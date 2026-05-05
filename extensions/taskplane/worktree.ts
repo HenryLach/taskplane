@@ -1613,17 +1613,81 @@ export function removeAllWorktrees(
  * Execute a command synchronously and return { ok, stdout }.
  * Returns ok=false on any error (non-zero exit, command not found, etc.).
  */
-export function execCheck(command: string, cwd?: string): { ok: boolean; stdout: string } {
+/**
+ * Result of an `execCheck` invocation. When `ok === false`, `errorKind`
+ * classifies the failure so callers can surface accurate diagnostics instead
+ * of the historical "binary not found" catch-all.
+ *
+ * @since TP-185
+ */
+export type ExecCheckResult = {
+	ok: boolean;
+	stdout: string;
+	errorKind?: "not-found" | "timeout" | "exit-code" | "signal" | "unknown";
+	errorDetail?: string;
+};
+
+/**
+ * Run a shell command and report whether it succeeded. Used by the orchestrator
+ * preflight to probe `git`, `git worktree`, and `pi`.
+ *
+ * @param command - Full command line (passed to `execSync`).
+ * @param cwd - Optional working directory.
+ * @param timeoutMs - Per-invocation timeout in milliseconds. Defaults to 10s,
+ *   which is fine for warm tools but can be tight for cold-start scenarios on
+ *   Windows (mise shim + Node bootstrap + AV scan + tool startup). Pass a
+ *   larger value (e.g. 30_000) for tools that may pay a cold-start tax.
+ */
+export function execCheck(command: string, cwd?: string, timeoutMs = 10_000): ExecCheckResult {
 	try {
 		const stdout = execSync(command, {
 			encoding: "utf-8",
-			timeout: 10_000,
+			timeout: timeoutMs,
 			stdio: ["pipe", "pipe", "pipe"],
 			...(cwd ? { cwd } : {}),
 		}).trim();
 		return { ok: true, stdout };
-	} catch {
-		return { ok: false, stdout: "" };
+	} catch (err: unknown) {
+		// Classify the failure mode so the caller can produce a useful hint.
+		// Node's `execSync` reports failures via:
+		//   - `code === 'ENOENT'`               → binary not found on PATH (POSIX direct spawn)
+		//   - `status === 127`                  → POSIX shell reported "command not found"
+		//   - cmd.exe stderr "not recognized"   → Windows shell missing-binary indicator (exit 1)
+		//   - `signal === 'SIGTERM'`            → timeout fired (Node killed the child)
+		//   - `status` is a number != 0         → child exited non-zero on its own
+		//   - `signal` is set otherwise         → child killed externally
+		// Note: when `execSync`'s `timeout` option fires, the resulting error has
+		// `signal: 'SIGTERM'` AND `errno` populated (the signal-kill errno on the
+		// platform). We attribute SIGTERM to the timeout because `execCheck` is
+		// the one setting the timeout option — there's no other realistic source
+		// of SIGTERM for a short-lived diagnostic command we just spawned.
+		const e = err as { code?: string | number; status?: number | null; signal?: NodeJS.Signals | null; errno?: number; message?: string; path?: string; stderr?: string | Buffer };
+		const stderrText = typeof e?.stderr === "string"
+			? e.stderr
+			: e?.stderr instanceof Buffer
+				? e.stderr.toString("utf-8")
+				: "";
+		const commandName = command.split(/\s+/)[0];
+		if (e?.code === "ENOENT") {
+			return { ok: false, stdout: "", errorKind: "not-found", errorDetail: e.path ?? commandName };
+		}
+		if (e?.status === 127) {
+			return { ok: false, stdout: "", errorKind: "not-found", errorDetail: commandName };
+		}
+		// Windows cmd.exe pattern: exit 1 + "is not recognized" in stderr.
+		if (e?.signal !== "SIGTERM" && /is not recognized as an internal or external command|command not found/i.test(stderrText)) {
+			return { ok: false, stdout: "", errorKind: "not-found", errorDetail: commandName };
+		}
+		if (e?.signal === "SIGTERM") {
+			return { ok: false, stdout: "", errorKind: "timeout", errorDetail: `exceeded ${timeoutMs}ms timeout` };
+		}
+		if (typeof e?.status === "number") {
+			return { ok: false, stdout: "", errorKind: "exit-code", errorDetail: `exit ${e.status}` };
+		}
+		if (e?.signal) {
+			return { ok: false, stdout: "", errorKind: "signal", errorDetail: String(e.signal) };
+		}
+		return { ok: false, stdout: "", errorKind: "unknown", errorDetail: e?.message ?? "unknown error" };
 	}
 }
 
@@ -1712,7 +1776,20 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 	});
 
 	// ── Pi availability ──────────────────────────────────────────
-	const piResult = execCheck("pi --version");
+	// Use a 30s timeout (vs default 10s) and retry once on timeout to absorb
+	// cold-start variance. Each `pi --version` invocation is a fresh Node
+	// process: mise shim resolution + Node bootstrap + Windows Defender
+	// process-launch scan + pi's own startup can comfortably exceed 10s on
+	// the first invocation after sleep/wake, even when pi is correctly
+	// installed and on PATH. (#TP-185)
+	const PI_PREFLIGHT_TIMEOUT_MS = 30_000;
+	let piResult = execCheck("pi --version", undefined, PI_PREFLIGHT_TIMEOUT_MS);
+	if (!piResult.ok && piResult.errorKind === "timeout") {
+		// Single retry: the first call typically warms the OS file cache and
+		// satisfies AV pre-scan, so a follow-up usually completes in <1s.
+		piResult = execCheck("pi --version", undefined, PI_PREFLIGHT_TIMEOUT_MS);
+	}
+
 	if (piResult.ok) {
 		checks.push({
 			name: "pi",
@@ -1720,12 +1797,34 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 			message: `Pi ${piResult.stdout || "available"}`,
 		});
 	} else {
-		checks.push({
-			name: "pi",
-			status: "fail",
-			message: "Pi not found",
-			hint: "Install Pi: npm install -g @mariozechner/pi-coding-agent",
-		});
+		// Tailor the failure message and hint to the actual error mode.
+		// The legacy code reported every failure as "Pi not found" with an
+		// `npm install -g` hint, which is misleading when the real cause is
+		// a timeout or non-zero exit from a correctly-installed pi.
+		let message: string;
+		let hint: string;
+		switch (piResult.errorKind) {
+			case "not-found":
+				message = "Pi not found on PATH";
+				hint = "Install Pi: npm install -g @mariozechner/pi-coding-agent";
+				break;
+			case "timeout":
+				message = `Pi did not respond within ${PI_PREFLIGHT_TIMEOUT_MS / 1000}s (retried once)`;
+				hint = "Pi appears installed but is responding slowly. Common causes: antivirus scanning the Node binary on first launch, slow disk, a zombie pi process holding a lock, or a stale mise shim. Try running `pi --version` directly to see how long it takes.";
+				break;
+			case "exit-code":
+				message = `Pi exited with error (${piResult.errorDetail ?? "non-zero status"})`;
+				hint = "Run `pi --version` directly to see the error output.";
+				break;
+			case "signal":
+				message = `Pi was killed by signal (${piResult.errorDetail ?? "unknown"})`;
+				hint = "The pi process was killed externally. Check for OOM, antivirus quarantine, or interrupted shell.";
+				break;
+			default:
+				message = `Pi check failed (${piResult.errorDetail ?? "unknown error"})`;
+				hint = "Run `pi --version` manually to diagnose.";
+		}
+		checks.push({ name: "pi", status: "fail", message, hint });
 	}
 
 	return {
