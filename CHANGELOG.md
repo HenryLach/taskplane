@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pi no longer hard-blocks startup with a red error when run in directories
+  that aren't configured for Taskplane (TP-183, #523):** Previously, launching
+  pi in any non-git directory (or any directory without
+  `.pi/taskplane-workspace.yaml` / `taskplane-config.json`) raised a verbose
+  red `WORKSPACE_SETUP_REQUIRED` notification at session_start. For users who
+  only want Taskplane in *some* projects, this was wrong UX. The
+  orchestrator now soft-fails the `WORKSPACE_SETUP_REQUIRED` case
+  specifically: no error notification, status line shows the quiet
+  `🔀 Orchestrator · disabled (no taskplane config in workspace)` indicator,
+  orchestrator commands stay gracefully disabled (and still explain why if
+  invoked, via the existing `requireExecCtx` guard). Configuration errors in
+  workspaces that ARE set up — `WORKSPACE_FILE_PARSE_ERROR`,
+  `WORKSPACE_SCHEMA_INVALID`, `WORKSPACE_REPO_PATH_NOT_FOUND`, and every
+  other `WorkspaceConfigErrorCode` — still surface loudly with the existing
+  red notify and `❌ startup failed (workspace config error)` status line, so
+  real misconfigurations remain visible. Throw behavior of
+  `buildExecutionContext` is unchanged — only the display in `extension.ts`
+  changes. 6 new tests in `orchestrator-startup-uxv2.test.ts` (3 scenarios,
+  6 fine-grained checks). Thanks to @mwickens for the report.
 - **Workers can now invoke `review_step`, `notify_supervisor`,
   `escalate_to_supervisor`, and `request_segment_expansion` (TP-184, #530):**
   Previously these
