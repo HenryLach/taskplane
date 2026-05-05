@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Workers can now invoke `review_step`, `notify_supervisor`, and
+  `request_segment_expansion` (TP-184, #530):** Previously these
+  engine-internal coordination tools were missing from the worker's
+  hardcoded `--tools` allowlist, so pi's tool gate filtered them out at the
+  worker. The visible symptom: plan/code/test reviews silently never fired
+  at Review Level >= 1, supervisor steering replies were impossible, and
+  multi-repo segment-expansion requests were unreachable. The bridge tools
+  are now always appended to the worker allowlist regardless of
+  `taskRunner.worker.tools` config; the user-tools default is unchanged.
+  Introduces three new exports in `agent-host.ts`: `ENGINE_BRIDGE_TOOLS`
+  (canonical list of engine-internal tools), `DEFAULT_WORKER_USER_TOOLS`
+  (the user-tools default literal), and `buildWorkerToolsAllowlist()`
+  (combines user portion with bridge tools, deduplicated). Called exactly
+  once at the lane-runner spawn site. Defense-in-depth: lane-runner now
+  warns (via `logExecution`) if any bridge tool is missing from the final
+  allowlist. 14 new tests in `worker-tools-allowlist.test.ts`.
 - **Preflight `pi` check no longer misreports cold-start timeouts as "Pi not
   found" (TP-185):** `execCheck` now classifies failures by mode (`not-found`,
   `timeout`, `exit-code`, `signal`, `unknown`) instead of treating every

@@ -390,6 +390,10 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 	},
 	merge: {
 		model: "",
+		// NOTE (TP-184): Mirrors `DEFAULT_WORKER_USER_TOOLS` in
+		// `agent-host.ts`. Kept as a literal here because types.ts anchors
+		// the module-import graph (agent-host.ts imports from types.ts), so
+		// importing the constant the other direction would create a cycle.
 		tools: "read,write,edit,bash,grep,find,ls",
 		thinking: "off",
 		verify: [],

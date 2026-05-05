@@ -160,7 +160,7 @@ Settings that control how `/task` spawns and manages worker agents.
 | Setting | Type | Default | Options | Description |
 |---------|------|---------|---------|-------------|
 | **Worker Model** | string | *(inherit)* | Any model ID | Model for worker agents. Empty = inherits the active session's model. Format: `provider/model-id` (e.g., `anthropic/claude-sonnet-4-20250514`). *(L1+L2)* |
-| **Worker Tools** | string | `read,write,edit,bash,grep,find,ls` | Comma-separated tool names | Tools available to worker agents. The default set covers all standard operations. |
+| **Worker Tools** | string | `read,write,edit,bash,grep,find,ls` | Comma-separated tool names | **User-facing** tools available to worker agents. The default set covers all standard operations. Engine-internal coordination tools (`review_step`, `notify_supervisor`, `request_segment_expansion`) are **always appended automatically** and cannot be disabled via this config — they are required for plan/code/test reviews, supervisor steering replies, and multi-repo segment expansion to work. See [issue #530](https://github.com/HenryLach/taskplane/issues/530) for context. |
 | **Worker Thinking** | picker | *(inherit)* | `inherit (use session thinking)`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | Thinking mode for workers. `inherit` uses active session default; level values force an explicit mode. Legacy `on` is normalized to `high`. |
 | **Spawn Mode** | enum | `subprocess` | `subprocess` | Runtime mode for `/task` worker/reviewer subprocesses. Runtime V2 supports subprocess only. |
 
