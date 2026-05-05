@@ -142,6 +142,26 @@ describe("orchestrator startup UX — soft-fail for WORKSPACE_SETUP_REQUIRED (TP
 		expect(block).toContain("Fix the workspace config");
 	});
 
+	it("global guard: the catch block calls notify(error) exactly once, and only in the loud arm (sage code review TP-183)", () => {
+		// Stronger guarantee than the per-arm assertions above: across the
+		// ENTIRE WorkspaceConfigError catch block, the error-severity notify
+		// call must appear exactly once, and that one occurrence must be inside
+		// the loud (non-setupError) arm. This catches subtle regressions where
+		// a future edit might add a notify ABOVE the setupError switch (which
+		// would re-introduce the loud path for the soft-fail case while still
+		// passing the per-arm assertions because each slice is checked
+		// independently).
+		const notifyErrorMatches = block.match(/ctx\.ui\.notify\(execCtxInitError, "error"\)/g) ?? [];
+		expect(notifyErrorMatches.length).toBe(1);
+
+		// Verify the single occurrence is positioned AFTER the `} else {`
+		// (i.e. inside the loud arm), not before the `if (setupError)` or
+		// inside the quiet arm.
+		const notifyIdx = block.indexOf('ctx.ui.notify(execCtxInitError, "error")');
+		const elseIdx = block.indexOf("} else {");
+		expect(notifyIdx).toBeGreaterThan(elseIdx);
+	});
+
 	it("scenario 3: successful buildExecutionContext skips the entire WorkspaceConfigError arm", () => {
 		// Sanity baseline: the catch arm only fires when buildExecutionContext
 		// throws. The success path (no throw) flows past the catch into the
