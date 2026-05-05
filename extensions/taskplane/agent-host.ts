@@ -51,6 +51,85 @@ import { resolvePiCliPath } from "./path-resolver.ts";
 // resolvePiCliPath() is imported from path-resolver.ts and re-exported below (TP-157)
 
 export { resolvePiCliPath };
+
+// ── Worker Tools Allowlist (TP-184) ─────────────────────────────────
+
+/**
+ * Engine-internal tools that the orchestrator's bridge extension
+ * (`agent-bridge-extension.ts`) registers for every spawned worker. These
+ * tools are coordination primitives owned by taskplane, NOT user-facing
+ * capabilities, so they must be present in the worker's `--tools` allowlist
+ * regardless of what `taskRunner.worker.tools` is configured to.
+ *
+ * If a worker is spawned without one of these tools in its allowlist, pi's
+ * tool gate filters the registered tool out and the matching feature
+ * silently no-ops:
+ *   - `review_step`:                plan/code/test reviews never fire at
+ *                                   any Review Level >= 1
+ *   - `notify_supervisor`:          worker cannot reply to supervisor
+ *                                   steering messages or escalate
+ *   - `request_segment_expansion`:  multi-repo segment expansion
+ *                                   unreachable (the request file IPC is
+ *                                   never written)
+ *
+ * Keep this list in sync with the registrations in
+ * `agent-bridge-extension.ts` (lines ~137, 230, 599).
+ *
+ * @see https://github.com/HenryLach/taskplane/issues/530
+ * @since TP-184
+ */
+export const ENGINE_BRIDGE_TOOLS = [
+	"review_step",
+	"notify_supervisor",
+	"request_segment_expansion",
+] as const;
+
+/**
+ * Default user-tools portion of the worker `--tools` allowlist. This is the
+ * fallback used when neither `taskRunner.worker.tools` config nor the
+ * `TASKPLANE_WORKER_TOOLS` env var supplies a value. Engine bridge tools
+ * (`ENGINE_BRIDGE_TOOLS`) are appended on top by
+ * `buildWorkerToolsAllowlist()` at the spawn site — they are NOT part of
+ * this default and should not be added by callers.
+ *
+ * NOTE: This literal is duplicated in `config-schema.ts` (defaults block)
+ * and `types.ts` (defaults block) as well. Those modules intentionally
+ * keep the literal to avoid pulling agent-host's heavy imports (child
+ * process, fs) into pure schema/type files. If you change the default
+ * here, update those copies too.
+ *
+ * @since TP-184
+ */
+export const DEFAULT_WORKER_USER_TOOLS = "read,write,edit,bash,grep,find,ls";
+
+/**
+ * Build the final worker `--tools` allowlist string by combining the
+ * user-tools portion (from config or {@link DEFAULT_WORKER_USER_TOOLS}) with
+ * {@link ENGINE_BRIDGE_TOOLS} (always appended, deduplicated).
+ *
+ * Semantics:
+ *   - `null` / `undefined` / empty / whitespace-only input → falls back to
+ *     {@link DEFAULT_WORKER_USER_TOOLS}
+ *   - Non-empty input → split on `,`, trim each entry, drop empties
+ *   - All three bridge tools are appended; duplicates are dropped via Set
+ *   - Returned string has no leading/trailing commas, no whitespace
+ *
+ * Call this exactly **once** in the spawn pipeline (currently
+ * `lane-runner.ts:580`) — augmentation is intended to be a single,
+ * idempotent layer; double-application is harmless (deduplicated) but
+ * obscures the data flow.
+ *
+ * @see https://github.com/HenryLach/taskplane/issues/530
+ * @since TP-184
+ */
+export function buildWorkerToolsAllowlist(userTools: string | undefined | null): string {
+	const userPart = (userTools && userTools.trim()) || DEFAULT_WORKER_USER_TOOLS;
+	const userList = userPart.split(",").map((s) => s.trim()).filter(Boolean);
+	const merged = new Set<string>(userList);
+	for (const t of ENGINE_BRIDGE_TOOLS) merged.add(t);
+	return Array.from(merged).join(",");
+}
+
 // ── Conversation Payload Helpers (TP-111) ───────────────────────────────
 
 /** Maximum characters for conversation event text payloads. */

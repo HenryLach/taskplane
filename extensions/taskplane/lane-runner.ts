@@ -32,7 +32,13 @@ import {
 	type CoreParsedTask,
 } from "./task-executor-core.ts";
 
-import { spawnAgent, type AgentHostOptions, type AgentHostResult } from "./agent-host.ts";
+import {
+	spawnAgent,
+	buildWorkerToolsAllowlist,
+	ENGINE_BRIDGE_TOOLS,
+	type AgentHostOptions,
+	type AgentHostResult,
+} from "./agent-host.ts";
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 
 import {
@@ -577,7 +583,11 @@ export async function executeTaskV2(
 				? config.workerSystemPrompt + "\n\n---\n\n" + config.workerSegmentPrompt
 				: config.workerSystemPrompt) || undefined,
 			model: config.workerModel || undefined,
-			tools: config.workerTools || "read,write,edit,bash,grep,find,ls",
+			// TP-184: buildWorkerToolsAllowlist always appends ENGINE_BRIDGE_TOOLS
+			// (review_step, notify_supervisor, request_segment_expansion) so that
+			// engine-internal coordination tools are present regardless of what the
+			// user configured for taskRunner.worker.tools. See issue #530.
+			tools: buildWorkerToolsAllowlist(config.workerTools),
 			thinking: config.workerThinking || undefined,
 			mailboxDir,
 			steeringPendingPath,
@@ -759,6 +769,19 @@ export async function executeTaskV2(
 				}
 				: undefined,
 		};
+
+		// TP-184: Defense-in-depth sanity check. Under normal operation,
+		// `buildWorkerToolsAllowlist()` guarantees ENGINE_BRIDGE_TOOLS are
+		// present in the allowlist. Warn (do NOT throw or block spawn) if any
+		// is missing — this catches future helper bugs or accidental bypasses.
+		// See issue #530 for what silently breaks when bridge tools are missing.
+		const toolsList = (hostOpts.tools ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+		for (const bridgeTool of ENGINE_BRIDGE_TOOLS) {
+			if (!toolsList.includes(bridgeTool)) {
+				logExecution(statusPath, "WARN",
+					`workerTools allowlist missing engine bridge tool '${bridgeTool}'; review/coordination features will silently no-op`);
+			}
+		}
 
 		// Context pressure: write wrap-up signal before kill
 		let workerKillReason: "context" | "timer" | null = null;
