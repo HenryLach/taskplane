@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Preflight `pi` check no longer misreports cold-start timeouts as "Pi not
+  found" (TP-185):** `execCheck` now classifies failures by mode (`not-found`,
+  `timeout`, `exit-code`, `signal`, `unknown`) instead of treating every
+  failure as missing-binary. The `pi` preflight now uses a 30s timeout (up
+  from 10s) and retries once on timeout to absorb cold-start variance — mise
+  shim resolution, Node bootstrap, AV process-launch scanning, and pi's own
+  startup can together exceed 10s on a fresh first run, especially on Windows.
+  Failure messages and hints are now tailored to the actual error kind
+  (e.g. timeouts say "Pi did not respond within 30s" + diagnostic guidance,
+  rather than the misleading "Install pi" hint). Detects missing binaries on
+  both POSIX (ENOENT/exit 127) and Windows (`cmd.exe` "is not recognized")
+  shells. 9 new tests in `exec-check-error-classification.test.ts` covering
+  every classification path including regression guards against the original
+  bug. Backward compatible: existing callers reading `{ ok, stdout }` are
+  unaffected.
 - **Worker model/thinking/tools from preferences now flow through to spawned
   workers (TP-181, #522):** `taskRunner.worker.{model,thinking,tools}` in
   `preferences.json` (and project config) are now threaded from
