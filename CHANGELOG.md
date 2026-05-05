@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Workers can now invoke `review_step`, `notify_supervisor`, and
-  `request_segment_expansion` (TP-184, #530):** Previously these
+- **Workers can now invoke `review_step`, `notify_supervisor`,
+  `escalate_to_supervisor`, and `request_segment_expansion` (TP-184, #530):**
+  Previously these
   engine-internal coordination tools were missing from the worker's
   hardcoded `--tools` allowlist, so pi's tool gate filtered them out at the
   worker. The visible symptom: plan/code/test reviews silently never fired

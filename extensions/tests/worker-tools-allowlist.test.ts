@@ -107,17 +107,49 @@ describe("buildWorkerToolsAllowlist", () => {
 		assert.strictEqual(tokens.length, unique.size,
 			"each tool should appear exactly once");
 	});
+
+	it("delimiter-only input → falls back to default user tools (regression for sage-flagged empty-list bug)", () => {
+		// A user mis-configuring `tools: ","` or `tools: " , "` would previously
+		// produce a worker with bridge tools only, no file/shell tools — silently
+		// wedging the worker with no read/write/bash. Guarantee fallback to default.
+		for (const input of [",", ",,,", " , ", " , , "]) {
+			const result = buildWorkerToolsAllowlist(input);
+			assert.ok(
+				result.includes("read") && result.includes("write") && result.includes("bash"),
+				`input ${JSON.stringify(input)} should fall back to default user tools, got: ${result}`,
+			);
+			for (const bridgeTool of ENGINE_BRIDGE_TOOLS) {
+				assert.ok(
+					result.includes(bridgeTool),
+					`input ${JSON.stringify(input)} should still include bridge tool ${bridgeTool}, got: ${result}`,
+				);
+			}
+		}
+	});
+
+	it("escalate_to_supervisor is always present in output (regression guard)", () => {
+		// Specific regression test for the original gap caught by sage code review:
+		// the helper must always include escalate_to_supervisor alongside the
+		// other bridge tools, regardless of user config.
+		for (const input of [undefined, null, "", "read", "read,write,bash", ","]) {
+			const result = buildWorkerToolsAllowlist(input);
+			assert.ok(
+				result.split(",").includes("escalate_to_supervisor"),
+				`input ${JSON.stringify(input)} must yield an allowlist containing escalate_to_supervisor, got: ${result}`,
+			);
+		}
+	});
 });
 
 describe("ENGINE_BRIDGE_TOOLS", () => {
-	it("contains exactly three entries", () => {
-		assert.strictEqual(ENGINE_BRIDGE_TOOLS.length, 3);
+	it("contains exactly four entries", () => {
+		assert.strictEqual(ENGINE_BRIDGE_TOOLS.length, 4);
 	});
 
-	it("entries are exactly review_step, notify_supervisor, request_segment_expansion", () => {
+	it("entries are exactly review_step, notify_supervisor, escalate_to_supervisor, request_segment_expansion", () => {
 		assert.deepStrictEqual(
 			[...ENGINE_BRIDGE_TOOLS].sort(),
-			["notify_supervisor", "request_segment_expansion", "review_step"],
+			["escalate_to_supervisor", "notify_supervisor", "request_segment_expansion", "review_step"],
 		);
 	});
 

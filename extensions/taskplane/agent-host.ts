@@ -67,13 +67,15 @@ export { resolvePiCliPath };
  *   - `review_step`:                plan/code/test reviews never fire at
  *                                   any Review Level >= 1
  *   - `notify_supervisor`:          worker cannot reply to supervisor
- *                                   steering messages or escalate
+ *                                   steering messages
+ *   - `escalate_to_supervisor`:     worker cannot escalate blockers or
+ *                                   ambiguity to the supervisor/operator
  *   - `request_segment_expansion`:  multi-repo segment expansion
  *                                   unreachable (the request file IPC is
  *                                   never written)
  *
  * Keep this list in sync with the registrations in
- * `agent-bridge-extension.ts` (lines ~137, 230, 599).
+ * `agent-bridge-extension.ts` (lines ~137, 180, 230, 599).
  *
  * @see https://github.com/HenryLach/taskplane/issues/530
  * @since TP-184
@@ -81,6 +83,7 @@ export { resolvePiCliPath };
 export const ENGINE_BRIDGE_TOOLS = [
 	"review_step",
 	"notify_supervisor",
+	"escalate_to_supervisor",
 	"request_segment_expansion",
 ] as const;
 
@@ -124,7 +127,13 @@ export const DEFAULT_WORKER_USER_TOOLS = "read,write,edit,bash,grep,find,ls";
  */
 export function buildWorkerToolsAllowlist(userTools: string | undefined | null): string {
 	const userPart = (userTools && userTools.trim()) || DEFAULT_WORKER_USER_TOOLS;
-	const userList = userPart.split(",").map((s) => s.trim()).filter(Boolean);
+	const rawUserList = userPart.split(",").map((s) => s.trim()).filter(Boolean);
+	// Guard against delimiter-only / whitespace-only inputs (e.g. ",", " , ")
+	// that would otherwise parse to an empty list and yield bridge-tools-only
+	// workers with no file/shell capabilities.
+	const userList = rawUserList.length > 0
+		? rawUserList
+		: DEFAULT_WORKER_USER_TOOLS.split(",").map((s) => s.trim()).filter(Boolean);
 	const merged = new Set<string>(userList);
 	for (const t of ENGINE_BRIDGE_TOOLS) merged.add(t);
 	return Array.from(merged).join(",");
