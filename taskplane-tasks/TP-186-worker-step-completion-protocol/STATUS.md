@@ -30,15 +30,15 @@
 ---
 
 ### Step 1: Plan the prompt edits and decide on Option B scope
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates wording before implementation.
 
-- [ ] Order of Operations section drafted (5–6 step numbered sequence)
-- [ ] Recovery Recipe drafted (revert + commit + handle REVISE through normal recipe)
-- [ ] Forbidden callout drafted (matches existing "Workers MUST NOT" rule style)
-- [ ] (If Option B) Guard inspection logic + refusal message designed; consistent with Recovery Recipe wording
-- [ ] Drafts written into STATUS or scratch file for plan review
+- [x] Order of Operations section drafted (5–6 step numbered sequence) — see PLAN-DRAFT.md §A
+- [x] Recovery Recipe drafted (revert + commit + handle REVISE through normal recipe) — PLAN-DRAFT.md §B
+- [x] Forbidden callout drafted (matches existing "Workers MUST NOT" rule style) — PLAN-DRAFT.md §C
+- [x] (If Option B) Guard inspection logic + refusal message designed; consistent with Recovery Recipe wording — PLAN-DRAFT.md §D
+- [x] Drafts written into STATUS or scratch file for plan review — PLAN-DRAFT.md created
 
 ---
 
