@@ -123,24 +123,25 @@ jobs:
           exit 1
 
       - name: Extract changelog section for this version
-        id: changelog
+        # Writes the section between `## [VERSION]` and the next `## [` heading
+        # to a file. Avoids using `${{ }}` interpolation for multi-line content
+        # in subsequent shell commands — markdown bullets/parens/backticks would
+        # be mis-parsed as shell syntax (subshells, command substitution, etc).
         run: |
           VERSION="${{ steps.version.outputs.tag_version }}"
-          # Extract the section between `## [VERSION]` and the next `## [` heading.
-          NOTES=$(awk -v v="^## \\\\[$VERSION\\\\]" '
+          awk -v v="^## \\\\[$VERSION\\\\]" '
             $0 ~ v { found=1; next }
             found && /^## \[/ { exit }
             found { print }
-          ' CHANGELOG.md)
-          if [ -z "$NOTES" ]; then
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
             echo "::warning::No CHANGELOG section found for version $VERSION; release notes will be sparse."
-            NOTES="See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
+            echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." > release-notes.md
           fi
-          {
-            echo 'notes<<NOTES_EOF'
-            echo "$NOTES"
-            echo NOTES_EOF
-          } >> "$GITHUB_OUTPUT"
+          echo "--- release-notes.md preview ---"
+          head -20 release-notes.md
+          echo "..."
+          echo "(total lines: $(wc -l < release-notes.md))"
 
       - name: Create GitHub release
         env:
@@ -153,9 +154,11 @@ jobs:
             echo "::notice::GitHub release $TAG already exists; skipping creation."
             exit 0
           fi
+          # Use --notes-file (not --notes "$VAR") so multi-line markdown with
+          # backticks/parens/asterisks isn't subjected to shell parsing.
           gh release create "$TAG" \
             --title "$TAG" \
-            --notes "${{ steps.changelog.outputs.notes }}" \
+            --notes-file release-notes.md \
             --verify-tag
 
       - name: Summary
