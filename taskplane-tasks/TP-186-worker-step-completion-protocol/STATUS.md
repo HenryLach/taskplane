@@ -30,7 +30,7 @@
 ---
 
 ### Step 1: Plan the prompt edits and decide on Option B scope
-**Status:** ✅ Complete (plan review APPROVE)
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates wording before implementation.
 
@@ -43,7 +43,7 @@
 ---
 
 ### Step 2: Apply prompt edits to templates/agents/task-worker.md
-**Status:** ✅ Complete (gated by Step 5 code review APPROVE — R002)
+**Status:** ✅ Complete
 
 - [x] Order of Operations section inserted (templates/agents/task-worker.md after "Correct sequence" / "WRONG sequence" blocks)
 - [x] Recovery Recipe section inserted (immediately after Order of Operations)
@@ -53,7 +53,7 @@
 ---
 
 ### Step 3: (Optional) Implement Option B engine-side guard
-**Status:** ✅ Complete (gated by Step 5 code review APPROVE — R002)
+**Status:** ✅ Complete
 
 - [x] STATUS.md inspection helper added (`isStepMarkedComplete` exported from agent-bridge-extension.ts)
 - [x] Wired into `review_step` handler in agent-bridge-extension.ts (early-return REFUSED before reviewer spawn)
@@ -63,7 +63,7 @@
 ---
 
 ### Step 4: Add tests
-**Status:** ✅ Complete (gated by Step 5 code review APPROVE — R002)
+**Status:** ✅ Complete
 
 - [x] `worker-step-completion-protocol.test.ts` created
 - [x] Source-pattern tests for the 3 prompt additions (1.1, 1.2, 1.3, 1.4)
@@ -73,7 +73,7 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ✅ Complete (R002 APPROVE)
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
@@ -136,6 +136,8 @@
 | 2026-05-06 | Step 5 code review | R002 APPROVE — Steps 2/3/4/5 now safe to mark Complete |
 | 2026-05-06 | Step 6 docs | CHANGELOG Unreleased/Fixed entry added; supervisor handover note for issue #510 logged in Discoveries |
 | 2026-05-06 | All steps complete | TP-186 done; STATUS ✅ Complete |
+| 2026-05-06 23:28 | Worker iter 1 | done in 856s, tools: 64 |
+| 2026-05-06 23:28 | Task complete | .DONE created |
 
 ---
 
