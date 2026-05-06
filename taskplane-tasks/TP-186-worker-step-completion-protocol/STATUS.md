@@ -1,6 +1,6 @@
 # TP-186: Fix worker death-spiral via explicit step-completion protocol — Status
 
-**Current Step:** Step 4: Add tests
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-06
 **Review Level:** 2
@@ -63,12 +63,12 @@
 ---
 
 ### Step 4: Add tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress (per new rule: do NOT mark Complete until Step 5 code review APPROVE)
 
-- [ ] `worker-step-completion-protocol.test.ts` created
-- [ ] Source-pattern tests for the 3 prompt additions
-- [ ] (If Option B) Behavioral tests for the guard
-- [ ] Targeted run passes
+- [x] `worker-step-completion-protocol.test.ts` created
+- [x] Source-pattern tests for the 3 prompt additions (1.1, 1.2, 1.3, 1.4)
+- [x] (If Option B) Behavioral tests for the guard (2.1–2.7) + wording-consistency tests (3.1–3.3)
+- [x] Targeted run passes — 14/14 pass
 
 ---
 
@@ -125,6 +125,7 @@
 | 2026-05-06 | Step 1 complete | Plan APPROVED; baseline SHA captured: 4150207066af63ab5e4fb08c342722d6e45d1e55 |
 | 2026-05-06 | Step 2 implementation | task-worker.md prompt edits applied (3 sections inserted in Review Protocol) |
 | 2026-05-06 | Step 3 implementation | agent-bridge-extension.ts: `isStepMarkedComplete` helper + guard wired into `review_step` handler |
+| 2026-05-06 | Step 4 implementation | worker-step-completion-protocol.test.ts: 14 tests, all pass (3 prompt + 7 helper + 3 wording + 1 regression) |
 
 ---
 

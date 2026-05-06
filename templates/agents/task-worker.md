@@ -338,11 +338,11 @@ will return a `REFUSED` verdict pointing back at this recipe.
 
 Workers MUST NOT do any of the following:
 
-1. ~~Mark a step `**Status:** ✅ Complete` before its code review (Review
-   Level ≥ 2) has returned APPROVE.~~ This is the **death-spiral
-   anti-pattern**: if the reviewer subsequently returns REVISE, the worker
-   enters a state contradiction it cannot resolve and the lane is lost. If
-   you did this accidentally, follow the Recovery Recipe above.
+1. ~~Mark a step `**Status:** ✅ Complete` before its code review (Level ≥ 2)
+   has returned APPROVE.~~ This is the **death-spiral anti-pattern**: if
+   the reviewer subsequently returns REVISE, the worker enters a state
+   contradiction it cannot resolve and the lane is lost. If you did this
+   accidentally, follow the Recovery Recipe above.
 2. ~~Hydrate, implement, check off, commit, THEN call plan review~~ — this
    makes plan review pointless; the work is already written.
 3. ~~Skip the code review and proceed to the next step on a Review Level ≥ 2
