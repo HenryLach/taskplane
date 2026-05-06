@@ -73,13 +73,13 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ZERO test failures allowed.
 
-- [ ] FULL fast suite passing (count = baseline + new tests)
-- [ ] Integration suite passing
-- [ ] CLI smoke clean
+- [x] FULL fast suite passing (count = baseline + new tests) — 3466 pass / 0 fail / 1 skip (3452 baseline + 14 new = 3466 ✅)
+- [x] Integration suite passing — `tests/*.test.ts` glob already covers `*.integration.test.ts` files; included in the 3466 above
+- [x] CLI smoke clean — `taskplane help` shows full command surface; `taskplane doctor` runs successfully (exits non-zero only because the worktree is not an init'd project, which is expected and unrelated to this fix)
 - [ ] Code-review checkpoint: call `review_step(step=5, type='code', baseline=<sha>)`
 - [ ] Per the new rule: do NOT mark Step 2 Complete until code review APPROVE
 
@@ -126,6 +126,7 @@
 | 2026-05-06 | Step 2 implementation | task-worker.md prompt edits applied (3 sections inserted in Review Protocol) |
 | 2026-05-06 | Step 3 implementation | agent-bridge-extension.ts: `isStepMarkedComplete` helper + guard wired into `review_step` handler |
 | 2026-05-06 | Step 4 implementation | worker-step-completion-protocol.test.ts: 14 tests, all pass (3 prompt + 7 helper + 3 wording + 1 regression) |
+| 2026-05-06 | Step 5 quality gate | Full suite: 3466 pass / 0 fail / 1 skip; CLI smoke OK |
 
 ---
 
