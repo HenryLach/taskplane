@@ -81,6 +81,19 @@ describe("1.x — task-worker.md prompt: TP-186 sections", () => {
 		expect(WORKER_PROMPT).toContain("Plan review happens BEFORE implementation");
 		expect(WORKER_PROMPT).toContain("Correct sequence:");
 	});
+
+	it("1.5 — Handling verdicts section documents REFUSED + points at Recovery Recipe (sage TP-186 follow-up)", () => {
+		// The Option B engine guard returns REFUSED. Workers must know how to
+		// react. Without REFUSED in the Handling verdicts section, a worker
+		// hitting the guard could spin trying to interpret the unfamiliar token.
+		expect(WORKER_PROMPT).toContain("**REFUSED**");
+		// The verdict entry must point at the Recovery Recipe (revert + commit + retry).
+		const handlingIdx = WORKER_PROMPT.indexOf("**Handling verdicts:**");
+		expect(handlingIdx).toBeGreaterThan(-1);
+		const section = WORKER_PROMPT.slice(handlingIdx, handlingIdx + 2000);
+		expect(section).toContain("REFUSED");
+		expect(section).toContain("Recovery Recipe");
+	});
 });
 
 // ─── 2.x — isStepMarkedComplete helper behavior ────────────────────────────

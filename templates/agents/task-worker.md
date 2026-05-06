@@ -304,7 +304,8 @@ its own — STATUS says done while the reviewer says revise.
 
 Individual checkboxes (`- [x] item text`) inside the step MAY be checked while
 implementation is in flight — they record per-item progress. The **step-level
-`**Status:**` heading** is the only field governed by this rule.
+`Status:` heading** (the line that reads `**Status:** ✅ Complete` in STATUS.md)
+is the only field governed by this rule.
 
 ### Recovery: "I marked the step Complete, then the reviewer returned REVISE"
 
@@ -357,6 +358,12 @@ rule from STATUS.md Hydration → Rules.
 - **REVISE** → read the review file in `.reviews/` for detailed feedback,
   address the issues, commit fixes, then **call `review_step` again** for re-review.
   The same reviewer evaluates whether your fixes address its concerns.
+- **REFUSED** → the engine's `review_step` guard rejected your call because the
+  step is already marked `**Status:** ✅ Complete` in STATUS.md while you're
+  trying to run a `code` or `test` review on it. This is the death-spiral
+  precondition. Follow the Recovery Recipe above (revert the premature status
+  update, commit the revert, then call `review_step` again — it will run
+  this time because the step is no longer marked Complete).
 - **UNAVAILABLE** → reviewer failed, proceed with caution
 
 **Example flow for a Review Level 2 task, Step 3:**
