@@ -1,10 +1,10 @@
 # TP-186: Fix worker death-spiral via explicit step-completion protocol — Status
 
-**Current Step:** Step 1: Plan the prompt edits and decide on Option B scope
+**Current Step:** Step 3: (Optional) Implement Option B engine-side guard
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-06
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -30,7 +30,7 @@
 ---
 
 ### Step 1: Plan the prompt edits and decide on Option B scope
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (plan review APPROVE)
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates wording before implementation.
 
@@ -43,12 +43,12 @@
 ---
 
 ### Step 2: Apply prompt edits to templates/agents/task-worker.md
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress (per new rule: do NOT mark Complete until Step 5 code review APPROVE)
 
-- [ ] Order of Operations section inserted
-- [ ] Recovery Recipe section inserted
-- [ ] Forbidden callout inserted
-- [ ] No internal contradictions with existing prompt content
+- [x] Order of Operations section inserted (templates/agents/task-worker.md after "Correct sequence" / "WRONG sequence" blocks)
+- [x] Recovery Recipe section inserted (immediately after Order of Operations)
+- [x] Forbidden callout inserted (replaces former "WRONG sequence" block; old item preserved as bullet 2)
+- [x] No internal contradictions with existing prompt content (top-of-file `**Status:**` is task-level; new rule governs step-level `**Status:**` headings; verified via grep)
 
 ---
 
@@ -98,6 +98,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| R001 | plan | 1 | APPROVE | .reviews/R001-plan-step1.md |
 
 ---
 
@@ -120,6 +121,9 @@
 | 2026-05-06 | Baseline tests | 3452 pass / 0 fail / 1 skip |
 | 2026-05-06 | Decision | Option A + Option B (prompt edits + engine guard) |
 | 2026-05-06 | Step 0 complete | Preflight done; entering Step 1 |
+| 2026-05-06 | Step 1 plan review | R001 APPROVE |
+| 2026-05-06 | Step 1 complete | Plan APPROVED; baseline SHA captured: 4150207066af63ab5e4fb08c342722d6e45d1e55 |
+| 2026-05-06 | Step 2 implementation | task-worker.md prompt edits applied (3 sections inserted in Review Protocol) |
 
 ---
 
@@ -138,3 +142,4 @@
   Defense: Step 1 plan-review checkpoint catches wording issues early; the
   task is small enough that the worker shouldn't accumulate the long
   multi-step state where the bug bites.
+| 2026-05-06 23:17 | Review R001 | plan Step 1: APPROVE |
