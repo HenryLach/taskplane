@@ -61,6 +61,17 @@ jobs:
           cache: npm
           cache-dependency-path: extensions/package-lock.json
 
+      - name: Upgrade npm to latest (Trusted Publishing requires >= 11.5.1)
+        # Node 22 LTS ships with npm 10.x. OIDC Trusted Publishing for npm
+        # requires npm 11.5.1+. Without this, `npm publish --provenance`
+        # signs provenance to Sigstore (works on npm 10) but then fails the
+        # registry PUT with a misleading 404 because the actual publish
+        # auth still uses the placeholder NODE_AUTH_TOKEN from setup-node
+        # instead of OIDC.
+        run: |
+          npm install -g npm@latest
+          echo "npm version after upgrade: $(npm --version)"
+
       - name: Validate tag matches package.json version
         id: version
         run: |
