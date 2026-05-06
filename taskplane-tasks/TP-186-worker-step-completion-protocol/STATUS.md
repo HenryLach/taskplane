@@ -1,6 +1,6 @@
 # TP-186: Fix worker death-spiral via explicit step-completion protocol — Status
 
-**Current Step:** Step 3: (Optional) Implement Option B engine-side guard
+**Current Step:** Step 4: Add tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-06
 **Review Level:** 2
@@ -53,12 +53,12 @@
 ---
 
 ### Step 3: (Optional) Implement Option B engine-side guard
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress (per new rule: do NOT mark Complete until Step 5 code review APPROVE)
 
-- [ ] STATUS.md inspection helper added (only if pursuing Option B)
-- [ ] Wired into `review_step` handler in agent-bridge-extension.ts
-- [ ] Applied to `code` and `test` types only (NOT `plan`)
-- [ ] Refusal message matches Recovery Recipe verbatim
+- [x] STATUS.md inspection helper added (`isStepMarkedComplete` exported from agent-bridge-extension.ts)
+- [x] Wired into `review_step` handler in agent-bridge-extension.ts (early-return REFUSED before reviewer spawn)
+- [x] Applied to `code` and `test` types only (NOT `plan`) — `if (reviewType !== "plan" && isStepMarkedComplete(...))`
+- [x] Refusal message matches Recovery Recipe verbatim (3-step recipe with `chore(<TASK-ID>): revert premature step-N completion` commit message)
 
 ---
 
@@ -124,6 +124,7 @@
 | 2026-05-06 | Step 1 plan review | R001 APPROVE |
 | 2026-05-06 | Step 1 complete | Plan APPROVED; baseline SHA captured: 4150207066af63ab5e4fb08c342722d6e45d1e55 |
 | 2026-05-06 | Step 2 implementation | task-worker.md prompt edits applied (3 sections inserted in Review Protocol) |
+| 2026-05-06 | Step 3 implementation | agent-bridge-extension.ts: `isStepMarkedComplete` helper + guard wired into `review_step` handler |
 
 ---
 

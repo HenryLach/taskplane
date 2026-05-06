@@ -132,6 +132,59 @@ function writeSegmentExpansionRequest(request: SegmentExpansionRequest): string 
 	return finalPath;
 }
 
+/**
+ * TP-186 — Death-spiral guard helper for `review_step`.
+ *
+ * Inspects STATUS.md to determine whether the worker has prematurely set the
+ * given step's section heading to `**Status:** ✅ Complete`. The guard fires
+ * for `code` and `test` review types only — plan reviews fire BEFORE
+ * implementation, when an empty STATUS is correct.
+ *
+ * Returns `true` ONLY if the step's section explicitly carries the
+ * `**Status:** ✅ Complete` line. The top-of-file (task-level) `**Status:**`
+ * field does not trip this guard because it is not inside any `### Step N:`
+ * section. All-checkboxes-checked is also NOT a trigger — it is the normal
+ * pre-code-review state.
+ *
+ * Designed to fail-open: any I/O error or a missing step heading returns
+ * `false` (the review proceeds). The prompt-side Recovery Recipe is the
+ * primary defense; this guard is a hard backstop, not a gatekeeper.
+ *
+ * @param statusPath absolute path to the worker's STATUS.md
+ * @param stepNum the step number being reviewed
+ * @returns true iff the step is marked Complete in STATUS.md
+ */
+export function isStepMarkedComplete(statusPath: string, stepNum: number): boolean {
+	let content: string;
+	try {
+		content = readFileSync(statusPath, "utf-8");
+	} catch {
+		return false;
+	}
+
+	const lines = content.split(/\r?\n/);
+	const stepHeadingRe = new RegExp(`^###\\s+Step\\s+${stepNum}\\b`);
+	const nextStepHeadingRe = /^###\s+Step\s+\d+\b/;
+
+	let inSection = false;
+	for (const line of lines) {
+		if (!inSection) {
+			if (stepHeadingRe.test(line)) inSection = true;
+			continue;
+		}
+		// Stop scanning at the next step heading.
+		if (nextStepHeadingRe.test(line)) break;
+		// Match a literal status line within this step's section.
+		// Examples that should match:
+		//   **Status:** ✅ Complete
+		//   **Status:** ✅ Complete (note ...)
+		if (/^\s*\*\*Status:\*\*\s*✅\s*Complete\b/.test(line)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "notify_supervisor",
@@ -631,6 +684,26 @@ export default function (pi: ExtensionAPI) {
 			const promptPath = process.env.TASKPLANE_PROMPT_PATH || join(taskFolder, "PROMPT.md");
 			const reviewsDir = process.env.TASKPLANE_REVIEWS_DIR || join(taskFolder, ".reviews");
 			if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+
+			// ── TP-186 death-spiral guard ─────────────────────────────────
+			// Refuse to spawn a code/test reviewer on a step that is already
+			// marked `**Status:** ✅ Complete` in STATUS.md. The worker has
+			// violated the Order of Operations contract; the only safe path
+			// is to revert STATUS first, then re-call review_step. Plan
+			// reviews are exempt because they fire BEFORE implementation.
+			if (reviewType !== "plan" && isStepMarkedComplete(statusPath, stepNum)) {
+				const taskIdMatch = statusPath.match(/[\\/]([A-Z]{2,}-\d+)[^\\/]*[\\/]STATUS\.md$/);
+				const taskId = taskIdMatch ? taskIdMatch[1] : "<TASK-ID>";
+				const refusal = [
+					`REFUSED: Step ${stepNum} is already marked \`**Status:** ✅ Complete\` in STATUS.md.`,
+					`Per the Order of Operations rule, code review must run BEFORE you mark a step Complete.`,
+					`Follow the Recovery Recipe in the worker prompt:`,
+					`  1. Revert the step's Status to \`🟨 In Progress\` in STATUS.md`,
+					`  2. Commit: chore(${taskId}): revert premature step-${stepNum} completion`,
+					`  3. Re-call review_step(step=${stepNum}, type="${reviewType}", baseline=<sha>)`,
+				].join("\n");
+				return { content: [{ type: "text" as const, text: refusal }], details: undefined };
+			}
 
 			// Read review counter from STATUS.md
 			let reviewCounter = 0;
