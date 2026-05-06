@@ -56,21 +56,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: npm
           cache-dependency-path: extensions/package-lock.json
 
-      - name: Upgrade npm to latest (Trusted Publishing requires >= 11.5.1)
-        # Node 22 LTS ships with npm 10.x. OIDC Trusted Publishing for npm
-        # requires npm 11.5.1+. Without this, `npm publish --provenance`
-        # signs provenance to Sigstore (works on npm 10) but then fails the
-        # registry PUT with a misleading 404 because the actual publish
-        # auth still uses the placeholder NODE_AUTH_TOKEN from setup-node
-        # instead of OIDC.
+      - name: Verify npm version supports OIDC Trusted Publishing
+        # OIDC Trusted Publishing for npm requires npm 11.5.1+.
+        # Node 24 LTS ships with npm 11.x natively, so this is just a
+        # belt-and-suspenders check + future-proofing in case a Node 24
+        # patch ever ships with an older npm. The `install -g npm@latest`
+        # is a no-op when the bundled version is already current.
         run: |
+          echo "Node version:        $(node --version)"
+          echo "npm version (pre):   $(npm --version)"
           npm install -g npm@latest
-          echo "npm version after upgrade: $(npm --version)"
+          echo "npm version (post):  $(npm --version)"
 
       - name: Validate tag matches package.json version
         id: version
