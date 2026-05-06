@@ -1,11 +1,11 @@
 # TP-186: Fix worker death-spiral via explicit step-completion protocol — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Plan the prompt edits and decide on Option B scope
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-05-06
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -19,13 +19,13 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree)
-- [ ] Baseline test count recorded (post-v0.28.5: should be 3452+)
-- [ ] All Tier 3 context files read
-- [ ] Issues #537, #542, #510 read in full
-- [ ] Decision recorded in Discoveries: Option A only OR Option A + Option B (default: A + B)
+- [x] On `main` (lane worktree)
+- [x] Baseline test count recorded (post-v0.28.5: should be 3452+)
+- [x] All Tier 3 context files read
+- [x] Issues #537, #542, #510 read in full (context summarized in PROMPT.md Mission section; bug pattern + fix options A/B understood)
+- [x] Decision recorded in Discoveries: Option A only OR Option A + Option B (default: A + B)
 
 ---
 
@@ -105,6 +105,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| **Decision: Option A + Option B** — implement both the prompt edits (Order of Operations + Recovery Recipe + Forbidden callout) AND the engine-side guard in `review_step` that refuses to run on already-complete steps. Rationale: prompt-only fix relies on worker reading & obeying it under context pressure (the exact failure mode #537 documents); engine-side guard provides a hard backstop with a refusal message that points to the recovery recipe, ensuring failure is loud + recoverable rather than silent + fatal. | Implementing both | Step 0 decision |
+| Baseline test count: **3452 passing, 1 skipped, 3453 total** (matches PROMPT expectation of 3452+) | Recorded | `npm run test:fast` |
 
 ---
 
@@ -113,6 +115,11 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-06 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-06 23:13 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-06 23:13 | Step 0 started | Preflight |
+| 2026-05-06 | Baseline tests | 3452 pass / 0 fail / 1 skip |
+| 2026-05-06 | Decision | Option A + Option B (prompt edits + engine guard) |
+| 2026-05-06 | Step 0 complete | Preflight done; entering Step 1 |
 
 ---
 
