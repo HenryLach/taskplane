@@ -3,7 +3,7 @@
  * @module orch/worktree
  */
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmdirSync, rmSync } from "fs";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { join, basename, resolve } from "path";
 
 import { execLog } from "./execution.ts";
@@ -640,6 +640,57 @@ export function isRetriableRemoveError(stderr: string): boolean {
 }
 
 /**
+ * Detect Windows MAX_PATH ("Filename too long") errors from `git worktree remove`.
+ *
+ * On Windows with default `core.longpaths = false`, git refuses to delete
+ * paths that exceed MAX_PATH (260 characters). Deep `node_modules` trees
+ * commonly trip this. Native `cmd` `rd /s /q` uses a different deletion
+ * code path (NT object namespace, longer path tolerance) and usually
+ * succeeds where git fails.
+ *
+ * @param stderr - Error output from `git worktree remove`
+ * @returns true if the failure looks like the Windows MAX_PATH case
+ * @since TP-188 (#543)
+ */
+export function isWindowsMaxPathError(stderr: string): boolean {
+	if (process.platform !== "win32") return false;
+	return /filename too long/i.test(stderr);
+}
+
+/**
+ * Run `cmd /c rd /s /q <path>` to recursively delete a directory on Windows.
+ *
+ * Used as a fallback after `git worktree remove` fails with the Windows
+ * MAX_PATH ("Filename too long") error. Caller must ensure platform is win32
+ * and the path is absolute. Path separators are normalized to backslashes
+ * because cmd's `rd` is more reliable with native Windows paths.
+ *
+ * @param absolutePath - Absolute path to remove (forward or back slashes accepted)
+ * @returns { ok, stdout, stderr }
+ * @since TP-188 (#543)
+ */
+export function runWindowsCmdRd(
+	absolutePath: string,
+): { ok: boolean; stdout: string; stderr: string } {
+	const winPath = absolutePath.replace(/\//g, "\\");
+	try {
+		const stdout = execFileSync("cmd", ["/c", "rd", "/s", "/q", winPath], {
+			encoding: "utf-8",
+			timeout: 60_000,
+			stdio: ["pipe", "pipe", "pipe"],
+		}).toString().trim();
+		return { ok: true, stdout, stderr: "" };
+	} catch (err: unknown) {
+		const e = err as { stdout?: string; stderr?: string; message?: string };
+		return {
+			ok: false,
+			stdout: (e.stdout ?? "").toString().trim(),
+			stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
+		};
+	}
+}
+
+/**
  * Remove a git worktree and clean up its associated branch.
  *
  * Executes `git worktree remove --force <path>` from the main repository
@@ -732,6 +783,50 @@ export function removeWorktree(
 		}
 
 		lastError = removeResult.stderr;
+
+		// ── Windows MAX_PATH fallback (#543) ────────────────────────
+		// On Windows, `git worktree remove` fails with "Filename too long"
+		// when the worktree contains deep `node_modules` trees (most
+		// non-trivial Node projects) and `core.longpaths = false` (default).
+		// `cmd /c rd /s /q <path>` uses a different deletion code path
+		// that tolerates long paths better. Try it ONCE before classifying
+		// the error as terminal/retriable so other error classes still
+		// surface unchanged.
+		if (isWindowsMaxPathError(lastError)) {
+			execLog(
+				"cleanup",
+				"worktree",
+				`Windows MAX_PATH detected — falling back to cmd "rd /s /q"`,
+				{ path: worktreePath, attempt },
+			);
+			const fallback = runWindowsCmdRd(worktreePath);
+			if (fallback.ok) {
+				execLog(
+					"cleanup",
+					"worktree",
+					`cmd "rd /s /q" fallback succeeded; pruning git worktree state`,
+					{ path: worktreePath },
+				);
+				// The on-disk tree is gone; git's bookkeeping still has a
+				// stale entry. Prune so isRegisteredWorktree() returns false
+				// during post-removal verification below.
+				runGit(["worktree", "prune"], repoRoot);
+				break;
+			}
+			// Fallback also failed — enrich error so the operator sees both
+			// attempts, then fall through to the existing terminal/retry
+			// classification (which will throw because "Filename too long"
+			// is non-retriable per isRetriableRemoveError).
+			execLog(
+				"cleanup",
+				"worktree",
+				`cmd "rd /s /q" fallback failed`,
+				{ path: worktreePath, error: fallback.stderr.slice(0, 200) },
+			);
+			lastError =
+				`git worktree remove failed: ${lastError}; ` +
+				`cmd rd /s /q fallback failed: ${fallback.stderr}`;
+		}
 
 		// Check if error is terminal (non-retriable)
 		if (!isRetriableRemoveError(lastError)) {
