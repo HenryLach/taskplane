@@ -1,10 +1,10 @@
 # TP-188: Reviewer quality checks + Windows worktree cleanup fallback — Status
 
-**Current Step:** Step 5: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S
 
@@ -40,7 +40,7 @@
 ---
 
 ### Step 2: Implement sub-fix A — reviewer quality checks
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] templates/agents/task-reviewer.md augmented with Quality-check verification (new section before Verdict Criteria; covers config discovery, package.json fallback, severity=important, REVISE downgrade)
 - [x] Confirm reviewer's existing bash tool is sufficient (agent-bridge-extension.ts:492 default tools include `bash`; new section explicitly notes `bash` is already allowed)
@@ -48,7 +48,7 @@
 ---
 
 ### Step 3: Implement sub-fix B — Windows worktree fallback
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] worktree.ts removeWorktree adds Windows + "Filename too long" detection (new `isWindowsMaxPathError` helper guards on `process.platform === "win32"`)
 - [x] cmd /c "rd /s /q" fallback with backslash path normalization (new `runWindowsCmdRd` helper; `path.replace(/\//g, "\\")`); on success also runs `git worktree prune` so post-removal verification passes
@@ -58,7 +58,7 @@
 ---
 
 ### Step 4: Add tests
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] reviewer-quality-checks.test.ts created (10 source-pattern tests on templates/agents/task-reviewer.md)
 - [x] windows-worktree-cleanup-fallback.test.ts created (11 source-pattern + 3 isWindowsMaxPathError unit + 3 runWindowsCmdRd mock-based unit; platform-agnostic)
@@ -67,23 +67,23 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
-- [ ] FULL fast suite passing
-- [ ] Integration suite passing
-- [ ] CLI smoke clean
-- [ ] Code-review checkpoint at Step 5
-- [ ] Per TP-186's rule: don't mark Step 2/3/4 Complete until APPROVE
+- [x] FULL fast suite passing (3494 pass / 1 skip / 0 fail; 27 net new tests vs 3467 baseline)
+- [x] Integration suite passing (worktree-lifecycle.integration.test included in fast suite run)
+- [x] CLI smoke clean (`node bin/taskplane.mjs help` ok; `doctor` reports pre-existing missing-`.pi/agents/*` warnings unrelated to this task)
+- [x] Code-review checkpoint at Step 5 — APPROVE (R002-code-step5)
+- [x] Per TP-186's rule: did not mark Step 2/3/4 Complete until code-review APPROVE
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] CHANGELOG.md two Unreleased / Fixed entries (#541, #543)
-- [ ] Discoveries logged
+- [x] CHANGELOG.md two Unreleased / Fixed entries (#541, #543) added
+- [x] Discoveries logged (preflight decisions + drafts in Discoveries table; Step 5 result table updated with both review verdicts)
 
 ---
 
@@ -92,6 +92,7 @@
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
 | 1 | plan | 1 | APPROVE | (in-process verdict) |
+| 2 | code | 5 | APPROVE | (in-process verdict; baseline 099a6b18) |
 
 ---
 
@@ -130,3 +131,4 @@
 - The Windows fallback specifically benefits this user (Windows + emailgistics-astro
   with 700+ npm deps). Likely to fire on most batches once shipped.
 | 2026-05-07 02:06 | Review R001 | plan Step 1: APPROVE |
+| 2026-05-07 02:17 | Review R002 | code Step 5: APPROVE |
