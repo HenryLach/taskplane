@@ -1,10 +1,10 @@
 # TP-188: Reviewer quality checks + Windows worktree cleanup fallback — Status
 
-**Current Step:** Step 1: Plan both sub-fixes
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Plan both sub-fixes
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint.
 
@@ -40,29 +40,29 @@
 ---
 
 ### Step 2: Implement sub-fix A — reviewer quality checks
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] templates/agents/task-reviewer.md augmented with Quality-check verification
-- [ ] Confirm reviewer's existing bash tool is sufficient (it is)
+- [x] templates/agents/task-reviewer.md augmented with Quality-check verification (new section before Verdict Criteria; covers config discovery, package.json fallback, severity=important, REVISE downgrade)
+- [x] Confirm reviewer's existing bash tool is sufficient (agent-bridge-extension.ts:492 default tools include `bash`; new section explicitly notes `bash` is already allowed)
 
 ---
 
 ### Step 3: Implement sub-fix B — Windows worktree fallback
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] worktree.ts removeWorktree adds Windows + "Filename too long" detection
-- [ ] cmd /c "rd /s /q" fallback with backslash path normalization
-- [ ] INFO-level log of fallback attempt
-- [ ] Other error classes still surface unchanged
+- [x] worktree.ts removeWorktree adds Windows + "Filename too long" detection (new `isWindowsMaxPathError` helper guards on `process.platform === "win32"`)
+- [x] cmd /c "rd /s /q" fallback with backslash path normalization (new `runWindowsCmdRd` helper; `path.replace(/\//g, "\\")`); on success also runs `git worktree prune` so post-removal verification passes
+- [x] INFO-level log of fallback attempt (`execLog("cleanup", "worktree", ...)` for detection, success, and failure)
+- [x] Other error classes still surface unchanged (fallback only fires when `isWindowsMaxPathError(stderr)` is true; non-Windows or other errors flow through original retriable/terminal classification untouched)
 
 ---
 
 ### Step 4: Add tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] reviewer-quality-checks.test.ts created
-- [ ] windows-worktree-cleanup-fallback.test.ts created (platform-agnostic via mocks)
-- [ ] Targeted run passes
+- [x] reviewer-quality-checks.test.ts created (10 source-pattern tests on templates/agents/task-reviewer.md)
+- [x] windows-worktree-cleanup-fallback.test.ts created (11 source-pattern + 3 isWindowsMaxPathError unit + 3 runWindowsCmdRd mock-based unit; platform-agnostic)
+- [x] Targeted run passes (27/27 in 201ms)
 
 ---
 
@@ -91,6 +91,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| 1 | plan | 1 | APPROVE | (in-process verdict) |
 
 ---
 
@@ -128,3 +129,4 @@
   parallel implementation within the task is fine.
 - The Windows fallback specifically benefits this user (Windows + emailgistics-astro
   with 700+ npm deps). Likely to fire on most batches once shipped.
+| 2026-05-07 02:06 | Review R001 | plan Step 1: APPROVE |

@@ -50,6 +50,67 @@ You handle a single review request and then exit.
 Do NOT just respond with text — the orchestrator reads the OUTPUT FILE to get
 your verdict. If you don't write the file, your review is lost.
 
+## Quality-check verification (code reviews only)
+
+**This section applies to code reviews only.** For plan reviews, skip this
+section entirely — there is no code to type-check or lint yet.
+
+Before returning a code-review verdict, run the project's declared
+typecheck / lint / format-check commands against the post-change tree. A
+behavioural-correctness APPROVE is **invalidated** by failing quality checks.
+
+The reviewer's tool allowlist already includes `bash`, so you can invoke these
+commands directly — no special tooling is required.
+
+### How to discover the commands
+
+1. **Project config first.** Read `.pi/taskplane-config.json` (or the legacy
+   `.pi/task-runner.yaml` / `.pi/task-runner.json` fallbacks) and look at
+   `taskRunner.testing.commands` — a `Record<string, string>` mapping a
+   command name (e.g. `typecheck`, `lint`, `format`, `format:check`) to a
+   shell command. Run any command whose key matches one of
+   `typecheck` / `tsc` / `types` / `lint` / `format` / `format:check`.
+2. **Fallback to `package.json` scripts.** If the project has no
+   `taskRunner.testing.commands`, read `package.json` and run any of these
+   scripts that exist, in this order:
+   `npm run typecheck`, `npm run lint`, `npm run format:check`.
+   Skip a script if `package.json#scripts` does not declare it — do not
+   invent commands.
+3. **Skip silently** if neither source yields a relevant command. Do not fail
+   the review just because the project has no quality-check pipeline
+   configured. Note this in the Summary so the operator knows quality checks
+   were not exercised.
+
+Do NOT run the project's full test suite from this section — that is the
+worker's Testing & Verification step. The quality checks here are
+**fast static checks** (typecheck, lint, format) that are cheap to run and
+high-signal for catching regressions the behavioural diff review would miss.
+
+### What to do with the results
+
+- **All quality checks pass** → proceed to behavioural code review as normal.
+- **A quality check fails** → surface each failing command as an entry in
+  **Issues Found** with severity `important`. Include:
+  - The command that failed (e.g. `npm run typecheck`)
+  - The first few lines of the failing output (file/line locations are
+    most useful)
+  - A concrete suggested fix where the failure makes one obvious
+- **Verdict downgrade rule:** If quality checks fail, the verdict is
+  **REVISE** — even if the behavioural code review would otherwise have
+  been APPROVE. Quality-check failures are blocking by definition: they
+  would surface at the worker's Testing & Verification step and force a
+  redo of the entire review cycle, so it is strictly cheaper to surface
+  them here.
+
+### Worked example (Issues Found entry)
+
+```
+1. **[npm run typecheck:1] [important]** — 5 strict-mode errors in
+   tests/foo.test.ts. Sample: "Argument of type 'undefined' is not
+   assignable to parameter of type 'string'" at line 42. Fix: narrow
+   `getThing()` return type or assert non-null at call site.
+```
+
 ## Verdict Criteria
 
 - **APPROVE** — Step will achieve its stated outcomes. Minor suggestions belong
