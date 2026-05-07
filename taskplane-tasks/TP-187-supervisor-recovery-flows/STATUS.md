@@ -4,7 +4,7 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 3
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
@@ -75,23 +75,50 @@
 - Add a section documenting `supervisor_takeover(reason: string)` semantics.
 - Document the existing text-reply parser semantics that lane-runner.ts uses: `skip` / `let it fail` / `close` / `abort` / `stop` are CLOSE_DIRECTIVES only when they are short (< 30 chars) standalone replies (or prefixes followed by `:`, ` `, `.`, ` -`). Embedding them in longer text is treated as instructions.
 
-#### Design #539 — resume reconstruction from disk
+#### Design #539 — resume reconstruction from disk (deterministic, with fail-loud fallback)
 
-**Entry point:** `resumeOrchBatch` in `resume.ts:1060`. After `loadBatchState(stateRoot)` returns null AND `force === true`, attempt reconstruction.
+**Background.** `executeAbort` calls `deleteBatchState(repoRoot)` so `.pi/batch-state.json` is gone after `orch_abort`. However, `.pi/runtime/<batchId>/` is NOT touched by abort: the per-batch registry, per-agent manifests, lane snapshots, and event logs all survive. Worktrees and branches also survive (preserved per the abort contract). This is enough to deterministically reconstruct a minimal `PersistedBatchState` for the `stopped` phase.
 
-**Reconstruction policy: prefer fail-loud over partial reconstruction.**
-The spec explicitly accepts "fail loudly with a clear error message" as the recovery path. Full state reconstruction from runtime/agent logs is genuinely fragile (we'd need to rebuild OrchBatchPhase, wave plan, lane allocations, segment frontiers, merge results, resilience counters). A partial reconstruct would be likely to silently mis-resume.
+**Entry point:** `resumeOrchBatch` in `resume.ts:1060`. After `loadBatchState(stateRoot)` returns null AND `force === true`, attempt reconstruction. If reconstruction fails for any reason in this strictness model, fall through to a clear fail-loud message that names the missing artifact.
 
-**Implementation:**
-- When `loadBatchState` returns null AND `force === true`:
-  1. Read `.pi/batch-history.json` via `loadBatchHistory(stateRoot)`.
-  2. If the history is empty or has no entries, fall through to the existing `resumeNoState()` error.
-  3. If a recent entry exists (most-recent-wins by ordering: newest first per `saveBatchHistory`), surface a focused, actionable error: it identifies the most recent batchId, the worktree paths that still exist, and recommends `orch_start <PROMPT.md>` as the recovery path.
-- New message helper in `messages.ts`: `resumeNoStateAfterAbort(batchId, worktreePathsExisting)` returning a clear multi-line error.
-- `resume.ts` handles `force=true` with empty in-memory state by reading from disk first (today's behavior is correct — `loadBatchState` reads from disk — the issue is purely about the post-abort case where the file is gone). The new behavior: when state file is gone but batch-history is not, still emit a clear error pointing to `orch_start` rather than the generic `resumeNoState()`.
-- **Multi-batch heuristic:** batch-history is sorted newest-first (line 1865 in persistence.ts: `nextHistory.unshift(summary)`). "Most recent wins" is just `history[0]`. Document this in the message and in inline comments.
+**Reconstruction inputs (deterministic strictness):**
+- **Required:**
+  - At least one batch directory under `.pi/runtime/` (pick the most-recent by directory mtime; document tie-breaking by sorted name as deterministic fallback).
+  - That directory contains `registry.json` AND at least one agent `manifest.json` AND each manifest's referenced `cwd` (worktree path) still exists on disk.
+- **Optional (best-effort):**
+  - `.pi/batch-history.json` entry for that batchId (gives totals + wave summaries; if absent, defaults are used).
+  - Lane snapshots `lanes/lane-N.json` (gives in-flight telemetry; if absent, treat as not-yet-started).
+  - `events.jsonl` per agent (used only for diagnostics, not state).
 
-**No changes to types.ts (no new state values needed)** — the existing `stopped`/`failed`/`paused` phase distinctions are sufficient; the issue is purely about the missing-state-file case.
+**Reconstruction output (minimal valid `PersistedBatchState`):**
+- `schemaVersion` = current schema version constant
+- `batchId` = directory name
+- `phase` = `"stopped"` (so existing force-resume flow promotes it to `"paused"` and retries)
+- `mode` = derived from presence of workspace config (`taskplane-workspace.yaml`); default `"repo"` if absent
+- `baseBranch` = best-effort: read from history entry if present, else read `git config init.defaultBranch` / detect from worktree's parent repo HEAD via `runGit`; if absent, fall through to fail-loud
+- `startedAt` / `endedAt` = from history entry if present; else use min/max manifest `startedAt`
+- `totalTasks` / `succeededTasks` / `failedTasks` / `skippedTasks` / `blockedTasks` / `totalWaves` / `currentWaveIndex` = from history entry if present; else computed from manifest task list with conservative defaults (one wave, 0 succeeded so reconciliation can re-evaluate via `.DONE` markers)
+- `tasks[]` = one record per worker manifest with `{ taskId, taskName, taskFolder (from manifest.packet.taskFolder), status: "pending" (reconciliation will fix via `.DONE` and STATUS.md), sessionName: agentId, laneNumber, repoId, resolvedRepoId }`. Already-completed tasks are picked up by the existing reconciliation pass which checks `.DONE` markers.
+- `lanes[]` = aggregated by laneNumber from worker manifests with `{ laneNumber, laneSessionId, taskIds, worktreePath: manifest.cwd, repoId }`
+- `mergeResults[]` = `[]` (force-resume re-runs merge phase if needed)
+- `resilience` = default-empty struct
+- `diagnostics` = `null`
+- `wavePlan` = single wave containing all reconstructed tasks (degraded mode — documented; correct multi-wave reconstruction is out of scope and would require persisting the original wavePlan separately, which is a larger change)
+
+**Validation gate.** The reconstructed state is passed through `validatePersistedState` (the same gate used by `loadBatchState`). If validation fails, fall through to fail-loud rather than persisting an invalid state.
+
+**Pre-resume diagnostics.** The existing `runPreResumeDiagnostics` already validates worktree existence, branch presence, and orphan detection on the persisted state. Reconstruction reuses that gate unchanged.
+
+**Fail-loud fallback.** When reconstruction inputs are missing/corrupt OR validation fails, emit a structured, actionable error via a new `messages.ts` helper `resumeNoStateAfterAbort(missingArtifact, batchId | null)`. The error names the missing artifact (e.g., "no `.pi/runtime/` directory", "registry.json missing for batch X", "worktree at <path> no longer exists") and recommends `orch_start <PROMPT.md>` as the recovery path. The existing generic `resumeNoState()` is preserved for the truly-empty case (no batch-state, no runtime dir, no history).
+
+**Multi-batch heuristic.** Multiple `.pi/runtime/<batchId>/` directories may exist (from prior batches). Most-recent-wins ordering by directory mtime; on tie, lexicographically-largest name. Document in inline comments and in the resume `onNotify` output so operators see which batch was selected.
+
+**API surface:**
+- New helper in `persistence.ts`: `reconstructBatchStateFromRuntime(stateRoot: string): { state: PersistedBatchState; batchId: string; selectionNote: string } | { error: string }`
+- New helper in `messages.ts`: `resumeReconstructed(batchId, selectionNote)` for the success path; `resumeNoStateAfterAbort(missingArtifact, batchId)` for failure.
+- `resumeOrchBatch` calls reconstruction only when `loadBatchState` returns null AND `force === true`. Otherwise behavior is unchanged.
+
+**No types.ts changes** — the existing `stopped`/`failed`/`paused` phase distinctions remain sufficient. Reconstruction yields `phase="stopped"` which the existing `isForceResume` branch in `resumeOrchBatch:1140` promotes to `"paused"` after running diagnostics.
 
 #### Design #540 — non-empty reason + assistant_message fallback
 
@@ -217,3 +244,4 @@ this task's worker is exposed to it during long-running review cycles.*
   release: v0.28.7 with TP-187 + TP-188 bundled (both depend on TP-186 being
   live in the worker spawn pipeline for safe execution).
 | 2026-05-07 03:12 | Review R001 | plan Step 1: REVISE |
+| 2026-05-07 03:14 | Review R002 | plan Step 1: REVISE |
