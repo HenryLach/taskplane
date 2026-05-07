@@ -27,7 +27,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { execSync, execFileSync, spawn, spawnSync } from "node:child_process";
+import { execSync, execFileSync, spawn } from "node:child_process";
 import {
 	TASKPLANE_GITIGNORE_HEADER,
 	TASKPLANE_GITIGNORE_NPM_HEADER,
@@ -36,6 +36,7 @@ import {
 	ALL_GITIGNORE_PATTERNS,
 	patternToRegex,
 } from "./gitignore-patterns.mjs";
+import { getVersion } from "./get-version.mjs";
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 
@@ -127,36 +128,10 @@ function commandExists(cmd) {
 	}
 }
 
-/**
- * Get a command's version string.
- *
- * Captures BOTH stdout and stderr because some CLIs (notably `pi`) print
- * `--version` output to stderr. With stdout-precedence: if stdout is
- * non-empty after trimming, return it; otherwise fall back to stderr.
- * This fixes the `taskplane doctor` empty `pi installed ()` display
- * (TP-189-C / TP-185 follow-up).
- *
- * On any failure or if both streams are empty, returns null.
- */
-function getVersion(cmd, flag = "--version") {
-	try {
-		// Use shell:true so legacy `${cmd} ${flag}` token-joined invocations
-		// (matching the prior execSync behavior) keep working for callers
-		// that pass a multi-token cmd or expect PATH lookup.
-		const result = spawnSync(`${cmd} ${flag}`, [], {
-			shell: true,
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		const stdout = (result.stdout ?? "").toString().trim();
-		const stderr = (result.stderr ?? "").toString().trim();
-		if (stdout) return stdout;
-		if (stderr) return stderr;
-		return null;
-	} catch {
-		return null;
-	}
-}
+// `getVersion` lives in `./get-version.mjs` so it can be unit-tested
+// without subprocessing the full CLI. Imported above. (TP-189-C / TP-185
+// follow-up: capture both stdout and stderr because `pi --version`
+// prints to stderr; null on failure preserves the original contract.)
 
 /**
  * Parse the tabular output from `pi --list-models` into structured model rows.

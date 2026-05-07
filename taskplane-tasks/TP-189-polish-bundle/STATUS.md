@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** L
 
@@ -60,9 +60,9 @@
 ### Step 3: Cluster C — taskplane doctor empty pi version
 **Status:** 🟨 In Progress
 
-- [x] `getVersion()` in `bin/taskplane.mjs` rewritten to use `spawnSync` with `stdio: ['ignore', 'pipe', 'pipe']`; stdout-precedence fallback to stderr; null when both empty or subprocess fails. `spawnSync` added to the existing `node:child_process` import.
+- [x] `getVersion()` extracted to NEW `bin/get-version.mjs` (testable ESM helper) and imported from `bin/taskplane.mjs`. Uses `spawnSync` with `stdio:['ignore','pipe','pipe']`, stdout-precedence with stderr fallback, AND **R008 fix**: gates on `result.error || result.status !== 0` so non-zero exits return null instead of leaking shell error text as a fake version string (preserves the prior execSync-throws-on-failure contract).
 - [x] Manual: `node bin/taskplane.mjs doctor` now shows `✅ pi installed (0.73.0)` (was empty parens).
-- [x] `cli-doctor-version-capture.test.ts` (NEW, 4 source-pattern tests): asserts spawnSync import, stdio shape, stdout-precedence ordering, and null-return fail-safe contract preserved.
+- [x] `cli-doctor-version-capture.test.ts` (NEW, 7 BEHAVIORAL tests): exercises the helper with real `node -e ...` subprocesses. Covers stdout success, stderr fallback (the pi case), stdout-over-stderr precedence, trimming, non-zero-exit returns null (R008 regression), nonexistent command returns null, both-empty-on-success returns null.
 
 ---
 
@@ -160,3 +160,4 @@
 | 2026-05-07 03:25 | Review R005 | plan Step 2: APPROVE |
 | 2026-05-07 03:28 | Review R006 | code Step 2: APPROVE |
 | 2026-05-07 03:29 | Review R007 | plan Step 3: APPROVE |
+| 2026-05-07 03:32 | Review R008 | code Step 3: REVISE |
