@@ -33,7 +33,7 @@
 ---
 
 ### Step 1: Plan all three sub-fix designs
-**Status:** ✅ Complete (R003 APPROVE)
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
@@ -162,7 +162,7 @@
 ---
 
 ### Step 2: Implement #538 — mailbox drain + supervisor_takeover
-**Status:** ✅ Complete (R006/R007 APPROVE)
+**Status:** ✅ Complete
 
 - [x] Synchronous mailbox drain at lane termination decision points (engine.ts hard-fail + lane-runner.ts no-progress kill)
 - [x] `supervisor_takeover(reason)` tool registered in extension.ts (alongside `orch_*` tools, NOT in agent-bridge-extension.ts; NOT in ENGINE_BRIDGE_TOOLS)
@@ -173,7 +173,7 @@
 ---
 
 ### Step 3: Implement #539 — resume reconstruction from disk
-**Status:** ✅ Complete (R006/R007 APPROVE)
+**Status:** ✅ Complete
 
 - [x] resume.ts force=true path reads from disk when in-memory state empty (via reconstructBatchStateFromRuntime)
 - [x] Loud failure with documented error message when no on-disk state (resumeNoStateAfterAbort message helper)
@@ -183,7 +183,7 @@
 ---
 
 ### Step 4: Implement #540 — non-empty reason + fallback
-**Status:** ✅ Complete (R006/R007 APPROVE)
+**Status:** ✅ Complete
 
 - [x] templates/agents/task-worker.md requires non-empty exit-no-progress reason (new MANDATORY block under "CRITICAL: Do NOT Exit")
 - [x] lane-runner.ts falls back to most-recent assistant_message when reason empty (events.jsonl walk-backward, with sentinel for the truly-silent case)
@@ -193,7 +193,7 @@
 ---
 
 ### Step 5: Add tests
-**Status:** ✅ Complete (R006/R007 APPROVE)
+**Status:** ✅ Complete
 
 - [x] supervisor-recovery-flows.test.ts created (44 tests)
 - [x] Coverage: mailbox drain, supervisor_takeover, resume reconstruction, worker-said fallback
@@ -257,6 +257,8 @@
 | 2026-05-06 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-05-07 03:02 | Task started | Runtime V2 lane-runner execution |
 | 2026-05-07 03:02 | Step 0 started | Preflight |
+| 2026-05-07 04:20 | Worker iter 1 | done in 4645s, tools: 331 |
+| 2026-05-07 04:20 | Task complete | .DONE created |
 
 ---
 
