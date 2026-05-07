@@ -1,10 +1,10 @@
 # TP-189: Accumulated polish bundle — Status
 
-**Current Step:** Step 1: Cluster A — Defensive tests + helper hardening
+**Current Step:** Step 2: Cluster B — Constants module migration
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** L
 
@@ -33,7 +33,7 @@
 ---
 
 ### Step 1: Cluster A — Defensive tests + helper hardening
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (code review APPROVE R004)
 
 - [x] Item 1: `lane-runner-spawn-wiring.test.ts` (NEW) — static assertion (4 tests pass)
 - [x] Item 2: `review-step-guard-runtime.test.ts` (NEW) — 4 runtime tests pass: type='code' on Complete → REFUSED + no spawn + counter unchanged; type='plan' on Complete → NOT refused; type='code' on In-Progress → NOT refused; REFUSED text matches prompt Recovery Recipe wording. Uses bare-specifier `child_process` mock for Node 22/24 portability.
@@ -47,7 +47,7 @@
 ---
 
 ### Step 2: Cluster B — Constants module migration
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] `extensions/taskplane/tool-allowlist-constants.ts` (NEW) — single source of truth
 - [ ] `agent-host.ts` imports from new module (re-exports per Step 0 decision)
@@ -156,3 +156,4 @@
 | 2026-05-07 03:07 | Review R001 | plan Step 1: APPROVE |
 | 2026-05-07 03:17 | Review R002 | code Step 1: REVISE |
 | 2026-05-07 03:21 | Review R003 | code Step 1: REVISE |
+| 2026-05-07 03:24 | Review R004 | code Step 1: APPROVE |
