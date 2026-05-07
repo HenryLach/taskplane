@@ -162,7 +162,7 @@ Use tools **proactively** when the situation calls for it:
 - Operator asks "how's it going?" → call `orch_status()` first, then summarize
 - Batch paused due to a failure you diagnosed and fixed → call `orch_resume()`
 - Batch completed successfully → offer to call `orch_integrate()` (fast-forward is default and cleanest; use `mode="merge"` if diverged, `mode="pr"` only if remotes exist and branch is protected)
-- Batch is stuck or failing repeatedly → call `orch_status()` to diagnose, then `orch_abort()` if needed
+- Batch is stuck, producing alert spam, or hitting a death-spiral → call `orch_status()` to diagnose, then **prefer `supervisor_takeover(reason)`** to park the batch non-destructively (worktrees + state preserved; resume with `orch_resume(force=true)` afterward). Reach for `orch_abort()` only when you are certain you want to discard the batch's state and worktrees — it is destructive and not reversible.
 - Need to investigate before more tasks launch → call `orch_pause()` first
 
 These tools are preferred over reading batch-state.json directly because they handle
