@@ -104,6 +104,25 @@ export const ORCH_MESSAGES = {
 	resumeNoState: () =>
 		`❌ No batch to resume. No batch-state.json file found.\n` +
 		`   Use /orch <areas|all> to start a new batch.`,
+
+	/**
+	 * TP-187 (#539): Successful reconstruction from .pi/runtime/<batchId>/
+	 * runtime artifacts during force-resume after `orch_abort()`.
+	 */
+	resumeReconstructed: (batchId: string, selectionNote: string) =>
+		`🔨 Reconstructed batch ${batchId} from .pi/runtime/ artifacts (${selectionNote}).\n` +
+		`   Force-resume will proceed with a fresh wave-zero pass; the existing\n` +
+		`   reconciliation logic will re-detect succeeded tasks via .DONE markers.`,
+
+	/**
+	 * TP-187 (#539): Fail-loud message when force-resume can't reconstruct
+	 * after `orch_abort()` because required runtime artifacts are missing.
+	 */
+	resumeNoStateAfterAbort: (missingArtifact: string, batchId: string | null) =>
+		`❌ Cannot resume after abort: ${missingArtifact}.\n` +
+		(batchId ? `   Last known batch: ${batchId}.\n` : "") +
+		`   To start fresh from the preserved worktree state, run\n` +
+		`   \`orch_start <PROMPT.md>\` (or \`/orch <areas|all>\`).`,
 	resumeInvalidState: (error: string) =>
 		`❌ Cannot resume: batch state file is invalid.\n` +
 		`   Error: ${error}\n` +

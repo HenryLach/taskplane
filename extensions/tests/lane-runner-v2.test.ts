@@ -169,10 +169,9 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 	it("3.6: executeLaneV2 preserves commitTaskArtifacts and worktree reset", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
 		// TP-181: window widened from 5000 to 6000 to accommodate worker env
-		// var reads (TASKPLANE_WORKER_{MODEL,THINKING,TOOLS}) added in PR #522.
-		// `runGit(` is at the tail of the function body and crossed the prior
-		// boundary; both target calls still present in the function.
-		const bodySection = executionSrc.slice(start, start + 6000);
+		// var reads. TP-187: widened to 7000 to accommodate the lane-respawned
+		// emit added at the top of the function body.
+		const bodySection = executionSrc.slice(start, start + 7000);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});

@@ -7,7 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New
+
+- **`supervisor_takeover(reason)` tool (TP-187, #538):** Non-destructive
+  escape hatch for misbehaving batches. Pauses the running wave, drains
+  every per-agent on-disk outbox for the current batch, and marks all
+  active lanes as terminated so any in-transit zombie alerts are dropped
+  before they reach the supervisor's user-message queue. Worktrees,
+  branches, batch state, and sessions are all preserved — distinct from
+  `orch_abort`, which kills sessions and deletes state. Use this when
+  the batch is producing alert spam or has hit a death-spiral pattern
+  but you may still want to resume the same batch. After takeover, call
+  `orch_status()` to inspect, then either `orch_resume(force=true)` to
+  continue (alert suppression is lifted automatically on resume) or
+  `orch_abort()` to escalate to destructive shutdown. Documented in
+  `templates/agents/supervisor.md` alongside the existing orch_* tool
+  surface, plus a new section codifying the lane-runner's text-reply
+  parser semantics (close keywords `skip` / `let it fail` / `close` /
+  `abort` / `stop` are only treated as session-close directives when
+  they appear in a reply under 30 characters; longer messages are
+  always treated as instructional re-prompts).
+
 ### Fixed
+
+- **Zombie supervisor alerts after lane termination (TP-187, #538):**
+  Previously, when a worker lane was killed (no-progress threshold or
+  hard-fail), 3–5 "wants to exit" alerts that the worker emitted before
+  termination remained in the supervisor's user-message queue and the
+  agent's on-disk outbox, where they could be re-discovered later.
+  None of the documented operator responses (`steer`, `skip`, `let it
+  fail`, `orch_abort`, `orch_skip_task`) reliably drained either path.
+  Fix has three parts: (1) at every lane-termination decision point
+  (no-progress kill in `lane-runner.ts`, hard-fail in `engine.ts`), the
+  agent's outbox is now synchronously drained — pending `*.msg.json`
+  files are moved to `outbox/processed/` and other pending files (e.g.,
+  `segment-expansion-*.json`) are renamed to `.drained` so they are
+  invisible to subsequent discovery scans; (2) the engine emits a new
+  `lane-terminated` IPC message to the supervisor process, which keys
+  a per-batch suppression filter (`terminatedLanes` /
+  `terminatedAgents` Maps) that drops any subsequent supervisor-alert
+  whose `context.laneNumber` or `context.agentId` matches before it
+  reaches `pi.sendUserMessage`; (3) the engine emits a complementary
+  `lane-respawned` IPC at the start of each `executeLaneV2` invocation
+  so a fresh task on a re-allocated lane number lifts the suppression.
+  The filter is also cleared on `orch_resume()`, on a new batch start,
+  and on `supervisor_takeover()`-then-resume. Implementation: new
+  `drainAgentOutbox` helper in `mailbox.ts`, `LaneTerminatedInfo` /
+  `LaneTerminatedCallback` types in `types.ts`, callback threading
+  through `engine.ts` / `execution.ts` / `resume.ts` / `engine-worker.ts`,
+  and IPC + filter wiring in `extension.ts`.
+
+- **`orch_resume(force=true)` cannot reattach after `orch_abort()`
+  (TP-187, #539):** `executeAbort()` deletes `.pi/batch-state.json` to
+  enforce its destructive contract, but the runtime registry, per-agent
+  manifests, lane snapshots, worktrees, and branches all survive. With
+  no batch-state.json, `loadBatchState()` returned null and force-resume
+  returned the generic "no batch found" error, forcing operators into
+  ~15 minutes of manual git surgery (fast-forward feature branches,
+  push, remove worktrees, edit STATUS, re-`orch_start`) just to do what
+  force-resume should have done. Fix adds a small `batch-meta.json`
+  runtime artifact written at batch-start to
+  `.pi/runtime/<batchId>/batch-meta.json` capturing the wave plan and
+  the few non-recoverable scalars (baseBranch, orchBranch, mode,
+  startedAt, totalWaves). On force-resume after abort, when
+  `loadBatchState()` returns null, the new
+  `reconstructBatchStateFromRuntime()` helper deterministically rebuilds
+  a validator-compliant `PersistedBatchState` from the surviving
+  artifacts: most-recent batch dir wins by mtime (lex tiebreak),
+  `batch-meta.json` provides wave topology and orchBranch, worker
+  manifests provide per-lane allocation, and the existing reconciliation
+  pass re-detects succeeded tasks via `.DONE` markers and STATUS.md.
+  When required artifacts are missing or validation fails, force-resume
+  fails loud with a new `resumeNoStateAfterAbort` message that names
+  the missing artifact and recommends `orch_start <PROMPT.md>` as the
+  recovery path. The non-force `orch_resume()` path is unchanged.
+  `orch_abort` itself remains semantically destructive — only
+  force-resume reads from the surviving runtime artifacts.
+
+- **`Worker said:` is empty in early no-progress alerts (TP-187, #540):**
+  When a worker exits an iteration without producing a visible assistant
+  message (a known failure mode in the death-spiral pattern), the
+  worker-exit-intercept alert sent to the supervisor showed
+  `Worker said: ""` — leaving the supervisor with no signal about why
+  the worker is stuck on the iterations where intervention could still
+  help. By the time the field has content, the worker is already at
+  no-progress count 3 (kill threshold). Fix has two parts: (1)
+  `templates/agents/task-worker.md` now requires a one-sentence reason
+  before any silent exit-with-no-progress, with concrete examples; (2)
+  `lane-runner.ts` falls back to walking the worker's `events.jsonl`
+  backward to find the most recent non-empty `assistant_message`
+  payload when the current turn produced no visible output, and tags
+  the alert with which source (`current-turn`,
+  `events-jsonl-fallback`, or `empty-sentinel`) produced the
+  `Worker said:` field. The 500-character truncation invariant is
+  preserved.
 
 - **`taskplane doctor` no longer shows empty parens for `pi installed ()`
   (TP-189-C / TP-185 follow-up):** pi prints its `--version` output to

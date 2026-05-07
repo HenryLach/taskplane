@@ -53,6 +53,7 @@ import {
 	sessionInboxDir,
 	ackOutboxMessage,
 	appendMailboxAuditEvent,
+	drainAgentOutbox,
 } from "./mailbox.ts";
 
 import {
@@ -245,6 +246,14 @@ export interface LaneRunnerConfig {
 	killPercent: number;
 	/** Optional callback for surfacing runtime mailbox replies/escalations to supervisor */
 	onSupervisorAlert?: SupervisorAlertCallback;
+	/**
+	 * Optional callback fired when the lane reaches a terminal state (no-progress
+	 * kill or hard-fail). The supervisor process uses this to suppress any
+	 * subsequent zombie alerts queued for the now-dead lane.
+	 *
+	 * @since TP-187 (#538)
+	 */
+	onLaneTerminated?: (info: import("./types.ts").LaneTerminatedInfo) => void;
 }
 
 /**
@@ -656,8 +665,41 @@ export async function executeTaskV2(
 						}
 					} catch { /* If we can't read STATUS.md, proceed with escalation */ }
 
-					// No visible progress — compose escalation message
-					const truncatedMsg = assistantMessage.slice(0, 500);
+					// No visible progress — compose escalation message.
+					// TP-187 (#540): when the worker exits silently, fall back to the most
+					// recent `assistant_message` event in events.jsonl so the supervisor
+					// has SOMETHING to act on instead of `Worker said: ""`.
+					let workerSaid = (assistantMessage ?? "").trim();
+					let workerSaidSource: "current-turn" | "events-jsonl-fallback" | "empty-sentinel" = "current-turn";
+					if (!workerSaid) {
+						workerSaidSource = "empty-sentinel";
+						try {
+							const raw = readFileSync(eventsPath, "utf-8");
+							const lines = raw.split("\n");
+							// Walk backward to find the most recent assistant_message with non-empty text.
+							for (let i = lines.length - 1; i >= 0; i--) {
+								const line = lines[i].trim();
+								if (!line) continue;
+								try {
+									const evt = JSON.parse(line) as Record<string, unknown>;
+									if (evt.type === "assistant_message") {
+										const payload = evt.payload as Record<string, unknown> | undefined;
+										const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+										if (text) {
+											workerSaid = text;
+											workerSaidSource = "events-jsonl-fallback";
+											break;
+										}
+									}
+								} catch { /* skip malformed line */ }
+							}
+						} catch { /* events.jsonl unreadable; sentinel will be used */ }
+					}
+					if (!workerSaid) {
+						workerSaid = "(no assistant message captured — worker exited without producing visible output)";
+						workerSaidSource = "empty-sentinel";
+					}
+					const truncatedMsg = workerSaid.slice(0, 500);
 					const uncheckedItems: string[] = [];
 					try {
 						const statusContent = readFileSync(statusPath, "utf-8");
@@ -693,7 +735,12 @@ export async function executeTaskV2(
 								`  Current step: ${currentStepInfo}\n` +
 								`  Iteration: ${totalIterations}, No-progress count: ${noProgressCount + 1}\n` +
 								`  Unchecked items: ${uncheckedItems.length > 0 ? uncheckedItems.join("; ") : "(none found)"}\n` +
-								`  Worker said: "${truncatedMsg}"\n` +
+								`  Worker said: "${truncatedMsg}"` +
+								(workerSaidSource === "events-jsonl-fallback"
+									? `   (fallback: most-recent assistant_message from events.jsonl)\n`
+									: workerSaidSource === "empty-sentinel"
+										? `   (no assistant message captured this iteration)\n`
+										: "\n") +
 								`\nSend a steering message to ${workerAgentId} with targeted instructions,` +
 								` or reply "skip" / "let it fail" to close the session.`,
 							context: {
@@ -978,6 +1025,30 @@ export async function executeTaskV2(
 					`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
 				if (noProgressCount >= config.noProgressLimit) {
 					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
+					// TP-187 (#538): synchronous outbox drain at lane-termination decision
+					// point. Purges any pending escalations/replies/segment-expansions the
+					// worker emitted just before termination so they are not later re-
+					// discovered and re-forwarded as zombie supervisor alerts.
+					try {
+						const drained = drainAgentOutbox(config.stateRoot, config.batchId, workerAgentId);
+						if (drained > 0) {
+							logExecution(statusPath, "Outbox drained",
+								`No-progress kill: drained ${drained} pending outbox entr${drained === 1 ? "y" : "ies"} for ${workerAgentId}`);
+						}
+					} catch { /* best effort — do not block termination */ }
+					// TP-187 (#538): notify the supervisor process so it can suppress any
+					// further alerts queued for this lane (zombie-alert filter).
+					if (config.onLaneTerminated) {
+						try {
+							config.onLaneTerminated({
+								laneNumber: config.laneNumber,
+								agentId: workerAgentId,
+								batchId: config.batchId,
+								terminatedAt: Date.now(),
+								reason: "no-progress-kill",
+							});
+						} catch { /* best effort */ }
+					}
 					return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
 						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
 				}

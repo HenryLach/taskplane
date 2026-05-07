@@ -2,12 +2,12 @@
  * State persistence, serialization, orphan detection
  * @module orch/persistence
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, mkdirSync, appendFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, mkdirSync, appendFileSync, readdirSync, statSync } from "fs";
 import { join, dirname, basename } from "path";
 
 import { execLog } from "./execution.ts";
-import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
-import type { BatchHistorySummary } from "./types.ts";
+import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics, runtimeRoot, runtimeManifestPath } from "./types.ts";
+import type { BatchHistorySummary, RuntimeAgentManifest } from "./types.ts";
 import type { AllocatedLane, DiscoveryResult, EngineEvent, EscalationContext, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedSegmentRecord, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
 import type { PreserveFailedLaneProgressResult } from "./worktree.ts";
@@ -2083,5 +2083,352 @@ export function emitEngineEvent(
 			});
 		}
 	}
+}
+
+
+// ── TP-187 (#539): Batch-Meta Runtime Artifact ─────────────────────
+//
+// Small JSON file written at batch-start to `.pi/runtime/<batchId>/batch-meta.json`.
+// Captures the wave plan and the few non-recoverable scalars (baseBranch,
+// orchBranch, mode, startedAt, totalWaves) so that `orch_resume(force=true)`
+// can deterministically reconstruct a validator-compliant PersistedBatchState
+// after `orch_abort()` deletes `.pi/batch-state.json`.
+//
+// Without this artifact the wave topology is unrecoverable from the surviving
+// runtime registry alone (manifests don't carry wave info) and a flattened
+// "single wave with all surviving tasks" reconstruction can violate DAG
+// dependency ordering. See R003 plan review.
+
+/**
+ * Schema-tagged batch metadata persisted alongside per-batch runtime state.
+ *
+ * @since TP-187 (#539)
+ */
+export interface BatchMetaArtifact {
+	schemaVersion: 1;
+	batchId: string;
+	wavePlan: string[][];
+	baseBranch: string;
+	orchBranch: string;
+	mode: WorkspaceMode;
+	startedAt: number;
+	totalWaves: number;
+}
+
+/** Path to the batch-meta artifact for a given batch. */
+function batchMetaPath(stateRoot: string, batchId: string): string {
+	return join(runtimeRoot(stateRoot, batchId), "batch-meta.json");
+}
+
+/**
+ * Persist the wave plan and core batch metadata to the runtime artifact
+ * directory. Best-effort: failures are logged but do NOT crash the batch.
+ *
+ * Called once at batch-start (after wavePlan is finalized) and re-written
+ * whenever the wave plan mutates (segment expansion).
+ *
+ * @since TP-187 (#539)
+ */
+export function saveBatchMetaRuntimeArtifact(
+	stateRoot: string,
+	artifact: BatchMetaArtifact,
+): void {
+	try {
+		const path = batchMetaPath(stateRoot, artifact.batchId);
+		mkdirSync(dirname(path), { recursive: true });
+		const tmp = path + ".tmp";
+		writeFileSync(tmp, JSON.stringify(artifact, null, 2) + "\n", "utf-8");
+		renameSync(tmp, path);
+		execLog("state", artifact.batchId, "persisted batch-meta runtime artifact", {
+			waves: artifact.wavePlan.length,
+			tasks: artifact.wavePlan.reduce((sum, w) => sum + w.length, 0),
+		});
+	} catch (err) {
+		execLog("state", artifact.batchId, `batch-meta write failed: ${err instanceof Error ? err.message : String(err)}`);
+	}
+}
+
+/**
+ * Load the batch-meta artifact for a given batch, or null if missing/invalid.
+ *
+ * @since TP-187 (#539)
+ */
+export function loadBatchMetaRuntimeArtifact(
+	stateRoot: string,
+	batchId: string,
+): BatchMetaArtifact | null {
+	const path = batchMetaPath(stateRoot, batchId);
+	if (!existsSync(path)) return null;
+	try {
+		const raw = readFileSync(path, "utf-8");
+		const parsed = JSON.parse(raw);
+		if (!parsed || typeof parsed !== "object") return null;
+		const obj = parsed as Record<string, unknown>;
+		if (obj.schemaVersion !== 1) return null;
+		if (typeof obj.batchId !== "string" || obj.batchId !== batchId) return null;
+		if (!Array.isArray(obj.wavePlan)) return null;
+		for (const wave of obj.wavePlan) {
+			if (!Array.isArray(wave)) return null;
+			for (const taskId of wave) {
+				if (typeof taskId !== "string") return null;
+			}
+		}
+		if (typeof obj.baseBranch !== "string") return null;
+		if (typeof obj.orchBranch !== "string") return null;
+		if (obj.mode !== "repo" && obj.mode !== "workspace") return null;
+		if (typeof obj.startedAt !== "number") return null;
+		if (typeof obj.totalWaves !== "number") return null;
+		return obj as unknown as BatchMetaArtifact;
+	} catch {
+		return null;
+	}
+}
+
+
+// ── TP-187 (#539): Reconstruct PersistedBatchState from runtime artifacts ──
+
+/**
+ * Result of `reconstructBatchStateFromRuntime`. On success, contains the
+ * validator-compliant state, the selected batchId, and a human-readable note
+ * about how the selection was made (used by resume's onNotify output). On
+ * failure, names the missing or corrupt artifact for fail-loud reporting.
+ *
+ * @since TP-187 (#539)
+ */
+export type ReconstructResult =
+	| { ok: true; state: PersistedBatchState; batchId: string; selectionNote: string }
+	| { ok: false; error: string };
+
+/**
+ * List candidate `.pi/runtime/<batchId>/` directories newest-first by mtime,
+ * with lex-largest tie-break for determinism.
+ */
+function listRuntimeBatchDirs(stateRoot: string): { batchId: string; mtimeMs: number }[] {
+	const root = join(stateRoot, ".pi", "runtime");
+	if (!existsSync(root)) return [];
+	let entries: string[] = [];
+	try {
+		entries = readdirSync(root);
+	} catch {
+		return [];
+	}
+	const candidates: { batchId: string; mtimeMs: number }[] = [];
+	for (const name of entries) {
+		const dir = join(root, name);
+		try {
+			const st = statSync(dir);
+			if (!st.isDirectory()) continue;
+			candidates.push({ batchId: name, mtimeMs: st.mtimeMs });
+		} catch {
+			continue;
+		}
+	}
+	candidates.sort((a, b) => {
+		if (b.mtimeMs !== a.mtimeMs) return b.mtimeMs - a.mtimeMs;
+		return b.batchId.localeCompare(a.batchId);
+	});
+	return candidates;
+}
+
+/**
+ * Read all worker manifests under `.pi/runtime/<batchId>/agents/`.
+ *
+ * Returns an empty array if the agents directory is missing.
+ */
+function readWorkerManifests(stateRoot: string, batchId: string): RuntimeAgentManifest[] {
+	const agentsDir = join(runtimeRoot(stateRoot, batchId), "agents");
+	if (!existsSync(agentsDir)) return [];
+	let entries: string[] = [];
+	try {
+		entries = readdirSync(agentsDir);
+	} catch {
+		return [];
+	}
+	const manifests: RuntimeAgentManifest[] = [];
+	for (const agentId of entries) {
+		const manifestPath = runtimeManifestPath(stateRoot, batchId, agentId);
+		if (!existsSync(manifestPath)) continue;
+		try {
+			const raw = readFileSync(manifestPath, "utf-8");
+			const parsed = JSON.parse(raw) as RuntimeAgentManifest;
+			if (parsed && typeof parsed === "object" && parsed.role === "worker") {
+				manifests.push(parsed);
+			}
+		} catch {
+			continue;
+		}
+	}
+	return manifests;
+}
+
+/**
+ * Deterministically reconstruct a validator-compliant `PersistedBatchState`
+ * from the surviving runtime artifacts after `.pi/batch-state.json` has been
+ * deleted (typically by `orch_abort()`).
+ *
+ * Required artifacts: at least one `.pi/runtime/<batchId>/` directory whose
+ * `batch-meta.json` parses cleanly AND has at least one worker manifest with
+ * an existing worktree on disk. Anything else returns a fail-loud error so
+ * the caller can surface a clear "no resumable state" message instead of
+ * silently producing an invalid state.
+ *
+ * @since TP-187 (#539)
+ */
+export function reconstructBatchStateFromRuntime(stateRoot: string): ReconstructResult {
+	const candidates = listRuntimeBatchDirs(stateRoot);
+	if (candidates.length === 0) {
+		return { ok: false, error: "no .pi/runtime/ directory or no batch subdirectories" };
+	}
+
+	// Try the newest batch first; if its required artifacts are missing, fall
+	// through to the next candidate. We stop at the first batch with a parseable
+	// batch-meta + at least one viable worker manifest.
+	const failures: string[] = [];
+	for (let idx = 0; idx < candidates.length; idx++) {
+		const cand = candidates[idx];
+		const meta = loadBatchMetaRuntimeArtifact(stateRoot, cand.batchId);
+		if (!meta) {
+			failures.push(`${cand.batchId}: batch-meta.json missing or invalid`);
+			continue;
+		}
+		const manifests = readWorkerManifests(stateRoot, cand.batchId);
+		if (manifests.length === 0) {
+			failures.push(`${cand.batchId}: no worker manifests`);
+			continue;
+		}
+		const workerManifestsWithWorktree = manifests.filter(m => typeof m.cwd === "string" && m.cwd.length > 0 && existsSync(m.cwd));
+		if (workerManifestsWithWorktree.length === 0) {
+			failures.push(`${cand.batchId}: worktree paths from manifests no longer exist on disk`);
+			continue;
+		}
+
+		// Build per-lane aggregation from worker manifests.
+		const laneMap = new Map<number, { laneNumber: number; agentId: string; worktreePath: string; repoId: string; taskIds: string[] }>();
+		for (const m of workerManifestsWithWorktree) {
+			if (typeof m.laneNumber !== "number") continue;
+			const lane = laneMap.get(m.laneNumber) ?? {
+				laneNumber: m.laneNumber,
+				agentId: m.agentId,
+				worktreePath: m.cwd,
+				repoId: m.repoId ?? "default",
+				taskIds: [] as string[],
+			};
+			if (typeof m.taskId === "string" && m.taskId && !lane.taskIds.includes(m.taskId)) {
+				lane.taskIds.push(m.taskId);
+			}
+			laneMap.set(m.laneNumber, lane);
+		}
+		if (laneMap.size === 0) {
+			failures.push(`${cand.batchId}: no lane numbers in manifests`);
+			continue;
+		}
+
+		// Tasks: union of taskIds across all lanes, plus any wavePlan tasks that
+		// are not represented (they are pending, not yet executed).
+		const knownTaskIds = new Set<string>();
+		for (const lane of laneMap.values()) {
+			for (const tid of lane.taskIds) knownTaskIds.add(tid);
+		}
+		for (const wave of meta.wavePlan) {
+			for (const tid of wave) knownTaskIds.add(tid);
+		}
+
+		// Build task records with conservative defaults; resume's reconciliation
+		// pass will re-detect succeeded tasks via `.DONE` markers and STATUS.md.
+		const tasks: PersistedTaskRecord[] = [];
+		const manifestByTaskId = new Map<string, RuntimeAgentManifest>();
+		for (const m of workerManifestsWithWorktree) {
+			if (typeof m.taskId === "string" && m.taskId) {
+				manifestByTaskId.set(m.taskId, m);
+			}
+		}
+		for (const taskId of knownTaskIds) {
+			const m = manifestByTaskId.get(taskId);
+			const lane = m ? laneMap.get(m.laneNumber) : undefined;
+			const taskRecord: PersistedTaskRecord = {
+				taskId,
+				taskName: taskId,
+				taskFolder: m?.packet?.taskFolder ?? "",
+				status: "pending",
+				sessionName: m?.agentId ?? "",
+				laneNumber: lane?.laneNumber ?? 0,
+				startedAt: typeof m?.startedAt === "number" ? m.startedAt : null,
+				endedAt: null,
+				exitReason: "",
+				doneFileFound: false,
+			};
+			if (m?.repoId) taskRecord.repoId = m.repoId;
+			if (m?.packet?.packetRepoId) (taskRecord as Record<string, unknown>).packetRepoId = m.packet.packetRepoId;
+			if (m?.packet?.packetTaskPath) (taskRecord as Record<string, unknown>).packetTaskPath = m.packet.packetTaskPath;
+			tasks.push(taskRecord);
+		}
+
+		// Build lane records.
+		const lanes: PersistedLaneRecord[] = Array.from(laneMap.values())
+			.sort((a, b) => a.laneNumber - b.laneNumber)
+			.map(l => {
+				const sessionId = l.agentId.replace(/-(worker|reviewer)$/, "");
+				const rec: PersistedLaneRecord = {
+					laneId: `lane-${l.laneNumber}`,
+					laneNumber: l.laneNumber,
+					laneSessionId: sessionId,
+					worktreePath: l.worktreePath,
+					branch: meta.orchBranch ? `${meta.orchBranch}-lane-${l.laneNumber}` : `lane-${l.laneNumber}`,
+					taskIds: [...l.taskIds],
+				};
+				if (l.repoId && l.repoId !== "default") rec.repoId = l.repoId;
+				return rec;
+			});
+
+		const now = Date.now();
+		const reconstructed: PersistedBatchState = {
+			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
+			batchId: meta.batchId,
+			phase: "stopped",
+			baseBranch: meta.baseBranch,
+			orchBranch: meta.orchBranch,
+			mode: meta.mode,
+			startedAt: meta.startedAt,
+			endedAt: null,
+			updatedAt: now,
+			currentWaveIndex: 0,
+			totalWaves: meta.totalWaves,
+			totalTasks: tasks.length,
+			succeededTasks: 0,
+			failedTasks: 0,
+			skippedTasks: 0,
+			blockedTasks: 0,
+			wavePlan: meta.wavePlan.map(wave => [...wave]),
+			lanes,
+			tasks,
+			mergeResults: [],
+			blockedTaskIds: [],
+			errors: [],
+			segments: [],
+			lastError: null,
+			resilience: { ...defaultResilienceState(), resumeForced: true },
+			diagnostics: defaultBatchDiagnostics(),
+		} as PersistedBatchState;
+
+		// Validate the reconstructed shape against the on-disk schema gate.
+		try {
+			const json = JSON.stringify(reconstructed);
+			validatePersistedState(JSON.parse(json));
+		} catch (err) {
+			failures.push(`${cand.batchId}: reconstructed state failed validation: ${err instanceof Error ? err.message : String(err)}`);
+			continue;
+		}
+
+		const totalCandidates = candidates.length;
+		const selectionNote = totalCandidates === 1
+			? `single batch in .pi/runtime/`
+			: `selected from ${totalCandidates} candidate(s) by mtime newest-first (skipped ${idx} earlier candidate(s))`;
+		return { ok: true, state: reconstructed, batchId: meta.batchId, selectionNote };
+	}
+
+	return {
+		ok: false,
+		error: `no reconstructable batch found in .pi/runtime/ (${failures.length} candidate(s) inspected: ${failures.slice(0, 3).join("; ")}${failures.length > 3 ? "; ..." : ""})`,
+	};
 }
 

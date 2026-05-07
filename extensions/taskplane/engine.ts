@@ -17,8 +17,9 @@ import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolic
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, saveBatchMetaRuntimeArtifact, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive as registryIsProcessAlive } from "./process-registry.ts";
+import { drainAgentOutbox } from "./mailbox.ts";
 import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
@@ -1781,6 +1782,8 @@ async function attemptStaleWorktreeRecovery(
 	onSupervisorAlert?: SupervisorAlertCallback,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
 	runnerConfig?: TaskRunnerConfig,
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
+	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -1896,6 +1899,8 @@ async function attemptStaleWorktreeRecovery(
 			excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
 		} : undefined,
 		runnerConfig?.workerExcludeExtensions ?? [],
+		onLaneTerminated,
+		onLaneRespawned,
 	);
 
 	return retryResult;
@@ -1973,6 +1978,18 @@ export async function executeOrchBatch(
 	onEngineEvent?: EngineEventCallback | null,
 	onSupervisorAlert?: SupervisorAlertCallback | null,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
+	/**
+	 * TP-187 (#538): Optional callback fired when a lane reaches a terminal
+	 * state. The supervisor process forwards this over IPC and uses it to
+	 * suppress zombie alerts queued for the now-dead lane.
+	 */
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback | null,
+	/**
+	 * TP-187 (#538): Optional callback fired when a lane is freshly
+	 * (re-)allocated to a task. The supervisor process uses it to lift any
+	 * zombie-alert suppression carried over from a prior wave.
+	 */
+	onLaneRespawned?: ((laneNumber: number, agentId: string, batchId: string) => void) | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
@@ -1994,6 +2011,23 @@ export async function executeOrchBatch(
 				const msg = err instanceof Error ? err.message : String(err);
 				execLog("batch", batchState.batchId, `supervisor alert callback failed: ${msg}`, {
 					alertCategory: alert.category,
+				});
+			}
+		}
+	};
+
+	// ── TP-187 (#538): Lane termination forwarding helper ──────
+	// Forwards lane-terminated events through the same callback chain so the
+	// supervisor process can suppress zombie alerts queued for a dead lane.
+	const emitLaneTerminated = (info: import("./types.ts").LaneTerminatedInfo): void => {
+		if (onLaneTerminated) {
+			try {
+				onLaneTerminated(info);
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				execLog("batch", batchState.batchId, `lane-terminated callback failed: ${msg}`, {
+					laneNumber: info.laneNumber,
+					reason: info.reason,
 				});
 			}
 		}
@@ -2312,6 +2346,22 @@ export async function executeOrchBatch(
 	// ── TS-009: Persist state on batch start (after wave computation) ──
 	persistRuntimeState("batch-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 
+	// ── TP-187 (#539): Persist batch-meta runtime artifact ──────────────
+	// Captures the wave plan and core scalars to a runtime-side file that
+	// survives `orch_abort()` (which deletes `.pi/batch-state.json`). Used by
+	// `orch_resume(force=true)` to deterministically reconstruct state when
+	// the main batch-state file is gone. Best-effort write: failures log only.
+	saveBatchMetaRuntimeArtifact(stateRoot, {
+		schemaVersion: 1,
+		batchId: batchState.batchId,
+		wavePlan: wavePlan.map(wave => [...wave]),
+		baseBranch: batchState.baseBranch,
+		orchBranch: batchState.orchBranch,
+		mode: workspaceConfig ? "workspace" : "repo",
+		startedAt: batchState.startedAt,
+		totalWaves: wavePlan.length,
+	});
+
 	// ── TP-105: Runtime V2 backend selection ────────────────────
 	// Use Runtime V2 (no-TMUX lane-runner) when ALL conditions are met:
 	//   1. Exactly one task in the batch
@@ -2507,6 +2557,8 @@ export async function executeOrchBatch(
 				excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
 			} : undefined,
 			runnerConfig?.workerExcludeExtensions ?? [],
+			emitLaneTerminated,
+			onLaneRespawned ?? undefined,
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -2530,6 +2582,8 @@ export async function executeOrchBatch(
 				emitAlert,
 				supervisorAutonomy,
 				runnerConfig,
+				emitLaneTerminated,
+				onLaneRespawned ?? undefined,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;
@@ -3058,6 +3112,29 @@ export async function executeOrchBatch(
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},
 			});
+
+			// TP-187 (#538): Hard-fail termination — synchronously drain the
+			// agent's outbox so stale escalations/replies don't get re-discovered
+			// later, then emit lane-terminated so the supervisor process
+			// suppresses any in-transit zombie alerts targeting this lane/agent.
+			if (laneForTask) {
+				const hardFailAgentId = outcome?.sessionName && outcome.sessionName.length > 0
+					? outcome.sessionName
+					: `${laneForTask.laneSessionId}-worker`;
+				try {
+					const drained = drainAgentOutbox(stateRoot, batchState.batchId, hardFailAgentId);
+					if (drained > 0) {
+						execLog("batch", batchState.batchId, `hard-fail outbox drain: ${drained} entr${drained === 1 ? "y" : "ies"} for ${hardFailAgentId}`);
+					}
+				} catch { /* best effort — do not block termination */ }
+				emitLaneTerminated({
+					laneNumber: laneForTask.laneNumber,
+					agentId: hardFailAgentId,
+					batchId: batchState.batchId,
+					terminatedAt: Date.now(),
+					reason: "hard-fail",
+				});
+			}
 		}
 
 		// ── TS-009: Persist state after wave execution ──

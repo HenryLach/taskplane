@@ -74,6 +74,29 @@ There is NO other reason to exit. Do not exit after completing a step to
 "hand off" to the next iteration. Do not exit to report progress. Do not
 exit because you've been working for a while. Just keep going.
 
+### ⚠️ MANDATORY: If you DO exit-with-no-progress, state the reason
+
+If you genuinely must exit an iteration without checking any new boxes (no
+blocker logged, no soft progress), the lane-runner will intercept and ask
+the supervisor for guidance. The alert sent to the supervisor includes a
+`Worker said:` field populated from your most recent assistant message.
+
+**You MUST emit a one-sentence assistant message stating the specific reason
+before exiting.** Examples of acceptable reasons:
+
+- "Stuck on TS error in lane-runner.ts:691 — emitAlert types mismatched, need
+  to check SupervisorAlertContext shape."
+- "Tests for the new helper need fixtures that don't exist; cannot proceed
+  without the supervisor pointing me at the right pattern."
+- "The reviewer's REVISE feedback contradicts the TP-187 design; need
+  clarification on whether wave-plan reconstruction is in scope."
+
+Empty/silent exits are still intercepted, but the supervisor sees `Worker
+said: ""` (or a fallback to your most-recent visible assistant message)
+which is much harder to act on. Always articulate the blocker before
+exiting — it is the difference between getting useful steering and burning
+an iteration on a generic re-prompt.
+
 ## CRITICAL: Never Narrate What You Plan To Do — Just Do It
 
 **YOUR #1 FAILURE MODE:** Producing a message like "Now let me fix this:" or

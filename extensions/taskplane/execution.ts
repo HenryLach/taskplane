@@ -1757,6 +1757,8 @@ export async function executeWave(
 	reviewerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] },
 	workerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] } | null,
 	workerExcludeExtensions?: string[],
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
+	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -1866,7 +1868,7 @@ export async function executeWave(
 			...buildWorkerEnv(workerConfig),
 			...buildReviewerEnv(reviewerConfig),
 			...buildWorkerExcludeEnv(workerExcludeExtensions),
-		}, onSupervisorAlert),
+		}, onSupervisorAlert, onLaneTerminated, onLaneRespawned),
 	);
 
 	// Start monitoring as a sibling async loop
@@ -2577,6 +2579,14 @@ export async function executeLaneV2(
 	isWorkspaceMode?: boolean,
 	extraEnvVars?: Record<string, string>,
 	onSupervisorAlert?: SupervisorAlertCallback,
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
+	/**
+	 * TP-187 (#538): Optional callback fired BEFORE the first task of this
+	 * lane begins. The supervisor process uses it to lift any zombie-alert
+	 * suppression that was applied when this lane number was previously
+	 * terminated (e.g., in a prior wave).
+	 */
+	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
 ): Promise<LaneExecutionResult> {
 	const laneId = lane.laneId;
 	const laneStartTime = Date.now();
@@ -2617,6 +2627,17 @@ export async function executeLaneV2(
 		worktree: lane.worktreePath,
 		agentPrefix: agentIdPrefix,
 	});
+
+	// TP-187 (#538): Lane is freshly starting — emit lane-respawned so any
+	// zombie-alert suppression carried over from a prior wave's termination of
+	// this lane number is lifted before new alerts begin to flow.
+	if (onLaneRespawned) {
+		try {
+			onLaneRespawned(lane.laneNumber, buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"), batchId);
+		} catch (err) {
+			execLog(laneId, "LANE", `lane-respawned callback failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
 
 	for (const task of lane.tasks) {
 		const taskSegmentId = task.task.activeSegmentId ?? null;
@@ -2675,6 +2696,7 @@ export async function executeLaneV2(
 			warnPercent: 85,
 			killPercent: 95,
 			onSupervisorAlert,
+			onLaneTerminated,
 		};
 
 		try {

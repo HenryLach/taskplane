@@ -539,6 +539,89 @@ export function ackOutboxMessage(
 }
 
 /**
+ * Drain (purge to processed/) all pending outbox messages for an agent.
+ *
+ * Used at lane-termination decision points to ensure stale escalations or
+ * replies that the worker emitted just before termination don't get later
+ * re-discovered and re-forwarded as zombie supervisor alerts. The drain
+ * mirrors {@link ackOutboxMessage} — each pending `*.msg.json` file is
+ * moved to `outbox/processed/` so it remains in the durable history (for
+ * `read_agent_replies`) but is no longer pending.
+ *
+ * Best-effort: any per-file failure is logged but does not abort the drain.
+ * Returns the number of messages successfully drained.
+ *
+ * Also drains any non-message pending files in the outbox (e.g.,
+ * `segment-expansion-*.json` requests) by renaming them to a `.drained`
+ * sibling so the engine's discovery scans don't re-pick them up.
+ *
+ * @since TP-187 (#538)
+ */
+export function drainAgentOutbox(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+): number {
+	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
+	if (!existsSync(outboxDir)) return 0;
+
+	let entries: string[] = [];
+	try {
+		entries = readdirSync(outboxDir);
+	} catch (err) {
+		process.stderr.write(
+			`[mailbox] WARNING: drainAgentOutbox failed to read ${outboxDir}: ${err instanceof Error ? err.message : String(err)}\n`,
+		);
+		return 0;
+	}
+
+	let drained = 0;
+	const processedDir = join(outboxDir, "processed");
+	let processedDirEnsured = false;
+
+	for (const entry of entries) {
+		// Skip the processed/ subdirectory itself and any in-flight temp writes.
+		if (entry === "processed" || entry.endsWith(".tmp")) continue;
+
+		const srcPath = join(outboxDir, entry);
+
+		if (entry.endsWith(".msg.json")) {
+			if (!processedDirEnsured) {
+				try { mkdirSync(processedDir, { recursive: true }); } catch { /* fall through to rename error handling */ }
+				processedDirEnsured = true;
+			}
+			const dstPath = join(processedDir, entry);
+			try {
+				renameSync(srcPath, dstPath);
+				drained++;
+			} catch (err: unknown) {
+				const code = (err as NodeJS.ErrnoException).code;
+				if (code === "ENOENT") continue; // already gone — race-safe
+				process.stderr.write(
+					`[mailbox] WARNING: drainAgentOutbox failed to rename ${entry}: ${err instanceof Error ? err.message : String(err)}\n`,
+				);
+			}
+			continue;
+		}
+
+		// Non-message pending files (e.g., segment-expansion-*.json). Rename in
+		// place to a `.drained` suffix so engine.ts discovery scans skip them.
+		try {
+			renameSync(srcPath, `${srcPath}.drained`);
+			drained++;
+		} catch (err: unknown) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code === "ENOENT") continue;
+			process.stderr.write(
+				`[mailbox] WARNING: drainAgentOutbox failed to mark ${entry} drained: ${err instanceof Error ? err.message : String(err)}\n`,
+			);
+		}
+	}
+
+	return drained;
+}
+
+/**
  * Discover all agent IDs that have mailbox directories for a batch.
  * Returns directory names under .pi/mailbox/{batchId}/ excluding _broadcast.
  * Used to find agents with historical messages even if no longer in the registry.
