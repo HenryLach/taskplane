@@ -1,6 +1,6 @@
 # TP-189: Accumulated polish bundle — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Cluster A — Defensive tests + helper hardening
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
@@ -33,7 +33,7 @@
 ---
 
 ### Step 1: Cluster A — Defensive tests + helper hardening
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Item 1: `lane-runner-spawn-wiring.test.ts` (NEW) — static assertion
 - [ ] Item 2: `review-step-guard-runtime.test.ts` (NEW) — runtime test of REFUSED path (3 sub-cases: code blocked, test blocked, plan NOT blocked)
