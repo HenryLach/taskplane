@@ -1,11 +1,11 @@
 # TP-187: Supervisor recovery flows — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-05-06
+**Current Step:** Step 1: Plan all three sub-fix designs
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-05-07
 **Review Level:** 3
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -20,14 +20,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree)
-- [ ] TP-186 confirmed merged (grep `templates/agents/task-worker.md` for "Order of operations")
-- [ ] Baseline test count recorded
-- [ ] All Tier 3 context files read
-- [ ] Issues #538, #539, #540 read in full
-- [ ] Decision recorded: which optional sub-features (e.g., #540C tool-call summaries) included
+- [x] On `main` (lane worktree)
+- [x] TP-186 confirmed merged (grep `templates/agents/task-worker.md` for "Order of operations")
+- [x] Baseline test count recorded
+- [x] All Tier 3 context files read
+- [x] Issues #538, #539, #540 read in full
+- [x] Decision recorded: which optional sub-features (e.g., #540C tool-call summaries) included
 
 ---
 
@@ -115,6 +115,13 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Baseline test count: 3496 passing, 1 skipped, 0 failed (107 test files) | Captured | Step 0 |
+| TP-186 merged (Order of Operations rule live in templates/agents/task-worker.md:281) | Confirmed | Step 0 |
+| Optional #540C (tool-call summaries) — DEFERRED. Most-recent assistant_message fallback is the spec-required minimum and addresses the issue. Tool-call summaries can land in a follow-up if needed. | Decision | Step 0 |
+| Branch is `task/henrylach-lane-1-20260506T230236` (lane worktree branch, not `main`). Treating as the lane worktree per orchestrated run. | Note | Step 0 |
+| Issue #538 architecture: alerts emitted by lane-runner via `config.onSupervisorAlert` are forwarded to extension.ts via `supervisor-alert` IPC, then queued via `pi.sendUserMessage(...)`. Multiple iterations queue multiple alerts in supervisor's pi message queue. After lane termination they remain queued — the "3-5 zombie alerts" the operator sees. | Architecture | engine.ts/extension.ts |
+| Issue #539 root cause: `orch_abort()` calls `executeAbort()` which calls `deleteBatchState()`. This wipes `.pi/batch-state.json`. Then `orch_resume(force=true)` runs `loadBatchState()` → null → returns with `resumeNoState()` error message. `.pi/batch-history.json` is preserved across abort and contains the most recent batch summary. | Architecture | abort.ts/resume.ts/persistence.ts |
+| Issue #540 location: `lane-runner.ts:691-712` — alert payload includes `Worker said: "${truncatedMsg}"` where `truncatedMsg = assistantMessage.slice(0, 500)`. The fallback should occur if `assistantMessage` is empty/whitespace. | Architecture | lane-runner.ts |
 
 ---
 
@@ -123,6 +130,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-06 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-07 03:02 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-07 03:02 | Step 0 started | Preflight |
 
 ---
 
