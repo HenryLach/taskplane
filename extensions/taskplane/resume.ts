@@ -37,7 +37,7 @@ import { mergeWaveByRepo } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, reconstructBatchStateFromRuntime, saveBatchState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { buildBatchProgressSnapshot, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, PersistedSegmentRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
@@ -1111,13 +1111,49 @@ export async function resumeOrchBatch(
 	}
 
 	if (!persistedState) {
+		if (!force) {
+			onNotify(
+				ORCH_MESSAGES.resumeNoState(),
+				"error",
+			);
+			// TP-040 R006: Reset phase on pre-execution early return
+			batchState.phase = "idle";
+			return;
+		}
+		// TP-187 (#539): On force-resume, attempt deterministic reconstruction
+		// from .pi/runtime/<batchId>/ runtime artifacts (typically left intact
+		// by `orch_abort()` even though `.pi/batch-state.json` is deleted).
+		const reconstruction = reconstructBatchStateFromRuntime(stateRoot);
+		if (!reconstruction.ok) {
+			onNotify(
+				ORCH_MESSAGES.resumeNoStateAfterAbort(reconstruction.error, null),
+				"error",
+			);
+			// TP-040 R006: Reset phase on pre-execution early return
+			batchState.phase = "idle";
+			return;
+		}
+		// Successful reconstruction: persist so the rest of resumeOrchBatch
+		// proceeds with a normal on-disk batch-state.json picture.
 		onNotify(
-			ORCH_MESSAGES.resumeNoState(),
-			"error",
+			ORCH_MESSAGES.resumeReconstructed(reconstruction.batchId, reconstruction.selectionNote),
+			"warning",
 		);
-		// TP-040 R006: Reset phase on pre-execution early return
-		batchState.phase = "idle";
-		return;
+		try {
+			saveBatchState(JSON.stringify(reconstruction.state, null, 2), stateRoot);
+		} catch (err) {
+			onNotify(
+				ORCH_MESSAGES.resumeNoStateAfterAbort(
+					`reconstructed state could not be persisted: ${err instanceof Error ? err.message : String(err)}`,
+					reconstruction.batchId,
+				),
+				"error",
+			);
+			// TP-040 R006: Reset phase on pre-execution early return
+			batchState.phase = "idle";
+			return;
+		}
+		persistedState = reconstruction.state;
 	}
 
 	// ── 2. Check eligibility ─────────────────────────────────────

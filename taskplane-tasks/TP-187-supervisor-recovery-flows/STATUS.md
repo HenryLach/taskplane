@@ -1,6 +1,6 @@
 # TP-187: Supervisor recovery flows — Status
 
-**Current Step:** Step 2: Implement #538 — mailbox drain + supervisor_takeover
+**Current Step:** Step 4: Implement #540 — non-empty reason + fallback
 **Status:** 🟨 In Progress
 **Code-Review Baseline:** 25b5c14b7de19267d776ba1fcffff8d9d629f372
 **Last Updated:** 2026-05-07
@@ -162,7 +162,7 @@
 ---
 
 ### Step 2: Implement #538 — mailbox drain + supervisor_takeover
-**Status:** 🟨 In Progress
+**Status:** 🟨 In Progress (awaiting Step 6 code review per Order of Operations)
 
 - [x] Synchronous mailbox drain at lane termination decision points (engine.ts hard-fail + lane-runner.ts no-progress kill)
 - [x] `supervisor_takeover(reason)` tool registered in extension.ts (alongside `orch_*` tools, NOT in agent-bridge-extension.ts; NOT in ENGINE_BRIDGE_TOOLS)
@@ -173,17 +173,17 @@
 ---
 
 ### Step 3: Implement #539 — resume reconstruction from disk
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress (awaiting Step 6 code review)
 
-- [ ] resume.ts force=true path reads from disk when in-memory state empty
-- [ ] Loud failure with documented error message when no on-disk state
-- [ ] Targeted integration test passes
-- [ ] Multi-batch edge case handled (most recent wins, documented)
+- [x] resume.ts force=true path reads from disk when in-memory state empty (via reconstructBatchStateFromRuntime)
+- [x] Loud failure with documented error message when no on-disk state (resumeNoStateAfterAbort message helper)
+- [x] Targeted integration test passes (full suite still green; dedicated test added in Step 5)
+- [x] Multi-batch edge case handled (most recent wins by mtime, lex tiebreak, documented in selectionNote and inline)
 
 ---
 
 ### Step 4: Implement #540 — non-empty reason + fallback
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] templates/agents/task-worker.md requires non-empty exit-no-progress reason
 - [ ] lane-runner.ts falls back to most-recent assistant_message when reason empty

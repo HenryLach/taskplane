@@ -17,7 +17,7 @@ import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolic
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, saveBatchMetaRuntimeArtifact, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive as registryIsProcessAlive } from "./process-registry.ts";
 import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -2330,6 +2330,22 @@ export async function executeOrchBatch(
 
 	// ── TS-009: Persist state on batch start (after wave computation) ──
 	persistRuntimeState("batch-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+
+	// ── TP-187 (#539): Persist batch-meta runtime artifact ──────────────
+	// Captures the wave plan and core scalars to a runtime-side file that
+	// survives `orch_abort()` (which deletes `.pi/batch-state.json`). Used by
+	// `orch_resume(force=true)` to deterministically reconstruct state when
+	// the main batch-state file is gone. Best-effort write: failures log only.
+	saveBatchMetaRuntimeArtifact(stateRoot, {
+		schemaVersion: 1,
+		batchId: batchState.batchId,
+		wavePlan: wavePlan.map(wave => [...wave]),
+		baseBranch: batchState.baseBranch,
+		orchBranch: batchState.orchBranch,
+		mode: workspaceConfig ? "workspace" : "repo",
+		startedAt: batchState.startedAt,
+		totalWaves: wavePlan.length,
+	});
 
 	// ── TP-105: Runtime V2 backend selection ────────────────────
 	// Use Runtime V2 (no-TMUX lane-runner) when ALL conditions are met:
