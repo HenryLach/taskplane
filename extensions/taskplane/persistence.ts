@@ -2302,6 +2302,34 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 			continue;
 		}
 
+		// TP-187 (#539) — sage post-integration follow-up: refuse reconstruction
+		// when the runtime artifacts indicate this batch was multi-repo (segment
+		// expansion). Reconstruction hardcodes `segments: []` and cannot recover
+		// the per-segment topology that lives only in the deleted batch-state.
+		// Resuming with `segments: []` for a multi-repo batch would silently lose
+		// the expansion state and could re-execute already-done segments OR fail
+		// dependency checks for cross-repo waves. Detection heuristic: if worker
+		// manifests carry more than one distinct repoId, segment expansion was
+		// active. Single-repo batches (the common case, including Taskplane's
+		// own self-orchestration) are unaffected.
+		{
+			const distinctRepoIds = new Set<string>();
+			for (const m of workerManifestsWithWorktree) {
+				if (typeof m.repoId === "string" && m.repoId.length > 0) {
+					distinctRepoIds.add(m.repoId);
+				}
+			}
+			if (distinctRepoIds.size > 1) {
+				failures.push(
+					`${cand.batchId}: multi-repo batch detected (${distinctRepoIds.size} distinct repoIds: ` +
+					`${[...distinctRepoIds].slice(0, 4).join(", ")}` +
+					`${distinctRepoIds.size > 4 ? ", ..." : ""}); reconstruction would lose segment ` +
+					`expansion state and is refused. Restore .pi/batch-state.json from backup or start a new batch.`
+				);
+				continue;
+			}
+		}
+
 		// Build per-lane aggregation from worker manifests.
 		const laneMap = new Map<number, { laneNumber: number; agentId: string; worktreePath: string; repoId: string; taskIds: string[] }>();
 		for (const m of workerManifestsWithWorktree) {

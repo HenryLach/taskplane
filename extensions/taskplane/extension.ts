@@ -1706,6 +1706,22 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	/**
+	 * TP-187 (#538) — sage post-integration follow-up: gate lane-terminated /
+	 * lane-respawned IPC on the current batchId so a stale message from a prior
+	 * batch (engine-worker process not yet shut down, or out-of-order delivery)
+	 * cannot taint the supervisor's terminated-lane filter for the live batch.
+	 * Returns true when the IPC's batchId matches the current batch (or when
+	 * the supervisor has not yet seen any state-sync, in which case we accept
+	 * the IPC — first batch, no risk of staleness).
+	 */
+	const ipcBatchIdMatches = (incomingBatchId: string | undefined): boolean => {
+		const currentBatchId = batchState.batchId;
+		if (!currentBatchId) return true; // no live batch yet — accept
+		if (!incomingBatchId) return true; // legacy IPC without batchId — accept (back-compat)
+		return incomingBatchId === currentBatchId;
+	};
+
+	/**
 	 * TP-187 (#538): True iff this alert targets a lane or agent that has
 	 * already been marked terminal. Used by the supervisor-alert IPC handler
 	 * to drop zombie alerts before they reach pi.sendUserMessage.
@@ -2279,6 +2295,13 @@ export default function (pi: ExtensionAPI) {
 			},
 			// TP-187 (#538): Lane-terminated handler.
 			(info) => {
+				if (!ipcBatchIdMatches(info.batchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
+						`(incoming batchId=${info.batchId}, current=${batchState.batchId})\n`,
+					);
+					return;
+				}
 				terminatedLanes.set(info.laneNumber, info.terminatedAt);
 				if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
 				process.stderr.write(
@@ -2287,7 +2310,14 @@ export default function (pi: ExtensionAPI) {
 				);
 			},
 			// TP-187 (#538): Lane-respawned handler.
-			(laneNumber, agentId) => {
+			(laneNumber, agentId, incomingBatchId) => {
+				if (!ipcBatchIdMatches(incomingBatchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
+						`(incoming batchId=${incomingBatchId}, current=${batchState.batchId})\n`,
+					);
+					return;
+				}
 				terminatedLanes.delete(laneNumber);
 				if (agentId) terminatedAgents.delete(agentId);
 			},
@@ -2641,6 +2671,13 @@ export default function (pi: ExtensionAPI) {
 			},
 			// TP-187 (#538): Lane-terminated handler.
 			(info) => {
+				if (!ipcBatchIdMatches(info.batchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
+						`(incoming batchId=${info.batchId}, current=${batchState.batchId})\n`,
+					);
+					return;
+				}
 				terminatedLanes.set(info.laneNumber, info.terminatedAt);
 				if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
 				process.stderr.write(
@@ -2649,7 +2686,14 @@ export default function (pi: ExtensionAPI) {
 				);
 			},
 			// TP-187 (#538): Lane-respawned handler.
-			(laneNumber, agentId) => {
+			(laneNumber, agentId, incomingBatchId) => {
+				if (!ipcBatchIdMatches(incomingBatchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
+						`(incoming batchId=${incomingBatchId}, current=${batchState.batchId})\n`,
+					);
+					return;
+				}
 				terminatedLanes.delete(laneNumber);
 				if (agentId) terminatedAgents.delete(agentId);
 			},
