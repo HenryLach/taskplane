@@ -270,6 +270,51 @@ describe("TP-189-A2 — review_step death-spiral guard runtime behavior", () => 
 		}
 	});
 
+	it("type='test' on a step marked Complete → returns REFUSED without spawning a reviewer (R002 follow-up)", async () => {
+		// The TP-186 guard's reviewType !== 'plan' clause is intentionally
+		// open-ended so future review types (e.g. 'test' for Review Level 3)
+		// are blocked the same way 'code' is. The schema currently only
+		// validates 'plan' | 'code', but the runtime handler must refuse
+		// any non-'plan' value if invoked directly. Future-proof coverage.
+		const { statusPath, cleanupEnv } = withTaskFolder(2, "✅ Complete");
+		spawnCallCount = 0;
+		try {
+			const tool = registerTools().get("review_step")!;
+
+			const result = await tool.execute("call-test", { step: 2, type: "test" });
+			const text = result.content[0]?.text ?? "";
+
+			assert.ok(
+				text.startsWith("REFUSED:"),
+				`type='test' on a Complete step must return REFUSED, got: ${text.slice(0, 200)}`,
+			);
+			assert.ok(
+				text.includes("`**Status:** ✅ Complete`"),
+				"REFUSED text must reference the offending Status field",
+			);
+			assert.ok(
+				text.includes(`Re-call review_step(step=2, type="test"`),
+				"REFUSED text must echo the original review type in the re-call instruction",
+			);
+			assert.strictEqual(
+				spawnCallCount,
+				0,
+				`type='test' REFUSED path must not spawn a reviewer; got ${spawnCallCount} spawn call(s)`,
+			);
+
+			const statusAfter = readFileSync(statusPath, "utf-8");
+			const rcMatch = statusAfter.match(/\*\*Review Counter:\*\*\s*(\d+)/);
+			assert.ok(rcMatch, "STATUS.md should still have a Review Counter field");
+			assert.strictEqual(
+				rcMatch![1],
+				"0",
+				"REFUSED path must not increment the Review Counter for type='test'",
+			);
+		} finally {
+			cleanupEnv();
+		}
+	});
+
 	it("REFUSED text uses the operative phrase from the prompt's Recovery Recipe", () => {
 		// Wording-consistency check between the engine's refusal prose
 		// (returned at runtime) and the worker prompt's Recovery Recipe.

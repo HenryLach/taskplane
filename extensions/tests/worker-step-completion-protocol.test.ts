@@ -288,9 +288,13 @@ describe("2.x — isStepMarkedComplete helper", () => {
 
 	it("2.11 — a fence opened inside the step but never closed within the step's section does not bleed into adjacent step lookup", () => {
 		// Pathological STATUS structure: an unclosed fence in step 2 would
-		// have left the scanner in `inFence` state, but the scan stops at
-		// the next step heading anyway. A subsequent query for step 3 must
-		// not be poisoned by that prior call — each call resets fence state.
+		// have left the scanner in `inFence` state, but each call gets a
+		// fresh scanner so a subsequent query for step 3 is not poisoned.
+		// Note: with the CommonMark-aware fence tracking the `### Step 3:`
+		// heading inside the unclosed fence is still treated as content
+		// (not a step boundary) for the step=2 query, so the unclosed
+		// fence effectively swallows the rest of the file. The step=3
+		// query starts fresh from its own heading.
 		const status = [
 			"### Step 2: Bad fencing",
 			"**Status:** 🟨 In Progress",
@@ -304,6 +308,57 @@ describe("2.x — isStepMarkedComplete helper", () => {
 		withTempStatus(status, (statusPath) => {
 			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
 			expect(isStepMarkedComplete(statusPath, 3)).toBe(true);
+		});
+	});
+
+	it("2.12 — a `~~~` line inside an open backtick fence does NOT prematurely close the fence (mixed-delimiter regression for R002)", () => {
+		// Sage caught: the prior implementation toggled inFence on ANY
+		// `````/`~~~` line, so a `~~~` example inside a backtick-fenced
+		// block prematurely closed the fence and let `**Status:** ✅ Complete`
+		// inside the same code block match. The CommonMark-aware tracker
+		// only closes on a matching delimiter (same char, length >= opener).
+		const status = [
+			"### Step 2: Documents fence syntax",
+			"**Status:** 🟨 In Progress",
+			"",
+			"````markdown", // 4-backtick opener so inner ``` examples don't close it
+			"Markdown supports both fence styles:",
+			"~~~",
+			"sample tilde block",
+			"~~~",
+			"```",
+			"sample backtick block",
+			"```",
+			"And a worker would set the heading like:",
+			"**Status:** ✅ Complete",
+			"````", // matching 4-backtick closer
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.13 — a backtick closer of equal length closes the fence (length >= opener length CommonMark semantics)", () => {
+		// Defense in depth: the tracker should accept a closer with the
+		// SAME length as the opener (the strict CommonMark rule is
+		// >= opener length).
+		const status = [
+			"### Step 2: Implement",
+			"**Status:** 🟨 In Progress",
+			"",
+			"```",
+			"code block",
+			"```",
+			"",
+			// This Status IS outside the now-closed fence — should match.
+			"**Status:** ✅ Complete",
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);
 		});
 	});
 });

@@ -171,29 +171,44 @@ export function isStepMarkedComplete(statusPath: string, stepNum: number): boole
 	const lines = content.split(/\r?\n/);
 	const stepHeadingRe = new RegExp(`^###\\s+Step\\s+${stepNum}\\b`);
 	const nextStepHeadingRe = /^###\s+Step\s+\d+\b/;
-	// TP-189-A3: track fenced-code-block state. A line that starts with
-	// three or more backticks (``` / ````) or three or more tildes (~~~)
-	// toggles fence state. While inside a fence, we do NOT inspect the
-	// line for the status pattern — a step's body that documents the
-	// literal `**Status:** ✅ Complete` text inside a code block is
-	// authoring, not a completion claim.
-	const fenceOpenRe = /^\s*(?:`{3,}|~{3,})/;
+	// TP-189-A3: track fenced-code-block state per CommonMark semantics.
+	// A fence opens with 3+ backticks OR 3+ tildes and closes only when a
+	// matching delimiter (same character, length >= the opener's length)
+	// is seen on its own line. Crucially: a `~~~` line inside an open
+	// backtick fence does NOT close that fence, and vice versa. Tracking
+	// the opener char and length avoids false-positive matches on
+	// `**Status:** ✅ Complete` inside code blocks that contain mixed
+	// fence-delimiter examples (e.g., markdown documentation about
+	// fences).
+	const fenceOpenRe = /^\s*(`{3,}|~{3,})/;
 	let inSection = false;
-	let inFence = false;
+	let fenceOpener: { char: string; length: number } | null = null;
 	for (const line of lines) {
 		if (!inSection) {
 			if (stepHeadingRe.test(line)) inSection = true;
 			continue;
 		}
-		// Stop scanning at the next step heading.
-		if (nextStepHeadingRe.test(line)) break;
-		// Toggle fence state on a fence-delimiter line, then skip it.
-		if (fenceOpenRe.test(line)) {
-			inFence = !inFence;
+		// Step boundaries are recognized only OUTSIDE a fenced block.
+		// (A `### Step N:` line inside a code-fence sample is content,
+		// not a real heading.)
+		if (fenceOpener === null && nextStepHeadingRe.test(line)) break;
+		// Detect fence delimiter lines.
+		const fenceMatch = line.match(fenceOpenRe);
+		if (fenceMatch) {
+			const delim = fenceMatch[1];
+			const char = delim[0]; // "`" or "~"
+			const length = delim.length;
+			if (fenceOpener === null) {
+				fenceOpener = { char, length };
+			} else if (char === fenceOpener.char && length >= fenceOpener.length) {
+				// Matching closer: same char, length >= opener length.
+				fenceOpener = null;
+			}
+			// Either way, the delimiter line itself is not inspected.
 			continue;
 		}
-		// Skip lines inside a fenced code block.
-		if (inFence) continue;
+		// Skip lines inside an open fenced code block.
+		if (fenceOpener !== null) continue;
 		// Match a literal status line within this step's section.
 		// Examples that should match:
 		//   **Status:** ✅ Complete
