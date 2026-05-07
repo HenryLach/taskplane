@@ -665,8 +665,41 @@ export async function executeTaskV2(
 						}
 					} catch { /* If we can't read STATUS.md, proceed with escalation */ }
 
-					// No visible progress — compose escalation message
-					const truncatedMsg = assistantMessage.slice(0, 500);
+					// No visible progress — compose escalation message.
+					// TP-187 (#540): when the worker exits silently, fall back to the most
+					// recent `assistant_message` event in events.jsonl so the supervisor
+					// has SOMETHING to act on instead of `Worker said: ""`.
+					let workerSaid = (assistantMessage ?? "").trim();
+					let workerSaidSource: "current-turn" | "events-jsonl-fallback" | "empty-sentinel" = "current-turn";
+					if (!workerSaid) {
+						workerSaidSource = "empty-sentinel";
+						try {
+							const raw = readFileSync(eventsPath, "utf-8");
+							const lines = raw.split("\n");
+							// Walk backward to find the most recent assistant_message with non-empty text.
+							for (let i = lines.length - 1; i >= 0; i--) {
+								const line = lines[i].trim();
+								if (!line) continue;
+								try {
+									const evt = JSON.parse(line) as Record<string, unknown>;
+									if (evt.type === "assistant_message") {
+										const payload = evt.payload as Record<string, unknown> | undefined;
+										const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+										if (text) {
+											workerSaid = text;
+											workerSaidSource = "events-jsonl-fallback";
+											break;
+										}
+									}
+								} catch { /* skip malformed line */ }
+							}
+						} catch { /* events.jsonl unreadable; sentinel will be used */ }
+					}
+					if (!workerSaid) {
+						workerSaid = "(no assistant message captured — worker exited without producing visible output)";
+						workerSaidSource = "empty-sentinel";
+					}
+					const truncatedMsg = workerSaid.slice(0, 500);
 					const uncheckedItems: string[] = [];
 					try {
 						const statusContent = readFileSync(statusPath, "utf-8");
@@ -702,7 +735,12 @@ export async function executeTaskV2(
 								`  Current step: ${currentStepInfo}\n` +
 								`  Iteration: ${totalIterations}, No-progress count: ${noProgressCount + 1}\n` +
 								`  Unchecked items: ${uncheckedItems.length > 0 ? uncheckedItems.join("; ") : "(none found)"}\n` +
-								`  Worker said: "${truncatedMsg}"\n` +
+								`  Worker said: "${truncatedMsg}"` +
+								(workerSaidSource === "events-jsonl-fallback"
+									? `   (fallback: most-recent assistant_message from events.jsonl)\n`
+									: workerSaidSource === "empty-sentinel"
+										? `   (no assistant message captured this iteration)\n`
+										: "\n") +
 								`\nSend a steering message to ${workerAgentId} with targeted instructions,` +
 								` or reply "skip" / "let it fail" to close the session.`,
 							context: {

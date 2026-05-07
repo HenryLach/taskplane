@@ -1,6 +1,6 @@
 # TP-187: Supervisor recovery flows — Status
 
-**Current Step:** Step 4: Implement #540 — non-empty reason + fallback
+**Current Step:** Step 5: Add tests
 **Status:** 🟨 In Progress
 **Code-Review Baseline:** 25b5c14b7de19267d776ba1fcffff8d9d629f372
 **Last Updated:** 2026-05-07
@@ -183,17 +183,17 @@
 ---
 
 ### Step 4: Implement #540 — non-empty reason + fallback
-**Status:** 🟨 In Progress
+**Status:** 🟨 In Progress (awaiting Step 6 code review)
 
-- [ ] templates/agents/task-worker.md requires non-empty exit-no-progress reason
-- [ ] lane-runner.ts falls back to most-recent assistant_message when reason empty
-- [ ] (Optional) Last 2–3 tool-call summaries included in alert payload
-- [ ] Targeted test passes
+- [x] templates/agents/task-worker.md requires non-empty exit-no-progress reason (new MANDATORY block under "CRITICAL: Do NOT Exit")
+- [x] lane-runner.ts falls back to most-recent assistant_message when reason empty (events.jsonl walk-backward, with sentinel for the truly-silent case)
+- [x] (Optional) Last 2–3 tool-call summaries included in alert payload — DEFERRED per Step-0 decision
+- [x] Targeted test passes (existing 5.2 updated to track variable rename; full suite green)
 
 ---
 
 ### Step 5: Add tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] supervisor-recovery-flows.test.ts created
 - [ ] Coverage: mailbox drain, supervisor_takeover, resume reconstruction, worker-said fallback
