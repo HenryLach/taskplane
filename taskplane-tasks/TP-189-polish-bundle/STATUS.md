@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** L
 
@@ -60,9 +60,9 @@
 ### Step 3: Cluster C — taskplane doctor empty pi version
 **Status:** 🟨 In Progress
 
-- [ ] `getVersion()` in `bin/taskplane.mjs` captures both stdout and stderr
-- [ ] Manual: `node bin/taskplane.mjs doctor` shows pi version (e.g., `0.73.x`)
-- [ ] Optional: `cli-doctor-version-capture.test.ts` (skip if testability awkward)
+- [x] `getVersion()` in `bin/taskplane.mjs` rewritten to use `spawnSync` with `stdio: ['ignore', 'pipe', 'pipe']`; stdout-precedence fallback to stderr; null when both empty or subprocess fails. `spawnSync` added to the existing `node:child_process` import.
+- [x] Manual: `node bin/taskplane.mjs doctor` now shows `✅ pi installed (0.73.0)` (was empty parens).
+- [x] `cli-doctor-version-capture.test.ts` (NEW, 4 source-pattern tests): asserts spawnSync import, stdio shape, stdout-precedence ordering, and null-return fail-safe contract preserved.
 
 ---
 
@@ -159,3 +159,4 @@
 | 2026-05-07 03:24 | Review R004 | code Step 1: APPROVE |
 | 2026-05-07 03:25 | Review R005 | plan Step 2: APPROVE |
 | 2026-05-07 03:28 | Review R006 | code Step 2: APPROVE |
+| 2026-05-07 03:29 | Review R007 | plan Step 3: APPROVE |
