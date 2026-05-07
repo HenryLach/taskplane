@@ -342,6 +342,12 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 			send({ type: "lane-terminated", info });
 		};
 
+		// TP-187 (#538): Lane respawn callback — forwards lane-respawned to
+		// the supervisor process so it can lift suppression for re-allocated lanes.
+		const onLaneRespawned = (laneNumber: number, agentId: string, batchId: string) => {
+			send({ type: "lane-respawned", laneNumber, agentId, batchId });
+		};
+
 		// ── Execute engine ───────────────────────────────────────────
 		const enginePromise = data.mode === "resume"
 			? resumeOrchBatch(
@@ -358,6 +364,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				onSupervisorAlert,
 				data.supervisorAutonomy ?? "autonomous",
 				onLaneTerminated,
+				onLaneRespawned,
 			)
 			: executeOrchBatch(
 				data.args ?? "",
@@ -374,6 +381,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				onSupervisorAlert,
 				data.supervisorAutonomy ?? "autonomous",
 				onLaneTerminated,
+				onLaneRespawned,
 			);
 
 		enginePromise

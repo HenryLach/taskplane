@@ -1782,6 +1782,7 @@ async function attemptStaleWorktreeRecovery(
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
 	runnerConfig?: TaskRunnerConfig,
 	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
+	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -1898,6 +1899,7 @@ async function attemptStaleWorktreeRecovery(
 		} : undefined,
 		runnerConfig?.workerExcludeExtensions ?? [],
 		onLaneTerminated,
+		onLaneRespawned,
 	);
 
 	return retryResult;
@@ -1975,6 +1977,18 @@ export async function executeOrchBatch(
 	onEngineEvent?: EngineEventCallback | null,
 	onSupervisorAlert?: SupervisorAlertCallback | null,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
+	/**
+	 * TP-187 (#538): Optional callback fired when a lane reaches a terminal
+	 * state. The supervisor process forwards this over IPC and uses it to
+	 * suppress zombie alerts queued for the now-dead lane.
+	 */
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback | null,
+	/**
+	 * TP-187 (#538): Optional callback fired when a lane is freshly
+	 * (re-)allocated to a task. The supervisor process uses it to lift any
+	 * zombie-alert suppression carried over from a prior wave.
+	 */
+	onLaneRespawned?: ((laneNumber: number, agentId: string, batchId: string) => void) | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
@@ -2543,6 +2557,7 @@ export async function executeOrchBatch(
 			} : undefined,
 			runnerConfig?.workerExcludeExtensions ?? [],
 			emitLaneTerminated,
+			onLaneRespawned ?? undefined,
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -2567,6 +2582,7 @@ export async function executeOrchBatch(
 				supervisorAutonomy,
 				runnerConfig,
 				emitLaneTerminated,
+				onLaneRespawned ?? undefined,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;

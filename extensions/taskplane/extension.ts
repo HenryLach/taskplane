@@ -1061,6 +1061,8 @@ export function startBatchInWorker(
 				wkData.force ?? false,
 				onSupervisorAlert ?? null,
 				wkData.supervisorAutonomy ?? "autonomous",
+				null, // onLaneTerminated — main-thread fallback path; alerts are local-only
+				null, // onLaneRespawned — main-thread fallback path; suppression maps stay clear
 			)
 			: () => executeOrchBatch(
 				wkData.args ?? "",
@@ -1076,6 +1078,8 @@ export function startBatchInWorker(
 				null, // onEngineEvent
 				onSupervisorAlert ?? null,
 				wkData.supervisorAutonomy ?? "autonomous",
+				null, // onLaneTerminated — main-thread fallback path
+				null, // onLaneRespawned — main-thread fallback path
 			);
 		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
 		return null;

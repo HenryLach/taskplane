@@ -1070,6 +1070,18 @@ export async function resumeOrchBatch(
 	force: boolean = false,
 	onSupervisorAlert?: import("./types.ts").SupervisorAlertCallback | null,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
+	/**
+	 * TP-187 (#538): Optional callback fired when a lane reaches a terminal
+	 * state during a resumed batch. Threaded through to executeWave so the
+	 * supervisor process keeps suppressing zombie alerts after resume too.
+	 */
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback | null,
+	/**
+	 * TP-187 (#538): Optional callback fired when a lane is freshly
+	 * (re-)allocated during resume. The supervisor uses it to lift any
+	 * carried-over zombie-alert suppression.
+	 */
+	onLaneRespawned?: ((laneNumber: number, agentId: string, batchId: string) => void) | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
@@ -2086,6 +2098,8 @@ export async function resumeOrchBatch(
 			runnerConfig.reviewer,
 			runnerConfig.worker,
 			runnerConfig.workerExcludeExtensions ?? [],
+			onLaneTerminated ?? undefined,
+			onLaneRespawned ?? undefined,
 		);
 
 		batchState.waveResults.push(waveResult);

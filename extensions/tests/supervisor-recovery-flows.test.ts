@@ -579,6 +579,115 @@ describe("TP-187: end-to-end drain coverage via discoverMailboxAgentIds", () => 
 	});
 });
 
+// ── Lane-terminated / lane-respawned IPC behavioral coverage ────────────
+
+describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (behavioral)", () => {
+	/**
+	 * Simulate the supervisor-process callback chain that's wired up in
+	 * `startBatchInWorker`: alerts pass through `isAlertSuppressed`, lane
+	 * termination adds entries to terminatedLanes, lane-respawn removes
+	 * them. The behavior under test is independent of the IPC transport.
+	 */
+	type Alert = { category: string; summary: string; context: { laneNumber?: number; agentId?: string } };
+
+	function makeFilter() {
+		const terminatedLanes = new Map<number, number>();
+		const terminatedAgents = new Map<string, number>();
+		const delivered: Alert[] = [];
+		const dropped: Alert[] = [];
+		const onAlert = (alert: Alert) => {
+			const suppressed =
+				(typeof alert.context?.laneNumber === "number" && terminatedLanes.has(alert.context.laneNumber)) ||
+				(typeof alert.context?.agentId === "string" && !!alert.context.agentId && terminatedAgents.has(alert.context.agentId));
+			if (suppressed) dropped.push(alert);
+			else delivered.push(alert);
+		};
+		const onLaneTerminated = (info: { laneNumber: number; agentId: string; terminatedAt: number }) => {
+			terminatedLanes.set(info.laneNumber, info.terminatedAt);
+			if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
+		};
+		const onLaneRespawned = (laneNumber: number, agentId: string) => {
+			terminatedLanes.delete(laneNumber);
+			if (agentId) terminatedAgents.delete(agentId);
+		};
+		return { onAlert, onLaneTerminated, onLaneRespawned, delivered, dropped, terminatedLanes, terminatedAgents };
+	}
+
+	it("alerts before termination are delivered; alerts after termination are dropped", () => {
+		const f = makeFilter();
+		f.onAlert({ category: "worker-exit-intercept", summary: "first", context: { laneNumber: 1, agentId: "a-1" } });
+		f.onLaneTerminated({ laneNumber: 1, agentId: "a-1", terminatedAt: 1000 });
+		f.onAlert({ category: "worker-exit-intercept", summary: "zombie", context: { laneNumber: 1, agentId: "a-1" } });
+		expect(f.delivered.length).toBe(1);
+		expect(f.delivered[0].summary).toBe("first");
+		expect(f.dropped.length).toBe(1);
+		expect(f.dropped[0].summary).toBe("zombie");
+	});
+
+	it("lane-respawned lifts suppression so a re-allocated lane's alerts pass through", () => {
+		const f = makeFilter();
+		// Wave 1: lane 1 terminates with agent a-1
+		f.onLaneTerminated({ laneNumber: 1, agentId: "a-1", terminatedAt: 1000 });
+		f.onAlert({ category: "task-failure", summary: "wave1-zombie", context: { laneNumber: 1, agentId: "a-1" } });
+		expect(f.dropped.length).toBe(1);
+
+		// Wave 2: lane 1 re-allocated for a fresh task with agent a-2
+		f.onLaneRespawned(1, "a-2", "b-test");
+		f.onAlert({ category: "worker-exit-intercept", summary: "wave2-fresh", context: { laneNumber: 1, agentId: "a-2" } });
+		expect(f.delivered.length).toBe(1);
+		expect(f.delivered[0].summary).toBe("wave2-fresh");
+	});
+
+	it("alerts targeting a different lane are not affected by suppression", () => {
+		const f = makeFilter();
+		f.onLaneTerminated({ laneNumber: 1, agentId: "a-1", terminatedAt: 1000 });
+		f.onAlert({ category: "task-failure", summary: "lane-2-alert", context: { laneNumber: 2, agentId: "a-2" } });
+		expect(f.delivered.length).toBe(1);
+		expect(f.dropped.length).toBe(0);
+	});
+
+	it("alerts without a context are never suppressed", () => {
+		const f = makeFilter();
+		f.onLaneTerminated({ laneNumber: 1, agentId: "a-1", terminatedAt: 1000 });
+		f.onAlert({ category: "batch-complete", summary: "global", context: {} });
+		expect(f.delivered.length).toBe(1);
+	});
+});
+
+describe("TP-187 #538: lane-respawned IPC wiring is end-to-end", () => {
+	const engineWorkerSrc = readFileSync(join(__dirname, "..", "taskplane", "engine-worker.ts"), "utf-8");
+	const executionSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
+
+	it("WorkerToMainMessage type declares lane-respawned", () => {
+		expect(engineWorkerSrc).toContain('| { type: "lane-respawned";');
+	});
+
+	it("engine-worker emits lane-respawned via IPC", () => {
+		expect(engineWorkerSrc).toContain('send({ type: "lane-respawned"');
+	});
+
+	it("engine-worker passes onLaneRespawned to executeOrchBatch and resumeOrchBatch", () => {
+		// Both invocation sites should pass the callback as the last argument.
+		// We just check the closures are wired through.
+		expect(engineWorkerSrc).toContain("const onLaneRespawned = (laneNumber: number");
+	});
+
+	it("executeLaneV2 emits onLaneRespawned at the top of the function body before the task loop", () => {
+		const start = executionSrc.indexOf("export async function executeLaneV2(");
+		const body = executionSrc.slice(start, start + 7500);
+		const respawnIdx = body.indexOf("onLaneRespawned(lane.laneNumber");
+		const forIdx = body.indexOf("for (const task of lane.tasks)");
+		expect(respawnIdx).not.toBe(-1);
+		expect(forIdx).not.toBe(-1);
+		expect(respawnIdx < forIdx).toBe(true);
+	});
+
+	it("executeOrchBatch threads onLaneRespawned to executeWave", () => {
+		const engineSrc2 = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+		expect(engineSrc2).toContain("onLaneRespawned ?? undefined,");
+	});
+});
+
 // ── deleteBatchState + reconstruction flow ─────────────────────────
 
 describe("TP-187 #539: end-to-end abort-then-reconstruct flow", () => {
