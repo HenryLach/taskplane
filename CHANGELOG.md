@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.7] - 2026-05-07
+
+### Enhanced
+
+- **Dashboard: lane parallelization visible in wave indicator chips (#484):**
+  Wave chips at the top of the dashboard now group tasks by lane within each
+  wave, joining same-lane tasks with `→` (serial) and different-lane tasks
+  with ` | ` (parallel). For example, `W1 [TP-165, TP-166, TP-168, TP-167]`
+  now reads `W1 [TP-165 → TP-166 | TP-168 | TP-167]`, immediately revealing
+  that TP-165→TP-166 are serialized on lane 1 while TP-168 and TP-167 run in
+  parallel on lanes 2 and 3. Within each lane, tasks render in execution
+  order (per `lane.taskIds`). Hover tooltip on the chip exposes the
+  expanded multi-line lane breakdown. Future waves with no lane assignment
+  data fall back to the previous flat comma-separated display — no
+  regression for unprovisioned waves.
+- **Dashboard: task title under task ID in lane view (#485):** The lane
+  view now renders the human-readable task title (extracted from PROMPT.md's
+  `# Task: <ID> - <title>` first-line heading) as a smaller muted subtitle
+  beneath the task ID. Operator no longer needs to remember what each
+  TP-XXX is. The title is read once from PROMPT.md and cached for the
+  server's lifetime (PROMPT.md is immutable above the `---` divider).
+  Surfaced via a new `taskTitle` field on `/api/state` task records;
+  frontend falls back gracefully when the field is null.
+
 ## [0.28.6] - 2026-05-06
 
 ### Fixed
