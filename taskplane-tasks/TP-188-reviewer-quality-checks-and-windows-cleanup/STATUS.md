@@ -1,11 +1,11 @@
 # TP-188: Reviewer quality checks + Windows worktree cleanup fallback — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-05-06
+**Current Step:** Step 1: Plan both sub-fixes
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-05-07
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -18,13 +18,13 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree); TP-186 confirmed merged
-- [ ] Baseline test count recorded
-- [ ] All Tier 3 context files read
-- [ ] Issues #541 and #543 read in full
-- [ ] Decision recorded: read commands from `taskRunner.testing.commands` or hardcode defaults
+- [x] On `main` (lane worktree); TP-186 confirmed merged (templates/agents/task-worker.md contains "Order of Operations", "death-spiral", "Recovery Recipe")
+- [x] Baseline test count recorded — 3468 tests, 3467 pass, 1 skip, 0 fail (69 test files)
+- [x] All Tier 3 context files read — task-reviewer.md, worktree.ts (removeWorktree + isRetriableRemoveError), types.ts (testing_commands), agent-bridge-extension.ts:439 (bash present in default reviewer tools)
+- [x] Issues #541 and #543 read in full (described in PROMPT.md)
+- [x] Decision recorded: hybrid — reviewer reads `.pi/taskplane-config.json` `taskRunner.testing.commands` first, falls back to inspecting `package.json` scripts for `typecheck`/`lint`/`format:check`. Documented in Discoveries.
 
 ---
 
@@ -98,6 +98,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Decision: hybrid command discovery | Sub-fix A reviewer prompt | Reviewer first checks `.pi/taskplane-config.json` `taskRunner.testing.commands`. If absent, inspects `package.json`'s `scripts` for `typecheck`/`lint`/`format:check` and runs those. Skips silently if neither source yields anything. |
+| Sub-fix A draft section | templates/agents/task-reviewer.md | New "Quality-check verification (code reviews only)" section between "How You Work" and "Verdict Criteria". Reviewer runs typecheck/lint/format before deciding. Failures = Issues Found with severity `important`. Verdict downgrades behavioural APPROVE → REVISE. Plan reviews skip this entirely. |
+| Sub-fix B detection condition | extensions/taskplane/worktree.ts removeWorktree | After failed `runGit(["worktree", "remove", "--force", path])`: if `process.platform === 'win32'` AND `/Filename too long/i`.test(stderr), call `cmd /c "rd /s /q <BACKSLASH-PATH>"` via `execFileSync("cmd", ["/c", "rd /s /q \"" + winPath + "\""])`. Log INFO via `execLog("cleanup", "worktree", ...)`. On success, treat as removed and proceed to verification. On failure, surface original git stderr unchanged. |
+| Existing retriable error helper | worktree.ts:625 | `isRetriableRemoveError` does NOT match "Filename too long" (it's not in the list). Good — fallback path is independent of retry path. Will run only after retries exhaust OR if classified non-retriable; safer to also try BEFORE the throw if first attempt sees the pattern. Plan: detect on first occurrence of the stderr pattern, attempt fallback, succeed → proceed; else continue normal retry/throw flow. |
 
 ---
 
@@ -106,6 +110,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-06 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-07 02:02 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-07 02:02 | Step 0 started | Preflight |
 
 ---
 
