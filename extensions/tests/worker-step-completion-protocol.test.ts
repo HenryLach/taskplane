@@ -82,6 +82,31 @@ describe("1.x — task-worker.md prompt: TP-186 sections", () => {
 		expect(WORKER_PROMPT).toContain("Correct sequence:");
 	});
 
+	it("1.4b — Resume Algorithm step 6 is Review-Level-aware (TP-189-E reconciliation regression guard)", () => {
+		// TP-189 Cluster E reconciled the Resume Algorithm with the new
+		// Order of Operations rule. Pre-TP-189, step 6 said "all items
+		// checked → proceed to next step" — ambiguous for Review Level ≥ 2
+		// where the step is NOT actually done until the code reviewer
+		// returns APPROVE. The fix splits step 6 by Review Level. Guard
+		// against accidental drift back to the pre-TP-189 wording.
+		const stepSixIdx = WORKER_PROMPT.indexOf(
+			"6. When a step's checkbox items are all checked",
+		);
+		expect(stepSixIdx).toBeGreaterThan(-1);
+		const stepSixEnd = WORKER_PROMPT.indexOf("\n7. ", stepSixIdx);
+		expect(stepSixEnd).toBeGreaterThan(stepSixIdx);
+		const stepSix = WORKER_PROMPT.slice(stepSixIdx, stepSixEnd);
+		// Both review-level branches must be enumerated.
+		expect(stepSix).toContain("Review Level 0 or 1");
+		expect(stepSix).toContain("Review Level 2 or 3");
+		// And the Level 2/3 branch must direct the worker at the code
+		// review and APPROVE-gating, not just "proceed to next step".
+		expect(stepSix).toMatch(/review_step\(.*type="code"/);
+		expect(stepSix).toContain("APPROVE");
+		// Cross-reference to Order of Operations.
+		expect(stepSix).toContain("Order of Operations");
+	});
+
 	it("1.5 — Handling verdicts section documents REFUSED + points at Recovery Recipe (sage TP-186 follow-up)", () => {
 		// The Option B engine guard returns REFUSED. Workers must know how to
 		// react. Without REFUSED in the Handling verdicts section, a worker
@@ -217,6 +242,192 @@ describe("2.x — isStepMarkedComplete helper", () => {
 		const status = [
 			"### Step 2: Implement the thing",
 			"**Status:** ✅ Complete (code review APPROVE R002)",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);
+		});
+	});
+
+	// ── TP-189-A3: fenced-code-block filter ────────────────────────────────
+
+	it("2.8 — ignores `**Status:** ✅ Complete` inside a triple-backtick fenced block", () => {
+		// A step that documents the literal status pattern as part of its
+		// own body (e.g. instructions or examples) must NOT trip the guard.
+		// The actual step Status remains `🟨 In Progress`.
+		const status = [
+			"### Step 2: Implement the thing",
+			"**Status:** 🟨 In Progress",
+			"",
+			"Set the heading like this when done:",
+			"",
+			"```",
+			"**Status:** ✅ Complete",
+			"```",
+			"",
+			"- [x] item one",
+			"",
+			"### Step 3: Next",
+			"**Status:** ⬜ Not Started",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.9 — ignores `**Status:** ✅ Complete` inside a tilde-fenced block (~~~)", () => {
+		// Markdown spec also allows ~~~ fences — the guard handles both.
+		const status = [
+			"### Step 2: Implement the thing",
+			"**Status:** 🟨 In Progress",
+			"",
+			"~~~markdown",
+			"**Status:** ✅ Complete",
+			"~~~",
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.10 — still detects a real `**Status:** ✅ Complete` line OUTSIDE a fenced block (regression: fence filter does not over-match)", () => {
+		// Defense in depth for 2.8/2.9: ensure the fence filter doesn't
+		// accidentally suppress a legitimate Status line that appears
+		// AFTER a closed fence in the same step's body.
+		const status = [
+			"### Step 2: Implement the thing",
+			"",
+			"```",
+			"**Status:** ✅ Complete",
+			"```",
+			"",
+			"**Status:** ✅ Complete",
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);
+		});
+	});
+
+	it("2.11 — a fence opened inside the step but never closed within the step's section does not bleed into adjacent step lookup", () => {
+		// Pathological STATUS structure: an unclosed fence in step 2 would
+		// have left the scanner in `inFence` state, but each call gets a
+		// fresh scanner so a subsequent query for step 3 is not poisoned.
+		// Note: with the CommonMark-aware fence tracking the `### Step 3:`
+		// heading inside the unclosed fence is still treated as content
+		// (not a step boundary) for the step=2 query, so the unclosed
+		// fence effectively swallows the rest of the file. The step=3
+		// query starts fresh from its own heading.
+		const status = [
+			"### Step 2: Bad fencing",
+			"**Status:** 🟨 In Progress",
+			"",
+			"```",
+			"unclosed fence body",
+			"",
+			"### Step 3: Next",
+			"**Status:** ✅ Complete",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+			expect(isStepMarkedComplete(statusPath, 3)).toBe(true);
+		});
+	});
+
+	it("2.12 — a `~~~` line inside an open backtick fence does NOT prematurely close the fence (mixed-delimiter regression for R002)", () => {
+		// Sage caught: the prior implementation toggled inFence on ANY
+		// `````/`~~~` line, so a `~~~` example inside a backtick-fenced
+		// block prematurely closed the fence and let `**Status:** ✅ Complete`
+		// inside the same code block match. The CommonMark-aware tracker
+		// only closes on a matching delimiter (same char, length >= opener).
+		const status = [
+			"### Step 2: Documents fence syntax",
+			"**Status:** 🟨 In Progress",
+			"",
+			"````markdown", // 4-backtick opener so inner ``` examples don't close it
+			"Markdown supports both fence styles:",
+			"~~~",
+			"sample tilde block",
+			"~~~",
+			"```",
+			"sample backtick block",
+			"```",
+			"And a worker would set the heading like:",
+			"**Status:** ✅ Complete",
+			"````", // matching 4-backtick closer
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.13b — a delimiter line with a trailing info string is NOT a closer (R003 follow-up)", () => {
+		// Sage caught: a 4-backtick fence containing a ```javascript line
+		// would have the inner line incorrectly treated as a closer, so
+		// the literal `**Status:** ✅ Complete` later in the same fenced
+		// block would false-positive. The CommonMark closer rule requires
+		// a same-char/length delimiter on a line BY ITSELF (only optional
+		// trailing whitespace).
+		const status = [
+			"### Step 2: Documents code blocks",
+			"**Status:** 🟨 In Progress",
+			"",
+			"````", // 4-backtick opener (no info string)
+			"Inside the outer fence we show shorter inner fences:",
+			"```javascript", // not a closer: trailing 'javascript'
+			"const x = 1;",
+			"```", // also not a closer: only 3 backticks (< opener length 4)
+			"And a literal status line still inside the outer fence:",
+			"**Status:** ✅ Complete",
+			"````", // matching 4-backtick closer with no trailing text
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.13c — a closer with trailing whitespace only IS a valid closer", () => {
+		// Defense in depth: trailing spaces/tabs on the closer line are
+		// allowed by CommonMark and should not prevent the fence from closing.
+		const status = [
+			"### Step 2: Implement",
+			"**Status:** 🟨 In Progress",
+			"",
+			"```",
+			"code",
+			"```   ", // closer with trailing spaces only
+			"",
+			"**Status:** ✅ Complete",
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);
+		});
+	});
+
+	it("2.13 — a backtick closer of equal length closes the fence (length >= opener length CommonMark semantics)", () => {
+		// Defense in depth: the tracker should accept a closer with the
+		// SAME length as the opener (the strict CommonMark rule is
+		// >= opener length).
+		const status = [
+			"### Step 2: Implement",
+			"**Status:** 🟨 In Progress",
+			"",
+			"```",
+			"code block",
+			"```",
+			"",
+			// This Status IS outside the now-closed fence — should match.
+			"**Status:** ✅ Complete",
+			"",
+			"### Step 3: Next",
 		].join("\n");
 		withTempStatus(status, (statusPath) => {
 			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);

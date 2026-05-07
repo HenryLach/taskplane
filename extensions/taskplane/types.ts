@@ -4,6 +4,10 @@
  */
 import { join } from "path";
 import type { ExitClassification, TaskExitDiagnostic } from "./diagnostics.js";
+// TP-189 (Cluster B): single source of truth for the worker user-tools
+// default literal. The constants module is import-free so this does NOT
+// create a cycle (types.ts -> tool-allowlist-constants.ts is a leaf).
+import { DEFAULT_WORKER_USER_TOOLS } from "./tool-allowlist-constants.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -390,11 +394,12 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 	},
 	merge: {
 		model: "",
-		// NOTE (TP-184): Mirrors `DEFAULT_WORKER_USER_TOOLS` in
-		// `agent-host.ts`. Kept as a literal here because types.ts anchors
-		// the module-import graph (agent-host.ts imports from types.ts), so
-		// importing the constant the other direction would create a cycle.
-		tools: "read,write,edit,bash,grep,find,ls",
+		// TP-189 (Cluster B): merge default sourced from the import-free
+		// `tool-allowlist-constants.ts` module. The previous concern about
+		// importing from `agent-host.ts` (which DOES depend on types.ts and
+		// would create a cycle) no longer applies because the constant
+		// lives in a leaf module that imports nothing.
+		tools: DEFAULT_WORKER_USER_TOOLS,
 		thinking: "off",
 		verify: [],
 		order: "fewest-files-first",
