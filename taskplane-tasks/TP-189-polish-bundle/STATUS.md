@@ -1,10 +1,10 @@
 # TP-189: Accumulated polish bundle — Status
 
-**Current Step:** Step 3: Cluster C — taskplane doctor empty pi version
+**Current Step:** Step 5: Cluster E — Worker prompt + skill reconciliation
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** L
 
@@ -58,7 +58,7 @@
 ---
 
 ### Step 3: Cluster C — taskplane doctor empty pi version
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (code review APPROVE R009)
 
 - [x] `getVersion()` extracted to NEW `bin/get-version.mjs` (testable ESM helper) and imported from `bin/taskplane.mjs`. Uses `spawnSync` with `stdio:['ignore','pipe','pipe']`, stdout-precedence with stderr fallback, AND **R008 fix**: gates on `result.error || result.status !== 0` so non-zero exits return null instead of leaking shell error text as a fake version string (preserves the prior execSync-throws-on-failure contract).
 - [x] Manual: `node bin/taskplane.mjs doctor` now shows `✅ pi installed (0.73.0)` (was empty parens).
@@ -161,3 +161,4 @@
 | 2026-05-07 03:28 | Review R006 | code Step 2: APPROVE |
 | 2026-05-07 03:29 | Review R007 | plan Step 3: APPROVE |
 | 2026-05-07 03:32 | Review R008 | code Step 3: REVISE |
+| 2026-05-07 03:34 | Review R009 | code Step 3: APPROVE |
