@@ -29,13 +29,13 @@
 ---
 
 ### Step 1: Plan both sub-fixes
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Plan-review checkpoint.
 
-- [ ] Sub-fix A: Quality-check section drafted for task-reviewer.md
-- [ ] Sub-fix B: Detection logic + retry command + path normalization designed
-- [ ] Drafts in Discoveries
+- [x] Sub-fix A: Quality-check section drafted for task-reviewer.md (see Discoveries: "Sub-fix A draft section")
+- [x] Sub-fix B: Detection logic + retry command + path normalization designed (see Discoveries: "Sub-fix B detection condition" + "Existing retriable error helper")
+- [x] Drafts in Discoveries
 
 ---
 
