@@ -1757,6 +1757,7 @@ export async function executeWave(
 	reviewerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] },
 	workerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] } | null,
 	workerExcludeExtensions?: string[],
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -1866,7 +1867,7 @@ export async function executeWave(
 			...buildWorkerEnv(workerConfig),
 			...buildReviewerEnv(reviewerConfig),
 			...buildWorkerExcludeEnv(workerExcludeExtensions),
-		}, onSupervisorAlert),
+		}, onSupervisorAlert, onLaneTerminated),
 	);
 
 	// Start monitoring as a sibling async loop
@@ -2577,6 +2578,7 @@ export async function executeLaneV2(
 	isWorkspaceMode?: boolean,
 	extraEnvVars?: Record<string, string>,
 	onSupervisorAlert?: SupervisorAlertCallback,
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
 ): Promise<LaneExecutionResult> {
 	const laneId = lane.laneId;
 	const laneStartTime = Date.now();
@@ -2675,6 +2677,7 @@ export async function executeLaneV2(
 			warnPercent: 85,
 			killPercent: 95,
 			onSupervisorAlert,
+			onLaneTerminated,
 		};
 
 		try {

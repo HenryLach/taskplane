@@ -2190,6 +2190,30 @@ export interface SupervisorAlert {
 export type SupervisorAlertCallback = (alert: SupervisorAlert) => void;
 
 /**
+ * Information about a lane that has just reached a terminal state.
+ *
+ * Emitted at the no-progress kill and hard-fail decision points so the
+ * supervisor process can mark the lane as terminated and drop any further
+ * alerts queued for it (see {@link LaneTerminatedCallback}).
+ *
+ * @since TP-187 (#538)
+ */
+export interface LaneTerminatedInfo {
+	laneNumber: number;
+	agentId: string;
+	batchId: string;
+	terminatedAt: number;
+	reason: "no-progress-kill" | "hard-fail" | "supervisor-takeover";
+}
+
+/**
+ * Callback invoked when a lane reaches a terminal state.
+ *
+ * @since TP-187 (#538)
+ */
+export type LaneTerminatedCallback = (info: LaneTerminatedInfo) => void;
+
+/**
  * Build a batch progress snapshot from runtime state.
  *
  * Pure function — extracts the current progress counters from

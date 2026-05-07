@@ -53,6 +53,7 @@ import {
 	sessionInboxDir,
 	ackOutboxMessage,
 	appendMailboxAuditEvent,
+	drainAgentOutbox,
 } from "./mailbox.ts";
 
 import {
@@ -245,6 +246,14 @@ export interface LaneRunnerConfig {
 	killPercent: number;
 	/** Optional callback for surfacing runtime mailbox replies/escalations to supervisor */
 	onSupervisorAlert?: SupervisorAlertCallback;
+	/**
+	 * Optional callback fired when the lane reaches a terminal state (no-progress
+	 * kill or hard-fail). The supervisor process uses this to suppress any
+	 * subsequent zombie alerts queued for the now-dead lane.
+	 *
+	 * @since TP-187 (#538)
+	 */
+	onLaneTerminated?: (info: import("./types.ts").LaneTerminatedInfo) => void;
 }
 
 /**
@@ -978,6 +987,30 @@ export async function executeTaskV2(
 					`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
 				if (noProgressCount >= config.noProgressLimit) {
 					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
+					// TP-187 (#538): synchronous outbox drain at lane-termination decision
+					// point. Purges any pending escalations/replies/segment-expansions the
+					// worker emitted just before termination so they are not later re-
+					// discovered and re-forwarded as zombie supervisor alerts.
+					try {
+						const drained = drainAgentOutbox(config.stateRoot, config.batchId, workerAgentId);
+						if (drained > 0) {
+							logExecution(statusPath, "Outbox drained",
+								`No-progress kill: drained ${drained} pending outbox entr${drained === 1 ? "y" : "ies"} for ${workerAgentId}`);
+						}
+					} catch { /* best effort — do not block termination */ }
+					// TP-187 (#538): notify the supervisor process so it can suppress any
+					// further alerts queued for this lane (zombie-alert filter).
+					if (config.onLaneTerminated) {
+						try {
+							config.onLaneTerminated({
+								laneNumber: config.laneNumber,
+								agentId: workerAgentId,
+								batchId: config.batchId,
+								terminatedAt: Date.now(),
+								reason: "no-progress-kill",
+							});
+						} catch { /* best effort */ }
+					}
 					return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
 						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
 				}

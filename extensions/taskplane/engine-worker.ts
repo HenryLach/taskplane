@@ -40,6 +40,17 @@ export type WorkerToMainMessage =
 	| { type: "monitor-update"; state: MonitorState }
 	| { type: "engine-event"; event: EngineEvent }
 	| { type: "supervisor-alert"; alert: SupervisorAlert }
+	/**
+	 * TP-187 (#538): Lane has reached a terminal state. The supervisor process
+	 * uses this to mark the lane terminated and filter any subsequently-arriving
+	 * (zombie) alerts whose `context.laneNumber`/`context.agentId` matches.
+	 */
+	| { type: "lane-terminated"; info: import("./types.ts").LaneTerminatedInfo }
+	/**
+	 * TP-187 (#538): Lane number has been re-allocated to a fresh task. The
+	 * supervisor lifts the suppression so subsequent alerts pass through.
+	 */
+	| { type: "lane-respawned"; laneNumber: number; agentId: string; batchId: string }
 	| { type: "state-sync"; state: SerializedBatchState }
 	| { type: "complete"; state: SerializedBatchState }
 	| { type: "error"; message: string; stack?: string; source?: WorkerErrorSource };
@@ -325,6 +336,12 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 			send({ type: "supervisor-alert", alert });
 		};
 
+		// TP-187 (#538): Lane termination callback — forwards lane-terminated to
+		// the supervisor process so it can suppress in-flight zombie alerts.
+		const onLaneTerminated = (info: import("./types.ts").LaneTerminatedInfo) => {
+			send({ type: "lane-terminated", info });
+		};
+
 		// ── Execute engine ───────────────────────────────────────────
 		const enginePromise = data.mode === "resume"
 			? resumeOrchBatch(
@@ -340,6 +357,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				data.force ?? false,
 				onSupervisorAlert,
 				data.supervisorAutonomy ?? "autonomous",
+				onLaneTerminated,
 			)
 			: executeOrchBatch(
 				data.args ?? "",
@@ -355,6 +373,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				onEngineEvent,
 				onSupervisorAlert,
 				data.supervisorAutonomy ?? "autonomous",
+				onLaneTerminated,
 			);
 
 		enginePromise

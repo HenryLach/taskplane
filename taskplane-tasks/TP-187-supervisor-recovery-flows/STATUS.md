@@ -1,10 +1,11 @@
 # TP-187: Supervisor recovery flows — Status
 
-**Current Step:** Step 1: Plan all three sub-fix designs
+**Current Step:** Step 2: Implement #538 — mailbox drain + supervisor_takeover
 **Status:** 🟨 In Progress
+**Code-Review Baseline:** 25b5c14b7de19267d776ba1fcffff8d9d629f372
 **Last Updated:** 2026-05-07
 **Review Level:** 3
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** L
 
@@ -32,7 +33,7 @@
 ---
 
 ### Step 1: Plan all three sub-fix designs
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (R003 APPROVE)
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
@@ -161,13 +162,13 @@
 ---
 
 ### Step 2: Implement #538 — mailbox drain + supervisor_takeover
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Synchronous mailbox drain at lane termination decision points (engine.ts hard-fail + lane-runner.ts no-progress kill)
-- [ ] `supervisor_takeover(reason)` tool registered in extension.ts (alongside `orch_*` tools, NOT in agent-bridge-extension.ts; NOT in ENGINE_BRIDGE_TOOLS)
-- [ ] Zombie-alert filter (terminatedLanes / terminatedAgents) wired into `case "supervisor-alert"` IPC handler in extension.ts with the lifecycle rules from the Step 1 design
-- [ ] `templates/agents/supervisor.md` documents the tool + text-reply parser semantics
-- [ ] Targeted tests pass
+- [x] Synchronous mailbox drain at lane termination decision points (engine.ts hard-fail + lane-runner.ts no-progress kill)
+- [x] `supervisor_takeover(reason)` tool registered in extension.ts (alongside `orch_*` tools, NOT in agent-bridge-extension.ts; NOT in ENGINE_BRIDGE_TOOLS)
+- [x] Zombie-alert filter (terminatedLanes / terminatedAgents) wired into `case "supervisor-alert"` IPC handler in extension.ts with the lifecycle rules from the Step 1 design
+- [x] `templates/agents/supervisor.md` documents the tool + text-reply parser semantics
+- [x] Targeted tests pass
 
 ---
 
@@ -270,3 +271,4 @@ this task's worker is exposed to it during long-running review cycles.*
 | 2026-05-07 03:12 | Review R001 | plan Step 1: REVISE |
 | 2026-05-07 03:14 | Review R002 | plan Step 1: REVISE |
 | 2026-05-07 03:20 | Review R003 | plan Step 1: REVISE |
+| 2026-05-07 03:24 | Review R004 | plan Step 1: APPROVE |

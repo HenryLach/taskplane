@@ -1781,6 +1781,7 @@ async function attemptStaleWorktreeRecovery(
 	onSupervisorAlert?: SupervisorAlertCallback,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
 	runnerConfig?: TaskRunnerConfig,
+	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -1896,6 +1897,7 @@ async function attemptStaleWorktreeRecovery(
 			excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
 		} : undefined,
 		runnerConfig?.workerExcludeExtensions ?? [],
+		onLaneTerminated,
 	);
 
 	return retryResult;
@@ -1994,6 +1996,23 @@ export async function executeOrchBatch(
 				const msg = err instanceof Error ? err.message : String(err);
 				execLog("batch", batchState.batchId, `supervisor alert callback failed: ${msg}`, {
 					alertCategory: alert.category,
+				});
+			}
+		}
+	};
+
+	// ── TP-187 (#538): Lane termination forwarding helper ──────
+	// Forwards lane-terminated events through the same callback chain so the
+	// supervisor process can suppress zombie alerts queued for a dead lane.
+	const emitLaneTerminated = (info: import("./types.ts").LaneTerminatedInfo): void => {
+		if (onLaneTerminated) {
+			try {
+				onLaneTerminated(info);
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				execLog("batch", batchState.batchId, `lane-terminated callback failed: ${msg}`, {
+					laneNumber: info.laneNumber,
+					reason: info.reason,
 				});
 			}
 		}
@@ -2507,6 +2526,7 @@ export async function executeOrchBatch(
 				excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
 			} : undefined,
 			runnerConfig?.workerExcludeExtensions ?? [],
+			emitLaneTerminated,
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -2530,6 +2550,7 @@ export async function executeOrchBatch(
 				emitAlert,
 				supervisorAutonomy,
 				runnerConfig,
+				emitLaneTerminated,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;
@@ -3058,6 +3079,18 @@ export async function executeOrchBatch(
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},
 			});
+
+			// TP-187 (#538): Hard-fail termination signal so the supervisor process
+			// suppresses any subsequent zombie alerts targeting this lane/agent.
+			if (laneForTask) {
+				emitLaneTerminated({
+					laneNumber: laneForTask.laneNumber,
+					agentId: outcome?.sessionName ?? "",
+					batchId: batchState.batchId,
+					terminatedAt: Date.now(),
+					reason: "hard-fail",
+				});
+			}
 		}
 
 		// ── TS-009: Persist state after wave execution ──
