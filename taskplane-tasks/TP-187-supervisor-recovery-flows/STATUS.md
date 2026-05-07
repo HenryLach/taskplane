@@ -1,6 +1,6 @@
 # TP-187: Supervisor recovery flows — Status
 
-**Current Step:** Step 5: Add tests
+**Current Step:** Step 6: Testing & Verification
 **Status:** 🟨 In Progress
 **Code-Review Baseline:** 25b5c14b7de19267d776ba1fcffff8d9d629f372
 **Last Updated:** 2026-05-07
@@ -193,16 +193,16 @@
 ---
 
 ### Step 5: Add tests
-**Status:** 🟨 In Progress
+**Status:** 🟨 In Progress (awaiting Step 6 code review)
 
-- [ ] supervisor-recovery-flows.test.ts created
-- [ ] Coverage: mailbox drain, supervisor_takeover, resume reconstruction, worker-said fallback
-- [ ] Targeted run passes
+- [x] supervisor-recovery-flows.test.ts created (44 tests)
+- [x] Coverage: mailbox drain, supervisor_takeover, resume reconstruction, worker-said fallback
+- [x] Targeted run passes (full suite: 3540 pass / 0 fail / 1 skipped — was 3496 before TP-187)
 
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ZERO test failures allowed. Code AND test reviews fire here (Level 3).
 

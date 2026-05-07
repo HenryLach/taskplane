@@ -2404,6 +2404,7 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 			mergeResults: [],
 			blockedTaskIds: [],
 			errors: [],
+			segments: [],
 			lastError: null,
 			resilience: { ...defaultResilienceState(), resumeForced: true },
 			diagnostics: defaultBatchDiagnostics(),
