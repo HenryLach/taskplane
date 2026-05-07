@@ -222,6 +222,90 @@ describe("2.x — isStepMarkedComplete helper", () => {
 			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);
 		});
 	});
+
+	// ── TP-189-A3: fenced-code-block filter ────────────────────────────────
+
+	it("2.8 — ignores `**Status:** ✅ Complete` inside a triple-backtick fenced block", () => {
+		// A step that documents the literal status pattern as part of its
+		// own body (e.g. instructions or examples) must NOT trip the guard.
+		// The actual step Status remains `🟨 In Progress`.
+		const status = [
+			"### Step 2: Implement the thing",
+			"**Status:** 🟨 In Progress",
+			"",
+			"Set the heading like this when done:",
+			"",
+			"```",
+			"**Status:** ✅ Complete",
+			"```",
+			"",
+			"- [x] item one",
+			"",
+			"### Step 3: Next",
+			"**Status:** ⬜ Not Started",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.9 — ignores `**Status:** ✅ Complete` inside a tilde-fenced block (~~~)", () => {
+		// Markdown spec also allows ~~~ fences — the guard handles both.
+		const status = [
+			"### Step 2: Implement the thing",
+			"**Status:** 🟨 In Progress",
+			"",
+			"~~~markdown",
+			"**Status:** ✅ Complete",
+			"~~~",
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.10 — still detects a real `**Status:** ✅ Complete` line OUTSIDE a fenced block (regression: fence filter does not over-match)", () => {
+		// Defense in depth for 2.8/2.9: ensure the fence filter doesn't
+		// accidentally suppress a legitimate Status line that appears
+		// AFTER a closed fence in the same step's body.
+		const status = [
+			"### Step 2: Implement the thing",
+			"",
+			"```",
+			"**Status:** ✅ Complete",
+			"```",
+			"",
+			"**Status:** ✅ Complete",
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);
+		});
+	});
+
+	it("2.11 — a fence opened inside the step but never closed within the step's section does not bleed into adjacent step lookup", () => {
+		// Pathological STATUS structure: an unclosed fence in step 2 would
+		// have left the scanner in `inFence` state, but the scan stops at
+		// the next step heading anyway. A subsequent query for step 3 must
+		// not be poisoned by that prior call — each call resets fence state.
+		const status = [
+			"### Step 2: Bad fencing",
+			"**Status:** 🟨 In Progress",
+			"",
+			"```",
+			"unclosed fence body",
+			"",
+			"### Step 3: Next",
+			"**Status:** ✅ Complete",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+			expect(isStepMarkedComplete(statusPath, 3)).toBe(true);
+		});
+	});
 });
 
 // ─── 3.x — Prompt ↔ guard wording consistency ──────────────────────────────

@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** L
 
@@ -35,11 +35,11 @@
 ### Step 1: Cluster A — Defensive tests + helper hardening
 **Status:** 🟨 In Progress
 
-- [ ] Item 1: `lane-runner-spawn-wiring.test.ts` (NEW) — static assertion
-- [ ] Item 2: `review-step-guard-runtime.test.ts` (NEW) — runtime test of REFUSED path (3 sub-cases: code blocked, test blocked, plan NOT blocked)
-- [ ] Item 3: `isStepMarkedComplete` ignores fenced code blocks; matching test added
-- [ ] Item 4 (sage TP-188 follow-up): behavioral tests for `removeWorktree()` Windows fallback in `windows-worktree-cleanup-fallback.test.ts` (3 sub-cases: MAX_PATH on win32 → fallback fires; non-MAX_PATH on win32 → fallback skipped; non-win32 + MAX_PATH text → fallback skipped)
-- [ ] Targeted run passes for all four new/modified tests
+- [x] Item 1: `lane-runner-spawn-wiring.test.ts` (NEW) — static assertion (4 tests pass)
+- [x] Item 2: `review-step-guard-runtime.test.ts` (NEW) — 4 runtime tests pass: type='code' on Complete → REFUSED + no spawn + counter unchanged; type='plan' on Complete → NOT refused; type='code' on In-Progress → NOT refused; REFUSED text matches prompt Recovery Recipe wording. Uses bare-specifier `child_process` mock for Node 22/24 portability.
+- [x] Item 3: `isStepMarkedComplete` now skips ``` and ~~~ fenced code blocks; 4 new test cases (2.8–2.11) cover triple-backtick, tilde fence, regression for real-status-after-fence, and unclosed-fence cross-call isolation. All pass.
+- [x] Item 4 (sage TP-188 follow-up): NEW `extensions/tests/windows-worktree-cleanup-behavioral.test.ts` with 3 behavioral decision-branch tests. Uses single `child_process` mock that dispatches on cmd (git vs cmd) and uses real on-disk temp directories (no fs mocking). All 3 pass: 4.1 win32+MAX_PATH → cmd rd fires + prune-after-rd ordering verified; 4.2 win32+non-MAX_PATH → fallback skipped, WORKTREE_REMOVE_FAILED thrown with original stderr; 4.3 non-win32+MAX_PATH text → platform guard skips fallback. (Created as a sibling file rather than adding to the existing fallback test file because the new tests need a richer cmd/git dispatcher than the existing single-fixture mock supports.)
+- [x] Targeted run passes: `lane-runner-spawn-wiring` (4) + `review-step-guard-runtime` (4) + `worker-step-completion-protocol` (19, includes 4 new fence-block cases) + `windows-worktree-cleanup-behavioral` (3) = 30 tests, all green.
 
 ---
 
@@ -150,3 +150,4 @@
 - Per-step reviews are the deliberate choice (not consolidation) because the
   clusters are independent and Cluster E specifically documents the per-step
   default.
+| 2026-05-07 03:07 | Review R001 | plan Step 1: APPROVE |

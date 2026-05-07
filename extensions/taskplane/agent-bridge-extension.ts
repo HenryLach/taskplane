@@ -146,6 +146,12 @@ function writeSegmentExpansionRequest(request: SegmentExpansionRequest): string 
  * section. All-checkboxes-checked is also NOT a trigger — it is the normal
  * pre-code-review state.
  *
+ * Fenced code blocks (delimited by ``` or ~~~) inside a step's body are
+ * skipped during the scan (TP-189-A3). This avoids a false-positive
+ * refusal when a step documents the literal `**Status:** ✅ Complete`
+ * pattern as part of its own instructions — a legitimate authoring case
+ * that doesn't represent an actual completion claim.
+ *
  * Designed to fail-open: any I/O error or a missing step heading returns
  * `false` (the review proceeds). The prompt-side Recovery Recipe is the
  * primary defense; this guard is a hard backstop, not a gatekeeper.
@@ -165,8 +171,15 @@ export function isStepMarkedComplete(statusPath: string, stepNum: number): boole
 	const lines = content.split(/\r?\n/);
 	const stepHeadingRe = new RegExp(`^###\\s+Step\\s+${stepNum}\\b`);
 	const nextStepHeadingRe = /^###\s+Step\s+\d+\b/;
-
+	// TP-189-A3: track fenced-code-block state. A line that starts with
+	// three or more backticks (``` / ````) or three or more tildes (~~~)
+	// toggles fence state. While inside a fence, we do NOT inspect the
+	// line for the status pattern — a step's body that documents the
+	// literal `**Status:** ✅ Complete` text inside a code block is
+	// authoring, not a completion claim.
+	const fenceOpenRe = /^\s*(?:`{3,}|~{3,})/;
 	let inSection = false;
+	let inFence = false;
 	for (const line of lines) {
 		if (!inSection) {
 			if (stepHeadingRe.test(line)) inSection = true;
@@ -174,6 +187,13 @@ export function isStepMarkedComplete(statusPath: string, stepNum: number): boole
 		}
 		// Stop scanning at the next step heading.
 		if (nextStepHeadingRe.test(line)) break;
+		// Toggle fence state on a fence-delimiter line, then skip it.
+		if (fenceOpenRe.test(line)) {
+			inFence = !inFence;
+			continue;
+		}
+		// Skip lines inside a fenced code block.
+		if (inFence) continue;
 		// Match a literal status line within this step's section.
 		// Examples that should match:
 		//   **Status:** ✅ Complete
