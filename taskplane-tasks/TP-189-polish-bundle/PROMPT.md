@@ -22,13 +22,20 @@ taskplane-tasks/TP-189-polish-bundle/
 
 Bundle of 8 small polish items that accumulated across TP-181, TP-184, TP-185, and TP-186 sage code reviews + the v0.28.5/v0.28.6 release work. None blocked their respective releases (all sage-rated as deferrable), so they were intentionally queued for a polish-bundle release rather than dragging individual hot-fix releases. Now is a good time to land them as a group, ahead of TP-187 + TP-188 (which are the next substantive bug-fix work).
 
-The 8 items, grouped into 5 implementation clusters:
+The 8 items, grouped into 5 implementation clusters. **Updated 2026-05-07:** Cluster D was completed ahead of schedule as part of the v0.28.8 release (PR #552 had to bump ci.yml from Node 22 to Node 24 to fix a `mock.module` portability issue in TP-188's tests). Cluster D is now a no-op for this task. A new sage TP-188 follow-up was added to Cluster A as item 4 (behavioral tests for `removeWorktree`).
+
+Net: **8 items active** across 4 implementation clusters (A, B, C, E). Cluster D is documented for traceability but has no work.
 
 ### Cluster A — Defensive tests + helper hardening (TP-184 + TP-186 follow-ups)
 
 1. **Static-assertion test for `lane-runner.ts` spawn-site wiring** (TP-184 follow-up): asserts that `buildWorkerToolsAllowlist(config.workerTools)` is called at the worker spawn site. Sage flagged this in the TP-184 review as an architectural regression guard — if a future edit accidentally bypasses the helper, this test catches it before merge.
 2. **Runtime refusal test for `review_step` guard** (TP-186 follow-up): mocks the spawn pathway, configures STATUS.md to show a step Complete, calls `review_step(type='code')`, and asserts: (a) returns the REFUSED payload with the documented text, (b) does NOT spawn a reviewer subprocess, (c) does NOT increment the review counter. Currently the guard's behavior is only validated via source-pattern tests; this adds end-to-end coverage.
 3. **Fenced-code-block filter in `isStepMarkedComplete`** (TP-186 follow-up): currently the helper scans STATUS.md text line-by-line for `**Status:** ✅ Complete` patterns. If a literal `**Status:** ✅ Complete` appears inside a fenced code block in the body of a step (e.g., as documentation of the format), the helper would false-positive and refuse a legitimate review. Low-priority hardening: ignore fenced code blocks during the scan.
+4. **Behavioral unit tests for `removeWorktree()` Windows fallback** (TP-188 follow-up): sage's TP-188 review noted that `windows-worktree-cleanup-fallback.test.ts`'s coverage of the `removeWorktree()` decision branches is mostly source-pattern-oriented — it does NOT mock `runGit` + `execFileSync` to fully execute the function and prove the conditional logic. Add behavioral tests that exercise the actual decision branches:
+   - **MAX_PATH on win32** → `runWindowsCmdRd` fallback IS invoked
+   - **Non-MAX_PATH error on win32** (e.g., "branch is checked out elsewhere", permission denied) → fallback is NOT invoked; original error surfaces
+   - **MAX_PATH text on non-win32** (linux/darwin) → fallback is NOT invoked; the predicate's platform guard correctly excludes
+   The mocking strategy must work on both Node 22 and Node 24 (handle the `mock.module("child_process", ...)` vs `mock.module("node:child_process", ...)` divergence per the existing test file's pattern). Once ci.yml ran on Node 24 (which it now does, per Cluster D's already-completed work), the bare-specifier mock works portably; this test can use the same approach.
 
 ### Cluster B — Constants module migration (TP-184 follow-up)
 
@@ -38,9 +45,9 @@ The 8 items, grouped into 5 implementation clusters:
 
 5. **Fix `taskplane doctor` empty `pi installed ()` display**: pi prints its version string to **stderr**, but `bin/taskplane.mjs:131`'s `getVersion()` only reads stdout. Result: `taskplane doctor` shows `✅ pi installed ()` with empty parens because stderr is discarded. The fix: capture both streams and use stderr if stdout is empty (or merge them with stdout-precedence). 2-line fix in `bin/taskplane.mjs`. Verified manually during TP-185 work — pi DOES print version to stderr (`pi --version 2>&1 1>/dev/null` returns `0.73.x`).
 
-### Cluster D — CI infrastructure alignment
+### Cluster D — CI infrastructure alignment ~~(deferred)~~ **✅ Completed in v0.28.8**
 
-6. **Migrate `.github/workflows/ci.yml` from Node 22 to Node 24**: `release.yml` was bumped to Node 24 LTS during the v0.28.5 release work (PR #544); `ci.yml` is still on Node 22. Aligning both reduces "works on release, fails on PR CI" surprises. Single-line change. Run a CI verification on the change itself before merging — Node 24 must still pass the existing test suite (it does locally on 24.15.0).
+6. ~~**Migrate `.github/workflows/ci.yml` from Node 22 to Node 24**~~: **Already shipped in v0.28.8** (commit `96a457f5`, part of the dashboard PR #552 release branch). The bump was needed to unblock PR #552's CI because TP-188's `runWindowsCmdRd` mock tests required Node 24's `mock.module` aliasing semantics. release.yml had moved to Node 24 during the v0.28.5 release; ci.yml now matches. **No work for this cluster in TP-189.** This entry is preserved for historical traceability.
 
 ### Cluster E — Documentation / template polish (TP-186 follow-up + skill clarification)
 
@@ -52,7 +59,8 @@ The 8 items, grouped into 5 implementation clusters:
 - **TP-186** must be merged (it is — shipped in v0.28.6). Cluster A items 2 and 3 reference the `isStepMarkedComplete` helper added there.
 - **TP-184** must be merged (it is — shipped in v0.28.5). Cluster A item 1 and Cluster B reference `buildWorkerToolsAllowlist` added there.
 - **TP-185** must be merged (it is — shipped in v0.28.5). Cluster C is a follow-up to that fix.
-- **No dependencies on TP-187 or TP-188** — those are independent later tasks.
+- **TP-188** must be merged (it is — shipped in v0.28.8). Cluster A item 4 references the `removeWorktree` + `runWindowsCmdRd` helpers added there.
+- **No dependencies on TP-187** — that's an independent later task.
 
 ## Context to Read First
 
@@ -63,14 +71,16 @@ The 8 items, grouped into 5 implementation clusters:
 - `taskplane-tasks/TP-181-merge-worker-model-from-preferences/STATUS.md` — sage findings that became Cluster A item 1 + Cluster B
 - `taskplane-tasks/TP-184-worker-tool-allowlist-bridge-tools/STATUS.md` — sage findings that became Cluster A item 1 + Cluster B
 - `taskplane-tasks/TP-186-worker-step-completion-protocol/STATUS.md` — sage findings that became Cluster A items 2-3 + Cluster E item 7
+- `taskplane-tasks/TP-188-reviewer-quality-checks-and-windows-cleanup/STATUS.md` — sage finding that became Cluster A item 4
 - `extensions/taskplane/agent-host.ts` — current `ENGINE_BRIDGE_TOOLS`, `DEFAULT_WORKER_USER_TOOLS`, `buildWorkerToolsAllowlist` exports (Cluster B references these)
 - `extensions/taskplane/config-schema.ts` lines ~597 and ~649 — duplicated literals (Cluster B target sites)
 - `extensions/taskplane/types.ts` line ~393 — duplicated literal (Cluster B target site)
 - `extensions/taskplane/lane-runner.ts` line ~590 — spawn site for Cluster A item 1's regression guard
 - `extensions/taskplane/agent-bridge-extension.ts` — `isStepMarkedComplete` helper + `review_step` guard (Cluster A items 2-3 target)
 - `bin/taskplane.mjs` lines ~120 and ~131 — `commandExists` and `getVersion` functions (Cluster C target)
-- `.github/workflows/ci.yml` line ~22 — `node-version: "22"` (Cluster D target)
-- `.github/workflows/release.yml` lines ~58-67 — Node 24 setup pattern (model for Cluster D)
+- ~~`.github/workflows/ci.yml` (Cluster D target)~~ — already shipped in v0.28.8
+- `extensions/taskplane/worktree.ts` — `removeWorktree` + `runWindowsCmdRd` + `isWindowsMaxPathError` (Cluster A item 4 targets, all added in TP-188)
+- `extensions/tests/windows-worktree-cleanup-fallback.test.ts` — existing TP-188 source-pattern tests (Cluster A item 4 augments with behavioral tests using the same `mock.module("child_process", ...)` pattern that file already establishes)
 - `templates/agents/task-worker.md` — full file. Cluster E item 7 needs careful re-read of all sections referencing checkbox/step transitions.
 - `skills/create-taskplane-task/SKILL.md` lines ~140-180 — Review Level rubric (Cluster E item 8 target)
 - `extensions/tests/worker-tools-allowlist.test.ts` — sibling test file for Cluster A item 1's pattern

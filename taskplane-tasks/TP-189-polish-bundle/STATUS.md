@@ -25,10 +25,10 @@
 
 - [ ] On topic branch (e.g., `chore/tp-189-polish-bundle`)
 - [ ] Working tree clean
-- [ ] Baseline test count recorded (post-v0.28.6: should be 3467+)
+- [ ] Baseline test count recorded (post-v0.28.8: should be 3496+)
 - [ ] All Tier 3 context files read per cluster
 - [ ] Decision: Cluster B re-export strategy — direct import only, or also re-export from `agent-host.ts`
-- [ ] Decision: Cluster D — local Node 24 smoke run before bumping ci.yml
+- [N/A] ~~Decision: Cluster D — local Node 24 smoke run before bumping ci.yml~~ — Cluster D shipped in v0.28.8 (commit `96a457f5`)
 
 ---
 
@@ -38,7 +38,8 @@
 - [ ] Item 1: `lane-runner-spawn-wiring.test.ts` (NEW) — static assertion
 - [ ] Item 2: `review-step-guard-runtime.test.ts` (NEW) — runtime test of REFUSED path (3 sub-cases: code blocked, test blocked, plan NOT blocked)
 - [ ] Item 3: `isStepMarkedComplete` ignores fenced code blocks; matching test added
-- [ ] Targeted run passes for all three new/modified tests
+- [ ] Item 4 (sage TP-188 follow-up): behavioral tests for `removeWorktree()` Windows fallback in `windows-worktree-cleanup-fallback.test.ts` (3 sub-cases: MAX_PATH on win32 → fallback fires; non-MAX_PATH on win32 → fallback skipped; non-win32 + MAX_PATH text → fallback skipped)
+- [ ] Targeted run passes for all four new/modified tests
 
 ---
 
@@ -63,11 +64,13 @@
 ---
 
 ### Step 4: Cluster D — CI Node 24 alignment
-**Status:** ⬜ Not Started
+**Status:** ✅ Already shipped in v0.28.8 (commit `96a457f5`)
 
-- [ ] Local smoke: `npm run test:fast` on Node 24 passes (already active via mise)
-- [ ] `ci.yml` `node-version: "22"` → `"24"`
-- [ ] PR CI passes with Node 24
+- [x] ~~Local smoke: `npm run test:fast` on Node 24 passes~~ — done during v0.28.8 release validation
+- [x] ~~`ci.yml` `node-version: "22"` → `"24"`~~ — done in commit `96a457f5`
+- [x] ~~PR CI passes with Node 24~~ — PR #552 + #554 both passed CI on Node 24
+
+*This step is preserved in the structure for traceability but has no work to perform. Future executions of this task should skip it.*
 
 ---
 
