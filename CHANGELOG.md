@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Worker death-spiral when code review returns REVISE on a step already
+  marked Complete in STATUS (TP-186, #537, #542):** Previously, if a worker
+  set a step's `**Status:** ✅ Complete` heading in STATUS.md before calling
+  `review_step(type="code")`, and the reviewer returned `REVISE`, the worker
+  was caught in a state contradiction (STATUS says done, reviewer says not)
+  with no recovery recipe in the prompt. The worker would loop through 3
+  no-progress iterations and the orch's safety mechanism would kill the
+  lane — the entire batch was a write-off, requiring ~15 min of manual git
+  surgery per occurrence. The fix is structural: (1) the base worker prompt
+  (`templates/agents/task-worker.md`) now contains an explicit **Order of
+  Operations** rule that mandates code review BEFORE marking a step
+  Complete, a **Recovery Recipe** for the case when the rule is
+  accidentally violated (revert STATUS → commit → handle REVISE through
+  the normal flow), and a **Forbidden** callout naming the death-spiral
+  anti-pattern alongside the existing "NEVER add, remove, or renumber
+  steps" family of MUST-NOT rules; (2) the engine-side `review_step` tool
+  now refuses to run on a step already marked `**Status:** ✅ Complete`,
+  returning a `REFUSED` verdict that points the worker at the Recovery
+  Recipe (the refusal applies to `code` and `test` review types only — plan
+  reviews fire pre-implementation and are correctly exempt). Until this
+  fix shipped, Review Level ≥ 2 was effectively unsafe in production. 14
+  new tests in `worker-step-completion-protocol.test.ts`. Supersedes the
+  partial diagnosis in #510. Thanks to the production batch
+  `20260506T105850` against `emailgistics-astro` for surfacing the
+  reproducer.
+
 ## [0.28.5] - 2026-05-05
 
 ### Fixed

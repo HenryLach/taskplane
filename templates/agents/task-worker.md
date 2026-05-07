@@ -278,9 +278,79 @@ code is already written.
 6. Commit implementation
 7. Call `review_step(step=N, type="code")` — AFTER implementation
 
-**WRONG sequence (violates the protocol):**
-1. ~~Hydrate, implement, check off, commit, THEN call plan review~~ ❌
-   This makes plan review pointless — the work is already done.
+### ⚠️ MANDATORY: Order of Operations for steps with code review
+
+**For any step that requires a code review (Review Level ≥ 2), the following
+order is MANDATORY. Workers MUST NOT mark a step `Status: ✅ Complete` in
+STATUS.md before the code review for that step has returned APPROVE.**
+
+1. **Implement** the step's checkbox items (write code, edit docs, etc.) —
+   check each box `[x]` in STATUS.md as you finish that item, but leave the
+   step's `**Status:**` heading set to `🟨 In Progress`.
+2. **Commit** the implementation:
+   `git add -A && git commit -m "feat(TASK-ID): step N implementation"`
+3. **Call** `review_step(step=N, type="code", baseline=<sha>)`.
+4. If the verdict is **REVISE**: read the review file in `.reviews/`, apply
+   the fixes, commit them, and call `review_step` again. Repeat until APPROVE
+   (max 2 code review cycles per step).
+5. If the verdict is **APPROVE**: NOW update the step's `**Status:**` heading
+   to `✅ Complete` in STATUS.md and commit the status update.
+6. **Move to step N+1.**
+
+The key invariant: **`Status: ✅ Complete` is the worker's commitment that the
+reviewer has signed off on the step.** It is not an in-progress marker. Setting
+it before APPROVE creates a contradiction the worker cannot recover from on
+its own — STATUS says done while the reviewer says revise.
+
+Individual checkboxes (`- [x] item text`) inside the step MAY be checked while
+implementation is in flight — they record per-item progress. The **step-level
+`Status:` heading** (the line that reads `**Status:** ✅ Complete` in STATUS.md)
+is the only field governed by this rule.
+
+### Recovery: "I marked the step Complete, then the reviewer returned REVISE"
+
+If you violated the Order of Operations and set `**Status:** ✅ Complete` for
+a step before the code review returned APPROVE, **you can recover without
+operator intervention**. Follow this recipe exactly:
+
+1. **Revert STATUS.md** for the affected step:
+   - Change the step's `**Status:** ✅ Complete` heading back to
+     `**Status:** 🟨 In Progress`.
+   - Leave the individual `- [x]` checkboxes alone — they record real work
+     that was done.
+   - If the top-of-file `**Current Step:**` field was advanced past this
+     step, set it back to this step's name.
+2. **Commit** the revert with a dedicated message:
+   `git commit -am "chore(TASK-ID): revert premature step-N completion"`
+3. **Handle the REVISE through the normal recipe:** read the review file in
+   `.reviews/`, add Issues-Found items as new checkboxes inside the step
+   (using the standard "After a REVISE Review" flow above), commit those
+   hydration changes, fix the issues, commit the fixes, then call
+   `review_step(step=N, type="code")` again.
+4. Once the reviewer returns APPROVE, follow Order of Operations step 5 and
+   set `**Status:** ✅ Complete` for real.
+
+Do NOT skip step 1. Leaving STATUS in the contradictory state (`Complete` +
+an open REVISE) is the failure mode this recipe exists to undo. The engine's
+`review_step` tool now refuses to run on a step already marked Complete and
+will return a `REFUSED` verdict pointing back at this recipe.
+
+### ❌ FORBIDDEN sequences (these break the review contract)
+
+Workers MUST NOT do any of the following:
+
+1. ~~Mark a step `**Status:** ✅ Complete` before its code review (Level ≥ 2)
+   has returned APPROVE.~~ This is the **death-spiral anti-pattern**: if
+   the reviewer subsequently returns REVISE, the worker enters a state
+   contradiction it cannot resolve and the lane is lost. If you did this
+   accidentally, follow the Recovery Recipe above.
+2. ~~Hydrate, implement, check off, commit, THEN call plan review~~ — this
+   makes plan review pointless; the work is already written.
+3. ~~Skip the code review and proceed to the next step on a Review Level ≥ 2
+   task~~ — the merge agent will reject the lane.
+
+These rules sit alongside the existing "NEVER add, remove, or renumber steps"
+rule from STATUS.md Hydration → Rules.
 
 **Handling verdicts:**
 - **APPROVE** → proceed (to implementation after plan review; to next step after code review)
@@ -288,6 +358,12 @@ code is already written.
 - **REVISE** → read the review file in `.reviews/` for detailed feedback,
   address the issues, commit fixes, then **call `review_step` again** for re-review.
   The same reviewer evaluates whether your fixes address its concerns.
+- **REFUSED** → the engine's `review_step` guard rejected your call because the
+  step is already marked `**Status:** ✅ Complete` in STATUS.md while you're
+  trying to run a `code` or `test` review on it. This is the death-spiral
+  precondition. Follow the Recovery Recipe above (revert the premature status
+  update, commit the revert, then call `review_step` again — it will run
+  this time because the step is no longer marked Complete).
 - **UNAVAILABLE** → reviewer failed, proceed with caution
 
 **Example flow for a Review Level 2 task, Step 3:**
