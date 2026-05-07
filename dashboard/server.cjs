@@ -160,6 +160,52 @@ function resolveTaskFolder(task, state) {
   return task.taskFolder;
 }
 
+/**
+ * Read the task title from a task folder's PROMPT.md.
+ *
+ * Extracts the human-readable title from the first `# Task:` heading. The
+ * heading format is `# Task: <ID> - <title>` per the create-taskplane-task
+ * skill's prompt template. Returns null when PROMPT.md is missing, the
+ * pattern doesn't match, or any read error occurs.
+ *
+ * Cached per-folder for the lifetime of this server process: PROMPT.md is
+ * immutable above the `---` divider so the title never changes mid-batch.
+ * Cache is keyed by absolute task folder path. (#485)
+ */
+const _taskTitleCache = new Map();
+function parseTaskTitle(taskFolder) {
+  if (!taskFolder) return null;
+  const cacheKey = path.resolve(taskFolder);
+  if (_taskTitleCache.has(cacheKey)) return _taskTitleCache.get(cacheKey);
+
+  // Look at both the canonical folder and the archive fallback (matches
+  // parseStatusMd's two-candidate strategy).
+  const candidates = [taskFolder];
+  const taskId = path.basename(taskFolder);
+  const archiveBase = taskFolder.replace(/[/\\]tasks[/\\][^/\\]+$/, "/tasks/archive/" + taskId);
+  if (archiveBase !== taskFolder) candidates.push(archiveBase);
+
+  for (const folder of candidates) {
+    const promptPath = path.join(folder, "PROMPT.md");
+    try {
+      const content = fs.readFileSync(promptPath, "utf-8");
+      // Match `# Task: <ID> - <title>` (the canonical first-line heading).
+      const match = content.match(/^# Task:\s*\S+\s*[-\u2014\u2013]\s*(.+?)\s*$/m);
+      if (match) {
+        const title = match[1].trim();
+        _taskTitleCache.set(cacheKey, title);
+        return title;
+      }
+    } catch {
+      // PROMPT.md missing or unreadable in this candidate — try the next.
+      continue;
+    }
+  }
+  // Cache the negative result too, so we don't re-attempt on every poll.
+  _taskTitleCache.set(cacheKey, null);
+  return null;
+}
+
 function parseStatusMd(taskFolder) {
   const candidates = [taskFolder];
   const taskId = path.basename(taskFolder);
@@ -1102,13 +1148,17 @@ function buildDashboardState() {
   const tasks = (state.tasks || []).map((task) => {
     const effectiveFolder = resolveTaskFolder(task, state);
     let statusData = null;
+    let taskTitle = null;
     if (effectiveFolder) {
       statusData = parseStatusMd(effectiveFolder);
+      // #485: read the human-readable title from PROMPT.md once, surface
+      // alongside taskId so the dashboard can show it as a subtitle.
+      taskTitle = parseTaskTitle(effectiveFolder);
     }
     if (!task.doneFileFound && effectiveFolder) {
       task.doneFileFound = checkDoneFile(effectiveFolder);
     }
-    return { ...task, statusData };
+    return { ...task, statusData, taskTitle };
   });
 
   // TP-107: Load Runtime V2 data when available

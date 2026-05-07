@@ -625,6 +625,28 @@ body {
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 0.85rem;
+  /* #485: task-id may now contain a stacked task-id-line + task-title-subtitle */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0; /* allow inner ellipsis to work */
+}
+
+.task-id-line {
+  /* The original TP-XXX line; preserves the previous single-line look */
+  white-space: nowrap;
+}
+
+.task-title-subtitle {
+  /* #485: human-readable task title under the ID */
+  font-family: var(--font-sans, inherit);
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .task-duration {

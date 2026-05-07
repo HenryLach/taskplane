@@ -616,12 +616,96 @@ function renderSummary(batch) {
       const isCurrent = i === waveIdx && (batch.phase === "executing" || batch.phase === "merging");
       const isMergingChip = i === waveIdx && batch.phase === "merging";
       const cls = isDone ? "done" : isMergingChip ? "current merging" : isCurrent ? "current" : "";
-      wavesHtml += `<span class="wave-chip ${cls}">W${i + 1} [${taskIds.join(", ")}]</span>`;
+      // #484: Show lane parallelization within each wave. Group taskIds by
+      // their assigned lane: tasks on the same lane render with `→` (serial),
+      // tasks on different lanes render with ` | ` (parallel). Tooltip shows
+      // the expanded lane breakdown.
+      const { compact, tooltip } = formatWaveLaneBreakdown(taskIds, batch.lanes || [], i + 1);
+      const titleAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : "";
+      wavesHtml += `<span class="wave-chip ${cls}"${titleAttr}>W${i + 1} [${compact}]</span>`;
     });
     $summaryWaves.innerHTML = wavesHtml;
   } else {
     $summaryWaves.innerHTML = "";
   }
+}
+
+/**
+ * Compute lane parallelization for a wave's tasks (#484).
+ *
+ * Returns:
+ *   - `compact`: a string like "TP-165 → TP-166 | TP-168 | TP-167" suitable
+ *     for the wave-chip body. Tasks on the same lane are joined by ` → `
+ *     (in lane execution order, not just appearance order); separate lanes
+ *     are joined by ` | `.
+ *   - `tooltip`: a multi-line string like
+ *     "W1\n  L1: TP-165 → TP-166\n  L2: TP-168\n  L3: TP-167" suitable for
+ *     the chip's `title` attribute. Empty string when no lane data is
+ *     available (future waves not yet provisioned).
+ *
+ * When lane data is missing for one or more tasks (e.g., the wave has not
+ * yet been provisioned, or task hasn't been assigned), unassigned tasks
+ * are shown with the previous flat formatting and no tooltip is generated
+ * — this preserves backward compatibility with future-wave display.
+ */
+function formatWaveLaneBreakdown(taskIds, lanes, waveNumber) {
+  if (!Array.isArray(taskIds) || taskIds.length === 0) {
+    return { compact: "", tooltip: "" };
+  }
+  // Build taskId → laneNumber map for the lanes that have any of these tasks.
+  const taskToLane = new Map();
+  for (const lane of lanes) {
+    if (!lane || !Array.isArray(lane.taskIds)) continue;
+    for (const tid of lane.taskIds) {
+      // First lane to claim a task wins (lanes shouldn't overlap, but be defensive).
+      if (!taskToLane.has(tid)) taskToLane.set(tid, lane.laneNumber);
+    }
+  }
+  // If no task in this wave has lane data, fall back to flat display.
+  const hasAnyLaneData = taskIds.some((t) => taskToLane.has(t));
+  if (!hasAnyLaneData) {
+    return { compact: taskIds.join(", "), tooltip: "" };
+  }
+  // Group taskIds by lane. Preserve appearance order across lanes.
+  // Within a lane, preserve the lane's own taskIds order so `→` reflects
+  // execution order, not the order taskIds happens to appear here.
+  const laneOrder = []; // lane numbers in order they first appear in taskIds
+  const laneToTasks = new Map(); // laneNumber → ordered taskIds for this wave
+  const unassigned = []; // taskIds not in any lane (shouldn't happen but be defensive)
+  for (const tid of taskIds) {
+    const ln = taskToLane.get(tid);
+    if (ln === undefined) {
+      unassigned.push(tid);
+      continue;
+    }
+    if (!laneToTasks.has(ln)) {
+      laneToTasks.set(ln, []);
+      laneOrder.push(ln);
+    }
+    laneToTasks.get(ln).push(tid);
+  }
+  // Sort each lane's tasks by their position in the lane.taskIds array
+  // so `→` always reflects execution order on that lane.
+  for (const ln of laneOrder) {
+    const lane = lanes.find((l) => l && l.laneNumber === ln);
+    if (lane && Array.isArray(lane.taskIds)) {
+      const orderIndex = new Map(lane.taskIds.map((t, idx) => [t, idx]));
+      laneToTasks.get(ln).sort((a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0));
+    }
+  }
+  // Build compact representation.
+  const laneSegments = laneOrder.map((ln) => laneToTasks.get(ln).join(" → "));
+  if (unassigned.length > 0) laneSegments.push(unassigned.join(", "));
+  const compact = laneSegments.join(" | ");
+  // Build tooltip representation.
+  const tooltipLines = [`W${waveNumber}`];
+  for (const ln of laneOrder) {
+    tooltipLines.push(`  L${ln}: ${laneToTasks.get(ln).join(" → ")}`);
+  }
+  if (unassigned.length > 0) {
+    tooltipLines.push(`  (unassigned): ${unassigned.join(", ")}`);
+  }
+  return { compact, tooltip: tooltipLines.join("\n") };
 }
 
 // ─── Render: Lanes + Tasks (integrated) ─────────────────────────────────────
@@ -858,11 +942,16 @@ function renderLanesTasks(batch, sessions) {
         ? `<button class="viewer-eye-btn${isViewingStatus ? ' active' : ''}" onclick="viewStatusMd('${escapeHtml(task.taskId)}')" title="View STATUS.md">👁</button>`
         : '';
 
+      // #485: Show task title (from PROMPT.md `# Task: <ID> - <title>`) under
+      // the task-id when available. Falls back to just the ID when missing.
+      const titleHtml = task.taskTitle
+        ? `<div class="task-title-subtitle">${escapeHtml(task.taskTitle)}</div>`
+        : "";
       html += `
         <div class="task-row">
           <span class="task-icon"><span class="status-dot ${task.status}"></span></span>
           <span class="task-actions">${eyeHtml}</span>
-          <span class="task-id status-${task.status}">${escapeHtml(task.taskId)}${showRepos ? repoBadgeHtml(tRepo, "repo-badge-task") : ""}</span>
+          <span class="task-id status-${task.status}"><div class="task-id-line">${escapeHtml(task.taskId)}${showRepos ? repoBadgeHtml(tRepo, "repo-badge-task") : ""}</div>${titleHtml}</span>
           <span><span class="status-badge status-${task.status}"><span class="status-dot ${task.status}"></span> ${task.status}</span></span>
           <span class="task-duration">${dur}</span>
           <span>${progressHtml}</span>
