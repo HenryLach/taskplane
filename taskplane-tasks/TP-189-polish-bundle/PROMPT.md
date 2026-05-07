@@ -56,11 +56,13 @@ Net: **8 items active** across 4 implementation clusters (A, B, C, E). Cluster D
 
 ## Dependencies
 
-- **TP-186** must be merged (it is — shipped in v0.28.6). Cluster A items 2 and 3 reference the `isStepMarkedComplete` helper added there.
-- **TP-184** must be merged (it is — shipped in v0.28.5). Cluster A item 1 and Cluster B reference `buildWorkerToolsAllowlist` added there.
-- **TP-185** must be merged (it is — shipped in v0.28.5). Cluster C is a follow-up to that fix.
-- **TP-188** must be merged (it is — shipped in v0.28.8). Cluster A item 4 references the `removeWorktree` + `runWindowsCmdRd` helpers added there.
-- **No dependencies on TP-187** — that's an independent later task.
+**None** — all referenced predecessor tasks are already merged. The following are informational cross-references for context, NOT runtime dependencies (the discovery parser skips dep extraction when this section starts with **None**, so these notes are safe even though TP-185's task folder has since been archived):
+
+- TP-186 (shipped v0.28.6): Cluster A items 2 and 3 reference the `isStepMarkedComplete` helper added there.
+- TP-184 (shipped v0.28.5): Cluster A item 1 and Cluster B reference `buildWorkerToolsAllowlist` added there.
+- TP-185 (shipped v0.28.5; folder archived): Cluster C is a follow-up to that diagnostic-UX fix.
+- TP-188 (shipped v0.28.8): Cluster A item 4 references the `removeWorktree` + `runWindowsCmdRd` helpers added there.
+- TP-187 (independent later task): no relationship; runs in the same batch as TP-189 only because they're both queued.
 
 ## Context to Read First
 
