@@ -607,8 +607,11 @@ body {
 .task-row {
   display: grid;
   grid-template-columns: 36px 24px 100px 90px 80px 200px 1fr;
+  /* #485 (revised): row 1 holds the primary cells; row 2 (auto, collapses to
+   * 0 when empty) holds the optional task-title-subtitle spanning cols 3–6. */
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 8px 8px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-subtle);
   transition: background 0.15s;
@@ -625,20 +628,19 @@ body {
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 0.85rem;
-  /* #485: task-id may now contain a stacked task-id-line + task-title-subtitle */
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0; /* allow inner ellipsis to work */
-}
-
-.task-id-line {
-  /* The original TP-XXX line; preserves the previous single-line look */
-  white-space: nowrap;
+  /* #485 (revised): task-id is back to a single inline cell. The optional
+   * title-subtitle is now a separate grid item placed in row 2 — it spans
+   * cols 3–6 (task-id through progress) for ~5× more horizontal space than
+   * the previous nested-subtitle approach. */
 }
 
 .task-title-subtitle {
-  /* #485: human-readable task title under the ID */
+  /* #485 (revised): human-readable task title placed on row 2 of the task-row
+   * grid, spanning cols 3–6 (task-id, status, duration, progress) and
+   * stopping before col 7 (task-step + telemetry). Auto row 2 collapses to
+   * 0 height when this element is absent (no title for the task). */
+  grid-column: 3 / 7;
+  grid-row: 2;
   font-family: var(--font-sans, inherit);
   font-weight: 400;
   font-size: 0.72rem;
@@ -646,7 +648,8 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  /* Pull subtitle visually closer to the task-id row above. */
+  margin-top: -2px;
 }
 
 .task-duration {
