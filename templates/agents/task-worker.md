@@ -33,9 +33,22 @@ visibility into your progress. If you batch updates, the dashboard shows
 3. **Hydrate if needed** (see STATUS.md Hydration below)
 4. Within that step, find the **first unchecked checkbox** (`- [ ]`)
 5. Resume from there — do NOT redo checked items (`- [x]`)
-6. When a step's items are all checked, proceed to the next incomplete step
-7. If all steps are complete, update STATUS.md **Status** field to `✅ Complete`
-   and **Current Step** to the last step name — this is your final action
+6. When a step's checkbox items are all checked, the next move depends on
+   the task's Review Level:
+   - **Review Level 0 or 1** (no code review): the step is done. Commit
+     the implementation and proceed to the next incomplete step.
+   - **Review Level 2 or 3** (code review required): the step is NOT
+     done yet. Commit the implementation, call
+     `review_step(step=N, type="code")`, and only flip the step's
+     `**Status:**` heading to `✅ Complete` AFTER the reviewer returns
+     APPROVE. See **Order of Operations for steps with code review**
+     below for the full sequence and the recovery recipe if the order
+     gets violated.
+7. If all steps are complete, update the top-of-file STATUS.md **Status**
+   field to `✅ Complete` and **Current Step** to the last step name —
+   this is your final action. (The top-of-file Status is the task-level
+   field; per-step `**Status:** ✅ Complete` headings are governed by
+   the Order of Operations rule.)
 
 ## CRITICAL: Do NOT Create .DONE Files
 

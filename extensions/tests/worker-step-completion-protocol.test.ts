@@ -82,6 +82,31 @@ describe("1.x — task-worker.md prompt: TP-186 sections", () => {
 		expect(WORKER_PROMPT).toContain("Correct sequence:");
 	});
 
+	it("1.4b — Resume Algorithm step 6 is Review-Level-aware (TP-189-E reconciliation regression guard)", () => {
+		// TP-189 Cluster E reconciled the Resume Algorithm with the new
+		// Order of Operations rule. Pre-TP-189, step 6 said "all items
+		// checked → proceed to next step" — ambiguous for Review Level ≥ 2
+		// where the step is NOT actually done until the code reviewer
+		// returns APPROVE. The fix splits step 6 by Review Level. Guard
+		// against accidental drift back to the pre-TP-189 wording.
+		const stepSixIdx = WORKER_PROMPT.indexOf(
+			"6. When a step's checkbox items are all checked",
+		);
+		expect(stepSixIdx).toBeGreaterThan(-1);
+		const stepSixEnd = WORKER_PROMPT.indexOf("\n7. ", stepSixIdx);
+		expect(stepSixEnd).toBeGreaterThan(stepSixIdx);
+		const stepSix = WORKER_PROMPT.slice(stepSixIdx, stepSixEnd);
+		// Both review-level branches must be enumerated.
+		expect(stepSix).toContain("Review Level 0 or 1");
+		expect(stepSix).toContain("Review Level 2 or 3");
+		// And the Level 2/3 branch must direct the worker at the code
+		// review and APPROVE-gating, not just "proceed to next step".
+		expect(stepSix).toMatch(/review_step\(.*type="code"/);
+		expect(stepSix).toContain("APPROVE");
+		// Cross-reference to Order of Operations.
+		expect(stepSix).toContain("Order of Operations");
+	});
+
 	it("1.5 — Handling verdicts section documents REFUSED + points at Recovery Recipe (sage TP-186 follow-up)", () => {
 		// The Option B engine guard returns REFUSED. Workers must know how to
 		// react. Without REFUSED in the Handling verdicts section, a worker
