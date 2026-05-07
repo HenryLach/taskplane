@@ -4,7 +4,7 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** L
 
@@ -52,11 +52,15 @@
 
 **Zombie-alert filter (the part operators actually see):**
 - The on-disk outbox drain alone does not stop alerts already queued in the supervisor's pi message queue. Add a per-lane terminal-state filter at the supervisor-alert delivery boundary in `extension.ts`:
-  - Maintain a `terminatedLanes: Set<number>` and `terminatedAgents: Set<string>` at supervisor-process scope.
-  - Engine-worker emits a new IPC message `lane-terminated` with `{ laneNumber, agentId, batchId }` whenever a lane reaches a terminal state (no-progress kill OR hard-fail).
-  - In the `case "supervisor-alert":` handler (extension.ts:1170), before invoking `onSupervisorAlert`, check whether `alert.context.laneNumber`/`alert.context.agentId` is in the terminated set. If yes, drop the alert (log to stderr for diagnostics) instead of forwarding to `pi.sendUserMessage`.
-  - The set is reset when a new batch starts (so a future lane re-using the number isn't suppressed).
-- This is the synchronous "drain" the operator perceives: zombie alerts get filtered before they reach pi's user-message queue.
+  - Maintain a `terminatedLanes: Map<number, number>` (laneNumber → terminatedAt epoch ms) and `terminatedAgents: Map<string, number>` (agentId → terminatedAt epoch ms) at supervisor-process scope.
+  - Engine-worker emits a new IPC message `lane-terminated` with `{ laneNumber, agentId, batchId, terminatedAt }` whenever a lane reaches a terminal state (no-progress kill OR hard-fail).
+  - In the `case "supervisor-alert":` handler (extension.ts:1170), before invoking `onSupervisorAlert`, check whether `alert.context.laneNumber`/`alert.context.agentId` is in the terminated map. If yes, drop the alert (log to stderr for diagnostics) instead of forwarding to `pi.sendUserMessage`. The check is presence-based (any termination record) — the timestamp is informational/diagnostic.
+  - **Suppression lifecycle (per R001 plan-review feedback):**
+    1. **Lane re-spawn** — when the engine re-allocates lane number N for a new task in a future wave, it emits `lane-respawned { laneNumber, agentId }` before that lane runs. Extension.ts removes the entry from the terminated maps. This is the natural unmute boundary: a fresh lane gets a fresh alert lifetime.
+    2. **`orch_resume`** — `doOrchResume` clears both maps before launching the engine worker. After force-resume the supervisor MUST see new alerts.
+    3. **New batch** — batch transitions to a new `batchId` clear both maps (new state-sync IPC carries a different batchId, supervisor wipes everything from the previous batch).
+    4. **`supervisor_takeover`** — marks all currently-known active lanes as terminated. Combined with the pause signal, this drops the in-transit zombie alerts but leaves the maps in place. When the operator subsequently calls `orch_resume`, lifecycle rule #2 fires and clears the suppression so future alerts get through.
+- This is the synchronous "drain" the operator perceives: zombie alerts get filtered before they reach pi's user-message queue, while legitimate alerts after recovery are not suppressed.
 
 **`supervisor_takeover(reason)` tool semantics:**
 - Registered alongside other `orch_*` tools in `extension.ts` (NOT in `agent-bridge-extension.ts` — that file is loaded into worker/reviewer/merger only). Therefore NOT added to `ENGINE_BRIDGE_TOOLS`.
@@ -108,10 +112,10 @@ The spec explicitly accepts "fail loudly with a clear error message" as the reco
 ### Step 2: Implement #538 — mailbox drain + supervisor_takeover
 **Status:** ⬜ Not Started
 
-- [ ] Synchronous mailbox drain at lane termination decision points in engine.ts
-- [ ] `supervisor_takeover(reason)` tool registered in agent-bridge-extension.ts
-- [ ] Supervisor tool list updated (NOT ENGINE_BRIDGE_TOOLS)
-- [ ] `templates/agents/supervisor.md` documents the tool + text-reply parser
+- [ ] Synchronous mailbox drain at lane termination decision points (engine.ts hard-fail + lane-runner.ts no-progress kill)
+- [ ] `supervisor_takeover(reason)` tool registered in extension.ts (alongside `orch_*` tools, NOT in agent-bridge-extension.ts; NOT in ENGINE_BRIDGE_TOOLS)
+- [ ] Zombie-alert filter (terminatedLanes / terminatedAgents) wired into `case "supervisor-alert"` IPC handler in extension.ts with the lifecycle rules from the Step 1 design
+- [ ] `templates/agents/supervisor.md` documents the tool + text-reply parser semantics
 - [ ] Targeted tests pass
 
 ---
@@ -212,3 +216,4 @@ this task's worker is exposed to it during long-running review cycles.*
 - After TP-186 ships and is validated, this task can run safely. Recommended
   release: v0.28.7 with TP-187 + TP-188 bundled (both depend on TP-186 being
   live in the worker spawn pipeline for safe execution).
+| 2026-05-07 03:12 | Review R001 | plan Step 1: REVISE |
