@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
@@ -40,6 +40,9 @@
 - [x] Item 3: `isStepMarkedComplete` now skips ``` and ~~~ fenced code blocks; 4 new test cases (2.8–2.11) cover triple-backtick, tilde fence, regression for real-status-after-fence, and unclosed-fence cross-call isolation. All pass.
 - [x] Item 4 (sage TP-188 follow-up): NEW `extensions/tests/windows-worktree-cleanup-behavioral.test.ts` with 3 behavioral decision-branch tests. Uses single `child_process` mock that dispatches on cmd (git vs cmd) and uses real on-disk temp directories (no fs mocking). All 3 pass: 4.1 win32+MAX_PATH → cmd rd fires + prune-after-rd ordering verified; 4.2 win32+non-MAX_PATH → fallback skipped, WORKTREE_REMOVE_FAILED thrown with original stderr; 4.3 non-win32+MAX_PATH text → platform guard skips fallback. (Created as a sibling file rather than adding to the existing fallback test file because the new tests need a richer cmd/git dispatcher than the existing single-fixture mock supports.)
 - [x] Targeted run passes: `lane-runner-spawn-wiring` (4) + `review-step-guard-runtime` (4) + `worker-step-completion-protocol` (19, includes 4 new fence-block cases) + `windows-worktree-cleanup-behavioral` (3) = 30 tests, all green.
+- [ ] **R002 fix 1 (important):** `isStepMarkedComplete` fence tracking is broken for mixed delimiters — a `~~~` line inside an open ``` fence prematurely closes `inFence`. Fix: track opener char + length, only close on matching delimiter (same char, length ≥ opener length).
+- [ ] **R002 fix 2 (important):** add runtime test in `review-step-guard-runtime.test.ts` for `type='test'` refused on a Complete step (mirror the code-refused assertions: REFUSED payload + no spawn + counter unchanged).
+- [ ] **R002 test gap:** add a regression test for mixed fence delimiters (backtick fence containing a `~~~` line) in `worker-step-completion-protocol.test.ts`.
 
 ---
 
@@ -151,3 +154,4 @@
   clusters are independent and Cluster E specifically documents the per-step
   default.
 | 2026-05-07 03:07 | Review R001 | plan Step 1: APPROVE |
+| 2026-05-07 03:17 | Review R002 | code Step 1: REVISE |
