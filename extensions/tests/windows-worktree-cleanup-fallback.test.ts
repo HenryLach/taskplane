@@ -194,15 +194,26 @@ const mockExecFileSync = mock.fn((cmd: string, args?: readonly string[]): Buffer
 	return currentBehavior();
 });
 
-mock.module("node:child_process", {
+// Mock the BARE `child_process` specifier (which is what worktree.ts uses).
+//
+// Node 22 vs Node 24 behavior diverges here: Node 24's mock.module aliases
+// `child_process` and `node:child_process` automatically (mocking either
+// intercepts both, and trying to mock the second throws ERR_INVALID_STATE).
+// Node 22 treats them as separate modules.
+//
+// Mocking the bare specifier only is portable to both: Node 24 picks it up
+// for both forms via aliasing; Node 22 picks it up because that's the exact
+// specifier worktree.ts imports from. Mocking `node:child_process` instead
+// only works on Node 24 (regression observed in CI on Node 22 — see
+// workflow run 25472777114).
+mock.module("child_process", {
 	namedExports: {
 		...realChildProcess,
 		execFileSync: mockExecFileSync,
 	},
 });
 
-// Import after mocking so worktree.ts (which uses bare specifier
-// `child_process`) picks up the mocked execFileSync.
+// Import after mocking so worktree.ts picks up the mocked execFileSync.
 const { runWindowsCmdRd } = await import("../taskplane/worktree.ts");
 
 describe("TP-188 sub-fix B (#543): runWindowsCmdRd unit (mocked execFileSync)", () => {
