@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 1
 **Size:** L
 
@@ -82,11 +82,17 @@
 
 > ⚠️ Hydrate: specific edits depend on Discovery-pass findings.
 
-- [ ] Item 7 Discovery: grep `task-worker.md` for checkbox/step-transition keywords; identify potential conflicts with new Order of Operations
-- [ ] Item 7: per-section decisions documented in Discoveries (rewrite/cross-reference/leave as-is)
-- [ ] Item 7: edits applied
-- [ ] Item 8: `SKILL.md` Review Levels rubric augmented with per-step vs. consolidated pattern documentation
-- [ ] Item 8: TP-186 referenced as a real consolidation example
+- [x] Item 7 Discovery: grepped `task-worker.md`. Two real conflicts identified (other matches are consistent with the new rule):
+  1. **Resume Algorithm step 6** — "all items checked → next step" doesn't account for Level ≥ 2's APPROVE-gating.
+  2. **Checkpoint Discipline / Git commits** — example commit `"complete Step N — description"` conflicts with the Order of Operations example commit `"step N implementation"`.
+  All other matches (Resume Algorithm step 7 "top-of-file Status", Scope Rules "complete each step", Error Handling general checkbox advice) are consistent and need no change.
+- [x] Item 7: per-section decisions documented in Discoveries.
+- [x] Item 7: 2 surgical edits applied to `templates/agents/task-worker.md`:
+  1. Resume Algorithm step 6 split into Level 0/1 (proceed) vs Level 2/3 (commit + code review + APPROVE-gated status flip), with explicit cross-reference to **Order of Operations**.
+  2. Checkpoint Discipline / Git commits — example commit message rewritten to `"step N implementation"`; new paragraphs distinguish Level 0/1 (commit completes the step) from Level 2/3 (commit is impl-only, separate post-APPROVE `"step N complete (code review APPROVE)"` commit).
+  Existing `worker-step-completion-protocol.test.ts` (23 substring assertions) still passes — the new paragraphs reuse the canonical wording from the Order of Operations + Recovery Recipe sections.
+- [x] Item 8: `SKILL.md` Complexity Assessment augmented with new sub-section **"Per-Step Reviews vs. Consolidated Reviews (Checkpoint Markers)"**. Documents: default per-step behavior (e.g., 5-impl-step Level 2 task → ~10 reviews), opt-in consolidation via `**Plan-review checkpoint**` / `**Code review checkpoint**` markers, when-to-use-which guidance, and a PROMPT-authoring decision heuristic.
+- [x] Item 8: TP-186 referenced as the canonical consolidation example (1 design + 3 mechanical impl + 1 verify → 2 reviews total instead of ~8).
 
 ---
 
@@ -163,3 +169,4 @@
 | 2026-05-07 03:29 | Review R007 | plan Step 3: APPROVE |
 | 2026-05-07 03:32 | Review R008 | code Step 3: REVISE |
 | 2026-05-07 03:34 | Review R009 | code Step 3: APPROVE |
+| 2026-05-07 03:36 | Review R010 | plan Step 5: APPROVE |

@@ -126,14 +126,30 @@ orchestrator and you will be re-spawned to do it again.
 ### Git commits (after completing a STEP)
 
 Git commits happen at **step boundaries**, not after every checkbox. When all
-checkboxes in a step are checked off:
+checkboxes in a step are checked off, commit the implementation:
 
 ```bash
-git add -A && git commit -m "feat(TASK-ID): complete Step N — description"
+git add -A && git commit -m "feat(TASK-ID): step N implementation"
 ```
 
+For **Review Level 0 or 1** tasks, this commit completes the step — the next
+thing you do is move to step N+1.
+
+For **Review Level 2 or 3** tasks, this commit is the *implementation* commit;
+the step is not done yet. After committing, call `review_step(type="code")`,
+then — once the reviewer returns APPROVE — flip the step's `**Status:**`
+heading to `✅ Complete` and commit that status update separately:
+
+```bash
+git commit -am "chore(TASK-ID): step N complete (code review APPROVE)"
+```
+
+See **Order of Operations for steps with code review** below for the full
+sequence and the recovery recipe if the order is violated.
+
 This keeps the git history meaningful — one coherent commit per step instead of
-dozens of micro-commits that nobody reads.
+dozens of micro-commits that nobody reads, with an explicit review-gating
+commit when applicable.
 
 **Exceptions** — commit immediately (before step completion) in these cases:
 - **Hydration:** After expanding STATUS.md with new checkboxes, commit before
