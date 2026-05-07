@@ -1,11 +1,11 @@
 # TP-189: Accumulated polish bundle — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-05-06
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-05-07
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -21,13 +21,13 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On topic branch (e.g., `chore/tp-189-polish-bundle`)
-- [ ] Working tree clean
-- [ ] Baseline test count recorded (post-v0.28.8: should be 3496+)
-- [ ] All Tier 3 context files read per cluster
-- [ ] Decision: Cluster B re-export strategy — direct import only, or also re-export from `agent-host.ts`
+- [x] On topic branch (lane branch `task/henrylach-lane-2-20260506T230236`)
+- [x] Working tree clean (only STATUS.md modified)
+- [x] Baseline test count recorded: **3496 pass, 1 skipped, 0 fail** (post-v0.28.8 confirmed)
+- [x] All Tier 3 context files read per cluster (agent-host.ts, config-schema.ts, types.ts, lane-runner.ts spawn site, agent-bridge-extension.ts review_step + isStepMarkedComplete, bin/taskplane.mjs getVersion, worktree.ts removeWorktree + helpers, existing TP-184/186/188 test files, task-worker.md, SKILL.md Review Levels rubric)
+- [x] Decision: Cluster B — NEW constants module exports `DEFAULT_WORKER_USER_TOOLS` only (not `ENGINE_BRIDGE_TOOLS`); `agent-host.ts` re-exports for backward compatibility (execution.ts and worker-tools-allowlist.test.ts already import from agent-host.ts — don't break)
 - [N/A] ~~Decision: Cluster D — local Node 24 smoke run before bumping ci.yml~~ — Cluster D shipped in v0.28.8 (commit `96a457f5`)
 
 ---
@@ -118,6 +118,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Cluster B: New module `tool-allowlist-constants.ts` exports only `DEFAULT_WORKER_USER_TOOLS`; `ENGINE_BRIDGE_TOOLS` stays in `agent-host.ts` (no duplication problem there). `agent-host.ts` re-exports `DEFAULT_WORKER_USER_TOOLS` from the new module for backward compatibility (existing imports in `execution.ts` and `worker-tools-allowlist.test.ts` continue to work). | Decision — directs Step 2 implementation | `extensions/taskplane/{tool-allowlist-constants.ts (new), agent-host.ts, config-schema.ts, types.ts}` |
+| Cluster B: `config-schema.ts` is currently import-free; `types.ts` imports only from `path` and `./diagnostics.js`. Neither module pulls `child_process`/`fs`. Importing `DEFAULT_WORKER_USER_TOOLS` from a new pure-data module (no imports) is safe — no circular import risk because the new module imports nothing. | Verified safe | (verified via `head -25` + `grep -n "^import"`) |
+| Baseline test count: **3496 pass / 1 skipped / 0 fail** post-v0.28.8 (PROMPT predicted 3496+; matches). | Baseline — final count should be 3496 + new tests from Clusters A and C (4-7 new). | n/a |
 
 ---
 
@@ -126,6 +129,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-06 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-07 03:02 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-07 03:02 | Step 0 started | Preflight |
 
 ---
 
