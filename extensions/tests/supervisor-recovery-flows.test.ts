@@ -153,6 +153,20 @@ describe("TP-187 #538: engine emits emitLaneTerminated on hard-fail", () => {
 		expect(engineSrc).toContain("const emitLaneTerminated = (info:");
 		expect(engineSrc).toContain('reason: "hard-fail"');
 	});
+
+	it("hard-fail block synchronously drains the agent outbox before emitting termination", () => {
+		const hardFailIdx = engineSrc.indexOf('reason: "hard-fail"');
+		expect(hardFailIdx).not.toBe(-1);
+		// Walk back ~1500 chars from the reason to inspect the surrounding block.
+		const windowStart = Math.max(0, hardFailIdx - 1500);
+		const block = engineSrc.slice(windowStart, hardFailIdx + 200);
+		expect(block).toContain("drainAgentOutbox(");
+		expect(block).toContain("hard-fail outbox drain");
+	});
+
+	it("engine.ts imports drainAgentOutbox from mailbox.ts", () => {
+		expect(engineSrc).toContain('import { drainAgentOutbox } from "./mailbox.ts"');
+	});
 });
 
 describe("TP-187 #538: supervisor_takeover tool", () => {

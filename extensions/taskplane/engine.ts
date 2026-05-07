@@ -19,6 +19,7 @@ import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-rep
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, saveBatchMetaRuntimeArtifact, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive as registryIsProcessAlive } from "./process-registry.ts";
+import { drainAgentOutbox } from "./mailbox.ts";
 import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
@@ -3112,12 +3113,23 @@ export async function executeOrchBatch(
 				},
 			});
 
-			// TP-187 (#538): Hard-fail termination signal so the supervisor process
-			// suppresses any subsequent zombie alerts targeting this lane/agent.
+			// TP-187 (#538): Hard-fail termination — synchronously drain the
+			// agent's outbox so stale escalations/replies don't get re-discovered
+			// later, then emit lane-terminated so the supervisor process
+			// suppresses any in-transit zombie alerts targeting this lane/agent.
 			if (laneForTask) {
+				const hardFailAgentId = outcome?.sessionName && outcome.sessionName.length > 0
+					? outcome.sessionName
+					: `${laneForTask.laneSessionId}-worker`;
+				try {
+					const drained = drainAgentOutbox(stateRoot, batchState.batchId, hardFailAgentId);
+					if (drained > 0) {
+						execLog("batch", batchState.batchId, `hard-fail outbox drain: ${drained} entr${drained === 1 ? "y" : "ies"} for ${hardFailAgentId}`);
+					}
+				} catch { /* best effort — do not block termination */ }
 				emitLaneTerminated({
 					laneNumber: laneForTask.laneNumber,
-					agentId: outcome?.sessionName ?? "",
+					agentId: hardFailAgentId,
 					batchId: batchState.batchId,
 					terminatedAt: Date.now(),
 					reason: "hard-fail",
