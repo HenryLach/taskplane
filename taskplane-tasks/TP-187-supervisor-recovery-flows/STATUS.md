@@ -1,7 +1,7 @@
 # TP-187: Supervisor recovery flows — Status
 
 **Current Step:** Step 1: Plan all three sub-fix designs
-**Status:** 🟡 In Progress
+**Status:** 🟨 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 3
 **Review Counter:** 0
@@ -32,14 +32,76 @@
 ---
 
 ### Step 1: Plan all three sub-fix designs
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
-- [ ] #538 design sketched (drain hook location, supervisor_takeover semantics)
-- [ ] #539 design sketched (reconstruction logic, partial-state policy, multi-batch heuristic)
-- [ ] #540 design sketched (fallback location, optional tool-call summary format)
-- [ ] Drafts in Discoveries
+- [x] #538 design sketched (drain hook location, supervisor_takeover semantics)
+- [x] #539 design sketched (reconstruction logic, partial-state policy, multi-batch heuristic)
+- [x] #540 design sketched (fallback location, optional tool-call summary format)
+- [x] Drafts in Discoveries
+
+#### Design #538 — mailbox drain + supervisor_takeover
+
+**Drain hook location:**
+- Add a new helper `drainAgentOutbox(stateRoot, batchId, agentId)` in `mailbox.ts` that synchronously moves all pending `*.msg.json` files from the agent's outbox to `outbox/processed/` (using the same rename-into-processed pattern as `ackOutboxMessage`). This prevents the supervisor from later being shown stale escalations/replies that were emitted by a now-dead worker.
+- Call `drainAgentOutbox` synchronously at lane termination decision points:
+  - **In `lane-runner.ts`**: at the no-progress kill path (line ~982) immediately before `return makeResult(... "failed" ...)`. Drain the worker agent's outbox.
+  - **In `engine.ts`**: at the hard-fail path that constructs the failure outcome and emits the `task-failure` alert (around line 3008–3033). Drain via `resolveTaskWorkerAgentId` to find the worker's outbox.
+- Best-effort: drain failures must not block lane termination (catch + log).
+
+**Zombie-alert filter (the part operators actually see):**
+- The on-disk outbox drain alone does not stop alerts already queued in the supervisor's pi message queue. Add a per-lane terminal-state filter at the supervisor-alert delivery boundary in `extension.ts`:
+  - Maintain a `terminatedLanes: Set<number>` and `terminatedAgents: Set<string>` at supervisor-process scope.
+  - Engine-worker emits a new IPC message `lane-terminated` with `{ laneNumber, agentId, batchId }` whenever a lane reaches a terminal state (no-progress kill OR hard-fail).
+  - In the `case "supervisor-alert":` handler (extension.ts:1170), before invoking `onSupervisorAlert`, check whether `alert.context.laneNumber`/`alert.context.agentId` is in the terminated set. If yes, drop the alert (log to stderr for diagnostics) instead of forwarding to `pi.sendUserMessage`.
+  - The set is reset when a new batch starts (so a future lane re-using the number isn't suppressed).
+- This is the synchronous "drain" the operator perceives: zombie alerts get filtered before they reach pi's user-message queue.
+
+**`supervisor_takeover(reason)` tool semantics:**
+- Registered alongside other `orch_*` tools in `extension.ts` (NOT in `agent-bridge-extension.ts` — that file is loaded into worker/reviewer/merger only). Therefore NOT added to `ENGINE_BRIDGE_TOOLS`.
+- On invocation:
+  1. **Pause the wave**: same code path as `orch_pause` — set `orchBatchState.pauseSignal.paused = true`, send `{type:"pause"}` to engine-worker.
+  2. **Drain all per-agent alert queues**: clear in-memory terminated sets, mark ALL active agents as terminated (this filter suppresses any further alerts for the duration of takeover); also synchronously drain on-disk outboxes for all known agents in the current batch via the new helper.
+  3. **Preserve worktrees + state**: do NOT call `executeAbort` or `deleteBatchState`. Worktrees, branches, and `.pi/batch-state.json` remain.
+  4. Return a structured text result describing what was paused / drained / preserved and the recommended next steps (`orch_status`, `orch_resume`, `orch_abort` if escalation needed).
+- Distinct from `orch_abort` because it does NOT delete state and does NOT kill sessions — it pauses + drains + parks for manual recovery.
+
+**Supervisor template documentation (`templates/agents/supervisor.md`):**
+- Add a section documenting `supervisor_takeover(reason: string)` semantics.
+- Document the existing text-reply parser semantics that lane-runner.ts uses: `skip` / `let it fail` / `close` / `abort` / `stop` are CLOSE_DIRECTIVES only when they are short (< 30 chars) standalone replies (or prefixes followed by `:`, ` `, `.`, ` -`). Embedding them in longer text is treated as instructions.
+
+#### Design #539 — resume reconstruction from disk
+
+**Entry point:** `resumeOrchBatch` in `resume.ts:1060`. After `loadBatchState(stateRoot)` returns null AND `force === true`, attempt reconstruction.
+
+**Reconstruction policy: prefer fail-loud over partial reconstruction.**
+The spec explicitly accepts "fail loudly with a clear error message" as the recovery path. Full state reconstruction from runtime/agent logs is genuinely fragile (we'd need to rebuild OrchBatchPhase, wave plan, lane allocations, segment frontiers, merge results, resilience counters). A partial reconstruct would be likely to silently mis-resume.
+
+**Implementation:**
+- When `loadBatchState` returns null AND `force === true`:
+  1. Read `.pi/batch-history.json` via `loadBatchHistory(stateRoot)`.
+  2. If the history is empty or has no entries, fall through to the existing `resumeNoState()` error.
+  3. If a recent entry exists (most-recent-wins by ordering: newest first per `saveBatchHistory`), surface a focused, actionable error: it identifies the most recent batchId, the worktree paths that still exist, and recommends `orch_start <PROMPT.md>` as the recovery path.
+- New message helper in `messages.ts`: `resumeNoStateAfterAbort(batchId, worktreePathsExisting)` returning a clear multi-line error.
+- `resume.ts` handles `force=true` with empty in-memory state by reading from disk first (today's behavior is correct — `loadBatchState` reads from disk — the issue is purely about the post-abort case where the file is gone). The new behavior: when state file is gone but batch-history is not, still emit a clear error pointing to `orch_start` rather than the generic `resumeNoState()`.
+- **Multi-batch heuristic:** batch-history is sorted newest-first (line 1865 in persistence.ts: `nextHistory.unshift(summary)`). "Most recent wins" is just `history[0]`. Document this in the message and in inline comments.
+
+**No changes to types.ts (no new state values needed)** — the existing `stopped`/`failed`/`paused` phase distinctions are sufficient; the issue is purely about the missing-state-file case.
+
+#### Design #540 — non-empty reason + assistant_message fallback
+
+**Worker prompt change (`templates/agents/task-worker.md`):**
+- Find the existing `Never Narrate What You Plan To Do` / `If you are unsure how to proceed` section and add a hard MUST: "If you DO exit-with-no-progress, you MUST first emit a one-sentence assistant message stating the specific reason (what you tried, what failed, what you need). Empty/silent exits will be intercepted with the most-recent assistant_message used as a fallback reason."
+
+**Lane-runner change (`lane-runner.ts:688`-712):**
+- The exit-intercept callback receives `assistantMessage` (already the most recent assistant message at that turn). The current code sets `truncatedMsg = assistantMessage.slice(0, 500)`. If `assistantMessage` is empty (whitespace-only or zero-length), the alert payload says `Worker said: ""`.
+- Fallback: when `assistantMessage.trim() === ""`, read the worker's `events.jsonl` (path = `eventsPath` already in scope; agent events appended via `appendAgentEvent`) and walk back to find the most recent `assistant_message` event with non-empty text. Use that as the message.
+- If `events.jsonl` also yields nothing, fall back to a literal sentinel: `"(no assistant message captured — worker exited without producing visible output)"`.
+- (Optional/deferred per Step-0 decision: tool-call summaries from #540C are NOT included in this iteration.)
+
+**File-shape note:** `events.jsonl` is appended-line JSON. Each line is a JSON event with `type` and `payload`. `assistant_message` events are emitted by the agent host. Read the file backwards (or read fully and iterate from the end) to find the most recent one.
+
 
 ---
 
