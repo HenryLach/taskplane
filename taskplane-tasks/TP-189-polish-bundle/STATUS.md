@@ -1,7 +1,7 @@
 # TP-189: Accumulated polish bundle — Status
 
 **Current Step:** Step 7: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-05-07
 **Review Level:** 2
 **Review Counter:** 12
@@ -110,10 +110,14 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] CHANGELOG entries categorized: Internal (A1-2, B, D), Fixed (A3, C), Docs (E)
-- [ ] Discoveries logged (especially Cluster E per-section rationale)
+- [x] CHANGELOG entries added under [Unreleased], categorized:
+  - **Fixed** (user-visible): TP-189-C `taskplane doctor` empty pi version; TP-189-A3 `isStepMarkedComplete` fenced-code-block filter
+  - **Docs** (user-visible): TP-189-E task-worker.md reconciliation; SKILL.md per-step vs. consolidated review pattern
+  - **Internal** (refactors / regression tests): TP-189-B constants module migration; TP-189-A1 spawn-site regression guard; TP-189-A2 REFUSED-path runtime test; TP-189-A4 removeWorktree behavioral tests
+  - Cluster D was already shipped in v0.28.8 — no entry needed.
+- [x] Discoveries logged in STATUS.md (Cluster B decision rationale + Cluster E per-section conflict analysis).
 
 ---
 

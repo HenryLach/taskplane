@@ -7,6 +7,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`taskplane doctor` no longer shows empty parens for `pi installed ()`
+  (TP-189-C / TP-185 follow-up):** pi prints its `--version` output to
+  **stderr**, but `bin/taskplane.mjs`'s `getVersion()` only captured
+  stdout via `execSync(... { stdio: 'pipe' })`, so the doctor display was
+  `✅ pi installed ()` with empty parens. The fix extracts `getVersion`
+  to `bin/get-version.mjs` (testable ESM helper) and switches it to
+  `spawnSync` with `stdio: ['ignore', 'pipe', 'pipe']`. The new logic
+  prefers stdout but falls back to stderr when stdout is empty, and
+  preserves the prior fail-safe contract (returns `null` on subprocess
+  failure or non-zero exit — critical so shell error text isn't surfaced
+  as a fake version string). Manual verification: `taskplane doctor` now
+  shows `✅ pi installed (0.73.0)`. 7 new behavioral tests in
+  `extensions/tests/cli-doctor-version-capture.test.ts` cover the
+  stdout-precedence, stderr-fallback, trim, and null-on-failure cases.
+- **`isStepMarkedComplete` death-spiral guard now skips fenced code
+  blocks (TP-189-A3 / TP-186 follow-up):** the helper that powers the
+  `review_step` REFUSED guard scanned STATUS.md line-by-line for the
+  literal `**Status:** ✅ Complete` pattern. If a step's body documented
+  that pattern inside a fenced code block (legitimate authoring of the
+  format itself), the guard would false-positive and refuse a legitimate
+  code review. The helper now uses CommonMark-aware fence tracking:
+  recognizes both ``` and ~~~ fences, tracks the opener char + length,
+  and only closes on a matching delimiter (same char, length ≥ opener
+  length, no trailing non-whitespace text). Mixed-delimiter examples and
+  `````info-string lines inside an outer fence no longer prematurely
+  close it. Step-heading detection is gated on being outside a fence so
+  a `### Step N:` line inside a code-block sample is treated as content
+  rather than a step boundary. 6 new unit tests cover the edge cases.
+
+### Docs
+
+- **`templates/agents/task-worker.md` reconciled with TP-186's Order of
+  Operations rule (TP-189-E):** two older sections were ambiguous when
+  read alongside the new review-gated step-completion contract from
+  TP-186. (1) Resume Algorithm step 6 ("all items checked → proceed to
+  next step") now splits behavior by Review Level: 0/1 may proceed,
+  but 2/3 must commit the implementation, call
+  `review_step(type="code")`, and only flip the per-step `**Status:**`
+  heading after APPROVE — with a cross-reference to the Order of
+  Operations section. (2) The Checkpoint Discipline / Git commits
+  example commit message changed from `feat(TASK-ID): complete Step N
+  — description` to `feat(TASK-ID): step N implementation`, plus
+  explicit Level 0/1 vs Level 2/3 paragraphs and a separate
+  `chore(TASK-ID): step N complete (code review APPROVE)` example for
+  the post-APPROVE status-flip commit. Both edits reuse canonical
+  wording from the Order of Operations + Recovery Recipe sections so
+  the existing source-pattern tests in
+  `extensions/tests/worker-step-completion-protocol.test.ts` continue to
+  pass; a new test 1.4b regression-guards the Resume Algorithm wording.
+- **`skills/create-taskplane-task/SKILL.md` Complexity Assessment
+  augmented with **Per-Step Reviews vs. Consolidated Reviews
+  (Checkpoint Markers)** sub-section (TP-189-E):** the existing rubric
+  documents Review Levels 0–3 but not the second axis — *how many*
+  reviews fire for a given level. PROMPT authors had been discovering
+  this empirically (e.g., TP-186 fired only 2 reviews via checkpoint
+  markers vs the default ~8 it would have fired without them). The new
+  sub-section makes the choice explicit: per-step is the default and
+  right for independent multi-feature work; consolidation via
+  `**Plan-review checkpoint**` / `**Code review checkpoint**` markers
+  is appropriate for single-deliverable tasks where the steps are
+  mechanical applications of one design. TP-186 is referenced as the
+  canonical consolidation example.
+
+### Internal
+
+- **`DEFAULT_WORKER_USER_TOOLS` migrated to a shared lightweight
+  constants module (TP-189-B / TP-184 follow-up):** the literal
+  `"read,write,edit,bash,grep,find,ls"` was duplicated across
+  `extensions/taskplane/agent-host.ts` (canonical), `config-schema.ts`
+  (×2), and `types.ts` (×1), with `NOTE (TP-184)` comments pointing at
+  the canonical source. The duplication existed because `agent-host.ts`
+  imports `child_process`/`fs`, and pulling those into the schema/types
+  layer would either be circular (types.ts is the import root for
+  agent-host.ts) or pollute pure-data files with subprocess plumbing.
+  Sage flagged this as a future cleanup target. Fix: new
+  `extensions/taskplane/tool-allowlist-constants.ts` is a deliberately
+  import-free leaf module that owns the literal. `agent-host.ts` now
+  re-exports `DEFAULT_WORKER_USER_TOOLS` from the new module so
+  existing internal callers (`execution.ts`,
+  `worker-tools-allowlist.test.ts`) continue to work unchanged.
+  `config-schema.ts` and `types.ts` now import directly from the new
+  module. Verified no circular imports via a Node import probe; existing
+  16-test `worker-tools-allowlist.test.ts` suite still passes (constant
+  value is unchanged, only its source module moved). `ENGINE_BRIDGE_TOOLS`
+  and `buildWorkerToolsAllowlist()` deliberately stay in `agent-host.ts`
+  — they have no duplication problem and live next to their consumers.
+- **Architectural regression guard for the worker tool allowlist
+  spawn-site wiring (TP-189-A1 / TP-184 follow-up):** new
+  `extensions/tests/lane-runner-spawn-wiring.test.ts` (4 source-pattern
+  tests) asserts that `lane-runner.ts` imports `buildWorkerToolsAllowlist`
+  from `agent-host` and calls it as
+  `tools: buildWorkerToolsAllowlist(config.workerTools)` at the worker
+  spawn site, with explicit guards against passing `config.workerTools`
+  directly (which would silently drop engine bridge tools and
+  re-introduce issue #530). The call site is also bounded to within
+  ~80 lines of the surrounding `agentId:` field, sanity-checking the
+  call lives inside the AgentHostOptions object literal.
+- **Runtime test of the `review_step` death-spiral guard's REFUSED path
+  (TP-189-A2 / TP-186 follow-up):** new
+  `extensions/tests/review-step-guard-runtime.test.ts` (5 tests)
+  exercises the actual `review_step` tool handler end-to-end via the
+  bridge-extension's tool registration. Confirms `type='code'` (and
+  `type='test'`) on a step marked `**Status:** ✅ Complete` returns
+  the documented REFUSED prose without spawning a reviewer subprocess
+  and without incrementing the Review Counter; `type='plan'` is exempt
+  even on a Complete step; `type='code'` on an In-Progress step
+  proceeds normally. Mocking strategy uses the bare `child_process`
+  specifier for portability across Node 22 and Node 24 (matches the
+  `windows-worktree-cleanup-fallback.test.ts` rationale).
+- **Behavioral tests for `removeWorktree()` Windows MAX_PATH fallback
+  (TP-189-A4 / TP-188 follow-up):** new
+  `extensions/tests/windows-worktree-cleanup-behavioral.test.ts` (3
+  tests) augments the existing source-pattern suite with end-to-end
+  decision-branch coverage. Uses a single `child_process` mock that
+  dispatches on the spawned command (git vs cmd) plus real on-disk temp
+  directories so the post-removal `existsSync` verification passes for
+  real. Covers: win32 + "Filename too long" stderr → `cmd /c rd /s /q`
+  fallback fires, prune-after-rd ordering verified, removed:true; win32
+  + non-MAX_PATH error → fallback skipped, `WORKTREE_REMOVE_FAILED`
+  thrown with the original stderr; non-win32 + MAX_PATH text →
+  platform guard in `isWindowsMaxPathError` correctly skips the
+  fallback.
+
 ## [0.28.8] - 2026-05-07
 
 ### Enhanced
