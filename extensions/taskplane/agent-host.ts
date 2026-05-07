@@ -87,23 +87,17 @@ export const ENGINE_BRIDGE_TOOLS = [
 	"request_segment_expansion",
 ] as const;
 
-/**
- * Default user-tools portion of the worker `--tools` allowlist. This is the
- * fallback used when neither `taskRunner.worker.tools` config nor the
- * `TASKPLANE_WORKER_TOOLS` env var supplies a value. Engine bridge tools
- * (`ENGINE_BRIDGE_TOOLS`) are appended on top by
- * `buildWorkerToolsAllowlist()` at the spawn site — they are NOT part of
- * this default and should not be added by callers.
- *
- * NOTE: This literal is duplicated in `config-schema.ts` (defaults block)
- * and `types.ts` (defaults block) as well. Those modules intentionally
- * keep the literal to avoid pulling agent-host's heavy imports (child
- * process, fs) into pure schema/type files. If you change the default
- * here, update those copies too.
- *
- * @since TP-184
- */
-export const DEFAULT_WORKER_USER_TOOLS = "read,write,edit,bash,grep,find,ls";
+// TP-189 (Cluster B): `DEFAULT_WORKER_USER_TOOLS` now lives in the
+// import-free `./tool-allowlist-constants.ts` module so that pure-data
+// layers (`config-schema.ts`, `types.ts`) can import it without pulling
+// agent-host's heavy `child_process`/`fs` imports into the schema/type
+// graph. We re-export here so existing internal imports (e.g.,
+// `execution.ts`, `worker-tools-allowlist.test.ts`) continue to work
+// without churn.
+//
+// @since TP-184 (constant introduced) / TP-189 (moved to constants module)
+export { DEFAULT_WORKER_USER_TOOLS } from "./tool-allowlist-constants.ts";
+import { DEFAULT_WORKER_USER_TOOLS } from "./tool-allowlist-constants.ts";
 
 /**
  * Build the final worker `--tools` allowlist string by combining the

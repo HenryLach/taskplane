@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** L
 
@@ -49,11 +49,11 @@
 ### Step 2: Cluster B — Constants module migration
 **Status:** 🟨 In Progress
 
-- [ ] `extensions/taskplane/tool-allowlist-constants.ts` (NEW) — single source of truth
-- [ ] `agent-host.ts` imports from new module (re-exports per Step 0 decision)
-- [ ] `config-schema.ts` and `types.ts` literals replaced with import; annotation comments removed
-- [ ] No circular imports (verified via import probe)
-- [ ] Full fast suite still passes (no behavior change)
+- [x] `extensions/taskplane/tool-allowlist-constants.ts` (NEW, 38 lines) — single source of truth, no imports beyond TS built-ins (verified)
+- [x] `agent-host.ts` re-exports `DEFAULT_WORKER_USER_TOOLS` from the new module via `export { ... } from` plus a local `import` for in-file usage; existing internal callers (`execution.ts`, `worker-tools-allowlist.test.ts`) continue to work unchanged
+- [x] `config-schema.ts` (worker.tools default + merge.tools default) and `types.ts` (merge.tools default) now reference `DEFAULT_WORKER_USER_TOOLS` via direct import; obsolete TP-184 NOTE comments replaced with TP-189 (Cluster B) comments explaining the new sourcing
+- [x] No circular imports: `node -e "await import('./taskplane/types.ts'); await import('./taskplane/config-schema.ts'); await import('./taskplane/agent-host.ts'); await import('./taskplane/tool-allowlist-constants.ts')"` succeeds
+- [x] `worker-tools-allowlist.test.ts` (16 tests) still passes — the constant value is unchanged, only its source module moved
 
 ---
 
@@ -157,3 +157,4 @@
 | 2026-05-07 03:17 | Review R002 | code Step 1: REVISE |
 | 2026-05-07 03:21 | Review R003 | code Step 1: REVISE |
 | 2026-05-07 03:24 | Review R004 | code Step 1: APPROVE |
+| 2026-05-07 03:25 | Review R005 | plan Step 2: APPROVE |

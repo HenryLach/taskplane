@@ -37,6 +37,12 @@
  * @module config/schema
  */
 
+// TP-189 (Cluster B): single source of truth for the worker user-tools
+// default literal. This is a deliberately import-free module so we can
+// import it here without pulling `agent-host.ts`'s `child_process`/`fs`
+// imports into the schema layer.
+import { DEFAULT_WORKER_USER_TOOLS } from "./tool-allowlist-constants.ts";
+
 // ── Config Version ───────────────────────────────────────────────────
 
 /**
@@ -594,14 +600,11 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	testing: { commands: {} },
 	standards: { docs: [], rules: [] },
 	standardsOverrides: {},
-	// NOTE (TP-184): The user-tools default literal here mirrors
-	// `DEFAULT_WORKER_USER_TOOLS` in `agent-host.ts`. We keep the literal
-	// instead of importing the constant because this file is currently
-	// import-free (pure schema/defaults) and importing from agent-host.ts
-	// would pull child_process/fs into the schema layer. If you change the
-	// default, update both copies. Engine bridge tools are appended at the
-	// lane-runner spawn site by `buildWorkerToolsAllowlist()`, not here.
-	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "", excludeExtensions: [] },
+	// TP-189 (Cluster B): user-tools default sourced from
+	// `tool-allowlist-constants.ts` (single source of truth). Engine
+	// bridge tools are appended at the lane-runner spawn site by
+	// `buildWorkerToolsAllowlist()`, not here.
+	worker: { model: "", tools: DEFAULT_WORKER_USER_TOOLS, thinking: "", excludeExtensions: [] },
 	reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on", excludeExtensions: [] },
 	context: {
 		workerContextWindow: 0,
@@ -653,10 +656,12 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 	},
 	merge: {
 		model: "",
-		// NOTE (TP-184): Mirrors `DEFAULT_WORKER_USER_TOOLS`. Merge agent does
-		// not run through `buildWorkerToolsAllowlist()` (no bridge-tool needs)
-		// so this literal is independent of the worker allowlist plumbing.
-		tools: "read,write,edit,bash,grep,find,ls",
+		// TP-189 (Cluster B): merge default mirrors the worker user-tools
+		// constant. The merge agent does NOT run through
+		// `buildWorkerToolsAllowlist()` (no bridge-tool needs), so this
+		// reference is purely for default-value parity — not a hard
+		// coupling to the worker allowlist plumbing.
+		tools: DEFAULT_WORKER_USER_TOOLS,
 		thinking: "off",
 		verify: [],
 		order: "fewest-files-first",
