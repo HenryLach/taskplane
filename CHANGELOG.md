@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Code reviewer now runs project quality checks (typecheck/lint/format)
+  before deciding (TP-188, #541):** Previously, the reviewer agent spawned
+  via `review_step(type="code")` evaluated changes through behavioural
+  inspection only. It did NOT run `npm run typecheck` / `npm run lint` /
+  `npm run format:check`, so code with TypeScript strict-mode errors or
+  lint failures could receive APPROVE — those issues then surfaced at the
+  worker's Testing & Verification step, blocking the entire batch. In one
+  observed production batch, a `code` review returned APPROVE for a step
+  that subsequently failed `npm run typecheck` with 5 strict-mode errors
+  in the test code the reviewer had just signed off on. Cost of catching
+  these earlier: one extra typecheck per code review. Cost of NOT
+  catching them: the entire investment in the affected step plus all
+  dependents. Fix is a prompt-only change to
+  `templates/agents/task-reviewer.md`: a new **Quality-check verification**
+  section (between How You Work and Verdict Criteria) instructs the
+  reviewer to (1) discover commands by reading
+  `.pi/taskplane-config.json` `taskRunner.testing.commands` first, then
+  fall back to `package.json` `scripts` for `typecheck` / `lint` /
+  `format:check`; (2) run any matching commands using its existing `bash`
+  tool (no allowlist change required — `bash` is already in the default
+  reviewer tool list); (3) surface failures as **Issues Found** with
+  severity `important`; (4) downgrade an otherwise-APPROVE verdict to
+  **REVISE** when any quality check fails. Plan reviews skip the section
+  entirely (no code exists yet to typecheck). Skip-silently rule: if
+  neither config nor `package.json` yields a relevant command, the
+  reviewer notes the skip in the Summary and proceeds normally rather
+  than blocking on absent infrastructure. 10 new source-pattern tests in
+  `extensions/tests/reviewer-quality-checks.test.ts` lock the section
+  shape, the hybrid discovery wording, and the verdict-downgrade rule.
+- **Windows worktree cleanup falls back to `cmd rd /s /q` when git hits
+  MAX_PATH (TP-188, #543):** On Windows with default
+  `core.longpaths = false`, `git worktree remove --force` fails with
+  `error: failed to delete '<path>': Filename too long` when the worktree
+  contains a deep `node_modules` tree (most non-trivial Node projects).
+  Previously the orchestrator surfaced cleanup-incomplete via the
+  post-integration banner but didn't recover — the operator had to run
+  `cmd /c "rd /s /q <path>"` manually. Observed twice during a single
+  recovery flow on the user's Windows machine working with
+  emailgistics-astro (700+ npm deps). Fix adds two new exported helpers
+  in `extensions/taskplane/worktree.ts`: `isWindowsMaxPathError(stderr)`
+  (returns true only on win32 + `/filename too long/i`) and
+  `runWindowsCmdRd(absolutePath)` (invokes `execFileSync("cmd", ["/c",
+  "rd", "/s", "/q", winPath])` with forward slashes normalized to
+  backslashes for native Windows path semantics). The fallback fires
+  inside `removeWorktree`'s retry loop when the predicate matches,
+  prunes git's bookkeeping on success so post-removal verification
+  passes, and falls through to the existing terminal/retry classification
+  on failure (with both git's stderr and cmd's stderr enriched into the
+  thrown error so operators can diagnose). Other error classes (lock
+  errors, permission denied, generic git errors) are unaffected. INFO-level
+  logs via `execLog("cleanup", "worktree", ...)` make the rescue path
+  visible in operator-facing output. 17 new tests in
+  `extensions/tests/windows-worktree-cleanup-fallback.test.ts` cover the
+  source-pattern wiring (helpers exist; `removeWorktree` calls them;
+  `git worktree prune` runs on fallback success; failure path enriches
+  the error), platform guard (returns false on linux/macOS), regex
+  case-insensitivity, and `runWindowsCmdRd`'s mocked invocation. Tests
+  are platform-agnostic via `child_process` mocking so the suite passes
+  on every CI runner.
+
 ## [0.28.7] - 2026-05-07
 
 ### Enhanced
