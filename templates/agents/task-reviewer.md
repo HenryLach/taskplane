@@ -67,12 +67,19 @@ commands directly — no special tooling is required.
 1. **Project config first.** Read `.pi/taskplane-config.json` (or the legacy
    `.pi/task-runner.yaml` / `.pi/task-runner.json` fallbacks) and look at
    `taskRunner.testing.commands` — a `Record<string, string>` mapping a
-   command name (e.g. `typecheck`, `lint`, `format`, `format:check`) to a
+   command name (e.g. `typecheck`, `lint`, `format:check`) to a
    shell command. Run any command whose key matches one of
-   `typecheck` / `tsc` / `types` / `lint` / `format` / `format:check`.
-2. **Fallback to `package.json` scripts.** If the project has no
-   `taskRunner.testing.commands`, read `package.json` and run any of these
-   scripts that exist, in this order:
+   `typecheck` / `tsc` / `types` / `lint` / `format:check`.
+   **Prefer `format:check` over `format`** — the latter typically rewrites
+   files in place, which would mutate the working tree the reviewer is
+   evaluating. If only a mutating `format` script is available in either
+   source, skip it and note this in the Summary; do not run mutating
+   commands from the reviewer.
+2. **Fallback to `package.json` scripts.** If step 1 did not yield any
+   relevant commands — either because `taskRunner.testing.commands` is
+   absent OR because it exists but contains no keys matching the
+   typecheck/lint/format-check set — read `package.json` and run any of
+   these scripts that exist, in this order:
    `npm run typecheck`, `npm run lint`, `npm run format:check`.
    Skip a script if `package.json#scripts` does not declare it — do not
    invent commands.

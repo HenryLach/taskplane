@@ -51,6 +51,31 @@ describe("TP-188 sub-fix A: reviewer prompt has Quality-check verification secti
 		expect(reviewerPromptSrc.toLowerCase()).toContain("package.json");
 	});
 
+	it("1.4b: package.json fallback fires on partial-config (sage TP-188 follow-up)", () => {
+		// Sage code review flagged that the original wording only triggered the
+		// package.json fallback when taskRunner.testing.commands was absent.
+		// If the map exists but lacks relevant keys (typecheck/lint/format:check),
+		// reviewers were instructed to skip even when package.json scripts existed.
+		// The fix: fallback when no relevant commands are *discovered* in step 1,
+		// not only when the map is absent.
+		const sectionStart = reviewerPromptSrc.indexOf("## Quality-check verification");
+		const sectionEnd = reviewerPromptSrc.indexOf("## Verdict Criteria", sectionStart);
+		const section = reviewerPromptSrc.slice(sectionStart, sectionEnd);
+		// Look for both the absent-map case AND the no-relevant-keys case.
+		expect(section).toMatch(/no relevant commands|no keys matching|absent OR/i);
+	});
+
+	it("1.4c: prefers format:check over mutating format command (sage TP-188 follow-up)", () => {
+		// Sage flagged: a non-suffixed `format` script typically rewrites files
+		// in place, which would mutate the working tree the reviewer is supposed
+		// to be evaluating. The reviewer prompt should explicitly prefer
+		// format:check (non-mutating) over format.
+		const sectionStart = reviewerPromptSrc.indexOf("## Quality-check verification");
+		const sectionEnd = reviewerPromptSrc.indexOf("## Verdict Criteria", sectionStart);
+		const section = reviewerPromptSrc.slice(sectionStart, sectionEnd);
+		expect(section).toMatch(/Prefer .format:check. over .format.|do not run mutating commands/i);
+	});
+
 	it("1.5: surfaces failures as Issues Found with severity `important`", () => {
 		// Both the Issues Found target and the explicit important severity word
 		// must be present in the new section.
