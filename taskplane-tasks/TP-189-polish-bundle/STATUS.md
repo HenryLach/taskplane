@@ -33,7 +33,7 @@
 ---
 
 ### Step 1: Cluster A — Defensive tests + helper hardening
-**Status:** ✅ Complete (code review APPROVE R004)
+**Status:** ✅ Complete
 
 - [x] Item 1: `lane-runner-spawn-wiring.test.ts` (NEW) — static assertion (4 tests pass)
 - [x] Item 2: `review-step-guard-runtime.test.ts` (NEW) — 4 runtime tests pass: type='code' on Complete → REFUSED + no spawn + counter unchanged; type='plan' on Complete → NOT refused; type='code' on In-Progress → NOT refused; REFUSED text matches prompt Recovery Recipe wording. Uses bare-specifier `child_process` mock for Node 22/24 portability.
@@ -47,7 +47,7 @@
 ---
 
 ### Step 2: Cluster B — Constants module migration
-**Status:** ✅ Complete (code review APPROVE R006)
+**Status:** ✅ Complete
 
 - [x] `extensions/taskplane/tool-allowlist-constants.ts` (NEW, 38 lines) — single source of truth, no imports beyond TS built-ins (verified)
 - [x] `agent-host.ts` re-exports `DEFAULT_WORKER_USER_TOOLS` from the new module via `export { ... } from` plus a local `import` for in-file usage; existing internal callers (`execution.ts`, `worker-tools-allowlist.test.ts`) continue to work unchanged
@@ -58,7 +58,7 @@
 ---
 
 ### Step 3: Cluster C — taskplane doctor empty pi version
-**Status:** ✅ Complete (code review APPROVE R009)
+**Status:** ✅ Complete
 
 - [x] `getVersion()` extracted to NEW `bin/get-version.mjs` (testable ESM helper) and imported from `bin/taskplane.mjs`. Uses `spawnSync` with `stdio:['ignore','pipe','pipe']`, stdout-precedence with stderr fallback, AND **R008 fix**: gates on `result.error || result.status !== 0` so non-zero exits return null instead of leaking shell error text as a fake version string (preserves the prior execSync-throws-on-failure contract).
 - [x] Manual: `node bin/taskplane.mjs doctor` now shows `✅ pi installed (0.73.0)` (was empty parens).
@@ -67,7 +67,7 @@
 ---
 
 ### Step 4: Cluster D — CI Node 24 alignment
-**Status:** ✅ Already shipped in v0.28.8 (commit `96a457f5`)
+**Status:** ✅ Complete
 
 - [x] ~~Local smoke: `npm run test:fast` on Node 24 passes~~ — done during v0.28.8 release validation
 - [x] ~~`ci.yml` `node-version: "22"` → `"24"`~~ — done in commit `96a457f5`
@@ -78,7 +78,7 @@
 ---
 
 ### Step 5: Cluster E — Worker prompt + skill reconciliation
-**Status:** ✅ Complete (code review APPROVE R012)
+**Status:** ✅ Complete
 
 > ⚠️ Hydrate: specific edits depend on Discovery-pass findings.
 
@@ -97,7 +97,7 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ✅ Complete (verification-only step — no code review per the rubric "skip reviews for the final documentation step"; this is the testing gate immediately preceding it)
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
@@ -146,6 +146,8 @@
 | 2026-05-06 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-05-07 03:02 | Task started | Runtime V2 lane-runner execution |
 | 2026-05-07 03:02 | Step 0 started | Preflight |
+| 2026-05-07 03:47 | Worker iter 1 | done in 2685s, tools: 186 |
+| 2026-05-07 03:47 | Task complete | .DONE created |
 
 ---
 
