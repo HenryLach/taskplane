@@ -340,6 +340,53 @@ describe("2.x — isStepMarkedComplete helper", () => {
 		});
 	});
 
+	it("2.13b — a delimiter line with a trailing info string is NOT a closer (R003 follow-up)", () => {
+		// Sage caught: a 4-backtick fence containing a ```javascript line
+		// would have the inner line incorrectly treated as a closer, so
+		// the literal `**Status:** ✅ Complete` later in the same fenced
+		// block would false-positive. The CommonMark closer rule requires
+		// a same-char/length delimiter on a line BY ITSELF (only optional
+		// trailing whitespace).
+		const status = [
+			"### Step 2: Documents code blocks",
+			"**Status:** 🟨 In Progress",
+			"",
+			"````", // 4-backtick opener (no info string)
+			"Inside the outer fence we show shorter inner fences:",
+			"```javascript", // not a closer: trailing 'javascript'
+			"const x = 1;",
+			"```", // also not a closer: only 3 backticks (< opener length 4)
+			"And a literal status line still inside the outer fence:",
+			"**Status:** ✅ Complete",
+			"````", // matching 4-backtick closer with no trailing text
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(false);
+		});
+	});
+
+	it("2.13c — a closer with trailing whitespace only IS a valid closer", () => {
+		// Defense in depth: trailing spaces/tabs on the closer line are
+		// allowed by CommonMark and should not prevent the fence from closing.
+		const status = [
+			"### Step 2: Implement",
+			"**Status:** 🟨 In Progress",
+			"",
+			"```",
+			"code",
+			"```   ", // closer with trailing spaces only
+			"",
+			"**Status:** ✅ Complete",
+			"",
+			"### Step 3: Next",
+		].join("\n");
+		withTempStatus(status, (statusPath) => {
+			expect(isStepMarkedComplete(statusPath, 2)).toBe(true);
+		});
+	});
+
 	it("2.13 — a backtick closer of equal length closes the fence (length >= opener length CommonMark semantics)", () => {
 		// Defense in depth: the tracker should accept a closer with the
 		// SAME length as the opener (the strict CommonMark rule is

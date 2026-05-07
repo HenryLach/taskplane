@@ -172,15 +172,16 @@ export function isStepMarkedComplete(statusPath: string, stepNum: number): boole
 	const stepHeadingRe = new RegExp(`^###\\s+Step\\s+${stepNum}\\b`);
 	const nextStepHeadingRe = /^###\s+Step\s+\d+\b/;
 	// TP-189-A3: track fenced-code-block state per CommonMark semantics.
-	// A fence opens with 3+ backticks OR 3+ tildes and closes only when a
-	// matching delimiter (same character, length >= the opener's length)
-	// is seen on its own line. Crucially: a `~~~` line inside an open
-	// backtick fence does NOT close that fence, and vice versa. Tracking
-	// the opener char and length avoids false-positive matches on
-	// `**Status:** ✅ Complete` inside code blocks that contain mixed
-	// fence-delimiter examples (e.g., markdown documentation about
-	// fences).
-	const fenceOpenRe = /^\s*(`{3,}|~{3,})/;
+	// A fence opens with 3+ backticks OR 3+ tildes optionally followed by
+	// an info string (e.g., ```javascript). A fence CLOSES only when a
+	// matching delimiter (same char, length >= opener length) is seen on
+	// a line by itself — the closer line MUST NOT contain trailing
+	// non-whitespace text. This distinction matters: ```javascript
+	// inside an open fence is content, not a closer; mistreating it as a
+	// closer would let `**Status:** ✅ Complete` later in the same code
+	// block trip the guard. Tracking opener char + length also avoids
+	// premature close on `~~~` inside a backtick fence (or vice versa).
+	const openerRe = /^\s*(`{3,}|~{3,})(.*)$/;
 	let inSection = false;
 	let fenceOpener: { char: string; length: number } | null = null;
 	for (const line of lines) {
@@ -193,19 +194,38 @@ export function isStepMarkedComplete(statusPath: string, stepNum: number): boole
 		// not a real heading.)
 		if (fenceOpener === null && nextStepHeadingRe.test(line)) break;
 		// Detect fence delimiter lines.
-		const fenceMatch = line.match(fenceOpenRe);
+		const fenceMatch = line.match(openerRe);
 		if (fenceMatch) {
 			const delim = fenceMatch[1];
+			const trailing = fenceMatch[2] ?? "";
 			const char = delim[0]; // "`" or "~"
 			const length = delim.length;
 			if (fenceOpener === null) {
+				// Opening: any trailing text is the info string — allowed.
+				// CommonMark forbids backticks in a backtick info string,
+				// but rejecting that case here only risks false negatives
+				// (i.e., not opening a fence we should have); the worst-
+				// case impact is a real Status line being inspected as if
+				// outside a fence — which is the safe default.
 				fenceOpener = { char, length };
-			} else if (char === fenceOpener.char && length >= fenceOpener.length) {
-				// Matching closer: same char, length >= opener length.
-				fenceOpener = null;
+				continue;
 			}
-			// Either way, the delimiter line itself is not inspected.
-			continue;
+			// Already inside a fence — a line counts as a closer ONLY if:
+			//   1. delimiter char matches the opener,
+			//   2. delimiter length >= opener length,
+			//   3. nothing follows the delimiter except whitespace.
+			const trailingIsWhitespace = /^\s*$/.test(trailing);
+			if (
+				char === fenceOpener.char &&
+				length >= fenceOpener.length &&
+				trailingIsWhitespace
+			) {
+				fenceOpener = null;
+				continue;
+			}
+			// Else: this line is content INSIDE the open fence (e.g.,
+			// ```javascript inside a 4-backtick fence, or a non-matching
+			// tilde delimiter). Fall through to the inFence skip below.
 		}
 		// Skip lines inside an open fenced code block.
 		if (fenceOpener !== null) continue;
