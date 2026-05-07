@@ -942,8 +942,11 @@ function renderLanesTasks(batch, sessions) {
         ? `<button class="viewer-eye-btn${isViewingStatus ? ' active' : ''}" onclick="viewStatusMd('${escapeHtml(task.taskId)}')" title="View STATUS.md">👁</button>`
         : '';
 
-      // #485: Show task title (from PROMPT.md `# Task: <ID> - <title>`) under
-      // the task-id when available. Falls back to just the ID when missing.
+      // #485 (revised): Show task title on a second grid row spanning task-id
+      // through progress (cols 3–6), giving ~5× more horizontal space than the
+      // original task-id-only width. Stops before col 7 (task-step + telemetry)
+      // so the step info and worker stats stay visible alongside the title.
+      // Falls back to no subtitle row when taskTitle is missing.
       const titleHtml = task.taskTitle
         ? `<div class="task-title-subtitle">${escapeHtml(task.taskTitle)}</div>`
         : "";
@@ -951,11 +954,12 @@ function renderLanesTasks(batch, sessions) {
         <div class="task-row">
           <span class="task-icon"><span class="status-dot ${task.status}"></span></span>
           <span class="task-actions">${eyeHtml}</span>
-          <span class="task-id status-${task.status}"><div class="task-id-line">${escapeHtml(task.taskId)}${showRepos ? repoBadgeHtml(tRepo, "repo-badge-task") : ""}</div>${titleHtml}</span>
+          <span class="task-id status-${task.status}">${escapeHtml(task.taskId)}${showRepos ? repoBadgeHtml(tRepo, "repo-badge-task") : ""}</span>
           <span><span class="status-badge status-${task.status}"><span class="status-dot ${task.status}"></span> ${task.status}</span></span>
           <span class="task-duration">${dur}</span>
           <span>${progressHtml}</span>
           <span class="task-step">${stepHtml}${workerHtml}</span>
+          ${titleHtml}
         </div>`;
       html += reviewerRowHtml;
     }
