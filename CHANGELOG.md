@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.8] - 2026-05-07
+
+### Enhanced
+
+- **Dashboard: task title row widened to span cols 3–6 (#485 follow-up):**
+  The task title subtitle introduced in v0.28.7 was constrained to the
+  100px-wide task-id column, which truncated most realistic titles
+  ('Reviewer runs typec...') after just a few words. Restructured the
+  task-row grid to two rows: row 1 holds the primary cells (icon, actions,
+  task-id, status, duration, progress, step+telemetry), row 2 holds the
+  optional task-title-subtitle spanning cols 3–6 (~486px combined width
+  vs. the previous 100px). Stops before col 7 (task-step + telemetry) so
+  step info and worker stats stay visible alongside the title. Auto row 2
+  collapses to 0 height when no subtitle exists, so tasks with null
+  taskTitle look identical to the v0.28.7 single-line layout. Display-only
+  change — cannot affect orchestrator correctness.
+
 ### Fixed
 
 - **Code reviewer now runs project quality checks (typecheck/lint/format)
@@ -68,6 +85,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case-insensitivity, and `runWindowsCmdRd`'s mocked invocation. Tests
   are platform-agnostic via `child_process` mocking so the suite passes
   on every CI runner.
+
+### Internal
+
+- **CI workflow upgraded to Node 24 LTS:** `.github/workflows/ci.yml` was
+  on Node 22; `release.yml` had moved to Node 24 LTS during the v0.28.5
+  release work but ci.yml was not aligned. Two motivations converged: the
+  Node 22 / Node 24 `mock.module()` semantics divergence caused TP-188's
+  `runWindowsCmdRd` unit tests to fail on Node 22 CI while passing locally
+  on Node 24 (Node 24 aliases bare `child_process` and `node:child_process`;
+  Node 22 treats them as separate modules). Bumping ci.yml to Node 24 fixes
+  the test mock portability AND completes TP-189's Cluster D ahead of
+  schedule.
 
 ## [0.28.7] - 2026-05-07
 
