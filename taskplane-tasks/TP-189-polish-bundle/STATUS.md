@@ -1,10 +1,10 @@
 # TP-189: Accumulated polish bundle — Status
 
-**Current Step:** Step 2: Cluster B — Constants module migration
+**Current Step:** Step 3: Cluster C — taskplane doctor empty pi version
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-07
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
@@ -47,7 +47,7 @@
 ---
 
 ### Step 2: Cluster B — Constants module migration
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (code review APPROVE R006)
 
 - [x] `extensions/taskplane/tool-allowlist-constants.ts` (NEW, 38 lines) — single source of truth, no imports beyond TS built-ins (verified)
 - [x] `agent-host.ts` re-exports `DEFAULT_WORKER_USER_TOOLS` from the new module via `export { ... } from` plus a local `import` for in-file usage; existing internal callers (`execution.ts`, `worker-tools-allowlist.test.ts`) continue to work unchanged
@@ -58,7 +58,7 @@
 ---
 
 ### Step 3: Cluster C — taskplane doctor empty pi version
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] `getVersion()` in `bin/taskplane.mjs` captures both stdout and stderr
 - [ ] Manual: `node bin/taskplane.mjs doctor` shows pi version (e.g., `0.73.x`)
@@ -158,3 +158,4 @@
 | 2026-05-07 03:21 | Review R003 | code Step 1: REVISE |
 | 2026-05-07 03:24 | Review R004 | code Step 1: APPROVE |
 | 2026-05-07 03:25 | Review R005 | plan Step 2: APPROVE |
+| 2026-05-07 03:28 | Review R006 | code Step 2: APPROVE |
