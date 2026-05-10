@@ -74,7 +74,7 @@
 ---
 
 ### Step 4: Implement Parts 3-4 — documentation
-**Status:** ✅ Complete (R005 fix applied, R006 APPROVE)
+**Status:** ✅ Complete
 
 **R005 revision:** reviewer flagged that `npm run lint:fix` was referenced in the new development-setup section but the script did not exist in `package.json`. The same `lint:fix` reference also exists in the pre-existing Biome section of the same file (line 161). Cleanest fix is to add the missing script (`"lint:fix": "biome lint --write --no-errors-on-unmatched ."`), which matches Biome's documented autofix command. Verified gates still pass after the package.json edit (`typecheck`, `lint`, `format:check` all exit 0). Note: actually invoking `npm run lint:fix` rewrites files — those rewrites were reverted; the script is documented for contributors but not run during this task.
 
@@ -221,6 +221,8 @@ Tier-1.5 follow-up list.
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-05-10 21:49 | Task started | Runtime V2 lane-runner execution |
 | 2026-05-10 21:49 | Step 0 started | Preflight |
+| 2026-05-10 22:05 | Worker iter 1 | done in 988s, tools: 110 |
+| 2026-05-10 22:05 | Task complete | .DONE created |
 
 ---
 
