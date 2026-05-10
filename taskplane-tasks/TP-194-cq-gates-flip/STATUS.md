@@ -1,10 +1,10 @@
 # TP-194: Code-quality gates flip — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 2: Implement Part 1 — CI workflow updates
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -35,7 +35,7 @@
 ---
 
 ### Step 1: Plan the gate flip
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint.
 
@@ -50,16 +50,16 @@
 ---
 
 ### Step 2: Implement Part 1 — CI workflow updates
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > Plan-reviewer must have APPROVED Step 1 before proceeding.
 > ⚠️ Code-review fires after this step.
 
-- [ ] `Typecheck` step added to ci.yml (no `continue-on-error`)
-- [ ] `Lint (Biome)` step `continue-on-error: true` removed
-- [ ] `Format check (Biome)` step added (no `continue-on-error`)
-- [ ] Order verified: typecheck → lint → format:check → tests
-- [ ] YAML syntax validates
+- [x] `Typecheck` step added to ci.yml (no `continue-on-error`)
+- [x] `Lint (Biome)` step `continue-on-error: true` removed
+- [x] `Format check (Biome)` step added (no `continue-on-error`)
+- [x] Order verified: typecheck → lint → format:check → tests → CLI smoke → docs links
+- [x] YAML syntax validates (rendered via `gh workflow view`; grep confirms no stray `continue-on-error`)
 
 ---
 
@@ -127,6 +127,7 @@
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
 | 1 | plan | 1 | REVISE | .reviews/R001-plan-step1.md |
+| 2 | plan | 1 | APPROVE | (re-review, no file written; verdict captured here) |
 
 ---
 
@@ -211,3 +212,4 @@ Because this task keeps the single-`ci`-job structure (rationale: separate jobs 
 
 This is Discoveries-only documentation, not a new automated test. The TP-188 source-pattern tests already verify the downgrade rule is wired; the manual smoke confirms it fires end-to-end with the activation now live.
 | 2026-05-10 21:52 | Review R001 | plan Step 1: REVISE |
+| 2026-05-10 21:54 | Review R002 | plan Step 1: APPROVE |
