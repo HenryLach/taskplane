@@ -1,11 +1,11 @@
 # TP-191: Code-quality prep — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Plan all six implementation parts
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -21,14 +21,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree)
-- [ ] Spec read in full: `docs/specifications/taskplane/code-quality-gates.md`
-- [ ] All Tier 3 context files read (existing tsconfig.json, tsconfig.test.json, tests/mocks/pi-coding-agent.ts, tests/mocks/pi-tui.ts, biome.json, .github/workflows/ci.yml lint step, .pi/taskplane-config.json testing.commands, templates/agents/task-reviewer.md TP-188 section, package.json scripts block — currently empty)
-- [ ] Baseline test count recorded (target: 3624 passing / 1 skipped / 0 failed post-TP-190)
-- [ ] Decision recorded: shim source strategy (lean: hand-written minimal stubs)
-- [ ] Pinned versions confirmed available on npm: `@biomejs/biome@2.4.15`, `typescript@5.6.3`
+- [x] On `main` (lane worktree) — branch `task/henrylach-lane-1-20260510T104217` (lane worktree forked from main)
+- [x] Spec read in full: `docs/specifications/taskplane/code-quality-gates.md` (sections 1-4, 6.1, 7, 8, 9 read)
+- [x] All Tier 3 context files read (existing tsconfig.json, tsconfig.test.json, tests/mocks/pi-coding-agent.ts, tests/mocks/pi-tui.ts, biome.json, .github/workflows/ci.yml lint step, .pi/taskplane-config.json testing.commands, templates/agents/task-reviewer.md TP-188 section, package.json scripts block — currently empty)
+- [x] Baseline test count recorded: **3624 passing / 1 skipped / 0 failed** (3625 total, fast suite, ~38s) — matches target
+- [x] Decision recorded: shim source strategy → hand-written minimal stubs in `extensions/types/pi-shims.d.ts` (per spec section 7.1 lean), seeded from `tests/mocks/pi-*.ts` shapes; refine on first tsc failure
+- [x] Pinned versions confirmed on npm: `@biomejs/biome@2.4.15` (current `latest` dist-tag, also latest 2.4.x), `typescript@5.6.3` (latest 5.6.x; newer stables 5.7-5.9 + 6.0 exist but per `same minor line` rule we stay at 5.6.3)
 
 ---
 
@@ -134,6 +134,12 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Baseline tests: 3624 passing / 1 skipped / 0 failed | Recorded as TP-191 baseline; Step 6 will re-run | extensions fast suite |
+| TypeScript `latest` is now 6.0.3, with 5.7–5.9 stables also available | Stayed on 5.6.3 per `same minor line` rule (latest 5.6.x); spec also called for 5.6.3 | package.json devDependencies (Step 2) |
+| Biome `latest` dist-tag is 2.4.15 (matches spec) | Use 2.4.15 as pinned | package.json + biome.json $schema (Step 2/4) |
+| Source-tree pi imports today: only `@mariozechner/*` scope (4 pi-ai, 7 pi-coding-agent, 2 pi-tui imports) | Shim BOTH scopes anyway per spec 6.1.3 (forward-compat for `@earendil-works/*` migration) | shim file (Step 3) |
+| Pi-package import surface (consumed exports): `ExtensionAPI`, `ExtensionContext` (types) from pi-coding-agent; `DynamicBorder`, `getSettingsListTheme` (values) from pi-coding-agent; `Type` (value) from pi-ai; `Model`, `Api` (types) from pi-ai; `Container`, `Text`, `SelectList`, `SettingsList`, `truncateToWidth` (values), `SelectItem`, `SettingItem` (types) from pi-tui | Drives shim minimum surface (Step 3) | extensions/**/*.ts grep |
+| `.pi/` is gitignored — changes to `.pi/taskplane-config.json` will not be committed/merged | Modify the project-local `.pi/taskplane-config.json` in the lane worktree per PROMPT file scope; orchestrator/operator handles propagation | `.pi/taskplane-config.json` (Step 5) |
 
 ---
 
@@ -142,6 +148,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-10 14:42 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-10 14:42 | Step 0 started | Preflight |
 
 ---
 
