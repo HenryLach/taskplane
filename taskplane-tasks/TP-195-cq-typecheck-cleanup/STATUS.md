@@ -1,7 +1,7 @@
 # TP-195: Code-quality typecheck cleanup — Status
 
-**Current Step:** Step 7: Documentation & Delivery
 **Status:** ✅ Complete
+**Current Step:** Step 7: Documentation & Delivery
 
 > Final summary: 264 typecheck errors → **0**. 3627/0/1 tests pass (TP-191
 > baseline 3624 + 3 new regression tests). Three latent runtime bugs
