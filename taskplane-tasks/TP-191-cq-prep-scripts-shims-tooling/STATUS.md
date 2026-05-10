@@ -1,10 +1,10 @@
 # TP-191: Code-quality prep — Status
 
-**Current Step:** Step 1: Plan all six implementation parts
+**Current Step:** Step 2: Implement Part 1 — package.json scripts and pinned dev deps
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -33,7 +33,7 @@
 ---
 
 ### Step 1: Plan all six implementation parts
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (plan review R001 APPROVE)
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
@@ -127,6 +127,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| 1 | plan | 1 | APPROVE | .reviews/R001-plan-step1.md |
 
 ---
 
@@ -322,3 +323,4 @@ with:
 **Pi-shim hand-written approach:** per spec section 7.1, start with hand-written minimal stubs seeded from `tests/mocks/pi-*.ts` shapes. The tests/mocks files are runtime mocks (with implementations); the shims are types-only. Don't point shims AT the mocks — `declare module` blocks in the .d.ts file should declare the type shapes directly. Refine on first tsc failure.
 
 **Pinned-version exception clause:** if `@biomejs/biome@2.4.15` is no longer the latest 2.x at task-execution time, use the latest stable in the same minor line and document the choice in Discoveries. Same for TypeScript 5.6.3 — use latest stable 5.x if a newer one exists. Major-version drift (e.g., Biome 3.x) should NOT be picked up automatically without operator confirmation.
+| 2026-05-10 14:48 | Review R001 | plan Step 1: APPROVE |
