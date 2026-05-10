@@ -64,12 +64,12 @@
 ---
 
 ### Step 3: Implement Part 2 — activate reviewer downgrade rule
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] Temporary activation note removed from `templates/agents/task-reviewer.md`
-- [ ] TP-188 Quality-check verification section returns to fully-active form
+- [x] Temporary activation note removed from `templates/agents/task-reviewer.md` (blockquote starting `> **Activation status (post-TP-191):**` and trailing italicized line)
+- [x] TP-188 Quality-check verification section returns to fully-active form (Verdict downgrade rule at line 105-106 is unchanged and unconditional)
 
 ---
 
