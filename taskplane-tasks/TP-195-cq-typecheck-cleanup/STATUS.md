@@ -1,10 +1,10 @@
 # TP-195: Code-quality typecheck cleanup — Status
 
-**Current Step:** Step 1: Plan the cleanup strategy
+**Current Step:** Step 3: Fix runtime-source errors
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
@@ -35,9 +35,9 @@
 ---
 
 ### Step 1: Plan the cleanup strategy per error category
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-> ⚠️ Plan-review checkpoint.
+> ⚠️ Plan-review checkpoint. **APPROVED** by R002 (post-revise re-review).
 
 - [x] Per-category fix approach documented in Discoveries
 - [x] Real-bug-vs-drift categorization complete (see 'Per-category strategy' table below)
@@ -49,28 +49,60 @@
 ---
 
 ### Step 2: Apply mechanical auto-fixes (if any safe ones exist)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete (skipped — no safe mechanical fixes per Step 1 plan)
 
-> ⚠️ Code-review fires after this step.
+> ⚠️ Code-review fires after this step. SKIPPED — nothing was changed.
 
-- [ ] Definite IDE-suggestable fixes applied via search-and-replace
-- [ ] No assertions / casts / defaults applied here (deferred to per-error judgment in Steps 3/4)
-- [ ] Typecheck error count after this step recorded
-- [ ] Targeted tests pass
+- [x] Definite IDE-suggestable fixes applied via search-and-replace — **N/A**: every fix in this task requires per-error judgment per the anti-shortcut policy. No purely-mechanical fix exists.
+- [x] No assertions / casts / defaults applied here (deferred to per-error judgment in Steps 3/4)
+- [x] Typecheck error count after this step recorded — unchanged at **264** (no fixes applied)
+- [x] Targeted tests pass — N/A (no code change)
 
 ---
 
-### Step 3: Fix runtime-source errors (~69 errors)
-**Status:** ⬜ Not Started
+### Step 3: Fix runtime-source errors (~68 errors)
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
-> ⚠️ Hydrate: expand checkboxes with one item per affected source file.
+**Per-file checklist (hydrated from Step 1 plan; tags: `[T]`=type-drift-only, `[N]`=behavior-neutral, `[B]`=behavior-affecting (escalate)):**
 
-- [ ] Each source-side error fixed via correct type changes
+- [ ] **types.ts**: add `"EXEC_MISSING_TASK_FOLDER"` to `ExecutionErrorCode` union `[T]`
+- [ ] **process-registry.ts**: re-export `RuntimeRegistry` from `./types.ts` `[T]`
+- [ ] **execution.ts** (type-drift / behavior-neutral subset — 17 of 20 errors):
+  - [ ] import `RuntimeRegistry` from types.ts; replace `import("./process-registry.ts").RuntimeRegistry` references `[T]`
+  - [ ] drop dead `config.orchestrator?.batchId` short-circuit `[N]`
+  - [ ] replace `config.project?.name || "project"` with `extraEnvVars?.TASKPLANE_PROJECT_NAME || "project"` `[N]`
+  - [ ] widen `execLog` `extra` to `Record<string, unknown>` `[N]` (cascades into engine.ts/resume.ts/merge.ts)
+- [ ] **execution.ts**: maxWorkerMinutes typo `[B]` — **GATED on E1**
+- [ ] **engine.ts** (type-drift subset — 7 of 11 errors):
+  - [ ] fix `processSegmentExpansionRequestAtBoundary` return type narrowing (`reason?: undefined` on success) `[T]`
+  - [ ] verify 5 execLog-cascade errors auto-resolve `[T]`
+- [ ] **engine.ts**: 4 missing cleanup imports `[B]` — **GATED on E4**
+- [ ] **persistence.ts** (all 8 errors are type-drift / behavior-neutral):
+  - [ ] fix `ReconstructResult` discriminated-union narrowing `[T]`
+  - [ ] drop `taskName: taskId` (no consumer) `[N]`
+  - [ ] drop dead `m.packet.packetRepoId/packetTaskPath` if-branches `[N]`
+  - [ ] use 2-step `as unknown as Record<string, unknown>` casts `[T]`
+- [ ] **resume.ts** (type-drift subset — 7 of 8 errors):
+  - [ ] hoist `batchState.phase` to local `OrchBatchPhase`-typed var at #3299/#3340 `[T]`
+  - [ ] verify 5 execLog-cascade errors auto-resolve `[T]`
+  - [ ] fix `ReconstructResult.error` access narrowing at #1220 `[T]` (auto-resolves with the persistence.ts fix)
+- [ ] **resume.ts**: `batchState.tasks.find` lookup `[B]` — **GATED on E3**
+- [ ] **extension.ts**: all 8 errors `[B]` — **GATED on E2**
+- [ ] **config-loader.ts** (all 5 errors):
+  - [ ] drop dead `prefs.spawnMode === "tmux"` check `[N]`
+  - [ ] use 2-step casts at #1007/#1028 `[T]`
+  - [ ] change `loadProjectOverrides` / `migrateProjectOverrides` to `DeepPartial<TaskplaneConfig>` `[T]`
+- [ ] **merge.ts** (all 4 errors):
+  - [ ] hoist normalized status to local var at #225/#415 `[T]`
+  - [ ] change `spawnMergeAgentV2` return type to `Promise<void>` `[T]`
+  - [ ] verify execLog-cascade error auto-resolves `[T]`
+- [ ] **settings-tui.ts**: 4 errors fixed by pi-shim extension (no source change) `[T]`
+- [ ] **pi-shims.d.ts**: extend `ExtensionContext` for typed `ui.custom<T>()` `[T]`
 - [ ] After each module: targeted tests pass
 - [ ] Full fast suite passes
-- [ ] Typecheck error count drops by ~69
+- [ ] Typecheck error count drops to **~196** (264 − 68 source-side; or to a slightly higher number while gated items remain pending)
 
 ---
 
@@ -349,3 +381,4 @@ The whole point of typecheck-as-a-gate is catching real bugs. A worker that uses
 
 **Strict mode is OUT of scope.** This task delivers typecheck-clean at CURRENT strictness only (`strict: false, noImplicitAny: false`). Strictness ratchet is a separate post-TP-194 follow-up that can decide later whether to do all-at-once strict or per-flag ratchet.
 | 2026-05-10 18:12 | Review R001 | plan Step 1: REVISE |
+| 2026-05-10 18:17 | Review R002 | plan Step 1: APPROVE |
