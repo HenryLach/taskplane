@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -54,6 +54,11 @@
 - [x] `execution.ts` env var + tool registration gated — already gated via `isSegmentScoped` on `TASKPLANE_ACTIVE_SEGMENT_ID` (lane-runner.ts:672) and `TASKPLANE_SEGMENT_ID` (line 673); the `request_segment_expansion` tool registration in `agent-bridge-extension.ts:97` keys off that env var so it inherits the gating. After TP-196 the env var is gated on a value derived from the authoritative mode, closing #502's drift concern.
 - [x] Scattered `stepSegmentMap && currentRepoId` checks unified — the *runtime* mode decision now flows through one `computeSegmentScopeMode` call. The remaining structural `stepSegmentMap && currentRepoId` conditional patterns (e.g., snapshotSegmentCtx at line 357, post-loop block at 1270+, emitSnapshot signature at 1482/1606) encode the *shape* of available data, not the mode decision, and are intentionally preserved.
 - [x] Targeted (62/62 in segment-scoped-lane-runner.test.ts) + full fast suite (3643 pass / 0 fail) pass
+
+**R002 revision items:**
+- [ ] Gate the segment-scoped *prompt-injection* block (lane-runner.ts ≈ line 517 originally, now line 556 after Step 2 changes) on `isSegmentScoped` instead of the raw `stepSegmentMap && currentRepoId && repoStepNumbers && remainingSteps.length > 0` composite condition.
+- [ ] Replace the test `7.3` source-string assertion that currently enshrines the raw composite-condition pattern — retarget it at the mode-derived gating.
+- [ ] Re-run targeted suite + full fast suite + all four gates after the fixes.
 
 **Files touched:** `extensions/taskplane/types.ts`, `extensions/taskplane/lane-runner.ts`, `extensions/tests/segment-scoped-lane-runner.test.ts`. New tests: 16 (sections 9.x — 11 unit tests for `computeSegmentScopeMode` + 5 source-analysis contracts for the unification).
 
@@ -125,7 +130,8 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
-| 1 | plan | 1 | APPROVE | `.reviews/` (step-1 plan) |
+| 1 | plan | 1 | APPROVE | `.reviews/R001-plan-step1.md` |
+| 2 | code | 2 | REVISE  | `.reviews/R002-code-step2.md` |
 
 ---
 
@@ -177,3 +183,4 @@ If plan-review reveals a clear architectural split during Step 1, splitting is a
 
 Post-TP-194, the reviewer agent downgrades APPROVE → REVISE on any failing `typecheck` / `lint` / `format:check`. This is the first task to run entirely under hard gates; the worker should expect that gate failures will be surfaced in code reviews and cannot be ignored. Plan accordingly: don't break gates anywhere mid-step.
 | 2026-05-10 23:39 | Review R001 | plan Step 1: APPROVE |
+| 2026-05-10 23:45 | Review R002 | code Step 2: REVISE |
