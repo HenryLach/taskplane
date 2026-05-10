@@ -1,11 +1,11 @@
 # TP-194: Code-quality gates flip — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -21,16 +21,16 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree, fresh from TP-191 + TP-192 + TP-193 merges)
-- [ ] TP-191, TP-192, TP-193 confirmed merged
-- [ ] **CRITICAL pre-condition** — all three gates already pass on main BEFORE this task's changes:
-  - [ ] `npm run typecheck` exits 0
-  - [ ] `npm run lint` exits 0
-  - [ ] `npm run format:check` exits 0
-- [ ] Baseline test count recorded (3624+ passing)
-- [ ] All Tier 3 context files read
+- [x] On `main` (lane worktree, fresh from TP-191 + TP-192 + TP-193 merges)
+- [x] TP-191, TP-192, TP-193 confirmed merged (git log shows TP-191/192/193/195 all merged via PRs #569/#571/#572/#573; HEAD at fda753fb)
+- [x] **CRITICAL pre-condition** — all three gates already pass on main BEFORE this task's changes:
+  - [x] `npm run typecheck` exits 0
+  - [x] `npm run lint` exits 0 (280 warnings + 671 infos, 0 errors)
+  - [x] `npm run format:check` exits 0
+- [x] Baseline test count recorded: 3628 tests, 3627 pass, 1 skipped, 0 fail
+- [x] All Tier 3 context files read
 
 ---
 
@@ -135,6 +135,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-10 21:49 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-10 21:49 | Step 0 started | Preflight |
 
 ---
 
