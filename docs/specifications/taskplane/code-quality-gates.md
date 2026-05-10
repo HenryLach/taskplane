@@ -5,7 +5,7 @@
 **Author:** Supervisor session (with sage design consultation)
 **Triggers:** Issue #559 (TP-187 `ReferenceError: batchState is not defined`) + the broader observation that Taskplane has grown beyond its original "small extension" scope without ever adopting standard static-analysis gates.
 
-> **TL;DR:** Taskplane has 50+ TypeScript source files, 700+ test suites, 3624 tests, and zero static-analysis gates at PR time. Biome lint runs in CI but `continue-on-error: true` makes it decoration. There is no `tsc --noEmit`. There is no `format:check`. The TP-188 reviewer-agent capability that runs `npm run typecheck` / `lint` / `format:check` is dormant because those scripts don't exist. This spec proposes a sequenced rollout: **prep PR → lint-cleanup PR → format-adoption PR → TP-191 (the actual gate flip) → Tier-1.5 follow-ups**.
+> **TL;DR:** Taskplane has 50+ TypeScript source files, 700+ test suites, 3624 tests, and zero static-analysis gates at PR time. Biome lint runs in CI but `continue-on-error: true` makes it decoration. There is no `tsc --noEmit`. There is no `format:check`. The TP-188 reviewer-agent capability that runs `npm run typecheck` / `lint` / `format:check` is dormant because those scripts don't exist. This spec proposes a sequenced rollout across **four task packets**: TP-191 (prep) → TP-192 (lint cleanup) → TP-193 (format adoption) → TP-194 (the gate flip), with Tier-1.5 follow-ups (TS strictness ratchet, CHANGELOG fragments) staged as their own task packets after TP-194 stabilizes.
 
 ---
 
@@ -87,10 +87,11 @@ It slipped through:
 }
 ```
 
-**Two real problems:**
+**Three real problems:**
 
 1. The pi packages (`@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui` — and legacy `@mariozechner/*`) are NOT in `node_modules`. They live at `npm root -g/<scope>/<pkg>` and are aliased at runtime by Pi's extension loader. `tsc --noEmit` cannot resolve them.
 2. `include: ["task-orchestrator.ts"]` only covers ONE entry point. The reviewer extension and the rest of `extensions/taskplane/` are excluded from typecheck scope today.
+3. The `// NOTE` comment in this file is **stale** — it still references `@mariozechner/*` only, even though the canonical scope is now `@earendil-works/*` (per issue #560 and Pi v0.74.0). This is a historical reference, not the current canonical scope. **TP-191 will refresh the comment** as part of the tsconfig modernization.
 
 ### 4.2 `extensions/tsconfig.test.json`
 
@@ -183,7 +184,7 @@ The rollout is **five PRs** in strict order. Each PR is small enough to ship cle
 │ ↓                                                                            │
 │ C. Format-adoption PR   [biome format --write once + .git-blame-ignore-revs]│
 │ ↓                                                                            │
-│ D. TP-191 (the gate)    [remove continue-on-error, add typecheck job,       │
+│ D. TP-194 (the gate)    [remove continue-on-error, add typecheck job,       │
 │                          add format:check job, activate reviewer downgrade] │
 │ ↓                                                                            │
 │ E. Tier-1.5 follow-ups  [TS strictness ratchet, CHANGELOG fragments]        │
@@ -196,7 +197,7 @@ The order matters. Detail in Section 6.
 
 ## 6. Detailed plan per PR
 
-### 6.1 PR A — Prep PR
+### 6.1 PR A — Prep PR (TP-191)
 
 **Mission:** add the foundational pieces (scripts, version pins, type shims, reviewer-discoverable commands) so the gates can be flipped safely later. **No** gating changes in this PR.
 
@@ -226,12 +227,14 @@ Add to `devDependencies`:
 
 ```json
 "devDependencies": {
-  "@biomejs/biome": "2.0.6",
+  "@biomejs/biome": "2.4.15",
   "typescript": "5.6.3"
 }
 ```
 
-**Removes** `npx ...@latest` and `npx @biomejs/biome@2` drift. CI now uses the pinned versions via the local install.
+**Versions selected:** Biome `2.4.15` is the current `latest` dist-tag at spec authoring time (2026-05-10). The existing `biome.json` schema URL references `2.0.6` (the version the config was originally written against) but CI today runs `npx @biomejs/biome@2` which resolves to whatever is current in the 2.x line — hence the version drift the pin eliminates. Pinning 2.4.15 also requires updating the `$schema` URL in `biome.json` to match (see 6.1.5).
+
+**Removes** `npx ...@latest` and `npx @biomejs/biome@2` drift. CI now uses the pinned versions via the local install. **Action:** update `biome.json` `$schema` URL from `2.0.6` to `2.4.15` to match (covered in 6.1.5).
 
 Update `.github/workflows/ci.yml` lint step:
 
@@ -346,6 +349,7 @@ The reviewer agent's TP-188 discovery loop reads this first. Now it finds all fo
 
 ```json
 {
+  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
   "files": {
     "includes": [
       "extensions/**/*.ts",
@@ -363,7 +367,7 @@ The reviewer agent's TP-188 discovery loop reads this first. Now it finds all fo
   },
   "linter": { ... },
   "formatter": {
-    "enabled": false   // ← NOTE: kept disabled until PR C
+    "enabled": false   // ← NOTE: kept disabled until TP-193 (Format adoption)
   }
 }
 ```
@@ -382,9 +386,9 @@ Update `templates/agents/task-reviewer.md` to add a comment block:
 > **Activation status (post-PR-A):** The typecheck/lint/format:check
 > scripts referenced in this section are now defined in the project's
 > `package.json`. The Quality-check verification logic IS active, but
-> until the gating PR (TP-191) lands, lint failures are surfaced as
+> until the gating PR (TP-194) lands, lint failures are surfaced as
 > Issues Found but NOT downgraded to REVISE (because pre-existing
-> errors in `main` are not the worker's fault). After TP-191, the
+> errors in `main` are not the worker's fault). After TP-194, the
 > downgrade rule fires normally.
 ```
 
@@ -406,7 +410,7 @@ This documents the sequencing for future reviewer agents reading the prompt.
 
 ---
 
-### 6.2 PR B — Lint cleanup
+### 6.2 PR B — Lint cleanup (TP-192)
 
 **Mission:** fix the ~10 existing Biome errors in `main` so PR D can promote lint to a gate without breaking the build.
 
@@ -449,7 +453,7 @@ Each fixed file gets re-run through targeted tests. The full suite must still pa
 
 ---
 
-### 6.3 PR C — Format adoption
+### 6.3 PR C — Format adoption (TP-193)
 
 **Mission:** turn on the formatter and apply it to the entire codebase in one diff. Add `.git-blame-ignore-revs`.
 
@@ -535,7 +539,7 @@ Keep PR C's diff **format-only**. No logic changes. No content changes. Pure mec
 
 ---
 
-### 6.4 PR D — TP-191 (the actual gate flip)
+### 6.4 PR D — TP-194 (the actual gate flip)
 
 **Mission:** remove `continue-on-error`, add typecheck job, add format:check job, activate reviewer-downgrade rule.
 
@@ -606,23 +610,23 @@ Add the three new CI jobs as required status checks for the `main` branch:
 
 ### 6.5 Tier-1.5 immediate follow-ups (Section 9)
 
-Once PR D is live and stable for ~1 week:
+Once TP-194 is live and stable for ~1 week, the next two task packets become priority:
 
-- **TP-192**: TypeScript strictness ratchet (Section 9.1).
-- **TP-193**: CHANGELOG fragment system (Section 9.2).
+- **TS strictness ratchet** (Section 9.1).
+- **CHANGELOG fragment system** (Section 9.2).
 
-Specs for these are out of scope for this document; outlines in Section 9.
+Specs for these are out of scope for this document; outlines in Section 9. Their TP-IDs will be assigned at staging time (after TP-194 lands).
 
 ---
 
 ## 7. Open decisions (pre-spec finalization)
 
-These need user input before TP-191's PROMPT is authored:
+These need user input before TP-191 through TP-194's PROMPTs are authored:
 
 1. **Pi-shim source-of-truth.** Generate from `tests/mocks/pi-*.ts`, hand-write minimal stubs, or copy from the actual installed pi package's `.d.ts` files? **Recommendation:** start with hand-written minimal stubs (smallest shim surface, easy to extend on first tsc failure). Fall back to copying real types if shim drift becomes painful.
 2. **Lint scope including tests.** Sage recommends including tests with per-rule overrides if noise is high. Confirm or specify exclusions.
 3. **Format choices.** Tabs vs spaces, line width, quote style — confirm Section 6.3.1's defaults or override.
-4. **Tier-1.5 timing.** Hard-couple to TP-191 (same release) or allow gap? **Recommendation:** allow gap. TP-192 (strictness) is its own substantial work.
+4. **Tier-1.5 timing.** Hard-couple to TP-194 (same release) or allow gap? **Recommendation:** allow gap. The strictness ratchet is its own substantial work.
 5. **Branch protection update.** Adding required status checks needs admin access to repo settings. Confirm willingness to flip these on the same PR-D release, or stage in a follow-up.
 
 ---
@@ -634,8 +638,8 @@ These need user input before TP-191's PROMPT is authored:
 | Pi-shim drifts from real pi types over time | Medium | Document maintenance note in shim file. Surface on first tsc failure post-shim. Possible long-term: extract types from pi's `.d.ts`. |
 | Format-PR rebase pain for in-flight work | Medium | Coordinated freeze window (Section 6.3.4). |
 | Reviewer agent REVISEs on pre-existing errors | High if mis-sequenced; low with sequencing | PRs B and C clean baseline before PR D activates downgrade rule. |
-| TP-191 surfaces typecheck errors in `main` not anticipated | High | PR A captures error count. PR B/C address surface-level. If structural typecheck errors exist, scope adjusts before TP-191. |
-| Strictness work (TP-192) discovers cascading errors | Medium | Tier-1.5 timing allows post-TP-191 stabilization. Strictness PR can be scoped per-flag. |
+| TP-194 surfaces typecheck errors in `main` not anticipated | High | TP-191 captures error count. TP-192/TP-193 address surface-level. If structural typecheck errors exist, scope adjusts before TP-194. |
+| Strictness work (Tier-1.5) discovers cascading errors | Medium | Tier-1.5 timing allows post-TP-194 stabilization. Strictness PR can be scoped per-flag. |
 | Biome config drift between PRs | Low | Single `biome.json`; pin Biome version in PR A. |
 | `npx ...@latest` lingering in CI | Low | Removed in PR A by pinning. |
 
@@ -643,18 +647,18 @@ These need user input before TP-191's PROMPT is authored:
 
 ## 9. Tier-1.5 immediate follow-ups (referenced, not specified here)
 
-### 9.1 TP-192 — TypeScript strictness ratchet
+### 9.1 TypeScript strictness ratchet (post-TP-194 follow-up)
 
-**Sage's recommendation:** don't bundle with TP-191. After PR D is live and gated, ratchet strictness in a dedicated effort.
+**Sage's recommendation:** don't bundle with TP-194. After the gate flip is live, ratchet strictness in a dedicated effort.
 
-**Approach options** (pick during TP-192 PROMPT authoring):
+**Approach options** (pick during strictness-ratchet PROMPT authoring):
 
 - **One-shot strict PR.** Flip `strict: true` + all sub-flags. Fix every error. Large but conclusive.
 - **Per-flag ratchet PRs.** `noImplicitAny` first, then `strictNullChecks`, then the rest. Each its own PR.
 
-**Likely error surface:** unknown until TP-191 is live and `npm run typecheck` produces a clean baseline. Probe at TP-192 authoring time.
+**Likely error surface:** unknown until TP-194 is live and `npm run typecheck` produces a clean baseline. Probe at strictness-ratchet PROMPT authoring time.
 
-### 9.2 TP-193 — CHANGELOG fragment system
+### 9.2 CHANGELOG fragment system (post-TP-194 follow-up)
 
 **Problem:** every PR that touches `[Unreleased]` in `CHANGELOG.md` creates a merge conflict for every other in-flight PR. Hit this twice in May 2026 (TP-187/189 batch, then v0.29.0 release prep).
 
@@ -687,7 +691,7 @@ These need user input before TP-191's PROMPT is authored:
 
 **Rationale for deferral:** coverage is a separate concern from "make CI validate the code." Coverage without static analysis is misleading; static analysis without coverage is still valuable. Land static gates first; revisit coverage when the gate baseline is stable.
 
-**When to revisit:** after TP-192 strictness work is complete. Coverage on weakly-typed code is less informative than coverage on strictly-typed code.
+**When to revisit:** after the TS strictness work is complete. Coverage on weakly-typed code is less informative than coverage on strictly-typed code.
 
 ### 10.2 Pre-commit hooks
 
@@ -733,7 +737,7 @@ These need user input before TP-191's PROMPT is authored:
 
 ## 11. Validation summary
 
-By the time PR D (TP-191) ships:
+By the time TP-194 (the gate flip) ships:
 
 - [ ] `npm run typecheck` exits 0 on `main`
 - [ ] `npm run lint` exits 0 on `main`
@@ -791,4 +795,4 @@ Files added or modified across the rollout:
 
 ---
 
-**Status when spec is approved:** ready to author TP-191 PROMPT.md (the gating PR) and any prep-task PROMPTs needed.
+**Status when spec is approved:** ready to author TP-191 through TP-194 PROMPT.md packets, in that order, for the orchestrator to execute as a sequence.
