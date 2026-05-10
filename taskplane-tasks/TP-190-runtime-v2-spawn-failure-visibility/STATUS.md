@@ -1,10 +1,10 @@
 # TP-190: Runtime V2 spawn-failure visibility — Status
 
-**Current Step:** Step 3: Implement Part 2 — no-retry for spawn failures
+**Current Step:** Step 4: Implement Part 3 — phase transition when all lanes spawn-fail
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -58,7 +58,7 @@
 ---
 
 ### Step 3: Implement Part 2 — no-retry for spawn failures
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -69,7 +69,7 @@
 ---
 
 ### Step 4: Implement Part 3 — phase transition when all lanes spawn-fail
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
@@ -120,6 +120,7 @@
 |---|------|------|---------|------|
 | R001 | plan | 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R002 | code | 2 | APPROVE | .reviews/R002-code-step2.md |
+| R003 | code | 3 | APPROVE | .reviews/R003-code-step3.md |
 
 ---
 
@@ -180,3 +181,4 @@ machine and the registry are out of sync today — fixing this task should
 bring them back into sync (or at least surface the discrepancy as a failure).
 | 2026-05-10 03:42 | Review R001 | plan Step 1: APPROVE |
 | 2026-05-10 03:48 | Review R002 | code Step 2: APPROVE |
+| 2026-05-10 03:51 | Review R003 | code Step 3: APPROVE |
