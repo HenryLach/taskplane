@@ -41,9 +41,9 @@
     "templates/"
   ],
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
-    "@earendil-works/pi-ai": "*",
     "@sinclair/typebox": "*"
   },
   "peerDependenciesMeta": {
@@ -63,6 +63,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
+    "@types/node": "^22.19.18",
     "typescript": "5.6.3"
   },
   "license": "MIT",

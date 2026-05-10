@@ -64,15 +64,16 @@
 ---
 
 ### Step 3: Implement Part 2 — pi-shims and tsconfig.ci.json
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] `extensions/types/pi-shims.d.ts` created with `declare module` for both Pi scopes
-- [ ] `extensions/tsconfig.ci.json` created with paths + comprehensive include
-- [ ] `extensions/tsconfig.test.json` updated to add `@earendil-works/*` mappings (back-compat for `@mariozechner/*` preserved)
-- [ ] `npm run typecheck` runs without `Cannot find module` errors (TYPE errors are expected; capture count)
-- [ ] Pre-cleanup typecheck error count recorded in Discoveries
+- [x] `extensions/types/pi-shims.d.ts` created with `declare module` for both Pi scopes (6 modules: pi-coding-agent, pi-ai, pi-tui under both `@earendil-works/*` and `@mariozechner/*`)
+- [x] `extensions/tsconfig.ci.json` created with `paths` mapping all six pi-package specifiers to `types/pi-shims.d.ts` + comprehensive `include` (entry points + taskplane/** + tests/** + types/**)
+- [x] `extensions/tsconfig.test.json` updated to add `@earendil-works/*` mappings alongside existing `@mariozechner/*` ones (back-compat preserved)
+- [x] `@types/node@22` added to root devDependencies (required by `"types": ["node"]` in tsconfig.ci.json; `typeRoots` overridden to `../node_modules/@types` since the inherited typeRoots in `tsconfig.json` points to a non-existent `../web/node_modules`)
+- [x] `npm run typecheck` runs WITHOUT `Cannot find module` / TS2307 errors (0 module-resolution failures — shims work)
+- [x] Pre-cleanup typecheck error count: **267 type errors** (TP-194's gating inventory; representative categories below in Discoveries). Tests still pass (3624/1/0).
 
 ---
 
@@ -145,6 +146,11 @@
 | Source-tree pi imports today: only `@mariozechner/*` scope (4 pi-ai, 7 pi-coding-agent, 2 pi-tui imports) | Shim BOTH scopes anyway per spec 6.1.3 (forward-compat for `@earendil-works/*` migration) | shim file (Step 3) |
 | Pi-package import surface (consumed exports): `ExtensionAPI`, `ExtensionContext` (types) from pi-coding-agent; `DynamicBorder`, `getSettingsListTheme` (values) from pi-coding-agent; `Type` (value) from pi-ai; `Model`, `Api` (types) from pi-ai; `Container`, `Text`, `SelectList`, `SettingsList`, `truncateToWidth` (values), `SelectItem`, `SettingItem` (types) from pi-tui | Drives shim minimum surface (Step 3) | extensions/**/*.ts grep |
 | `.pi/` is gitignored — changes to `.pi/taskplane-config.json` will not be committed/merged | Modify the project-local `.pi/taskplane-config.json` in the lane worktree per PROMPT file scope; orchestrator/operator handles propagation | `.pi/taskplane-config.json` (Step 5) |
+| Pre-cleanup typecheck count (TP-194 baseline): **267 errors**, 0 module-resolution failures | Recorded for TP-194's gating decision | `npm run typecheck` against tsconfig.ci.json (Step 3) |
+| Typecheck error categories sampled (top): TS2304 (Cannot find name) — internal symbol references in engine.ts; TS2339 (Property does not exist) — union-type narrowing gaps; TS2322/2345/2352 (assignment type mismatches) — config-loader generic-coercions; TS2367 (no-overlap comparison) — string-literal type mismatches | TP-192/TP-194 cleanup queue (this task does not fix them) | engine.ts, config-loader.ts |
+| The base `extensions/tsconfig.json` has `typeRoots: ["../web/node_modules/@types"]` pointing to a directory that does not exist in this repo — a relic from a different layout | tsconfig.ci.json overrides typeRoots to the now-installed `../node_modules/@types`. Editor-facing tsconfig.json is left untouched per PROMPT do-not. | `extensions/tsconfig.json` |
+| `@types/node` had to be added to root devDependencies (not specified in spec section 6.1.2 but implied by `"types": ["node"]` in spec section 6.1.3) | Pinned to `@types/node@22` (matches Node 22 engines target). Documented as required-companion-of-typescript-pin. | root `package.json` devDependencies |
+| JSDoc comments containing `**/*.ts` glob fragments accidentally close the comment block (the `*/` inside) | Avoided in `pi-shims.d.ts` by rewording surface-seed reference; lesson noted | `extensions/types/pi-shims.d.ts` |
 
 ---
 
