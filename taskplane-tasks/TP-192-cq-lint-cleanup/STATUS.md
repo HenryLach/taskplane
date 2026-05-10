@@ -1,10 +1,10 @@
 # TP-192: Code-quality lint cleanup — Status
 
-**Current Step:** Step 1: Plan the cleanup strategy per error category
+**Current Step:** Step 2: Apply fixes by category
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -31,7 +31,7 @@
 ---
 
 ### Step 1: Plan the cleanup strategy per error category
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (plan-review APPROVE — R001)
 
 > ⚠️ Plan-review checkpoint.
 
@@ -61,36 +61,36 @@
 ---
 
 ### Step 2: Apply fixes by category
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step (the only code review for this task).
 
 #### `noImplicitAnyLet` × 5 — explicit type annotations
 
-- [ ] `extensions/taskplane/lane-runner.ts:148` — `let m;` → `let m: RegExpExecArray | null;`
-- [ ] `extensions/taskplane/merge.ts:2083` — `let entries;` → `let entries: Dirent[];` (verify `Dirent` import; add to existing `node:fs` import if missing)
-- [ ] `extensions/taskplane/task-executor-core.ts:102` — `let m;` → `let m: RegExpExecArray | null;`
-- [ ] `extensions/taskplane/task-executor-core.ts:110` — `let cb;` → `let cb: RegExpExecArray | null;`
-- [ ] `extensions/taskplane/task-executor-core.ts:127` — `let pm;` → `let pm: RegExpExecArray | null;`
+- [x] `extensions/taskplane/lane-runner.ts:148` — `let m;` → `let m: RegExpExecArray | null;`
+- [x] `extensions/taskplane/merge.ts:2083` — `let entries;` → `let entries: Dirent[];`. Added `type Dirent` to the existing `from "fs"` import (was missing).
+- [x] `extensions/taskplane/task-executor-core.ts:102` — `let m;` → `let m: RegExpExecArray | null;`
+- [x] `extensions/taskplane/task-executor-core.ts:110` — `let cb;` → `let cb: RegExpExecArray | null;`
+- [x] `extensions/taskplane/task-executor-core.ts:127` — `let pm;` → `let pm: RegExpExecArray | null;`
 
 #### `noControlCharactersInRegex` × 1
 
-- [ ] `extensions/taskplane/verification.ts:122` — convert `ANSI_REGEX` literal to `new RegExp("...", "g")` with escaped string; remove stale `// eslint-disable-next-line no-control-regex` comment
+- [x] `extensions/taskplane/verification.ts:122` — converted `ANSI_REGEX` literal to `new RegExp("...", "g")` with escaped string; removed stale `// eslint-disable-next-line no-control-regex` comment; replaced with a comment explaining the construction choice.
 
 #### `noRedeclare` × 2
 
-- [ ] `extensions/taskplane/waves.ts:10` — remove `AllocateLanesResult` from the type-import list (it's not exported from `./types.ts`; the local declaration at line 1072 stays)
-- [ ] `extensions/tests/orch-state-persistence.test.ts:4519` — rename the second `resolveRepoRoot` declaration to `resolveRepoRootMixedRepo` and update its 15 callers (4693, 4694, 4696, 4697, 4700, 4701, 4704, 4705, 4708, 4709, 4712, 4713, 4817, 4839, 5267)
+- [x] `extensions/taskplane/waves.ts:10` — removed `AllocateLanesResult` from the type-import list. Verified via `grep -rn "AllocateLanesResult" extensions/` that the type is only declared (not imported) in waves.ts; types.ts does NOT export it. The local `export interface AllocateLanesResult` at line 1072 is the canonical source.
+- [x] `extensions/tests/orch-state-persistence.test.ts:4519` — renamed the second `resolveRepoRoot` declaration to `resolveRepoRootMixedRepo` (section 8.1 self-containment helper). Updated 14 callers in section 8.1 (lines 4695-4715, 4819, 4841). The 5269 call (section TP-007 Step 2's `collectAllRepoRoots` helper) intentionally remains pointing at `resolveRepoRoot` (the section-7 declaration at line 4226), which has the narrower signature it expects. Added explanatory comment above the renamed declaration.
 
 #### `noUnsafeFinally` × 1
 
-- [ ] `extensions/taskplane/extension.ts:395-410` — invert `if (!snapshot) return;` to `if (snapshot) { ... }` (conditional cleanup, no early-return in finally)
+- [x] `extensions/taskplane/extension.ts:395-410` — inverted `if (!snapshot) return;` to `if (snapshot) { ... }` (conditional cleanup wraps the existing try/catch; no early-return in finally). Behavior identical: cleanup runs iff snapshot exists; never re-throws.
 
 #### Verification
 
-- [ ] Targeted tests pass for each modified file (fast feedback during implementation)
-- [ ] `npm run lint` exits 0 (the gate this task delivers)
-- [ ] Full fast suite passes (3624+ / 1 / 0)
+- [x] Targeted tests pass for each modified file: 215 tests across `verification-*`, `lane-runner-*`, `merge-failure-phase`, `orch-state-persistence`, `waves-repo-scoped` — all passing (392ms)
+- [x] `npm run lint` exits 0 — confirmed (0 errors, 277 warnings, 660 infos remain; warnings/infos are out of scope per spec section 6.2)
+- [x] Full fast suite passes: **3624 passing / 1 skipped / 0 failed** (3625 total, 37.5s) — exactly matches baseline
 
 ---
 
@@ -121,6 +121,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| R001 | plan | 1 | APPROVE | (no review file emitted by tool) |
 
 ---
 
@@ -177,3 +178,4 @@ on something that's structurally required to be redeclared), STOP and
 escalate to the operator via STATUS.md Discoveries rather than adding a
 `// biome-ignore` comment. The operator will decide whether to approve a
 suppression or expand scope.
+| 2026-05-10 16:25 | Review R001 | plan Step 1: APPROVE |

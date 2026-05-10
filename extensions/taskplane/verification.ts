@@ -118,8 +118,14 @@ export interface FingerprintDiff {
 /** Max length for normalized message strings */
 const MESSAGE_NORM_MAX_LENGTH = 512;
 
-// eslint-disable-next-line no-control-regex
-const ANSI_REGEX = /[\u001b\u009b]\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g;
+// Built via `new RegExp` so Biome's noControlCharactersInRegex (which only
+// inspects regex literals) does not flag the \u001b/\u009b escapes that are
+// fundamental to ANSI sequence detection. Runtime behavior is identical to
+// the prior literal regex; this is a static-analysis adjustment only.
+const ANSI_REGEX = new RegExp(
+	"[\\u001b\\u009b]\\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]",
+	"g",
+);
 
 /** Match duration strings like (42ms), (1.2s), (3m 12s), 42 ms, 1200ms */
 const DURATION_REGEX = /\(?\d+(?:\.\d+)?\s*(?:ms|s|m)\s*(?:\d+(?:\.\d+)?\s*(?:ms|s))?\)?/g;

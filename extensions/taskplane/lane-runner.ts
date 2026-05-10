@@ -145,7 +145,7 @@ export function getSegmentCheckboxes(
 	let unchecked = 0;
 	const uncheckedTexts: string[] = [];
 	const cbRegex = /^\s*-\s*\[([ xX])\]\s*(.*)/gm;
-	let m;
+	let m: RegExpExecArray | null;
 	while ((m = cbRegex.exec(segContent)) !== null) {
 		if (m[1].toLowerCase() === "x") {
 			checked++;

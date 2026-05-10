@@ -2,7 +2,7 @@
  * Merge orchestration, merge agents, merge worktree
  * @module orch/merge
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync, readdirSync, type Dirent } from "fs";
 import { readFile as fsReadFile } from "fs/promises";
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
@@ -2080,7 +2080,7 @@ export async function mergeWave(
 			if (!existsSync(rootDir)) return [];
 			const files: string[] = [];
 			const walk = (dir: string): void => {
-				let entries;
+				let entries: Dirent[];
 				try {
 					entries = readdirSync(dir, { withFileTypes: true });
 				} catch {

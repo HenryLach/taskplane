@@ -4515,8 +4515,10 @@ function collectRepoRoots(
 
 console.log("\n── 8.1: Mixed-repo reconciliation scenarios (TP-007) ──");
 
-// Reimplement resolveRepoRoot (mirrors source exactly)
-function resolveRepoRoot(
+// Reimplement resolveRepoRoot for section 8.1 self-containment (mirrors source exactly).
+// Renamed from `resolveRepoRoot` to avoid clashing with the section-7 helper of the same name
+// (Biome lint/suspicious/noRedeclare). Bodies are functionally identical.
+function resolveRepoRootMixedRepo(
 	repoId: string | undefined,
 	defaultRepoRoot: string,
 	workspaceConfig?: { repos: Map<string, { path: string; defaultBranch?: string }> } | null,
@@ -4690,26 +4692,26 @@ const testWorkspaceConfig = {
 	const defaultRoot = "/default/repo";
 
 	// v2 workspace: lane with repoId="api" → resolves to /repos/api
-	const apiRoot = resolveRepoRoot("api", defaultRoot, testWorkspaceConfig);
+	const apiRoot = resolveRepoRootMixedRepo("api", defaultRoot, testWorkspaceConfig);
 	assertEqual(apiRoot, "/repos/api", "resolveRepoRoot: api → /repos/api");
 
-	const frontendRoot = resolveRepoRoot("frontend", defaultRoot, testWorkspaceConfig);
+	const frontendRoot = resolveRepoRootMixedRepo("frontend", defaultRoot, testWorkspaceConfig);
 	assertEqual(frontendRoot, "/repos/frontend", "resolveRepoRoot: frontend → /repos/frontend");
 
 	// v1/repo mode: undefined repoId → returns default root
-	const undefinedRoot = resolveRepoRoot(undefined, defaultRoot, testWorkspaceConfig);
+	const undefinedRoot = resolveRepoRootMixedRepo(undefined, defaultRoot, testWorkspaceConfig);
 	assertEqual(undefinedRoot, defaultRoot, "resolveRepoRoot: undefined → default root");
 
 	// v1/repo mode: no workspace config → returns default root
-	const noConfigRoot = resolveRepoRoot("api", defaultRoot, null);
+	const noConfigRoot = resolveRepoRootMixedRepo("api", defaultRoot, null);
 	assertEqual(noConfigRoot, defaultRoot, "resolveRepoRoot: null config → default root");
 
 	// v1/repo mode: empty string repoId → returns default root (falsy check)
-	const emptyRoot = resolveRepoRoot("", defaultRoot, testWorkspaceConfig);
+	const emptyRoot = resolveRepoRootMixedRepo("", defaultRoot, testWorkspaceConfig);
 	assertEqual(emptyRoot, defaultRoot, "resolveRepoRoot: empty string → default root");
 
 	// Unknown repoId → defensive fallback to default root
-	const unknownRoot = resolveRepoRoot("unknown-repo", defaultRoot, testWorkspaceConfig);
+	const unknownRoot = resolveRepoRootMixedRepo("unknown-repo", defaultRoot, testWorkspaceConfig);
 	assertEqual(unknownRoot, defaultRoot, "resolveRepoRoot: unknown repo → default root");
 }
 
@@ -4814,7 +4816,7 @@ const testWorkspaceConfig = {
 
 	const uniqueRoots = new Set<string>();
 	for (const lr of persistedLanes) {
-		uniqueRoots.add(resolveRepoRoot(lr.repoId, defaultRoot, testWorkspaceConfig));
+		uniqueRoots.add(resolveRepoRootMixedRepo(lr.repoId, defaultRoot, testWorkspaceConfig));
 	}
 
 	assertEqual(uniqueRoots.size, 3, "unique roots: 3 distinct roots (api, frontend, default)");
@@ -4836,7 +4838,7 @@ const testWorkspaceConfig = {
 
 	const uniqueRoots = new Set<string>();
 	for (const lr of emptyLanesState.lanes) {
-		uniqueRoots.add(resolveRepoRoot(lr.repoId, defaultRoot, null));
+		uniqueRoots.add(resolveRepoRootMixedRepo(lr.repoId, defaultRoot, null));
 	}
 	if (uniqueRoots.size === 0) {
 		uniqueRoots.add(defaultRoot);
