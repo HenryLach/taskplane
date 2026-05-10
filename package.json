@@ -28,6 +28,7 @@
   "scripts": {
     "typecheck": "tsc --project extensions/tsconfig.ci.json --noEmit",
     "lint": "biome lint --no-errors-on-unmatched .",
+    "lint:fix": "biome lint --write --no-errors-on-unmatched .",
     "format": "biome format --write --no-errors-on-unmatched .",
     "format:check": "biome format --no-errors-on-unmatched ."
   },

@@ -85,6 +85,9 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
    - Especially for discovery, waves, persistence/resume, and command parsing.
 
 4. **Run validations locally (minimum)**
+   - `npm run typecheck` (required CI gate — TypeScript errors block merge)
+   - `npm run lint` (required CI gate — Biome lint errors block merge)
+   - `npm run format:check` (required CI gate — Biome format drift blocks merge)
    - `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
    - If CLI changed: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
 
