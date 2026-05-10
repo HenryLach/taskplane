@@ -74,14 +74,14 @@
 ---
 
 ### Step 4: Implement Parts 3-4 — documentation
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] `AGENTS.md` validation checklist augmented with the three commands
-- [ ] `docs/maintainers/release-process.md` pre-release checklist augmented
-- [ ] `docs/maintainers/development-setup.md` documents the gate commands
-- [ ] Cross-reference checks (no other docs reference legacy gate behavior)
+- [x] `AGENTS.md` validation checklist augmented with the three commands (typecheck/lint/format:check, labeled as required CI gates)
+- [x] `docs/maintainers/release-process.md` pre-release checklist augmented (added a code-quality-gates block in section 2 + 3 new checkboxes in the Pre-release checklist)
+- [x] `docs/maintainers/development-setup.md` documents the gate commands (new "Code-quality gates (required for every PR)" section before the existing Biome section, with spec link)
+- [x] Cross-reference checks: spec doc references are historical/design (kept); CHANGELOG entries are historical (kept); no other operator-facing docs reference the legacy gate behavior. `templates/agents/task-worker.md` and `templates/agents/supervisor.md` have no gate references requiring update.
 
 ---
 

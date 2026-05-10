@@ -121,6 +121,33 @@ and `@mariozechner/pi-tui` to local mock stubs so tests don't need the real pack
 
 ---
 
+## Code-quality gates (required for every PR)
+
+Three static checks are **required CI gates** — every PR must pass all three
+before it can be merged. Each runs as a separate step in `.github/workflows/ci.yml`
+and a failure blocks the merge:
+
+```bash
+npm run typecheck       # TypeScript type-check (tsc --noEmit against extensions/tsconfig.ci.json)
+npm run lint            # Biome lint check
+npm run format:check    # Biome format check (non-zero exit on diff)
+```
+
+Run these locally before pushing for PR — they are cheap (each runs in a few
+seconds) and catch regressions before CI does. The rationale for the three-gate
+baseline is documented in
+[`docs/specifications/taskplane/code-quality-gates.md`](../specifications/taskplane/code-quality-gates.md)
+(the spec that introduced these gates via TP-191/TP-192/TP-193/TP-194).
+
+To auto-fix the lint/format gates locally:
+
+```bash
+npm run lint:fix        # apply safe Biome lint autofixes
+npm run format          # rewrite files in-place to match the format check
+```
+
+The typecheck gate has no auto-fix — type errors must be addressed by hand.
+
 ## Code style and `git blame.ignoreRevsFile` (recommended one-time config)
 
 Taskplane uses [Biome](https://biomejs.dev) as both linter and formatter. The

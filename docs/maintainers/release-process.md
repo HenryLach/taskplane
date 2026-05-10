@@ -85,7 +85,16 @@ npm pack --dry-run
 
 Confirm only intended files ship (per `package.json#files`).
 
-Run the test suite:
+Run the code-quality gates (all three are required CI gates — if they fail
+locally, CI will block the release PR):
+
+```bash
+npm run typecheck
+npm run lint
+npm run format:check
+```
+
+All three must exit 0. Then run the test suite:
 
 ```bash
 cd extensions
@@ -306,6 +315,9 @@ a `-` qualifier).
 
 - [ ] `main` is clean and synced
 - [ ] All content PRs that should ship are merged
+- [ ] `npm run typecheck` exits 0 (required CI gate)
+- [ ] `npm run lint` exits 0 (required CI gate)
+- [ ] `npm run format:check` exits 0 (required CI gate)
 - [ ] Tests pass: `cd extensions && npm run test:fast`
 - [ ] CLI smoke: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
 - [ ] `npm pack --dry-run` reviewed (only intended files ship)
