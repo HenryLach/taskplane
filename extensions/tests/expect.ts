@@ -32,7 +32,11 @@ interface ExpectMethods {
 	toBeCloseTo(expected: number, numDigits?: number): void;
 	toMatch(re: RegExp | string): void;
 	toBeInstanceOf(cls: unknown): void;
-	toHaveProperty(key: string): void;
+	/**
+	 * TP-195: accept optional `value` argument for Vitest-style
+	 * `toHaveProperty(key, value)` calls.
+	 */
+	toHaveProperty(key: string, value?: unknown): void;
 	toThrow(expected?: string | RegExp | (new (...args: any[]) => Error)): void;
 	toHaveBeenCalled(): void;
 	toHaveBeenCalledTimes(n: number): void;
@@ -40,7 +44,31 @@ interface ExpectMethods {
 	not: Omit<ExpectMethods, "not">;
 }
 
-export function expect(actual: unknown): ExpectMethods {
+/**
+ * Vitest-compatible `expect.unreachable(msg)` helper.
+ *
+ * Throws an assertion error with the given message. Used in tests where a
+ * code path should be unreachable (e.g., after a `throw` in the
+ * production code, the test asserts that the catch handler ran rather
+ * than fall-through). Static method on `expect` to match Vitest's API.
+ *
+ * @since TP-195 (#TBD) — was previously called but never defined,
+ * silently typecheck-erroring on every call site (TS2339).
+ */
+export function expectUnreachable(message?: string): never {
+	assert.fail(message ?? "Reached unreachable code path");
+}
+
+/**
+ * TP-195: Accept an optional 2nd `message` argument to mirror Vitest's
+ * diagnostic-message API. The message is currently advisory — our
+ * `node:assert`-backed matchers already include the failed-value context
+ * in their own thrown messages — but accepting it lets ~190 existing
+ * `expect(value, "description").toBe(...)` call sites typecheck. The
+ * message argument is stored but not yet woven into the matcher output;
+ * it CAN be wired in later if richer assertion messages are needed.
+ */
+export function expect(actual: unknown, _message?: string): ExpectMethods {
 	const methods: ExpectMethods = {
 		toBe(expected: unknown) {
 			assert.strictEqual(actual, expected);
@@ -137,11 +165,18 @@ export function expect(actual: unknown): ExpectMethods {
 				`Expected instance of ${(cls as any).name}, got ${actual}`,
 			);
 		},
-		toHaveProperty(key: string) {
+		toHaveProperty(key: string, value?: unknown) {
 			assert.ok(
 				actual != null && key in (actual as object),
 				`Expected object to have property "${key}"`,
 			);
+			if (arguments.length > 1) {
+				assert.deepStrictEqual(
+					(actual as Record<string, unknown>)[key],
+					value,
+					`Expected property "${key}" to deepEqual ${JSON.stringify(value)}`,
+				);
+			}
 		},
 		toThrow(expected?: string | RegExp | (new (...args: any[]) => Error)) {
 			if (expected === undefined) {
@@ -310,4 +345,16 @@ export function expect(actual: unknown): ExpectMethods {
 	} as Omit<ExpectMethods, "not">;
 
 	return methods;
+}
+
+// TP-195: attach `unreachable` as a static method on `expect` so call sites
+// can write `expect.unreachable(...)` per Vitest's API. The function type
+// is the call signature `(actual: unknown) => ExpectMethods`; we widen it
+// to include the static slot via a typed assignment + a declaration merge.
+(expect as unknown as { unreachable: typeof expectUnreachable }).unreachable = expectUnreachable;
+
+// Type declaration so consumers can call `expect.unreachable(...)` without
+// a TS error. Mirrors Vitest's surface for this single static method.
+export declare namespace expect {
+	export function unreachable(message?: string): never;
 }

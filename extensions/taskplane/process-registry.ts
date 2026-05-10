@@ -50,6 +50,12 @@ import {
 	type PacketPaths,
 } from "./types.ts";
 
+// TP-195: Re-export RuntimeRegistry so dynamic-import references in
+// execution.ts (`import("./process-registry.ts").RuntimeRegistry`) resolve
+// without each call site having to import directly from types.ts. Pure
+// re-export — no runtime impact.
+export type { RuntimeRegistry };
+
 // ── Manifest Lifecycle ───────────────────────────────────────────────
 
 /**

@@ -65,9 +65,12 @@ function makeLaneResult(overrides: Partial<MergeLaneResult> = {}): MergeLaneResu
 		result: {
 			status: "SUCCESS",
 			source_branch: "task/lane-1",
+			target_branch: "main",
 			merge_commit: "cccc3333",
 			conflicts: [],
-			verification: { passed: true, commands: [], output: "" },
+			// TP-195: `commands` removed from `MergeVerification` schema; use
+			// `ran` (canonical field) instead.
+			verification: { ran: true, passed: true, output: "" },
 		},
 		error: null,
 		durationMs: 1000,

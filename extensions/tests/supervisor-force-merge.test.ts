@@ -366,7 +366,9 @@ describe("3.x — orch_force_merge recovery prep logic (persisted state)", () =>
 				"some other error",
 				"Merge timeout on lane 2",
 			],
-			lastError: "merge failed for wave 0",
+			// TP-195: `lastError` is `{code, message}` not a string. Mirror the
+			// structured shape so the override matches `PersistedBatchState`.
+			lastError: { code: "MERGE_FAILED", message: "merge failed for wave 0" },
 		});
 
 		// Simulate doOrchForceMerge error clearing
@@ -381,7 +383,10 @@ describe("3.x — orch_force_merge recovery prep logic (persisted state)", () =>
 
 	it("3.7 — force merge defaults to current wave when waveIndex not provided", () => {
 		const state = buildTestPersistedState({ currentWaveIndex: 0 });
-		const targetWave = undefined ?? state.currentWaveIndex;
+		// TP-195: typed `number | undefined` to express the fallback intent
+		// without TS’s “always nullish” warning on the literal `undefined`.
+		const providedWave: number | undefined = undefined;
+		const targetWave = providedWave ?? state.currentWaveIndex;
 		expect(targetWave).toBe(0);
 	});
 

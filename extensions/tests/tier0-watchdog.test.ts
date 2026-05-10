@@ -258,7 +258,17 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 					laneId: "lane-1",
 					sourceBranch: "task/TP-TEST",
 					targetBranch: "main",
-					result: { status: "MERGED", resolvedWith: null, error: null },
+					// TP-195: rewritten to the canonical `MergeResult` shape (was
+					// using legacy `MERGED`/`resolvedWith`/`error` fields that no
+					// longer exist on the type).
+					result: {
+						status: "SUCCESS",
+						source_branch: "task/TP-TEST",
+						target_branch: "main",
+						merge_commit: "abc123",
+						conflicts: [],
+						verification: { ran: true, passed: true, output: "" },
+					},
 					error: null,
 					durationMs: 800,
 				},
@@ -367,7 +377,15 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 					laneId: "lane-1",
 					sourceBranch: "task/TP-TEST",
 					targetBranch: "main",
-					result: { status: "CONFLICT_UNRESOLVED", resolvedWith: null, error: "conflict" },
+					// TP-195: rewritten to the canonical `MergeResult` shape.
+					result: {
+						status: "CONFLICT_UNRESOLVED",
+						source_branch: "task/TP-TEST",
+						target_branch: "main",
+						merge_commit: "",
+						conflicts: [{ file: "src/conflict.ts", type: "content", resolved: false }],
+						verification: { ran: false, passed: false, output: "" },
+					},
 					error: null,
 					durationMs: 500,
 				},

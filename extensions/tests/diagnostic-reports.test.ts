@@ -42,6 +42,12 @@ type DiagnosticEvent = import("../taskplane/diagnostic-reports.ts").DiagnosticEv
 const { defaultBatchDiagnostics } = await import("../taskplane/types.ts");
 type PersistedTaskRecord = import("../taskplane/types.ts").PersistedTaskRecord;
 type OrchestratorConfig = import("../taskplane/types.ts").OrchestratorConfig;
+// TP-195: import `ExitClassification` for the test's `"crash"` literal
+// (which isn't in the canonical union but flows through the formatter
+// as an opaque string; a cast preserves the test's intent without
+// changing runtime behavior).
+type ExitClassification = import("../taskplane/diagnostics.ts").ExitClassification;
+const { makeOrchestratorConfig } = await import("./helpers/mock-orchestrator-config.ts");
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -67,14 +73,16 @@ function makeTask(
 /** Build a minimal DiagnosticReportInput with overrides. */
 function makeInput(overrides: Partial<DiagnosticReportInput> = {}): DiagnosticReportInput {
 	return {
-		orchConfig: {
-			orchestrator: {
-				lanes: 2,
-				session_prefix: "orch",
-				worktree_prefix: "orch",
-				integration: "manual",
-			},
-		} as OrchestratorConfig,
+		// TP-195: use the shared factory so this mock stays in sync with
+		// the canonical `OrchestratorConfig` schema; the previous inline
+		// literal had drifted (`lanes` should be `max_lanes`,
+		// `session_prefix` should be `sessionPrefix`, and most required
+		// sections were missing). The 2-step `as unknown as` cast that
+		// papered over the drift was a code smell flagged by
+		// `npm run typecheck`.
+		orchConfig: makeOrchestratorConfig({
+			orchestrator: { max_lanes: 2, worktree_prefix: "orch", integration: "manual" },
+		}),
 		batchId: "test-batch-001",
 		phase: "completed",
 		mode: "repo",
@@ -286,7 +294,7 @@ describe("eventsToJsonl", () => {
 				mode: "repo",
 				taskId: "T-002",
 				status: "failed",
-				classification: "crash",
+				classification: "crash" as ExitClassification,
 				cost: 0.3,
 				durationSec: 30,
 				retries: 1,
@@ -358,7 +366,12 @@ describe("buildMarkdownReport", () => {
 			diagnostics: {
 				taskExits: {
 					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60, retries: 0 },
-					"TP-002": { classification: "crash", cost: 0.05, durationSec: 30, retries: 1 },
+					"TP-002": {
+						classification: "crash" as ExitClassification,
+						cost: 0.05,
+						durationSec: 30,
+						retries: 1,
+					},
 				},
 				batchCost: 0.15,
 			},
@@ -390,7 +403,7 @@ describe("buildMarkdownReport", () => {
 			diagnostics: {
 				taskExits: {
 					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60 },
-					"TP-002": { classification: "crash", cost: 0.05, durationSec: 30 },
+					"TP-002": { classification: "crash" as ExitClassification, cost: 0.05, durationSec: 30 },
 					"TP-003": { classification: "completed", cost: 0.2, durationSec: 90 },
 				},
 				batchCost: 0.35,
@@ -520,7 +533,12 @@ describe("emitDiagnosticReports — robustness", () => {
 			diagnostics: {
 				taskExits: {
 					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60, retries: 0 },
-					"TP-002": { classification: "crash", cost: 0.05, durationSec: 30, retries: 1 },
+					"TP-002": {
+						classification: "crash" as ExitClassification,
+						cost: 0.05,
+						durationSec: 30,
+						retries: 1,
+					},
 				},
 				batchCost: 0.15,
 			},

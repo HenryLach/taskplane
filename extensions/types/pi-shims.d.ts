@@ -31,7 +31,21 @@
 declare module "@earendil-works/pi-coding-agent" {
 	// Types
 	export type ExtensionAPI = any;
-	export type ExtensionContext = any;
+	// TP-195: Extended `ExtensionContext` from `any` to a structural
+	// interface that exposes `ui.custom<T>()` with explicit type-argument
+	// support. The 4 settings-tui.ts call sites (`ctx.ui.custom<T>(cb)`)
+	// were rejected as TS2347 "Untyped function calls may not accept type
+	// arguments" because `any` typed methods cannot accept generics.
+	// `ui` is optional so partial test mocks (e.g., `{ model: null }`)
+	// still satisfy the type. Index signatures preserve forward-compat
+	// for any other ctx access.
+	export interface ExtensionContext {
+		ui?: {
+			custom<T = unknown>(...args: any[]): Promise<T>;
+			[key: string]: any;
+		};
+		[key: string]: any;
+	}
 	// Values
 	export class DynamicBorder {
 		constructor(...args: any[]);
@@ -81,7 +95,15 @@ declare module "@earendil-works/pi-tui" {
 
 declare module "@mariozechner/pi-coding-agent" {
 	export type ExtensionAPI = any;
-	export type ExtensionContext = any;
+	// TP-195: parallel `ExtensionContext` interface for the legacy scope
+	// (same rationale as the `@earendil-works/pi-coding-agent` declaration).
+	export interface ExtensionContext {
+		ui?: {
+			custom<T = unknown>(...args: any[]): Promise<T>;
+			[key: string]: any;
+		};
+		[key: string]: any;
+	}
 	export class DynamicBorder {
 		constructor(...args: any[]);
 		[key: string]: any;

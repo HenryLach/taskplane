@@ -7,8 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Preflight cleanup feature now actually runs (TP-195):** `runOrchBatch`
+  in `extensions/taskplane/engine.ts` referenced `sweepStaleArtifacts`,
+  `formatPreflightSweep`, `rotateSupervisorLogs`, and `formatLogRotation`
+  inside the preflight-cleanup try-block, but those identifiers were
+  never imported from `./cleanup.ts`. At runtime the first reference
+  threw a ReferenceError that the enclosing catch-all swallowed, so
+  Layers 2–5 of preflight cleanup (age-based artifact sweep, supervisor
+  log rotation, telemetry size cap, prior-batch artifact cleanup) had
+  been silently a no-op since TP-065 / #221 (․2024-09). The missing
+  imports were uncovered by the TP-191 typecheck script; this fix adds
+  them so the advertised cleanup runs on every batch. Regression test:
+  `tests/lane-runner-v2.test.ts 3.10` asserts the four helpers are
+  imported from `./cleanup.ts`.
+- **`max_worker_minutes` config field is honored (TP-195):** Lane-runner
+  config in `executeLaneV2` (`extensions/taskplane/execution.ts`) was
+  reading a non-existent `config.failure?.maxWorkerMinutes` camelCase
+  alias — always undefined — silently ignoring any operator-set value
+  on `OrchestratorConfig.failure.max_worker_minutes` and always falling
+  through to the hard-coded `120`-minute default. Fixed to read the
+  canonical snake_case field. Operators with `max_worker_minutes`
+  configured in `.pi/taskplane-config.json` will now have their
+  configured limit honored; default of 120 preserved when the field is
+  unset. Regression test: `tests/lane-runner-v2.test.ts 3.9` asserts
+  the corrected accessor and absence of the typo.
+- **Resume’s failed-task supervisor-alert path no longer crashes
+  (TP-195):** When `/orch-resume` encountered a failed task during a
+  wave, the supervisor-alert emission block in `resume.ts` called
+  `batchState.tasks.find(…)`, but `OrchBatchRuntimeState` has no
+  `tasks` field (only `PersistedBatchState` does). The runtime call
+  would throw `TypeError: undefined.find is not a function`. The
+  failed-task path was never covered by tests, so the crash never
+  surfaced. Replaced with a lookup against `laneForTask?.tasks.find
+  (…)?.task` — the lane-allocated `ParsedTask` payload carries the
+  same `segmentIds`/`activeSegmentId` data the alert needs.
+  Regression test: `tests/resume-bug-fixes.test.ts 4.1`.
+
 ### Internal
 
+- **Code-quality typecheck cleanup (TP-195):** Fourth of four sequenced
+  packets implementing the code-quality-gates spec
+  ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)).
+  Cleaned up the **264 typecheck errors** that TP-191 surfaced when it
+  first made `npm run typecheck` runnable, so TP-194’s gate flip can
+  promote typecheck from advisory to a CI gate. Final state:
+  `npm run typecheck` exits 0 against `extensions/tsconfig.ci.json` at
+  the current strictness (`strict: false`, `noImplicitAny: false`).
+  **Per-category breakdown of fixes** (top categories at task start):
+  TS2339 (63) — property-not-exist; TS2741 (52) — mock-object missing
+  required fields; TS2345 (30) — caller-shape mismatch; TS2554 (23) —
+  signature drift; TS2367 (21) — unintentional comparison; TS2322 (19)
+  — assignment mismatch; TS2739 (12) — type missing properties; plus
+  smaller TS2769/TS2353/TS2352/TS2559/TS2347/TS2578/TS2304/TS2871/
+  TS2694 counts. **Source-side highlights:** 4 latent bugs uncovered
+  and fixed (preflight-cleanup-feature no-op, `max_worker_minutes`
+  typo, resume failed-task crash, plus an extension.ts dashboard
+  change-detection that was reading non-existent fields and only ever
+  refreshing on `currentTaskId` — dropped the dead comparisons,
+  observable behavior unchanged); widened `execLog`’s `extra`
+  parameter from `Record<string, string\|number\|boolean>` to
+  `Record<string, unknown>` (callers were already passing arrays/
+  objects; template-string stringification preserved); re-exported
+  `RuntimeRegistry` from `process-registry.ts`; documented optional
+  `batchId?` field on `OrchestratorConfig.orchestrator`; added
+  `EXEC_MISSING_TASK_FOLDER` to `ExecutionErrorCode`; fixed
+  discriminated-union narrowing under non-strict mode by adding
+  `reason?: undefined` / `error?: undefined` to success branches;
+  switched `loadProjectOverrides` / `migrateProjectOverrides` /
+  `loadJsonConfig` / `mergeProjectOverrides` to
+  `DeepPartial<TaskplaneConfig>`; changed `spawnMergeAgentV2` return
+  type to `Promise<void>` (fire-and-forget). **Test-side highlights:**
+  introduced shared `tests/helpers/mock-orchestrator-config.ts`
+  factories (`makeOrchestratorConfig`/`makeTaskRunnerConfig`) that
+  wrap `DEFAULT_*_CONFIG` defaults from `types.ts` so test mocks stay
+  in sync with the runtime schema; added `expect.unreachable()` and
+  optional 2nd `message` arg to `expect()` (Vitest-compat surface that
+  ~190 sites already relied on); fixed phase-narrowing in 9.x
+  launch-window suite via typed `OrchBatchPhase` casts; updated
+  `LaneRunnerConfig` / `PersistedTaskRecord` / `MergeResult` /
+  `BatchSummaryData` / `MinimalBatchState` / `WorkspaceRoutingConfig`
+  fixtures to match current schemas; replaced legacy `RuntimeAgentStatus`
+  `"complete"` with canonical `"exited"`; converted `it(name, fn,
+  30000)` calls to `it(name, { timeout: 30000 }, fn)` for node:test
+  compatibility; declared `mock.fn<(…args: any[]) => any>()` so
+  `mockImplementation` accepts non-undefined returns. **Anti-shortcut
+  policy enforced:** zero new `as any` casts; zero `@ts-expect-error`
+  added (the 3 unused-directive errors were removed); only legitimate
+  2-step `as unknown as X` widenings with justifying comments; no
+  garbage default values — every mock-object missing-field fix uses
+  a schema-defined value. **Pi-shim** extended `ExtensionContext`
+  from `any` to a structural interface so `ctx.ui.custom<T>()`
+  typechecks at 4 settings-tui.ts call sites; `ui` left optional so
+  thin test mocks (e.g., `{ model: null }`) still satisfy the type.
+  After the pass: `npm run typecheck` exits 0;
+  `npm run lint` / `npm run format:check` unchanged from baseline;
+  test suite **3627 passing / 1 skipped / 0 failed** (TP-191
+  baseline 3624 + 3 new TP-195 regression tests for the
+  fix-the-bug paths). **Strict mode remains out of scope** — the
+  strictness ratchet (enabling `strict: true` /
+  `noImplicitAny: true`) is a separate post-TP-194 follow-up. With
+  this packet merged, TP-194’s typecheck-gate flip CRITICAL
+  pre-condition (“`npm run typecheck` exits 0 on `main`”) is
+  satisfied.
 - **Code-quality formatter adoption (TP-193):** Third of four sequenced
   packets implementing the code-quality-gates spec
   ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)

@@ -173,8 +173,10 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
 		// TP-181: window widened from 5000 to 6000 to accommodate worker env
 		// var reads. TP-187: widened to 7000 to accommodate the lane-respawned
-		// emit added at the top of the function body.
-		const bodySection = executionSrc.slice(start, start + 7000);
+		// emit added at the top of the function body. TP-195: widened to 7500
+		// to accommodate the typecheck-cleanup TP-195 comments documenting the
+		// `maxWorkerMinutes`/`projectName` field-name decisions.
+		const bodySection = executionSrc.slice(start, start + 7500);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});
@@ -189,6 +191,31 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
 		const bodySection = executionSrc.slice(start, start + 5000);
 		expect(bodySection).toContain("buildRuntimeAgentId(");
+	});
+
+	it("3.9 (TP-195): executeLaneV2 honors `config.failure.max_worker_minutes` (snake_case)", () => {
+		// TP-195: regression check that the source reads `max_worker_minutes`
+		// (the canonical snake_case key on `OrchestratorConfig.failure`) and
+		// NOT the legacy camelCase typo `maxWorkerMinutes`, which used to
+		// silently fall through to the hard-coded `120` default.
+		expect(executionSrc).toContain("config.failure?.max_worker_minutes");
+		expect(executionSrc).not.toContain("config.failure?.maxWorkerMinutes");
+		expect(executionSrc).not.toContain("config.failure as unknown as { maxWorkerMinutes");
+	});
+
+	it("3.10 (TP-195): preflight cleanup helpers are imported from ./cleanup.ts", () => {
+		// TP-195: regression check that engine.ts imports the 4 preflight
+		// cleanup helpers (`sweepStaleArtifacts`, `formatPreflightSweep`,
+		// `rotateSupervisorLogs`, `formatLogRotation`). Before the fix
+		// these were referenced inside `runOrchBatch` but never imported,
+		// so the enclosing try/catch silently swallowed the ReferenceError
+		// and Layers 2–5 of preflight cleanup were a no-op since TP-065.
+		const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+		const importBlock = engineSrc.match(/import \{[^}]*\} from "\.\/cleanup\.ts";/)?.[0] ?? "";
+		expect(importBlock).toContain("sweepStaleArtifacts");
+		expect(importBlock).toContain("formatPreflightSweep");
+		expect(importBlock).toContain("rotateSupervisorLogs");
+		expect(importBlock).toContain("formatLogRotation");
 	});
 });
 

@@ -2366,7 +2366,14 @@ export async function resumeOrchBatch(
 		for (const taskId of waveResult.failedTaskIds) {
 			const outcome = allTaskOutcomes.find((o) => o.taskId === taskId);
 			const laneForTask = latestAllocatedLanes.find((l) => l.tasks.some((t) => t.taskId === taskId));
-			const taskRecord = batchState.tasks.find((task) => task.taskId === taskId);
+			// TP-195: corrected the lookup to the real source of segment
+			// metadata. `batchState.tasks` does not exist on
+			// `OrchBatchRuntimeState` (it's on `PersistedBatchState`); the
+			// previous read would have thrown `undefined.find is not a
+			// function` if hit at runtime. The allocated lane carries the
+			// `ParsedTask` payload via `AllocatedTask.task`, which has
+			// `segmentIds`/`activeSegmentId` already populated by discovery.
+			const taskRecord = laneForTask?.tasks.find((t) => t.taskId === taskId)?.task;
 			const exitReason = outcome?.exitReason || "unknown";
 			const hasPartialProgress = (outcome?.partialProgressCommits ?? 0) > 0;
 			const segmentFrontier = buildSupervisorSegmentFrontierSnapshot(
@@ -3296,7 +3303,17 @@ export async function resumeOrchBatch(
 	// supervisor agent. Legacy engine fast-forward is removed — supervisor
 	// handles all non-manual integration after batch_complete event.
 	const mergedTaskCount = batchState.succeededTasks;
-	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
+	// TP-195: hoist `batchState.phase` to a fresh local with the wide
+	// `OrchBatchPhase` type. TypeScript's narrowing-on-property semantics
+	// under `strict: false` carries assignments forward through the
+	// function (visible in the `(batchState.phase as OrchBatchPhase) === ...`
+	// pattern already used at lines ~3366/~3476 above), which here narrows
+	// `batchState.phase` to a subtype that excludes `"completed"` and
+	// `"failed"`. Hoisting to a typed local breaks the narrowing chain so
+	// the comparisons typecheck without a per-call cast. Runtime
+	// evaluation is identical.
+	const phaseAtTerminal = batchState.phase as OrchBatchPhase;
+	const isTerminalPhase = phaseAtTerminal === "completed" || phaseAtTerminal === "failed";
 	if (
 		isTerminalPhase &&
 		!preserveWorktreesForResume &&
@@ -3337,7 +3354,9 @@ export async function resumeOrchBatch(
 	);
 
 	// ── TP-076: Emit supervisor alert for batch completion ──────
-	if (batchState.phase === "completed" || batchState.phase === "failed") {
+	// TP-195: reuse the hoisted-typed phase to avoid the same narrowing
+	// artifact as the `isTerminalPhase` check above.
+	if (phaseAtTerminal === "completed" || phaseAtTerminal === "failed") {
 		const batchDurationMs = batchState.endedAt ? batchState.endedAt - batchState.startedAt : 0;
 		const durationStr =
 			batchDurationMs > 0

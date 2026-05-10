@@ -1282,6 +1282,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1332,6 +1333,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1377,6 +1379,7 @@ describe("16.x — formatBatchSummary", () => {
 					resolution: "retried merge OK",
 				},
 			],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1418,6 +1421,7 @@ describe("16.x — formatBatchSummary", () => {
 				},
 			],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1446,6 +1450,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1471,6 +1476,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1500,6 +1506,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1540,6 +1547,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1567,6 +1575,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);
@@ -1592,6 +1601,7 @@ describe("16.x — formatBatchSummary", () => {
 			mergeResults: [],
 			auditEntries: [],
 			tier0Events: [],
+			segmentOutcomes: null,
 			errors: [],
 		};
 		const md = formatBatchSummary(data);

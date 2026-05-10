@@ -152,10 +152,12 @@ describe("filterExcludedExtensions", () => {
 
 	it("handles null/undefined exclusions gracefully", () => {
 		const packages = ["npm:pi-sage"];
-		// @ts-expect-error — testing runtime safety
-		const result1 = filterExcludedExtensions(packages, null);
+		// TP-195: removed stale `@ts-expect-error` markers — the function
+		// signature now accepts `null \| undefined` for the exclusions arg,
+		// so the directives became unused-directive errors. Runtime
+		// safety is still being verified by the assertions below.
+		const result1 = filterExcludedExtensions(packages, null as unknown as string[]);
 		assert.deepEqual(result1, ["npm:pi-sage"]);
-		// @ts-expect-error — testing runtime safety
 		const result2 = filterExcludedExtensions(packages, undefined);
 		assert.deepEqual(result2, ["npm:pi-sage"]);
 	});

@@ -389,7 +389,7 @@ describe("TP-187 #539: reconstructBatchStateFromRuntime", () => {
 				pid: 99999,
 				parentPid: 99998,
 				startedAt: 1100,
-				status: "complete",
+				status: "exited",
 				cwd: t.cwd,
 				packet: null,
 			};
@@ -447,7 +447,7 @@ describe("TP-187 #539: reconstructBatchStateFromRuntime", () => {
 			pid: 99999,
 			parentPid: 99998,
 			startedAt: 1100,
-			status: "complete",
+			status: "exited",
 			cwd: wt,
 			packet: null,
 		};
@@ -481,7 +481,7 @@ describe("TP-187 #539: reconstructBatchStateFromRuntime", () => {
 			pid: 99999,
 			parentPid: 99998,
 			startedAt: 1100,
-			status: "complete",
+			status: "exited",
 			cwd: join(stateRoot, "non-existent-worktree"),
 			packet: null,
 		};
@@ -684,7 +684,11 @@ describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (beh
 			terminatedLanes.set(info.laneNumber, info.terminatedAt);
 			if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
 		};
-		const onLaneRespawned = (laneNumber: number, agentId: string) => {
+		// TP-195: accept the 3rd `batchId` parameter to match the engine’s
+		// `onLaneRespawned` callback signature (extension.ts/engine.ts both
+		// invoke with three args). Local handler ignores `batchId` — it has
+		// no use in the suppression-only filter modeled here.
+		const onLaneRespawned = (laneNumber: number, agentId: string, _batchId?: string) => {
 			terminatedLanes.delete(laneNumber);
 			if (agentId) terminatedAgents.delete(agentId);
 		};
@@ -848,7 +852,7 @@ describe("TP-187 #539: end-to-end abort-then-reconstruct flow", () => {
 			pid: 99999,
 			parentPid: 99998,
 			startedAt: 1100,
-			status: "complete",
+			status: "exited",
 			cwd: wt,
 			packet: null,
 		};

@@ -27,7 +27,9 @@ import { strict as assert } from "node:assert";
 
 // `bin/get-version.mjs` is plain ESM JavaScript (no .ts) so we import
 // it directly. Path is relative to extensions/tests/.
-// @ts-expect-error -- .mjs sibling without types; runtime import is fine.
+// TP-195: removed stale `@ts-expect-error` (TS no longer flags this
+// `.mjs` import after the typecheck script was added — the directive
+// is now an unused-directive error itself).
 import { getVersion } from "../../bin/get-version.mjs";
 
 const NODE = process.execPath;

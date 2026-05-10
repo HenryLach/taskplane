@@ -255,6 +255,7 @@ describe("1.x: computeResumePoint — merge skip detection (Bug #102)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-2",
@@ -265,6 +266,7 @@ describe("1.x: computeResumePoint — merge skip detection (Bug #102)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-3",
@@ -275,6 +277,7 @@ describe("1.x: computeResumePoint — merge skip detection (Bug #102)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 			mergeResults: [], // Both wave 0 and wave 1 are missing merges
@@ -371,6 +374,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 		});
@@ -399,6 +403,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 		});
@@ -420,6 +425,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 		});
@@ -442,6 +448,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 		});
@@ -466,6 +473,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: Date.now() - 10000,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 		});
@@ -488,6 +496,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-b",
@@ -498,6 +507,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-c",
@@ -508,6 +518,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 		});
@@ -532,6 +543,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 		});
@@ -562,6 +574,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-2",
@@ -572,6 +585,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-3",
@@ -582,6 +596,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 			mergeResults: [
@@ -620,6 +635,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-2",
@@ -630,6 +646,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-3",
@@ -640,6 +657,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 			mergeResults: [
@@ -677,6 +695,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-2",
@@ -687,6 +706,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 			mergeResults: [
@@ -721,6 +741,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-2",
@@ -731,6 +752,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-3",
@@ -741,6 +763,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 			mergeResults: [],
@@ -773,6 +796,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-2",
@@ -783,6 +807,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 				{
 					taskId: "task-3",
@@ -793,6 +818,7 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 					startedAt: null,
 					endedAt: null,
 					exitReason: "",
+					doneFileFound: false,
 				},
 			],
 			mergeResults: [
@@ -812,5 +838,34 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 		// Wave 0 merge failed → merge retry needed, even though wave 1 is fine
 		expect(resume.mergeRetryWaveIndexes).toContain(0);
 		expect(resume.resumeWaveIndex).toBe(0);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 4.x — TP-195 regression: failed-task supervisor-alert task lookup
+// ══════════════════════════════════════════════════════════════════════
+
+describe("4.x — TP-195: resume.ts failed-task alert uses lane-allocated task source", () => {
+	it("4.1: resume.ts does NOT reach into `batchState.tasks` (non-existent field on OrchBatchRuntimeState)", async () => {
+		// TP-195: prior code read `batchState.tasks.find(…)` which would have
+		// thrown TypeError at runtime (the runtime state has no `tasks`
+		// field — tasks live on `PersistedBatchState`). The corrected lookup
+		// uses `laneForTask?.tasks.find(…)?.task` to source segmentIds /
+		// activeSegmentId from the allocated `ParsedTask` payload.
+		const { readFileSync: rf } = await import("fs");
+		const { join: j, dirname: dn } = await import("path");
+		const { fileURLToPath: fu } = await import("url");
+		const here = dn(fu(import.meta.url));
+		const resumeSrc = rf(j(here, "..", "taskplane", "resume.ts"), "utf-8");
+
+		// The failed-task supervisor-alert block must not query batchState.tasks.
+		const alertBlock =
+			resumeSrc.match(/Emit supervisor alerts for task failures[\s\S]*?emitAlert\(\{/)?.[0] ?? "";
+		expect(alertBlock.length).toBeGreaterThan(0);
+		expect(alertBlock).not.toContain("batchState.tasks.find");
+		expect(alertBlock).not.toContain("batchState as { tasks?");
+		// And it MUST pull from the lane's allocated tasks (the real source
+		// of segmentIds/activeSegmentId at runtime).
+		expect(alertBlock).toContain("laneForTask?.tasks.find(");
 	});
 });

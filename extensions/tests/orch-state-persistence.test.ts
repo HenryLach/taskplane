@@ -5677,7 +5677,7 @@ function runAllTests() {
 		assert(point.failedTaskIds.includes("WS-001"), "cross-repo blocked: WS-001 in failed");
 
 		// Now simulate what resumeOrchBatch does: compute transitive dependents from failures
-		const failedSet = new Set(point.failedTaskIds);
+		const failedSet = new Set<string>(point.failedTaskIds as string[]);
 		const blocked = computeTransitiveDependents(failedSet, depGraph);
 
 		assertEqual(blocked.size, 1, "cross-repo blocked: 1 task blocked (WS-003)");
@@ -5808,7 +5808,7 @@ function runAllTests() {
 			T5: ["T3"],
 		});
 
-		const failedSet = new Set(point.failedTaskIds);
+		const failedSet = new Set<string>(point.failedTaskIds as string[]);
 		// T2 failed → T3 depends on T2 → blocked. T5 depends on T3 → transitively blocked.
 		const newBlocked = computeTransitiveDependents(failedSet, depGraph);
 
@@ -5902,7 +5902,7 @@ function runAllTests() {
 			T3: ["T2"],
 		});
 
-		const failedSet = new Set(point.failedTaskIds);
+		const failedSet = new Set<string>(point.failedTaskIds as string[]);
 		const blocked = computeTransitiveDependents(failedSet, depGraph);
 		// T2 failed, T3 failed (both already in failedTaskIds) → T3 depends on T2
 		// But T3 is already in failedSet, so no NEW blocked tasks
@@ -6186,6 +6186,10 @@ function runAllTests() {
 			blockedTasks: 0,
 			blockedTaskIds: new Set(),
 			errors: [],
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentLanes: [],
+			dependencyGraph: null,
 			mergeResults: [],
 		};
 
@@ -6272,6 +6276,10 @@ function runAllTests() {
 			blockedTasks: 0,
 			blockedTaskIds: new Set(),
 			errors: [],
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentLanes: [],
+			dependencyGraph: null,
 			mergeResults: [],
 		};
 
@@ -6445,6 +6453,10 @@ function runAllTests() {
 			blockedTasks: 0,
 			blockedTaskIds: new Set(),
 			errors: [],
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentLanes: [],
+			dependencyGraph: null,
 			mergeResults: [],
 		};
 
@@ -6535,6 +6547,10 @@ function runAllTests() {
 			blockedTasks: 0,
 			blockedTaskIds: new Set(),
 			errors: [],
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentLanes: [],
+			dependencyGraph: null,
 			mergeResults: [],
 		};
 		const outcomes = [
@@ -6670,6 +6686,10 @@ function runAllTests() {
 			blockedTasks: 0,
 			blockedTaskIds: new Set(),
 			errors: [],
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentLanes: [],
+			dependencyGraph: null,
 			mergeResults: [
 				// Re-exec merge with sentinel
 				{
@@ -6734,6 +6754,10 @@ function runAllTests() {
 			blockedTasks: 0,
 			blockedTaskIds: new Set(),
 			errors: [],
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentLanes: [],
+			dependencyGraph: null,
 			mergeResults: [
 				{
 					waveIndex: 0,
@@ -6799,6 +6823,10 @@ function runAllTests() {
 			blockedTasks: 0,
 			blockedTaskIds: new Set(),
 			errors: [],
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentLanes: [],
+			dependencyGraph: null,
 			mergeResults: [],
 		};
 		const outcomes = [
