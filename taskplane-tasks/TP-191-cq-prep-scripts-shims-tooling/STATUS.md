@@ -1,10 +1,10 @@
 # TP-191: Code-quality prep — Status
 
-**Current Step:** Step 2: Implement Part 1 — package.json scripts and pinned dev deps
+**Current Step:** Step 3: Implement Part 2 — pi-shims and tsconfig.ci.json
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -48,7 +48,7 @@
 ---
 
 ### Step 2: Implement Part 1 — package.json scripts and pinned dev deps
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (code review R003 APPROVE)
 
 > Plan-reviewer must have APPROVED Step 1 before proceeding.
 > ⚠️ Code-review fires after this step.
@@ -131,6 +131,7 @@
 |---|------|------|---------|------|
 | 1 | plan | 1 | APPROVE | .reviews/R001-plan-step1.md |
 | 2 | code | 2 | REVISE | .reviews/R002-code-step2.md |
+| 3 | code | 2 | APPROVE | .reviews/R003-code-step2.md |
 
 ---
 
@@ -328,3 +329,4 @@ with:
 **Pinned-version exception clause:** if `@biomejs/biome@2.4.15` is no longer the latest 2.x at task-execution time, use the latest stable in the same minor line and document the choice in Discoveries. Same for TypeScript 5.6.3 — use latest stable 5.x if a newer one exists. Major-version drift (e.g., Biome 3.x) should NOT be picked up automatically without operator confirmation.
 | 2026-05-10 14:48 | Review R001 | plan Step 1: APPROVE |
 | 2026-05-10 14:53 | Review R002 | code Step 2: REVISE |
+| 2026-05-10 14:57 | Review R003 | code Step 2: APPROVE |
