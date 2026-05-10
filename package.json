@@ -25,6 +25,12 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "scripts": {
+    "typecheck": "tsc --project extensions/tsconfig.ci.json --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format ."
+  },
   "files": [
     "bin/",
     "dashboard/",
@@ -54,6 +60,10 @@
   "dependencies": {
     "jiti": "^2.6.1",
     "yaml": "^2.4.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.15",
+    "typescript": "5.6.3"
   },
   "license": "MIT",
   "repository": {

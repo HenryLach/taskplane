@@ -48,16 +48,16 @@
 ---
 
 ### Step 2: Implement Part 1 — package.json scripts and pinned dev deps
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > Plan-reviewer must have APPROVED Step 1 before proceeding.
 > ⚠️ Code-review fires after this step.
 
-- [ ] `scripts` block added (typecheck, lint, format, format:check)
-- [ ] `devDependencies` added (Biome 2.4.15, TypeScript 5.6.3)
-- [ ] `npm install` succeeds; `package-lock.json` refreshed
-- [ ] All four scripts execute to completion (non-zero exit OK at this stage)
-- [ ] Full fast suite still passes (no behavior change)
+- [x] `scripts` block added (typecheck, lint, format, format:check)
+- [x] `devDependencies` added (Biome 2.4.15, TypeScript 5.6.3)
+- [x] `npm install` succeeds; root `package-lock.json` created/refreshed
+- [x] All four scripts execute to completion: `typecheck` exit 1 (tsconfig.ci.json absent until Step 3 — expected), `lint` exit 1 (9 errors, 264 warnings — inventory for TP-192), `format:check` exit 0 (0 files, formatter disabled — expected), `format` exit 0 (same)
+- [x] Full fast suite still passes: 3624 passing / 1 skipped / 0 failed (no behavior change)
 
 ---
 
