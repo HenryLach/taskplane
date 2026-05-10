@@ -78,7 +78,10 @@ const mockOrchConfig = {
 };
 
 beforeEach(() => {
-	testRoot = join(tmpdir(), `tp-packet-home-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	testRoot = join(
+		tmpdir(),
+		`tp-packet-home-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	);
 	mkdirSync(testRoot, { recursive: true });
 	counter = 0;
 });
@@ -99,9 +102,10 @@ describe("workspace routing.task_packet_repo contract", () => {
 		const tasks = join(repo, "taskplane-tasks");
 		mkdirSync(tasks, { recursive: true });
 
-		writeWorkspaceConfig(wsRoot,
+		writeWorkspaceConfig(
+			wsRoot,
 			`repos:\n  api:\n    path: ${repo}\n` +
-			`routing:\n  tasks_root: ${tasks}\n  default_repo: api\n  task_packet_repo: api\n`
+				`routing:\n  tasks_root: ${tasks}\n  default_repo: api\n  task_packet_repo: api\n`,
 		);
 
 		const config = loadWorkspaceConfig(wsRoot);
@@ -116,9 +120,10 @@ describe("workspace routing.task_packet_repo contract", () => {
 		const tasks = join(repo, "taskplane-tasks");
 		mkdirSync(tasks, { recursive: true });
 
-		writeWorkspaceConfig(wsRoot,
+		writeWorkspaceConfig(
+			wsRoot,
 			`repos:\n  api:\n    path: ${repo}\n` +
-			`routing:\n  tasks_root: ${tasks}\n  default_repo: api\n`
+				`routing:\n  tasks_root: ${tasks}\n  default_repo: api\n`,
 		);
 
 		const config = loadWorkspaceConfig(wsRoot);
@@ -133,9 +138,10 @@ describe("workspace routing.task_packet_repo contract", () => {
 		const tasks = join(repo, "taskplane-tasks");
 		mkdirSync(tasks, { recursive: true });
 
-		writeWorkspaceConfig(wsRoot,
+		writeWorkspaceConfig(
+			wsRoot,
 			`repos:\n  api:\n    path: ${repo}\n` +
-			`routing:\n  tasks_root: ${tasks}\n  default_repo: api\n  task_packet_repo: missing\n`
+				`routing:\n  tasks_root: ${tasks}\n  default_repo: api\n  task_packet_repo: missing\n`,
 		);
 
 		try {
@@ -157,9 +163,10 @@ describe("workspace routing.task_packet_repo contract", () => {
 		const tasksInRepoA = join(repoA, "taskplane-tasks");
 		mkdirSync(tasksInRepoA, { recursive: true });
 
-		writeWorkspaceConfig(wsRoot,
+		writeWorkspaceConfig(
+			wsRoot,
 			`repos:\n  api:\n    path: ${repoA}\n  docs:\n    path: ${repoB}\n` +
-			`routing:\n  tasks_root: ${tasksInRepoA}\n  default_repo: api\n  task_packet_repo: docs\n`
+				`routing:\n  tasks_root: ${tasksInRepoA}\n  default_repo: api\n  task_packet_repo: docs\n`,
 		);
 
 		try {
@@ -185,9 +192,10 @@ describe("cross-config task-area containment", () => {
 		const tasksRoot = join(repo, "taskplane-tasks");
 		mkdirSync(tasksRoot, { recursive: true });
 
-		writeWorkspaceConfig(wsRoot,
+		writeWorkspaceConfig(
+			wsRoot,
 			`repos:\n  api:\n    path: ${repo}\n` +
-			`routing:\n  tasks_root: ${tasksRoot}\n  default_repo: api\n  task_packet_repo: api\n`
+				`routing:\n  tasks_root: ${tasksRoot}\n  default_repo: api\n  task_packet_repo: api\n`,
 		);
 
 		const loadTaskConfig = () => ({
@@ -220,9 +228,10 @@ describe("cross-config task-area containment", () => {
 		const areaPath = join(tasksRoot, "general");
 		mkdirSync(areaPath, { recursive: true });
 
-		writeWorkspaceConfig(wsRoot,
+		writeWorkspaceConfig(
+			wsRoot,
 			`repos:\n  api:\n    path: ${repo}\n` +
-			`routing:\n  tasks_root: ${tasksRoot}\n  default_repo: api\n  task_packet_repo: api\n`
+				`routing:\n  tasks_root: ${tasksRoot}\n  default_repo: api\n  task_packet_repo: api\n`,
 		);
 
 		const loadTaskConfig = () => ({

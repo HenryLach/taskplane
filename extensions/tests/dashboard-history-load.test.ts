@@ -24,26 +24,31 @@ describe("dashboard loadHistory", () => {
 			"utf-8",
 		).replace(/\r\n/g, "\n");
 
-		const fnSource = extractFunction(
-			source,
-			"function loadHistory()",
-			"/** GET /api/history",
-		);
+		const fnSource = extractFunction(source, "function loadHistory()", "/** GET /api/history");
 
 		const root = mkdtempSync(join(tmpdir(), "tp-137-dashboard-"));
 		const historyPath = join(root, ".pi", "batch-history.json");
 		mkdirSync(join(root, ".pi"), { recursive: true });
-		writeFileSync(historyPath, JSON.stringify([
-			{ batchId: "batch-new", startedAt: 2000 },
-			{ batchId: "batch-old", startedAt: 1000 },
-		], null, 2));
+		writeFileSync(
+			historyPath,
+			JSON.stringify(
+				[
+					{ batchId: "batch-new", startedAt: 2000 },
+					{ batchId: "batch-old", startedAt: 1000 },
+				],
+				null,
+				2,
+			),
+		);
 
 		try {
 			const context = {
 				fs,
 				BATCH_HISTORY_PATH: historyPath,
 			};
-			const loadHistory = vm.runInNewContext(`${fnSource}; loadHistory;`, context) as () => Array<{ batchId: string }>;
+			const loadHistory = vm.runInNewContext(`${fnSource}; loadHistory;`, context) as () => Array<{
+				batchId: string;
+			}>;
 			const history = loadHistory();
 			expect(history).toHaveLength(2);
 			expect(history[0].batchId).toBe("batch-new");

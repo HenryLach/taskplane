@@ -22,8 +22,13 @@
 
 import { spawn, type ChildProcess } from "child_process";
 import {
-	readFileSync, writeFileSync, appendFileSync, mkdirSync,
-	existsSync, readdirSync, renameSync,
+	readFileSync,
+	writeFileSync,
+	appendFileSync,
+	mkdirSync,
+	existsSync,
+	readdirSync,
+	renameSync,
 } from "fs";
 import { join, dirname, basename, resolve } from "path";
 import { StringDecoder } from "string_decoder";
@@ -121,13 +126,19 @@ import { DEFAULT_WORKER_USER_TOOLS } from "./tool-allowlist-constants.ts";
  */
 export function buildWorkerToolsAllowlist(userTools: string | undefined | null): string {
 	const userPart = (userTools && userTools.trim()) || DEFAULT_WORKER_USER_TOOLS;
-	const rawUserList = userPart.split(",").map((s) => s.trim()).filter(Boolean);
+	const rawUserList = userPart
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
 	// Guard against delimiter-only / whitespace-only inputs (e.g. ",", " , ")
 	// that would otherwise parse to an empty list and yield bridge-tools-only
 	// workers with no file/shell capabilities.
-	const userList = rawUserList.length > 0
-		? rawUserList
-		: DEFAULT_WORKER_USER_TOOLS.split(",").map((s) => s.trim()).filter(Boolean);
+	const userList =
+		rawUserList.length > 0
+			? rawUserList
+			: DEFAULT_WORKER_USER_TOOLS.split(",")
+					.map((s) => s.trim())
+					.filter(Boolean);
 	const merged = new Set<string>(userList);
 	for (const t of ENGINE_BRIDGE_TOOLS) merged.add(t);
 	return Array.from(merged).join(",");
@@ -155,9 +166,13 @@ function extractAssistantText(message: Record<string, unknown>): string {
 	// Guard: skip null/non-object entries to prevent TypeError on malformed streams
 	if (Array.isArray(message.content)) {
 		const textBlocks = message.content
-			.filter((b: unknown): b is { type: string; text: string } =>
-				typeof b === "object" && b !== null &&
-				(b as any).type === "text" && typeof (b as any).text === "string")
+			.filter(
+				(b: unknown): b is { type: string; text: string } =>
+					typeof b === "object" &&
+					b !== null &&
+					(b as any).type === "text" &&
+					typeof (b as any).text === "string",
+			)
 			.map((b) => b.text);
 		if (textBlocks.length > 0) return textBlocks.join("\n");
 	}
@@ -304,8 +319,10 @@ function isValidMailboxMessage(obj: any): boolean {
 		typeof obj.batchId === "string" &&
 		typeof obj.from === "string" &&
 		typeof obj.to === "string" &&
-		typeof obj.timestamp === "number" && Number.isFinite(obj.timestamp) &&
-		typeof obj.type === "string" && MAILBOX_MESSAGE_TYPES.has(obj.type) &&
+		typeof obj.timestamp === "number" &&
+		Number.isFinite(obj.timestamp) &&
+		typeof obj.type === "string" &&
+		MAILBOX_MESSAGE_TYPES.has(obj.type) &&
 		typeof obj.content === "string"
 	);
 }
@@ -330,7 +347,6 @@ export function spawnAgent(
 	onEvent?: AgentEventCallback,
 	onTelemetry?: AgentTelemetryCallback,
 ): { promise: Promise<AgentHostResult>; kill: () => void } {
-
 	const cliPath = resolvePiCliPath();
 	const closeDelayMs = opts.closeDelayMs ?? 100;
 	const timeoutMs = opts.timeoutMs ?? 0;
@@ -369,9 +385,16 @@ export function spawnAgent(
 	let stdinClosed = false;
 	let assistantMessageEnds = 0;
 	const STATS_REFRESH_EVERY_ASSISTANT_MESSAGES = 5;
-	let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0;
-	let costUsd = 0, toolCalls = 0, retries = 0, compactions = 0;
-	let lastTool = "", error: string | null = null;
+	let inputTokens = 0,
+		outputTokens = 0,
+		cacheReadTokens = 0,
+		cacheWriteTokens = 0;
+	let costUsd = 0,
+		toolCalls = 0,
+		retries = 0,
+		compactions = 0;
+	let lastTool = "",
+		error: string | null = null;
 	let contextUsage: AgentHostResult["contextUsage"] = null;
 	let stderrBuffer = "";
 	const STDERR_MAX = 2048;
@@ -388,7 +411,11 @@ export function spawnAgent(
 		timeoutHandle = setTimeout(() => {
 			timedOut = true;
 			killed = true;
-			try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+			try {
+				proc.kill("SIGTERM");
+			} catch {
+				/* ignore */
+			}
 		}, timeoutMs);
 	}
 
@@ -397,12 +424,14 @@ export function spawnAgent(
 	const refreshRegistrySnapshot = (force: boolean = false) => {
 		if (!opts.stateRoot) return;
 		const now = Date.now();
-		if (!force && (now - lastRegistryRefreshAt) < REGISTRY_REFRESH_INTERVAL_MS) return;
+		if (!force && now - lastRegistryRefreshAt < REGISTRY_REFRESH_INTERVAL_MS) return;
 		try {
 			const snapshot = buildRegistrySnapshot(opts.stateRoot, opts.batchId);
 			writeRegistrySnapshot(opts.stateRoot, snapshot);
 			lastRegistryRefreshAt = now;
-		} catch { /* best effort */ }
+		} catch {
+			/* best effort */
+		}
 	};
 
 	// Registry integration: write manifest before process is considered visible
@@ -430,10 +459,18 @@ export function spawnAgent(
 		stdinClosed = true;
 		if (closeDelayMs > 0) {
 			setTimeout(() => {
-				try { proc.stdin?.end(); } catch { /* ignore */ }
+				try {
+					proc.stdin?.end();
+				} catch {
+					/* ignore */
+				}
 			}, closeDelayMs);
 		} else {
-			try { proc.stdin?.end(); } catch { /* ignore */ }
+			try {
+				proc.stdin?.end();
+			} catch {
+				/* ignore */
+			}
 		}
 	}
 
@@ -456,7 +493,9 @@ export function spawnAgent(
 			try {
 				mkdirSync(dirname(opts.eventsPath), { recursive: true });
 				appendFileSync(opts.eventsPath, JSON.stringify(event) + "\n", "utf-8");
-			} catch { /* best effort */ }
+			} catch {
+				/* best effort */
+			}
 		}
 	}
 
@@ -481,9 +520,15 @@ export function spawnAgent(
 			if (!existsSync(inboxDir)) continue;
 
 			let entries: string[];
-			try { entries = readdirSync(inboxDir); } catch { continue; }
+			try {
+				entries = readdirSync(inboxDir);
+			} catch {
+				continue;
+			}
 
-			const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp")).sort();
+			const msgFiles = entries
+				.filter((f) => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp"))
+				.sort();
 			if (msgFiles.length === 0) continue;
 
 			const ackDir = join(opts.mailboxDir, "ack");
@@ -509,12 +554,24 @@ export function spawnAgent(
 					if (isBroadcast) {
 						// Do NOT remove the shared broadcast inbox file. Persist a per-agent
 						// ack marker so all agents can consume the same broadcast exactly once.
-						try { writeFileSync(ackPath, raw, "utf-8"); } catch { /* best effort */ }
+						try {
+							writeFileSync(ackPath, raw, "utf-8");
+						} catch {
+							/* best effort */
+						}
 					} else {
-						try { renameSync(join(inboxDir, filename), ackPath); } catch { /* race ok */ }
+						try {
+							renameSync(join(inboxDir, filename), ackPath);
+						} catch {
+							/* race ok */
+						}
 					}
 
-					emitEvent("message_delivered", { messageId: msg.id, content: msg.content, broadcast: isBroadcast });
+					emitEvent("message_delivered", {
+						messageId: msg.id,
+						content: msg.content,
+						broadcast: isBroadcast,
+					});
 					if (opts.stateRoot) {
 						appendMailboxAuditEvent(opts.stateRoot, expectedBatchId, {
 							type: "message_delivered",
@@ -530,11 +587,18 @@ export function spawnAgent(
 					// TP-090: steering-pending flag
 					if (opts.steeringPendingPath) {
 						try {
-							appendFileSync(opts.steeringPendingPath,
-								JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id }) + "\n", "utf-8");
-						} catch { /* best effort */ }
+							appendFileSync(
+								opts.steeringPendingPath,
+								JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id }) + "\n",
+								"utf-8",
+							);
+						} catch {
+							/* best effort */
+						}
 					}
-				} catch { /* skip malformed */ }
+				} catch {
+					/* skip malformed */
+				}
 			}
 		}
 	}
@@ -576,9 +640,15 @@ export function spawnAgent(
 					const summary = {
 						exitCode: result.exitCode,
 						exitSignal: result.signal,
-						tokens: (inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens) > 0
-							? { input: inputTokens, output: outputTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }
-							: null,
+						tokens:
+							inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens > 0
+								? {
+										input: inputTokens,
+										output: outputTokens,
+										cacheRead: cacheReadTokens,
+										cacheWrite: cacheWriteTokens,
+									}
+								: null,
 						cost: costUsd > 0 ? costUsd : null,
 						toolCalls,
 						retries,
@@ -589,23 +659,29 @@ export function spawnAgent(
 						contextUsage: contextUsage || null,
 					};
 					writeFileSync(opts.exitSummaryPath, JSON.stringify(summary, null, 2) + "\n", "utf-8");
-				} catch { /* best effort */ }
+				} catch {
+					/* best effort */
+				}
 			}
 
-			const exitEventType: RuntimeAgentEventType =
-				timedOut ? "agent_timeout" :
-				killed ? "agent_killed" :
-				(exitCode === 0 && agentEnded) ? "agent_exited" :
-				"agent_crashed";
+			const exitEventType: RuntimeAgentEventType = timedOut
+				? "agent_timeout"
+				: killed
+					? "agent_killed"
+					: exitCode === 0 && agentEnded
+						? "agent_exited"
+						: "agent_crashed";
 			emitEvent(exitEventType, { exitCode, signal, durationMs: result.durationMs, timedOut });
 
 			// Registry integration: update manifest to terminal status
 			if (opts.stateRoot) {
-				const terminalStatus =
-					timedOut ? "timed_out" as const :
-					killed ? "killed" as const :
-					(exitCode === 0 && agentEnded) ? "exited" as const :
-					"crashed" as const;
+				const terminalStatus = timedOut
+					? ("timed_out" as const)
+					: killed
+						? ("killed" as const)
+						: exitCode === 0 && agentEnded
+							? ("exited" as const)
+							: ("crashed" as const);
 				updateManifestStatus(opts.stateRoot, opts.batchId, opts.agentId, terminalStatus);
 				refreshRegistrySnapshot(true);
 			}
@@ -623,7 +699,11 @@ export function spawnAgent(
 				if (!line.trim()) continue;
 
 				let event: any;
-				try { event = JSON.parse(line); } catch { continue; }
+				try {
+					event = JSON.parse(line);
+				} catch {
+					continue;
+				}
 				if (!event || !event.type) continue;
 
 				// Accumulate telemetry
@@ -636,7 +716,12 @@ export function spawnAgent(
 							cacheReadTokens += usage.cacheRead || 0;
 							cacheWriteTokens += usage.cacheWrite || 0;
 							if (usage.cost) {
-								costUsd += typeof usage.cost === "object" ? (usage.cost.total || 0) : (typeof usage.cost === "number" ? usage.cost : 0);
+								costUsd +=
+									typeof usage.cost === "object"
+										? usage.cost.total || 0
+										: typeof usage.cost === "number"
+											? usage.cost
+											: 0;
 							}
 						}
 						// TP-111: Emit assistant_message with bounded content
@@ -652,8 +737,15 @@ export function spawnAgent(
 						// then periodically at a bounded cadence to refresh context usage.
 						if (event.message?.role === "assistant") {
 							assistantMessageEnds += 1;
-							if (assistantMessageEnds === 1 || assistantMessageEnds % STATS_REFRESH_EVERY_ASSISTANT_MESSAGES === 0) {
-								try { proc.stdin?.write(JSON.stringify({ type: "get_session_stats" }) + "\n"); } catch { /* ignore */ }
+							if (
+								assistantMessageEnds === 1 ||
+								assistantMessageEnds % STATS_REFRESH_EVERY_ASSISTANT_MESSAGES === 0
+							) {
+								try {
+									proc.stdin?.write(JSON.stringify({ type: "get_session_stats" }) + "\n");
+								} catch {
+									/* ignore */
+								}
 							}
 						}
 						// Check mailbox
@@ -662,7 +754,16 @@ export function spawnAgent(
 						refreshRegistrySnapshot(false);
 						// Emit telemetry update
 						if (onTelemetry) {
-							onTelemetry({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd, toolCalls, lastTool, contextUsage });
+							onTelemetry({
+								inputTokens,
+								outputTokens,
+								cacheReadTokens,
+								cacheWriteTokens,
+								costUsd,
+								toolCalls,
+								lastTool,
+								contextUsage,
+							});
 						}
 						break;
 					}
@@ -670,8 +771,12 @@ export function spawnAgent(
 						toolCalls++;
 						currentTurnHadToolCalls = true;
 						const toolName = event.toolName || "tool";
-						const argPreview = typeof event.args === "string" ? event.args.slice(0, 300) :
-							(event.args && typeof Object.values(event.args)[0] === "string" ? String(Object.values(event.args)[0]).slice(0, 300) : "");
+						const argPreview =
+							typeof event.args === "string"
+								? event.args.slice(0, 300)
+								: event.args && typeof Object.values(event.args)[0] === "string"
+									? String(Object.values(event.args)[0]).slice(0, 300)
+									: "";
 						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
 						// TP-111: Bounded payload only — no raw args in durable event log
 						const toolPath = event.args?.path ? String(event.args.path).slice(0, 200) : "";
@@ -680,14 +785,21 @@ export function spawnAgent(
 					}
 					case "tool_execution_end": {
 						// TP-111: Include bounded result summary for dashboard display
-						const toolResultSummary = typeof event.result === "string" ? event.result.slice(0, 200)
-							: event.output ? String(event.output).slice(0, 200) : "";
+						const toolResultSummary =
+							typeof event.result === "string"
+								? event.result.slice(0, 200)
+								: event.output
+									? String(event.output).slice(0, 200)
+									: "";
 						emitEvent("tool_result", { tool: event.toolName, summary: toolResultSummary });
 						break;
 					}
 					case "auto_retry_start": {
 						retries++;
-						emitEvent("retry_started", { attempt: event.attempt, error: event.errorMessage || event.error });
+						emitEvent("retry_started", {
+							attempt: event.attempt,
+							error: event.errorMessage || event.error,
+						});
 						break;
 					}
 					case "auto_compaction_start": {
@@ -704,7 +816,16 @@ export function spawnAgent(
 							emitEvent("context_usage", { ...event.data.contextUsage });
 							// Emit telemetry immediately so context % is live in dashboard
 							if (onTelemetry) {
-								onTelemetry({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd, toolCalls, lastTool, contextUsage });
+								onTelemetry({
+									inputTokens,
+									outputTokens,
+									cacheReadTokens,
+									cacheWriteTokens,
+									costUsd,
+									toolCalls,
+									lastTool,
+									contextUsage,
+								});
 							}
 						}
 						break;
@@ -717,60 +838,62 @@ export function spawnAgent(
 						// because workers commonly use tools (reads/greps) then exit
 						// with a text declaration ("Now let me fix this:") without
 						// actually making the edit.
-						const shouldIntercept = opts.onPrematureExit
-							&& exitInterceptionCount < maxExitInterceptions;
+						const shouldIntercept = opts.onPrematureExit && exitInterceptionCount < maxExitInterceptions;
 						if (shouldIntercept) {
 							exitInterceptionCount++;
 							const INTERCEPTION_TIMEOUT_MS = 120_000; // 2 minute safety timeout
 							// Wrap in Promise.resolve().then() to catch synchronous throws
 							const interceptPromise = Promise.resolve().then(() =>
-								opts.onPrematureExit!(lastAssistantMessage));
+								opts.onPrematureExit!(lastAssistantMessage),
+							);
 							const timeoutPromise = new Promise<null>((res) =>
-								setTimeout(() => res(null), INTERCEPTION_TIMEOUT_MS));
-							Promise.race([interceptPromise, timeoutPromise])
-								.then(
-									(newPrompt: string | null) => {
-										if (newPrompt && !stdinClosed && proc.stdin && !proc.stdin.destroyed) {
-											// Re-prompt the agent with supervisor guidance
-											agentEnded = false; // Reset for the new turn
-											currentTurnHadToolCalls = false; // Reset for new turn
-											proc.stdin.write(JSON.stringify({ type: "prompt", message: newPrompt }) + "\n");
-											emitEvent("exit_intercepted", {
-												interceptionCount: exitInterceptionCount,
-												assistantMessage: truncatePayload(lastAssistantMessage, 500),
-												supervisorConsulted: true,
-												action: "reprompt",
-												newPromptPreview: truncatePayload(newPrompt, MAX_CONV_PAYLOAD_CHARS),
-											});
-										} else {
-											// Callback returned null or stdin already closed — close session
-											const reason = stdinClosed ? "stdin_closed"
-												: newPrompt === null ? "callback_returned_null"
-												: "unknown";
-											emitEvent("exit_intercepted", {
-												interceptionCount: exitInterceptionCount,
-												assistantMessage: truncatePayload(lastAssistantMessage, 500),
-												supervisorConsulted: true,
-												action: "close",
-												reason,
-											});
-											closeStdin();
-										}
-									},
-									(err: unknown) => {
-										// Callback rejected — emit single diagnostic event and close
-										const msg = err instanceof Error ? err.message : String(err);
+								setTimeout(() => res(null), INTERCEPTION_TIMEOUT_MS),
+							);
+							Promise.race([interceptPromise, timeoutPromise]).then(
+								(newPrompt: string | null) => {
+									if (newPrompt && !stdinClosed && proc.stdin && !proc.stdin.destroyed) {
+										// Re-prompt the agent with supervisor guidance
+										agentEnded = false; // Reset for the new turn
+										currentTurnHadToolCalls = false; // Reset for new turn
+										proc.stdin.write(JSON.stringify({ type: "prompt", message: newPrompt }) + "\n");
 										emitEvent("exit_intercepted", {
 											interceptionCount: exitInterceptionCount,
 											assistantMessage: truncatePayload(lastAssistantMessage, 500),
-											supervisorConsulted: false,
+											supervisorConsulted: true,
+											action: "reprompt",
+											newPromptPreview: truncatePayload(newPrompt, MAX_CONV_PAYLOAD_CHARS),
+										});
+									} else {
+										// Callback returned null or stdin already closed — close session
+										const reason = stdinClosed
+											? "stdin_closed"
+											: newPrompt === null
+												? "callback_returned_null"
+												: "unknown";
+										emitEvent("exit_intercepted", {
+											interceptionCount: exitInterceptionCount,
+											assistantMessage: truncatePayload(lastAssistantMessage, 500),
+											supervisorConsulted: true,
 											action: "close",
-											reason: "callback_error",
-											error: msg,
+											reason,
 										});
 										closeStdin();
-									},
-								);
+									}
+								},
+								(err: unknown) => {
+									// Callback rejected — emit single diagnostic event and close
+									const msg = err instanceof Error ? err.message : String(err);
+									emitEvent("exit_intercepted", {
+										interceptionCount: exitInterceptionCount,
+										assistantMessage: truncatePayload(lastAssistantMessage, 500),
+										supervisorConsulted: false,
+										action: "close",
+										reason: "callback_error",
+										error: msg,
+									});
+									closeStdin();
+								},
+							);
 						} else {
 							// No callback, had tool calls, or interception limit reached — close normally
 							if (opts.onPrematureExit && exitInterceptionCount >= maxExitInterceptions) {
@@ -820,7 +943,11 @@ export function spawnAgent(
 
 	const kill = () => {
 		killed = true;
-		try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+		try {
+			proc.kill("SIGTERM");
+		} catch {
+			/* ignore */
+		}
 	};
 
 	return { promise, kill };

@@ -35,10 +35,21 @@ import { tmpdir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-import { formatDiscoveryResults, parsePromptForOrchestrator, resolveTaskRouting, runDiscovery } from "../taskplane/discovery.ts";
+import {
+	formatDiscoveryResults,
+	parsePromptForOrchestrator,
+	resolveTaskRouting,
+	runDiscovery,
+} from "../taskplane/discovery.ts";
 import { loadTaskRunnerConfig } from "../taskplane/config.ts";
 import { FATAL_DISCOVERY_CODES } from "../taskplane/types.ts";
-import type { DiscoveryResult, ParsedTask, TaskArea, WorkspaceConfig, WorkspaceRepoConfig } from "../taskplane/types.ts";
+import type {
+	DiscoveryResult,
+	ParsedTask,
+	TaskArea,
+	WorkspaceConfig,
+	WorkspaceRepoConfig,
+} from "../taskplane/types.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
 
@@ -651,7 +662,6 @@ Repo: api
 	});
 });
 
-
 // ── Routing Precedence Tests (Step 1) ────────────────────────────────
 
 /**
@@ -694,7 +704,9 @@ function makeDiscoveryResult(tasks: ParsedTask[]): DiscoveryResult {
 /**
  * Helper to build a minimal ParsedTask.
  */
-function makeTask(overrides: Partial<ParsedTask> & { taskId: string; areaName: string }): ParsedTask {
+function makeTask(
+	overrides: Partial<ParsedTask> & { taskId: string; areaName: string },
+): ParsedTask {
 	return {
 		taskName: overrides.taskName ?? "Test Task",
 		reviewLevel: overrides.reviewLevel ?? 2,
@@ -1157,7 +1169,6 @@ describe("14.x: Multiple tasks with mixed routing sources", () => {
 	});
 });
 
-
 // ══════════════════════════════════════════════════════════════════════
 // Step 2: Annotate Discovery Outputs — Integration Tests
 // ══════════════════════════════════════════════════════════════════════
@@ -1243,10 +1254,7 @@ describe("15.x: Discovery output annotation with resolved repo", () => {
 describe("16.x: Routing errors appear as fatal errors in formatted output", () => {
 	it("16.1: TASK_REPO_UNKNOWN appears in error section", () => {
 		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "ghost" });
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		const taskAreas: Record<string, TaskArea> = {
 			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
 		};
@@ -1564,10 +1572,7 @@ Repo: nonexistent
 		const taskAreas: Record<string, TaskArea> = {
 			default: { path: areaDir, prefix: "TP", context: "" },
 		};
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 
 		const result = runDiscovery("all", taskAreas, areaDir, {
 			workspaceConfig,
@@ -1706,7 +1711,6 @@ Repo: nonexistent
 	});
 });
 
-
 // ── 15.x: Config: area repo_id parsing ───────────────────────────────
 
 describe("15.x: loadTaskRunnerConfig parses repo_id", () => {
@@ -1824,7 +1828,6 @@ describe("15.x: loadTaskRunnerConfig parses repo_id", () => {
 	});
 });
 
-
 // ── 16.x: formatDiscoveryResults repo annotation ─────────────────────
 
 describe("16.x: formatDiscoveryResults repo annotation", () => {
@@ -1886,7 +1889,6 @@ describe("16.x: formatDiscoveryResults repo annotation", () => {
 		expect(line2).not.toContain("→ repo:");
 	});
 });
-
 
 // ── 17.x: Actionable routing error guidance ──────────────────────────
 
@@ -1977,7 +1979,6 @@ describe("17.x: Actionable routing error guidance", () => {
 	});
 });
 
-
 // ══════════════════════════════════════════════════════════════════════
 // Strict Routing Policy Tests (TP-011 Step 0 + Step 1)
 // ══════════════════════════════════════════════════════════════════════
@@ -2041,10 +2042,7 @@ describe("19.x: Strict mode — rejects tasks without explicit execution target"
 	});
 
 	it("19.3: strict mode rejects multiple tasks without promptRepoId", () => {
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = true;
 
 		const taskAreas: Record<string, TaskArea> = {
@@ -2063,10 +2061,7 @@ describe("19.x: Strict mode — rejects tasks without explicit execution target"
 	});
 
 	it("19.4: strict mode still blocks even if area-level repoId is available", () => {
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = true;
 
 		const taskAreas: Record<string, TaskArea> = {
@@ -2129,10 +2124,7 @@ describe("20.x: Strict mode — accepts tasks with explicit execution target", (
 	});
 
 	it("20.2: strict mode still validates that promptRepoId is known", () => {
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = true;
 
 		const taskAreas: Record<string, TaskArea> = {
@@ -2208,10 +2200,7 @@ describe("21.x: Permissive mode (strict=false) — existing behavior unchanged",
 	});
 
 	it("21.2: strict=undefined (not set) behaves as permissive", () => {
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		// strict field not set at all (undefined)
 		delete (workspaceConfig.routing as any).strict;
 
@@ -2262,8 +2251,7 @@ describe("22.x: TASK_ROUTING_STRICT is classified as fatal", () => {
 		const discovery = makeDiscoveryResult([task]);
 		discovery.errors.push({
 			code: "TASK_ROUTING_STRICT",
-			message:
-				'Task TP-100 has no explicit execution target, but strict routing is enabled.',
+			message: "Task TP-100 has no explicit execution target, but strict routing is enabled.",
 			taskId: "TP-100",
 			taskPath: "/workspace/tasks/TP-100/PROMPT.md",
 		});
@@ -2277,10 +2265,7 @@ describe("22.x: TASK_ROUTING_STRICT is classified as fatal", () => {
 	});
 
 	it("22.3: strict error includes taskId and taskPath", () => {
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = true;
 
 		const taskAreas: Record<string, TaskArea> = {
@@ -2345,10 +2330,7 @@ describe("24.x: runDiscovery pipeline — strict routing end-to-end", () => {
 		const taskAreas: Record<string, TaskArea> = {
 			default: { path: areaDir, prefix: "TP", context: "", repoId: "api" },
 		};
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = true;
 
 		const result = runDiscovery("all", taskAreas, areaDir, {
@@ -2395,10 +2377,7 @@ Repo: api
 		const taskAreas: Record<string, TaskArea> = {
 			default: { path: areaDir, prefix: "TP", context: "" },
 		};
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = true;
 
 		const result = runDiscovery("all", taskAreas, areaDir, {
@@ -2444,10 +2423,7 @@ Repo: api
 		const taskAreas: Record<string, TaskArea> = {
 			default: { path: areaDir, prefix: "TP", context: "", repoId: "api" },
 		};
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		// strict is NOT set (permissive default)
 
 		const result = runDiscovery("all", taskAreas, areaDir, {
@@ -2492,7 +2468,6 @@ Repo: api
 	});
 });
 
-
 // ══════════════════════════════════════════════════════════════════════
 // Step 1: Command-Surface Remediation Hints (TP-011)
 // ══════════════════════════════════════════════════════════════════════
@@ -2501,65 +2476,46 @@ Repo: api
 
 describe("25.x: Command surface TASK_ROUTING_STRICT remediation hints", () => {
 	it("25.1: extension.ts checks for TASK_ROUTING_STRICT in fatal error block", () => {
-		const extensionSrc = readFileSync(
-			join(__dirname, "..", "taskplane", "extension.ts"),
-			"utf-8",
-		);
+		const extensionSrc = readFileSync(join(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 		expect(extensionSrc).toContain('"TASK_ROUTING_STRICT"');
 		// Verify it's part of the fatal-error hint block (not just a comment)
-		expect(extensionSrc).toContain('hasStrictErrors');
-		expect(extensionSrc).toContain('Strict routing is enabled');
+		expect(extensionSrc).toContain("hasStrictErrors");
+		expect(extensionSrc).toContain("Strict routing is enabled");
 	});
 
 	it("25.2: engine.ts checks for TASK_ROUTING_STRICT in fatal error block", () => {
-		const engineSrc = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 		expect(engineSrc).toContain('"TASK_ROUTING_STRICT"');
-		expect(engineSrc).toContain('hasStrictErrors');
-		expect(engineSrc).toContain('Strict routing is enabled');
+		expect(engineSrc).toContain("hasStrictErrors");
+		expect(engineSrc).toContain("Strict routing is enabled");
 	});
 
 	it("25.3: extension.ts TASK_ROUTING_STRICT hint includes remediation guidance", () => {
-		const extensionSrc = readFileSync(
-			join(__dirname, "..", "taskplane", "extension.ts"),
-			"utf-8",
-		);
+		const extensionSrc = readFileSync(join(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 		// The hint should tell users how to fix and how to disable
 		expect(extensionSrc).toContain("Execution Target");
 		expect(extensionSrc).toContain("routing.strict: false");
 	});
 
 	it("25.4: engine.ts TASK_ROUTING_STRICT hint includes remediation guidance", () => {
-		const engineSrc = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 		expect(engineSrc).toContain("Execution Target");
 		expect(engineSrc).toContain("routing.strict: false");
 	});
 
 	it("25.5: extension.ts has separate handling for routing and strict errors", () => {
-		const extensionSrc = readFileSync(
-			join(__dirname, "..", "taskplane", "extension.ts"),
-			"utf-8",
-		);
+		const extensionSrc = readFileSync(join(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 		// Both TASK_REPO_UNRESOLVED/UNKNOWN and TASK_ROUTING_STRICT should be handled
 		expect(extensionSrc).toContain("hasRoutingErrors");
 		expect(extensionSrc).toContain("hasStrictErrors");
 	});
 
 	it("25.6: engine.ts has separate handling for routing and strict errors", () => {
-		const engineSrc = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 		expect(engineSrc).toContain("hasRoutingErrors");
 		expect(engineSrc).toContain("hasStrictErrors");
 	});
 });
-
 
 // ══════════════════════════════════════════════════════════════════════
 // Step 2: Governance Scenarios (TP-011)
@@ -2608,11 +2564,14 @@ Repo: api
 		const result = runDiscovery("all", taskAreas, areaDir);
 
 		// No routing errors at all
-		expect(result.errors.filter((e) =>
-			e.code === "TASK_ROUTING_STRICT" ||
-			e.code === "TASK_REPO_UNKNOWN" ||
-			e.code === "TASK_REPO_UNRESOLVED"
-		)).toHaveLength(0);
+		expect(
+			result.errors.filter(
+				(e) =>
+					e.code === "TASK_ROUTING_STRICT" ||
+					e.code === "TASK_REPO_UNKNOWN" ||
+					e.code === "TASK_REPO_UNRESOLVED",
+			),
+		).toHaveLength(0);
 
 		// Task discovered but not routed
 		expect(result.pending.size).toBe(1);
@@ -2709,10 +2668,7 @@ Repo: ghost-service
 		const taskAreas: Record<string, TaskArea> = {
 			default: { path: areaDir, prefix: "TP", context: "" }, // no repoId on area
 		};
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = false; // explicitly permissive
 
 		const result = runDiscovery("all", taskAreas, areaDir, {
@@ -2786,10 +2742,7 @@ Repo: api
 		const taskAreas: Record<string, TaskArea> = {
 			default: { path: areaDir, prefix: "TP", context: "", repoId: "api" },
 		};
-		const workspaceConfig = makeWorkspaceConfig(
-			{ api: { path: "/repos/api" } },
-			"api",
-		);
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
 		workspaceConfig.routing.strict = true;
 
 		const result = runDiscovery("all", taskAreas, areaDir, {
@@ -2883,9 +2836,7 @@ describe("28.x: explicit segment DAG metadata", () => {
 		expect(result.task).not.toBeNull();
 		expect(result.task!.explicitSegmentDag).toEqual({
 			repoIds: ["api", "web-client"],
-			edges: [
-				{ fromRepoId: "api", toRepoId: "web-client" },
-			],
+			edges: [{ fromRepoId: "api", toRepoId: "web-client" }],
 		});
 	});
 
@@ -3014,9 +2965,7 @@ Edges:
 	});
 
 	it("28.7: SEGMENT_DAG_INVALID is treated as fatal in formatted discovery output", () => {
-		const discovery = makeDiscoveryResult([
-			makeTask({ taskId: "TP-540", areaName: "default" }),
-		]);
+		const discovery = makeDiscoveryResult([makeTask({ taskId: "TP-540", areaName: "default" })]);
 		discovery.errors.push({
 			code: "SEGMENT_DAG_INVALID",
 			message: "Task TP-540 has cyclic ## Segment DAG metadata: api -> web -> api.",

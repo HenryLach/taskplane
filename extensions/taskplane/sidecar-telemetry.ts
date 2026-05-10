@@ -107,12 +107,25 @@ export interface SidecarTelemetryDelta {
  *
  * The caller (poll loop) accumulates the returned deltas into TaskState.
  */
-export function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): SidecarTelemetryDelta {
+export function tailSidecarJsonl(
+	filePath: string,
+	tailState: SidecarTailState,
+): SidecarTelemetryDelta {
 	const delta: SidecarTelemetryDelta = {
-		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
-		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
-		retryActive: tailState.retryActive, retriesStarted: 0, lastRetryError: "",
-		hadEvents: false, contextUsage: null, sawStatsResponseWithoutContextUsage: false,
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheReadTokens: 0,
+		cacheWriteTokens: 0,
+		cost: 0,
+		latestTotalTokens: 0,
+		toolCalls: 0,
+		lastTool: "",
+		retryActive: tailState.retryActive,
+		retriesStarted: 0,
+		lastRetryError: "",
+		hadEvents: false,
+		contextUsage: null,
+		sawStatsResponseWithoutContextUsage: false,
 	};
 
 	// Gracefully handle missing file (wrapper hasn't written yet)
@@ -176,16 +189,18 @@ export function tailSidecarJsonl(filePath: string, tailState: SidecarTailState):
 					delta.cacheReadTokens += usage.cacheRead || 0;
 					delta.cacheWriteTokens += usage.cacheWrite || 0;
 					if (usage.cost) {
-						delta.cost += typeof usage.cost === "object"
-							? (usage.cost.total || 0)
-							: (typeof usage.cost === "number" ? usage.cost : 0);
+						delta.cost +=
+							typeof usage.cost === "object"
+								? usage.cost.total || 0
+								: typeof usage.cost === "number"
+									? usage.cost
+									: 0;
 					}
 					// totalTokens is cumulative (grows each turn) — use latest value.
 					// Include cacheRead tokens: pi's totalTokens and the
 					// input+output fallback both exclude cache reads, but cached
 					// tokens still consume context window capacity.
-					const rawTotal = usage.totalTokens
-						|| ((usage.input || 0) + (usage.output || 0));
+					const rawTotal = usage.totalTokens || (usage.input || 0) + (usage.output || 0);
 					const totalTokens = rawTotal + (usage.cacheRead || 0);
 					if (totalTokens > delta.latestTotalTokens) {
 						delta.latestTotalTokens = totalTokens;

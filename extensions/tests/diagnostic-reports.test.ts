@@ -34,12 +34,8 @@ mock.module("fs", {
 
 // Dynamic imports so the module-under-test picks up the mocked 'fs'.
 // These MUST be after mock.module() to intercept the module's 'fs' import.
-const {
-	buildDiagnosticEvents,
-	eventsToJsonl,
-	buildMarkdownReport,
-	emitDiagnosticReports,
-} = await import("../taskplane/diagnostic-reports.ts");
+const { buildDiagnosticEvents, eventsToJsonl, buildMarkdownReport, emitDiagnosticReports } =
+	await import("../taskplane/diagnostic-reports.ts");
 type DiagnosticReportInput = import("../taskplane/diagnostic-reports.ts").DiagnosticReportInput;
 type DiagnosticEvent = import("../taskplane/diagnostic-reports.ts").DiagnosticEvent;
 
@@ -50,7 +46,10 @@ type OrchestratorConfig = import("../taskplane/types.ts").OrchestratorConfig;
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /** Build a minimal PersistedTaskRecord with overrides. */
-function makeTask(taskId: string, overrides: Partial<PersistedTaskRecord> = {}): PersistedTaskRecord {
+function makeTask(
+	taskId: string,
+	overrides: Partial<PersistedTaskRecord> = {},
+): PersistedTaskRecord {
 	return {
 		taskId,
 		laneNumber: 1,
@@ -80,7 +79,7 @@ function makeInput(overrides: Partial<DiagnosticReportInput> = {}): DiagnosticRe
 		phase: "completed",
 		mode: "repo",
 		startedAt: 1710000000000,
-		endedAt: 1710000300000,    // 300 seconds
+		endedAt: 1710000300000, // 300 seconds
 		tasks: [],
 		diagnostics: defaultBatchDiagnostics(),
 		succeededTasks: 0,
@@ -104,14 +103,10 @@ describe("buildDiagnosticEvents", () => {
 
 	it("sorts events deterministically by taskId", () => {
 		const input = makeInput({
-			tasks: [
-				makeTask("ZZ-003"),
-				makeTask("AA-001"),
-				makeTask("MM-002"),
-			],
+			tasks: [makeTask("ZZ-003"), makeTask("AA-001"), makeTask("MM-002")],
 		});
 		const events = buildDiagnosticEvents(input);
-		expect(events.map(e => e.taskId)).toEqual(["AA-001", "MM-002", "ZZ-003"]);
+		expect(events.map((e) => e.taskId)).toEqual(["AA-001", "MM-002", "ZZ-003"]);
 	});
 
 	it("uses taskExits as primary data source (precedence over exitDiagnostic)", () => {
@@ -125,17 +120,17 @@ describe("buildDiagnosticEvents", () => {
 				taskExits: {
 					"TP-001": {
 						classification: "completed",
-						cost: 0.50,
+						cost: 0.5,
 						durationSec: 120,
 						retries: 0,
 					},
 				},
-				batchCost: 0.50,
+				batchCost: 0.5,
 			},
 		});
 		const events = buildDiagnosticEvents(input);
 		expect(events[0].classification).toBe("completed");
-		expect(events[0].cost).toBe(0.50);
+		expect(events[0].cost).toBe(0.5);
 		expect(events[0].durationSec).toBe(120);
 	});
 
@@ -150,7 +145,7 @@ describe("buildDiagnosticEvents", () => {
 		});
 		const events = buildDiagnosticEvents(input);
 		expect(events[0].classification).toBe("api_error");
-		expect(events[0].cost).toBe(0);  // no cost in exitDiagnostic
+		expect(events[0].cost).toBe(0); // no cost in exitDiagnostic
 	});
 
 	it("falls back to 'unknown' when both taskExits and exitDiagnostic missing", () => {
@@ -167,7 +162,7 @@ describe("buildDiagnosticEvents", () => {
 			tasks: [
 				makeTask("TP-001", {
 					startedAt: 1710000000000,
-					endedAt: 1710000090000,  // 90 seconds
+					endedAt: 1710000090000, // 90 seconds
 				}),
 			],
 		});
@@ -244,12 +239,12 @@ describe("buildDiagnosticEvents", () => {
 				taskExits: {
 					"TP-001": {
 						classification: "completed",
-						cost: 0.10,
+						cost: 0.1,
 						durationSec: 30,
 						retries: 3,
 					},
 				},
-				batchCost: 0.10,
+				batchCost: 0.1,
 			},
 		});
 		const events = buildDiagnosticEvents(input);
@@ -362,7 +357,7 @@ describe("buildMarkdownReport", () => {
 			],
 			diagnostics: {
 				taskExits: {
-					"TP-001": { classification: "completed", cost: 0.10, durationSec: 60, retries: 0 },
+					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60, retries: 0 },
 					"TP-002": { classification: "crash", cost: 0.05, durationSec: 30, retries: 1 },
 				},
 				batchCost: 0.15,
@@ -394,9 +389,9 @@ describe("buildMarkdownReport", () => {
 			],
 			diagnostics: {
 				taskExits: {
-					"TP-001": { classification: "completed", cost: 0.10, durationSec: 60 },
+					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60 },
 					"TP-002": { classification: "crash", cost: 0.05, durationSec: 30 },
-					"TP-003": { classification: "completed", cost: 0.20, durationSec: 90 },
+					"TP-003": { classification: "completed", cost: 0.2, durationSec: 90 },
 				},
 				batchCost: 0.35,
 			},
@@ -440,7 +435,7 @@ describe("buildMarkdownReport", () => {
 	it("formats duration correctly", () => {
 		const input = makeInput({
 			startedAt: 1710000000000,
-			endedAt: 1710003661000,  // 3661 seconds = 1h 1m 1s
+			endedAt: 1710003661000, // 3661 seconds = 1h 1m 1s
 		});
 		const events = buildDiagnosticEvents(input);
 		const report = buildMarkdownReport(input, events);
@@ -524,7 +519,7 @@ describe("emitDiagnosticReports — robustness", () => {
 			failedTasks: 1,
 			diagnostics: {
 				taskExits: {
-					"TP-001": { classification: "completed", cost: 0.10, durationSec: 60, retries: 0 },
+					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60, retries: 0 },
 					"TP-002": { classification: "crash", cost: 0.05, durationSec: 30, retries: 1 },
 				},
 				batchCost: 0.15,
@@ -537,8 +532,8 @@ describe("emitDiagnosticReports — robustness", () => {
 		expect(mockWriteFileSync).toHaveBeenCalledTimes(2);
 
 		// Check JSONL file
-		const jsonlCall = mockWriteFileSync.mock.calls.find(
-			(call: any) => String(call.arguments[0]).endsWith("-events.jsonl"),
+		const jsonlCall = mockWriteFileSync.mock.calls.find((call: any) =>
+			String(call.arguments[0]).endsWith("-events.jsonl"),
 		);
 		expect(jsonlCall).toBeDefined();
 		const jsonlPath = String(jsonlCall!.arguments[0]);
@@ -560,8 +555,8 @@ describe("emitDiagnosticReports — robustness", () => {
 		}
 
 		// Check markdown file
-		const mdCall = mockWriteFileSync.mock.calls.find(
-			(call: any) => String(call.arguments[0]).endsWith("-report.md"),
+		const mdCall = mockWriteFileSync.mock.calls.find((call: any) =>
+			String(call.arguments[0]).endsWith("-report.md"),
 		);
 		expect(mdCall).toBeDefined();
 		const mdPath = String(mdCall!.arguments[0]);

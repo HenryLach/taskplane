@@ -34,18 +34,12 @@ const NODE = process.execPath;
 
 describe("TP-189-C — getVersion() behavioral capture (success cases)", () => {
 	it("returns trimmed stdout when the command writes its version to stdout", () => {
-		const result = getVersion(
-			`"${NODE}" -e "process.stdout.write('1.2.3')"`,
-			"",
-		);
+		const result = getVersion(`"${NODE}" -e "process.stdout.write('1.2.3')"`, "");
 		assert.strictEqual(result, "1.2.3");
 	});
 
 	it("falls back to stderr when stdout is empty (the pi --version case)", () => {
-		const result = getVersion(
-			`"${NODE}" -e "process.stderr.write('0.73.0')"`,
-			"",
-		);
+		const result = getVersion(`"${NODE}" -e "process.stderr.write('0.73.0')"`, "");
 		assert.strictEqual(result, "0.73.0");
 	});
 
@@ -58,10 +52,7 @@ describe("TP-189-C — getVersion() behavioral capture (success cases)", () => {
 	});
 
 	it("trims surrounding whitespace from the captured stream", () => {
-		const result = getVersion(
-			`"${NODE}" -e "process.stdout.write('  v9.9.9  \\n')"`,
-			"",
-		);
+		const result = getVersion(`"${NODE}" -e "process.stdout.write('  v9.9.9  \\n')"`, "");
 		assert.strictEqual(result, "v9.9.9");
 	});
 });
@@ -73,15 +64,8 @@ describe("TP-189-C — getVersion() fail-safe contract (R008 follow-up)", () => 
 		// `command not found`-style error prose as a fake version. The
 		// guard `if (result.error || result.status !== 0) return null;`
 		// preserves the prior execSync-throws-on-failure contract.
-		const result = getVersion(
-			`"${NODE}" -e "process.stderr.write('boom'); process.exit(1)"`,
-			"",
-		);
-		assert.strictEqual(
-			result,
-			null,
-			"non-zero exit must return null, not the stderr error text",
-		);
+		const result = getVersion(`"${NODE}" -e "process.stderr.write('boom'); process.exit(1)"`, "");
+		assert.strictEqual(result, null, "non-zero exit must return null, not the stderr error text");
 	});
 
 	it("returns null for a guaranteed-nonexistent command", () => {

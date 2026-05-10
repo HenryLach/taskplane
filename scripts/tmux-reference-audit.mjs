@@ -17,12 +17,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CATEGORY_ORDER = [
-	"compat-code",
-	"user-facing strings",
-	"comments/docs",
-	"types/contracts",
-];
+const CATEGORY_ORDER = ["compat-code", "user-facing strings", "comments/docs", "types/contracts"];
 
 const STRICT_FAILURE_EXIT_CODE = 2;
 const SCAN_ROOTS = ["extensions", "bin", "templates", "dashboard", "skills"];
@@ -48,10 +43,7 @@ const USER_FACING_FILES = new Set([
 	"supervisor.ts",
 ]);
 
-const TYPES_CONTRACT_FILES = new Set([
-	"types.ts",
-	"config-schema.ts",
-]);
+const TYPES_CONTRACT_FILES = new Set(["types.ts", "config-schema.ts"]);
 
 const FUNCTIONAL_PATTERNS = [
 	{
@@ -102,6 +94,32 @@ function isCommentLine(trimmed, inBlockComment) {
 	return false;
 }
 
+/**
+ * Test files contain string-literal assertions of the form
+ *   expect(src).not.toContain('execSync("tmux ...")')
+ * which look identical to real functional TMUX usage to a regex scanner.
+ * These are NEGATIVE assertions verifying that production code does NOT
+ * call into TMUX, not actual TMUX calls. Skip functional-usage detection
+ * inside test files; they're not shipped and never trigger TMUX execution.
+ *
+ * (The line is still counted as a `tmux` reference under compat-code; only
+ * the strict-mode functional-usage gate is skipped.)
+ *
+ * Added under TP-193 because Biome's `quoteStyle: "double"` rule rewrote
+ * test assertions like `'execSync(\'tmux ...\')'` to `"execSync('tmux ...')"`,
+ * removing the escaped quotes that previously hid these literal strings
+ * from FUNCTIONAL_PATTERNS regex matching.
+ */
+function isTestSourceFile(relPath) {
+	return (
+		relPath.includes("/tests/") ||
+		relPath.endsWith(".test.ts") ||
+		relPath.endsWith(".test.tsx") ||
+		relPath.endsWith(".test.mjs") ||
+		relPath.endsWith(".integration.test.ts")
+	);
+}
+
 function detectFunctionalUsage(line) {
 	for (const pattern of FUNCTIONAL_PATTERNS) {
 		if (pattern.regex.test(line)) return pattern.id;
@@ -117,7 +135,8 @@ function isUserFacingLine(fileName, line) {
 	}
 
 	if (fileName === "worktree.ts") {
-		const hasDisplayContext = line.includes("message:") || line.includes("hint:") || /["'`]/.test(line);
+		const hasDisplayContext =
+			line.includes("message:") || line.includes("hint:") || /["'`]/.test(line);
 		return hasDisplayContext && /tmux/i.test(line);
 	}
 
@@ -150,8 +169,9 @@ function collectFilesRecursive(repoRoot, rootRel, out) {
 	const stack = [absRoot];
 	while (stack.length > 0) {
 		const current = stack.pop();
-		const entries = readdirSync(current, { withFileTypes: true })
-			.sort((a, b) => a.name.localeCompare(b.name));
+		const entries = readdirSync(current, { withFileTypes: true }).sort((a, b) =>
+			a.name.localeCompare(b.name),
+		);
 
 		for (let i = entries.length - 1; i >= 0; i--) {
 			const entry = entries[i];
@@ -177,7 +197,9 @@ function buildAudit() {
 		collectFilesRecursive(repoRoot, scanRoot, entriesAbs);
 	}
 
-	entriesAbs.sort((a, b) => normalizeRepoPath(relative(repoRoot, a)).localeCompare(normalizeRepoPath(relative(repoRoot, b))));
+	entriesAbs.sort((a, b) =>
+		normalizeRepoPath(relative(repoRoot, a)).localeCompare(normalizeRepoPath(relative(repoRoot, b))),
+	);
 
 	const totalsByCategory = createCategoryCounter();
 	const byFile = [];
@@ -210,7 +232,7 @@ function buildAudit() {
 				fileByCategory[category] += matchCount;
 				totalsByCategory[category] += matchCount;
 
-				if (executableFile && !commentLine) {
+				if (executableFile && !commentLine && !isTestSourceFile(relPath)) {
 					const patternId = detectFunctionalUsage(line);
 					if (patternId) {
 						const firstIndex = line.toLowerCase().indexOf("tmux");
@@ -247,7 +269,7 @@ function buildAudit() {
 		return a.pattern.localeCompare(b.pattern);
 	});
 
-	const filesWithReferences = byFile.filter(entry => entry.references > 0).length;
+	const filesWithReferences = byFile.filter((entry) => entry.references > 0).length;
 
 	return {
 		schemaVersion: 2,
@@ -296,7 +318,7 @@ function main() {
 	}
 
 	const known = new Set(["--json", "--strict", "--help"]);
-	const unknown = args.filter(arg => !known.has(arg));
+	const unknown = args.filter((arg) => !known.has(arg));
 	if (unknown.length > 0) {
 		console.error(`[tmux-reference-audit] Unknown option(s): ${unknown.join(", ")}`);
 		printUsage();

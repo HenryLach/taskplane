@@ -38,10 +38,7 @@ import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const extensionSrc = readFileSync(
-	resolve(__dirname, "..", "taskplane", "extension.ts"),
-	"utf-8",
-);
+const extensionSrc = readFileSync(resolve(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 
 /**
  * Extract the body of the `WorkspaceConfigError` catch branch in the

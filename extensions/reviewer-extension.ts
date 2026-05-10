@@ -48,7 +48,8 @@ export default function reviewerExtension(pi: ExtensionAPI) {
 			"Block until the next review request is available, then return its content. " +
 			"Call this after completing each review to wait for the next one. " +
 			"Returns 'SHUTDOWN' when the task is complete and you should exit.",
-		promptSnippet: "wait_for_review() — block until the next review request arrives (persistent reviewer mode)",
+		promptSnippet:
+			"wait_for_review() — block until the next review request arrives (persistent reviewer mode)",
 		promptGuidelines: [
 			"Call wait_for_review() to receive each review request.",
 			"After writing your review to the specified output file, call wait_for_review() again.",
@@ -82,11 +83,14 @@ export default function reviewerExtension(pi: ExtensionAPI) {
 					if (!existsSync(requestPath)) {
 						// Signal fired but request file doesn't exist (race condition or error)
 						return {
-							content: [{
-								type: "text" as const,
-								text: `ERROR — Signal file ${REVIEWER_SIGNAL_PREFIX}${signalNum} found but ` +
-									`${signalContent} does not exist. Waiting for next signal.`,
-							}],
+							content: [
+								{
+									type: "text" as const,
+									text:
+										`ERROR — Signal file ${REVIEWER_SIGNAL_PREFIX}${signalNum} found but ` +
+										`${signalContent} does not exist. Waiting for next signal.`,
+								},
+							],
 							details: undefined,
 						};
 					}
@@ -103,16 +107,18 @@ export default function reviewerExtension(pi: ExtensionAPI) {
 				// Check timeout
 				if (Date.now() - startTime > REVIEWER_WAIT_TIMEOUT_MS) {
 					return {
-						content: [{
-							type: "text" as const,
-							text: "TIMEOUT — No review request received within the timeout period. Exit cleanly.",
-						}],
+						content: [
+							{
+								type: "text" as const,
+								text: "TIMEOUT — No review request received within the timeout period. Exit cleanly.",
+							},
+						],
 						details: undefined,
 					};
 				}
 
 				// Wait before next poll
-				await new Promise(resolve => setTimeout(resolve, REVIEWER_POLL_INTERVAL_MS));
+				await new Promise((resolve) => setTimeout(resolve, REVIEWER_POLL_INTERVAL_MS));
 			}
 		},
 	});

@@ -54,10 +54,7 @@ import {
 	computeResumePoint,
 	reconstructAllocatedLanes,
 } from "../taskplane/resume.ts";
-import {
-	freshOrchBatchState,
-	BATCH_STATE_SCHEMA_VERSION,
-} from "../taskplane/types.ts";
+import { freshOrchBatchState, BATCH_STATE_SCHEMA_VERSION } from "../taskplane/types.ts";
 import type {
 	AllocatedLane,
 	AllocatedTask,
@@ -110,10 +107,7 @@ function monoTask(taskId: string, opts?: Partial<ParsedTask>): ParsedTask {
 }
 
 /** Build a monorepo AllocatedLane (no repoId). */
-function monoLane(
-	laneNum: number,
-	tasks: AllocatedTask[],
-): AllocatedLane {
+function monoLane(laneNum: number, tasks: AllocatedTask[]): AllocatedLane {
 	return {
 		laneNumber: laneNum,
 		laneId: `lane-${laneNum}`,
@@ -160,7 +154,6 @@ ${deps}
 ---
 `;
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 8.1 — Repo-mode persisted state defaults
@@ -222,13 +215,12 @@ describe("8.1: Repo-mode state — mode=repo, no repo fields", () => {
 			const validated = validatePersistedState(data);
 			expect(validated.lanes[0].laneSessionId).toBe("orch-legacy-lane-1");
 			expect((validated.lanes[0] as Record<string, unknown>).tmuxSessionName).toBeUndefined();
-			expect(errors.some(line => line.includes("lanes[].tmuxSessionName"))).toBe(true);
+			expect(errors.some((line) => line.includes("lanes[].tmuxSessionName"))).toBe(true);
 		} finally {
 			console.error = originalConsoleError;
 		}
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 8.2 — Repo-mode discovery: no routing
@@ -268,7 +260,7 @@ describe("8.2: Repo-mode discovery — no routing applied", () => {
 
 		// No routing errors (TASK_REPO_UNKNOWN, TASK_REPO_UNRESOLVED)
 		const routingErrors = result.errors.filter(
-			e => e.code === "TASK_REPO_UNKNOWN" || e.code === "TASK_REPO_UNRESOLVED",
+			(e) => e.code === "TASK_REPO_UNKNOWN" || e.code === "TASK_REPO_UNRESOLVED",
 		);
 		expect(routingErrors).toHaveLength(0);
 	});
@@ -368,7 +360,6 @@ Repo: api
 	});
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════
 // 8.3 — Repo-mode naming: un-scoped IDs
 // ═══════════════════════════════════════════════════════════════════════
@@ -399,20 +390,19 @@ describe("8.3: Repo-mode naming — no repoId segments", () => {
 	});
 
 	it("8.3.5: multiple repo-mode lane IDs are unique", () => {
-		const ids = [1, 2, 3].map(n => generateLaneId(n));
+		const ids = [1, 2, 3].map((n) => generateLaneId(n));
 		expect(new Set(ids).size).toBe(3);
 		expect(ids).toEqual(["lane-1", "lane-2", "lane-3"]);
 	});
 
 	it("8.3.6: multiple repo-mode session names are unique", () => {
-		const names = [1, 2, 3].map(n => generateLaneSessionId("orch", n, "alice"));
+		const names = [1, 2, 3].map((n) => generateLaneSessionId("orch", n, "alice"));
 		expect(new Set(names).size).toBe(3);
 		for (const name of names) {
 			expect(name).toMatch(/^orch-alice-lane-\d+$/);
 		}
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 8.4 — Repo-mode serialization round-trip
@@ -530,7 +520,6 @@ describe("8.4: Repo-mode serialization — round-trip preserves mode=repo", () =
 	});
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════
 // 8.5 — Repo-mode resume: v1→v2 upconvert and eligibility
 // ═══════════════════════════════════════════════════════════════════════
@@ -585,25 +574,29 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			currentWaveIndex: 0,
 			totalWaves: 1,
 			wavePlan: [["TP-100"]],
-			lanes: [{
-				laneNumber: 1,
-				laneId: "lane-1",
-				laneSessionId: "orch-op-lane-1",
-				worktreePath: "/wt-1",
-				branch: "task/op-lane-1-20260316T120000",
-				taskIds: ["TP-100"],
-			}],
-			tasks: [{
-				taskId: "TP-100",
-				laneNumber: 1,
-				sessionName: "orch-op-lane-1",
-				status: "running",
-				taskFolder: "/tasks/TP-100",
-				startedAt: 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-			}],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-op-lane-1",
+					worktreePath: "/wt-1",
+					branch: "task/op-lane-1-20260316T120000",
+					taskIds: ["TP-100"],
+				},
+			],
+			tasks: [
+				{
+					taskId: "TP-100",
+					laneNumber: 1,
+					sessionName: "orch-op-lane-1",
+					status: "running",
+					taskFolder: "/tasks/TP-100",
+					startedAt: 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+				},
+			],
 			mergeResults: [],
 			totalTasks: 1,
 			succeededTasks: 0,
@@ -634,25 +627,29 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			currentWaveIndex: 0,
 			totalWaves: 1,
 			wavePlan: [["TP-100"]],
-			lanes: [{
-				laneNumber: 1,
-				laneId: "lane-1",
-				laneSessionId: "orch-op-lane-1",
-				worktreePath: "/wt-1",
-				branch: "task/op-lane-1-20260316T120000",
-				taskIds: ["TP-100"],
-			}],
-			tasks: [{
-				taskId: "TP-100",
-				laneNumber: 1,
-				sessionName: "orch-op-lane-1",
-				status: "running",
-				taskFolder: "/tasks/TP-100",
-				startedAt: 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-			}],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-op-lane-1",
+					worktreePath: "/wt-1",
+					branch: "task/op-lane-1-20260316T120000",
+					taskIds: ["TP-100"],
+				},
+			],
+			tasks: [
+				{
+					taskId: "TP-100",
+					laneNumber: 1,
+					sessionName: "orch-op-lane-1",
+					status: "running",
+					taskFolder: "/tasks/TP-100",
+					startedAt: 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+				},
+			],
 			mergeResults: [],
 			totalTasks: 1,
 			succeededTasks: 0,
@@ -690,25 +687,29 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			currentWaveIndex: 0,
 			totalWaves: 1,
 			wavePlan: [["TP-100"]],
-			lanes: [{
-				laneNumber: 1,
-				laneId: "lane-1",
-				laneSessionId: "orch-op-lane-1",
-				worktreePath: "/wt-1",
-				branch: "task/op-lane-1-20260316T120000",
-				taskIds: ["TP-100"],
-			}],
-			tasks: [{
-				taskId: "TP-100",
-				laneNumber: 1,
-				sessionName: "orch-op-lane-1",
-				status: "running",
-				taskFolder: "/tasks/TP-100",
-				startedAt: 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-			}],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-op-lane-1",
+					worktreePath: "/wt-1",
+					branch: "task/op-lane-1-20260316T120000",
+					taskIds: ["TP-100"],
+				},
+			],
+			tasks: [
+				{
+					taskId: "TP-100",
+					laneNumber: 1,
+					sessionName: "orch-op-lane-1",
+					status: "running",
+					taskFolder: "/tasks/TP-100",
+					startedAt: 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+				},
+			],
 			mergeResults: [],
 			totalTasks: 1,
 			succeededTasks: 0,
@@ -734,25 +735,29 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 	});
 
 	it("8.5.6: reconstructAllocatedLanes from repo-mode state has no repoId", () => {
-		const persistedLanes = [{
-			laneNumber: 1,
-			laneId: "lane-1",
-			laneSessionId: "orch-op-lane-1",
-			worktreePath: "/wt-1",
-			branch: "task/op-lane-1-20260316T120000",
-			taskIds: ["TP-100"],
-		}];
-		const persistedTasks = [{
-			taskId: "TP-100",
-			laneNumber: 1,
-			sessionName: "orch-op-lane-1",
-			status: "succeeded" as const,
-			taskFolder: "/tasks/TP-100",
-			startedAt: 1000,
-			endedAt: 2000,
-			doneFileFound: true,
-			exitReason: "done",
-		}];
+		const persistedLanes = [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "orch-op-lane-1",
+				worktreePath: "/wt-1",
+				branch: "task/op-lane-1-20260316T120000",
+				taskIds: ["TP-100"],
+			},
+		];
+		const persistedTasks = [
+			{
+				taskId: "TP-100",
+				laneNumber: 1,
+				sessionName: "orch-op-lane-1",
+				status: "succeeded" as const,
+				taskFolder: "/tasks/TP-100",
+				startedAt: 1000,
+				endedAt: 2000,
+				doneFileFound: true,
+				exitReason: "done",
+			},
+		];
 
 		const lanes = reconstructAllocatedLanes(persistedLanes, persistedTasks);
 
@@ -762,7 +767,6 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 		expect(lanes[0].tasks[0].task?.resolvedRepoId).toBeUndefined();
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 8.6 — Repo-mode merge: groupLanesByRepo returns single default group
@@ -787,9 +791,7 @@ describe("8.6: Repo-mode merge — groupLanesByRepo returns single default group
 
 	it("8.6.2: single lane without repoId grouped correctly", () => {
 		const t1 = monoTask("TP-710");
-		const lanes: AllocatedLane[] = [
-			monoLane(1, [monoAllocatedTask("TP-710", 0, t1)]),
-		];
+		const lanes: AllocatedLane[] = [monoLane(1, [monoAllocatedTask("TP-710", 0, t1)])];
 
 		const groups = groupLanesByRepo(lanes);
 
@@ -798,7 +800,6 @@ describe("8.6: Repo-mode merge — groupLanesByRepo returns single default group
 		expect(groups[0].lanes).toHaveLength(1);
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 8.7 — Repo-mode wave computation: groupTasksByRepo returns single group

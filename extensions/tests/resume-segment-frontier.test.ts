@@ -29,25 +29,29 @@ function makeState(overrides: Partial<PersistedBatchState> = {}): PersistedBatch
 		currentWaveIndex: 0,
 		totalWaves: 1,
 		wavePlan: [["TP-001"]],
-		lanes: [{
-			laneNumber: 1,
-			laneId: "lane-1",
-			laneSessionId: "orch-lane-1",
-			worktreePath: "/tmp/wt-1",
-			branch: "task/lane-1",
-			taskIds: ["TP-001"],
-		}],
-		tasks: [{
-			taskId: "TP-001",
-			laneNumber: 1,
-			sessionName: "orch-lane-1",
-			status: "running",
-			taskFolder: "/tmp/tasks/TP-001",
-			startedAt: Date.now() - 900,
-			endedAt: null,
-			doneFileFound: false,
-			exitReason: "",
-		}],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "orch-lane-1",
+				worktreePath: "/tmp/wt-1",
+				branch: "task/lane-1",
+				taskIds: ["TP-001"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "TP-001",
+				laneNumber: 1,
+				sessionName: "orch-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tasks/TP-001",
+				startedAt: Date.now() - 900,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		],
 		mergeResults: [],
 		totalTasks: 1,
 		succeededTasks: 0,
@@ -92,22 +96,29 @@ describe("TP-135 resume segment fallback behavior", () => {
 
 		try {
 			const state = makeState({
-				tasks: [{
-					taskId: "TP-001",
-					laneNumber: 1,
-					sessionName: "orch-lane-1",
-					status: "running",
-					taskFolder,
-					startedAt: Date.now() - 1000,
-					endedAt: null,
-					doneFileFound: false,
-					exitReason: "",
-					segmentIds: ["TP-001::api", "TP-001::web"],
-					activeSegmentId: "TP-001::web",
-				}],
+				tasks: [
+					{
+						taskId: "TP-001",
+						laneNumber: 1,
+						sessionName: "orch-lane-1",
+						status: "running",
+						taskFolder,
+						startedAt: Date.now() - 1000,
+						endedAt: null,
+						doneFileFound: false,
+						exitReason: "",
+						segmentIds: ["TP-001::api", "TP-001::web"],
+						activeSegmentId: "TP-001::web",
+					},
+				],
 				segments: [
 					makeSegment({ segmentId: "TP-001::api", status: "succeeded", endedAt: Date.now() - 500 }),
-					makeSegment({ segmentId: "TP-001::web", repoId: "web", status: "running", dependsOnSegmentIds: ["TP-001::api"] }),
+					makeSegment({
+						segmentId: "TP-001::web",
+						repoId: "web",
+						status: "running",
+						dependsOnSegmentIds: ["TP-001::api"],
+					}),
 				],
 			});
 
@@ -132,19 +143,21 @@ describe("TP-135 resume segment fallback behavior", () => {
 				{ waveIndex: 0, status: "succeeded" },
 				{ waveIndex: 1, status: "succeeded" },
 			] as any,
-			tasks: [{
-				taskId: "TP-010",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "succeeded",
-				taskFolder: "/tmp/tasks/TP-010",
-				startedAt: Date.now() - 1000,
-				endedAt: Date.now() - 100,
-				doneFileFound: true,
-				exitReason: "done",
-				segmentIds: ["TP-010::api", "TP-010::web"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-010",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "succeeded",
+					taskFolder: "/tmp/tasks/TP-010",
+					startedAt: Date.now() - 1000,
+					endedAt: Date.now() - 100,
+					doneFileFound: true,
+					exitReason: "done",
+					segmentIds: ["TP-010::api", "TP-010::web"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [],
 		});
 
@@ -161,22 +174,22 @@ describe("TP-135 resume segment fallback behavior", () => {
 
 	it("mid-segment crash re-executes the running segment", () => {
 		const state = makeState({
-			tasks: [{
-				taskId: "TP-020",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "running",
-				taskFolder: "/tmp/tasks/TP-020",
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-020::api"],
-				activeSegmentId: "TP-020::api",
-			}],
-			segments: [
-				makeSegment({ taskId: "TP-020", segmentId: "TP-020::api", status: "running" }),
+			tasks: [
+				{
+					taskId: "TP-020",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "running",
+					taskFolder: "/tmp/tasks/TP-020",
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-020::api"],
+					activeSegmentId: "TP-020::api",
+				},
 			],
+			segments: [makeSegment({ taskId: "TP-020", segmentId: "TP-020::api", status: "running" })],
 		});
 
 		reconstructSegmentFrontier(state);
@@ -190,21 +203,28 @@ describe("TP-135 resume segment fallback behavior", () => {
 		const state = makeState({
 			wavePlan: [["TP-021"], ["TP-021"]],
 			totalWaves: 2,
-			tasks: [{
-				taskId: "TP-021",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "running",
-				taskFolder: "/tmp/tasks/TP-021",
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-021::api", "TP-021::web"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-021",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "running",
+					taskFolder: "/tmp/tasks/TP-021",
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-021::api", "TP-021::web"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [
-				makeSegment({ taskId: "TP-021", segmentId: "TP-021::api", status: "succeeded", endedAt: Date.now() - 100 }),
+				makeSegment({
+					taskId: "TP-021",
+					segmentId: "TP-021::api",
+					status: "succeeded",
+					endedAt: Date.now() - 100,
+				}),
 			],
 		});
 
@@ -224,22 +244,36 @@ describe("TP-135 resume segment fallback behavior", () => {
 				{ waveIndex: 0, status: "succeeded" },
 				{ waveIndex: 1, status: "succeeded" },
 			] as any,
-			tasks: [{
-				taskId: "TP-022",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "running",
-				taskFolder: "/tmp/tasks/TP-022",
-				startedAt: Date.now() - 2000,
-				endedAt: Date.now() - 100,
-				doneFileFound: true,
-				exitReason: "done",
-				segmentIds: ["TP-022::api", "TP-022::web"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-022",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "running",
+					taskFolder: "/tmp/tasks/TP-022",
+					startedAt: Date.now() - 2000,
+					endedAt: Date.now() - 100,
+					doneFileFound: true,
+					exitReason: "done",
+					segmentIds: ["TP-022::api", "TP-022::web"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [
-				makeSegment({ taskId: "TP-022", segmentId: "TP-022::api", status: "succeeded", endedAt: Date.now() - 500 }),
-				makeSegment({ taskId: "TP-022", segmentId: "TP-022::web", repoId: "web", status: "succeeded", dependsOnSegmentIds: ["TP-022::api"], endedAt: Date.now() - 100 }),
+				makeSegment({
+					taskId: "TP-022",
+					segmentId: "TP-022::api",
+					status: "succeeded",
+					endedAt: Date.now() - 500,
+				}),
+				makeSegment({
+					taskId: "TP-022",
+					segmentId: "TP-022::web",
+					repoId: "web",
+					status: "succeeded",
+					dependsOnSegmentIds: ["TP-022::api"],
+					endedAt: Date.now() - 100,
+				}),
 			],
 		});
 
@@ -283,7 +317,12 @@ describe("TP-135 resume segment fallback behavior", () => {
 				},
 			],
 			segments: [
-				makeSegment({ taskId: "TP-030", segmentId: "TP-030::api", status: "failed", endedAt: Date.now() - 100 }),
+				makeSegment({
+					taskId: "TP-030",
+					segmentId: "TP-030::api",
+					status: "failed",
+					endedAt: Date.now() - 100,
+				}),
 			],
 		});
 
@@ -298,23 +337,44 @@ describe("TP-135 resume segment fallback behavior", () => {
 		const state = makeState({
 			wavePlan: [["TP-041"], ["TP-041"], ["TP-041"]],
 			totalWaves: 3,
-			tasks: [{
-				taskId: "TP-041",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "running",
-				taskFolder: "/tmp/tasks/TP-041",
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-041::api", "TP-041::ops", "TP-041::web"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-041",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "running",
+					taskFolder: "/tmp/tasks/TP-041",
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-041::api", "TP-041::ops", "TP-041::web"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [
-				makeSegment({ taskId: "TP-041", segmentId: "TP-041::api", status: "succeeded", endedAt: Date.now() - 500 }),
-				makeSegment({ taskId: "TP-041", segmentId: "TP-041::ops", repoId: "ops", status: "pending", dependsOnSegmentIds: ["TP-041::api"], expandedFrom: "TP-041::api", expansionRequestId: "exp-041" } as any),
-				makeSegment({ taskId: "TP-041", segmentId: "TP-041::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-041::ops"] }),
+				makeSegment({
+					taskId: "TP-041",
+					segmentId: "TP-041::api",
+					status: "succeeded",
+					endedAt: Date.now() - 500,
+				}),
+				makeSegment({
+					taskId: "TP-041",
+					segmentId: "TP-041::ops",
+					repoId: "ops",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-041::api"],
+					expandedFrom: "TP-041::api",
+					expansionRequestId: "exp-041",
+				} as any),
+				makeSegment({
+					taskId: "TP-041",
+					segmentId: "TP-041::web",
+					repoId: "web",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-041::ops"],
+				}),
 			],
 		});
 
@@ -330,22 +390,35 @@ describe("TP-135 resume segment fallback behavior", () => {
 			wavePlan: [["TP-050"]],
 			totalWaves: 1,
 			mergeResults: [{ waveIndex: 0, status: "succeeded" }] as any,
-			tasks: [{
-				taskId: "TP-050",
-				laneNumber: 1,
-				sessionName: "",
-				status: "pending",
-				taskFolder: "/tmp/tasks/TP-050",
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-050::api", "TP-050::web"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-050",
+					laneNumber: 1,
+					sessionName: "",
+					status: "pending",
+					taskFolder: "/tmp/tasks/TP-050",
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-050::api", "TP-050::web"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [
-				makeSegment({ taskId: "TP-050", segmentId: "TP-050::api", status: "succeeded", endedAt: Date.now() - 100 }),
-				makeSegment({ taskId: "TP-050", segmentId: "TP-050::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-050::api"] }),
+				makeSegment({
+					taskId: "TP-050",
+					segmentId: "TP-050::api",
+					status: "succeeded",
+					endedAt: Date.now() - 100,
+				}),
+				makeSegment({
+					taskId: "TP-050",
+					segmentId: "TP-050::web",
+					repoId: "web",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-050::api"],
+				}),
 			],
 		});
 
@@ -407,27 +480,25 @@ describe("TP-135 resume segment fallback behavior", () => {
 		});
 
 		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
-		expect(runtimeWavePlan).toEqual([
-			["TP-060", "TP-061"],
-			["TP-060", "TP-061"],
-			["TP-062"],
-		]);
+		expect(runtimeWavePlan).toEqual([["TP-060", "TP-061"], ["TP-060", "TP-061"], ["TP-062"]]);
 	});
 
 	it("repo-singleton tasks without segment IDs keep legacy resume behavior", () => {
 		const state = makeState({
 			wavePlan: [["TP-040"]],
-			tasks: [{
-				taskId: "TP-040",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "running",
-				taskFolder: "/tmp/tasks/TP-040",
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-			}],
+			tasks: [
+				{
+					taskId: "TP-040",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "running",
+					taskFolder: "/tmp/tasks/TP-040",
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+				},
+			],
 			segments: [],
 		});
 
@@ -445,30 +516,47 @@ describe("TP-135 resume segment fallback behavior", () => {
 describe("TP-169 resume after segment expansion — no crash, taskFolder populated", () => {
 	it("taskFolder is set on task stub even when persisted record has empty taskFolder", () => {
 		const state = makeState({
-			lanes: [{
-				laneNumber: 1,
-				laneId: "lane-1",
-				laneSessionId: "orch-lane-1",
-				worktreePath: "/tmp/wt-1",
-				branch: "task/lane-1",
-				taskIds: ["TP-070"],
-			}],
-			tasks: [{
-				taskId: "TP-070",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "running",
-				taskFolder: "", // empty — not enriched from discovery
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-070::api", "TP-070::web"],
-				activeSegmentId: "TP-070::web",
-			}],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-lane-1",
+					worktreePath: "/tmp/wt-1",
+					branch: "task/lane-1",
+					taskIds: ["TP-070"],
+				},
+			],
+			tasks: [
+				{
+					taskId: "TP-070",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "running",
+					taskFolder: "", // empty — not enriched from discovery
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-070::api", "TP-070::web"],
+					activeSegmentId: "TP-070::web",
+				},
+			],
 			segments: [
-				makeSegment({ taskId: "TP-070", segmentId: "TP-070::api", status: "succeeded", endedAt: Date.now() - 500 }),
-				makeSegment({ taskId: "TP-070", segmentId: "TP-070::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-070::api"], expandedFrom: "TP-070::api", expansionRequestId: "exp-070" } as any),
+				makeSegment({
+					taskId: "TP-070",
+					segmentId: "TP-070::api",
+					status: "succeeded",
+					endedAt: Date.now() - 500,
+				}),
+				makeSegment({
+					taskId: "TP-070",
+					segmentId: "TP-070::web",
+					repoId: "web",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-070::api"],
+					expandedFrom: "TP-070::api",
+					expansionRequestId: "exp-070",
+				} as any),
 			],
 		});
 
@@ -486,30 +574,45 @@ describe("TP-169 resume after segment expansion — no crash, taskFolder populat
 
 	it("taskFolder is preserved on task stub when persisted record has a valid path", () => {
 		const state = makeState({
-			lanes: [{
-				laneNumber: 1,
-				laneId: "lane-1",
-				laneSessionId: "orch-lane-1",
-				worktreePath: "/tmp/wt-1",
-				branch: "task/lane-1",
-				taskIds: ["TP-071"],
-			}],
-			tasks: [{
-				taskId: "TP-071",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "running",
-				taskFolder: "/tmp/tasks/TP-071",
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-071::api", "TP-071::web"],
-				activeSegmentId: "TP-071::web",
-			}],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-lane-1",
+					worktreePath: "/tmp/wt-1",
+					branch: "task/lane-1",
+					taskIds: ["TP-071"],
+				},
+			],
+			tasks: [
+				{
+					taskId: "TP-071",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "running",
+					taskFolder: "/tmp/tasks/TP-071",
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-071::api", "TP-071::web"],
+					activeSegmentId: "TP-071::web",
+				},
+			],
 			segments: [
-				makeSegment({ taskId: "TP-071", segmentId: "TP-071::api", status: "succeeded", endedAt: Date.now() - 500 }),
-				makeSegment({ taskId: "TP-071", segmentId: "TP-071::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-071::api"] }),
+				makeSegment({
+					taskId: "TP-071",
+					segmentId: "TP-071::api",
+					status: "succeeded",
+					endedAt: Date.now() - 500,
+				}),
+				makeSegment({
+					taskId: "TP-071",
+					segmentId: "TP-071::web",
+					repoId: "web",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-071::api"],
+				}),
 			],
 		});
 
@@ -521,28 +624,32 @@ describe("TP-169 resume after segment expansion — no crash, taskFolder populat
 
 	it("task stub is not null when only segment fields are set (no repoId)", () => {
 		const state = makeState({
-			lanes: [{
-				laneNumber: 1,
-				laneId: "lane-1",
-				laneSessionId: "orch-lane-1",
-				worktreePath: "/tmp/wt-1",
-				branch: "task/lane-1",
-				taskIds: ["TP-072"],
-			}],
-			tasks: [{
-				taskId: "TP-072",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				status: "pending",
-				taskFolder: "",
-				startedAt: null,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				// Only segment fields, no repoId/resolvedRepoId
-				segmentIds: ["TP-072::default"],
-				activeSegmentId: "TP-072::default",
-			}],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-lane-1",
+					worktreePath: "/tmp/wt-1",
+					branch: "task/lane-1",
+					taskIds: ["TP-072"],
+				},
+			],
+			tasks: [
+				{
+					taskId: "TP-072",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					status: "pending",
+					taskFolder: "",
+					startedAt: null,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					// Only segment fields, no repoId/resolvedRepoId
+					segmentIds: ["TP-072::default"],
+					activeSegmentId: "TP-072::default",
+				},
+			],
 		});
 
 		const lanes = reconstructAllocatedLanes(state.lanes, state.tasks);

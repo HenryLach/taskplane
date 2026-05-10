@@ -67,9 +67,7 @@ describe("classifyExit — all 9 classification paths", () => {
 			name: "model_access_error — retries with rate_limit_exceeded pattern",
 			input: makeInput({
 				exitSummary: makeSummary({
-					retries: [
-						{ attempt: 1, error: "rate_limit_exceeded", delayMs: 5000, succeeded: false },
-					],
+					retries: [{ attempt: 1, error: "rate_limit_exceeded", delayMs: 5000, succeeded: false }],
 				}),
 			}),
 			expected: "model_access_error",
@@ -102,9 +100,7 @@ describe("classifyExit — all 9 classification paths", () => {
 			input: makeInput({
 				exitSummary: makeSummary({
 					exitCode: 1,
-					retries: [
-						{ attempt: 1, error: "rate_limit", delayMs: 1000, succeeded: true },
-					],
+					retries: [{ attempt: 1, error: "rate_limit", delayMs: 1000, succeeded: true }],
 				}),
 			}),
 			// last retry succeeded → skip api_error, move to process_crash (exitCode=1)
@@ -401,32 +397,40 @@ describe("classifyExit — edge cases", () => {
 	});
 
 	it("exitCode === null (killed by signal) → skips process_crash", () => {
-		const result = classifyExit(makeInput({
-			exitSummary: makeSummary({ exitCode: null, exitSignal: "SIGTERM" }),
-		}));
+		const result = classifyExit(
+			makeInput({
+				exitSummary: makeSummary({ exitCode: null, exitSignal: "SIGTERM" }),
+			}),
+		);
 		// exitCode is null (not a number), so process_crash check doesn't fire
 		expect(result).toBe("unknown");
 	});
 
 	it("exitCode === 0 → not process_crash (clean exit)", () => {
-		const result = classifyExit(makeInput({
-			exitSummary: makeSummary({ exitCode: 0 }),
-		}));
+		const result = classifyExit(
+			makeInput({
+				exitSummary: makeSummary({ exitCode: 0 }),
+			}),
+		);
 		expect(result).toBe("unknown");
 	});
 
 	it("empty retries array → not api_error", () => {
-		const result = classifyExit(makeInput({
-			exitSummary: makeSummary({ retries: [], exitCode: 0 }),
-		}));
+		const result = classifyExit(
+			makeInput({
+				exitSummary: makeSummary({ retries: [], exitCode: 0 }),
+			}),
+		);
 		expect(result).toBe("unknown");
 	});
 
 	it("compactions > 0 but contextPct exactly 89 → not context_overflow", () => {
-		const result = classifyExit(makeInput({
-			exitSummary: makeSummary({ compactions: 1, exitCode: 0 }),
-			contextPct: 89,
-		}));
+		const result = classifyExit(
+			makeInput({
+				exitSummary: makeSummary({ compactions: 1, exitCode: 0 }),
+				contextPct: 89,
+			}),
+		);
 		// 89 < 90 threshold → not context_overflow, exitCode=0 → not crash → unknown
 		expect(result).toBe("unknown");
 	});
@@ -434,28 +438,34 @@ describe("classifyExit — edge cases", () => {
 	it("contextKilled → context_overflow (even without compactions or summary)", () => {
 		// Task-runner explicitly killed the session due to context limit,
 		// but wrapper crashed before writing exit summary
-		const result = classifyExit(makeInput({
-			exitSummary: null,
-			contextKilled: true,
-		}));
+		const result = classifyExit(
+			makeInput({
+				exitSummary: null,
+				contextKilled: true,
+			}),
+		);
 		// contextKilled (3b) beats session_vanished (6)
 		expect(result).toBe("context_overflow");
 	});
 
 	it("contextKilled → context_overflow (summary exists but compactions=0)", () => {
 		// Wrapper didn't record compactions but task-runner detected context limit
-		const result = classifyExit(makeInput({
-			exitSummary: makeSummary({ compactions: 0, exitCode: 0 }),
-			contextKilled: true,
-			contextPct: 50,
-		}));
+		const result = classifyExit(
+			makeInput({
+				exitSummary: makeSummary({ compactions: 0, exitCode: 0 }),
+				contextKilled: true,
+				contextPct: 50,
+			}),
+		);
 		expect(result).toBe("context_overflow");
 	});
 
 	it("contextKilled=false (default) → no change to existing behavior", () => {
-		const result = classifyExit(makeInput({
-			exitSummary: makeSummary({ exitCode: 0 }),
-		}));
+		const result = classifyExit(
+			makeInput({
+				exitSummary: makeSummary({ exitCode: 0 }),
+			}),
+		);
 		// contextKilled defaults to false via ?? in classifyExit
 		expect(result).toBe("unknown");
 	});
@@ -484,9 +494,17 @@ describe("EXIT_CLASSIFICATIONS constant", () => {
 
 	it("includes all expected values", () => {
 		const expected: ExitClassification[] = [
-			"completed", "api_error", "model_access_error", "context_overflow",
-			"wall_clock_timeout", "process_crash", "session_vanished",
-			"stall_timeout", "user_killed", "spawn_failure", "unknown",
+			"completed",
+			"api_error",
+			"model_access_error",
+			"context_overflow",
+			"wall_clock_timeout",
+			"process_crash",
+			"session_vanished",
+			"stall_timeout",
+			"user_killed",
+			"spawn_failure",
+			"unknown",
 		];
 		for (const val of expected) {
 			expect(EXIT_CLASSIFICATIONS).toContain(val);

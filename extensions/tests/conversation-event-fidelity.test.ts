@@ -18,7 +18,10 @@ import { EventEmitter } from "events";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const agentHostSrc = readFileSync(join(__dirname, "..", "taskplane", "agent-host.ts"), "utf-8");
-const dashboardAppSrc = readFileSync(join(__dirname, "..", "..", "dashboard", "public", "app.js"), "utf-8");
+const dashboardAppSrc = readFileSync(
+	join(__dirname, "..", "..", "dashboard", "public", "app.js"),
+	"utf-8",
+);
 
 type RuntimeAgentEvent = import("../taskplane/types.ts").RuntimeAgentEvent;
 
@@ -39,7 +42,7 @@ let lastSpawnedProc: FakeChildProc | null = null;
 let onStdinWrite: ((chunk: string) => void) | null = null;
 
 const realChildProcess = await import("node:child_process");
-const mockSpawnSync = mock.fn(() => ({ stdout: "", stderr: "", status: 0 } as any));
+const mockSpawnSync = mock.fn(() => ({ stdout: "", stderr: "", status: 0 }) as any);
 const mockSpawn = mock.fn((_cmd: string, _args?: readonly string[], _opts?: any) => {
 	const proc = new EventEmitter() as FakeChildProc;
 	proc.stdout = new PassThrough();
@@ -82,7 +85,14 @@ beforeEach(() => {
 	lastSpawnedProc = null;
 	onStdinWrite = null;
 	fakeAppDataRoot = mkdtempSync(join(tmpdir(), "tp111-agent-host-"));
-	const fakeCliDir = join(fakeAppDataRoot, "npm", "node_modules", "@mariozechner", "pi-coding-agent", "dist");
+	const fakeCliDir = join(
+		fakeAppDataRoot,
+		"npm",
+		"node_modules",
+		"@mariozechner",
+		"pi-coding-agent",
+		"dist",
+	);
 	mkdirSync(fakeCliDir, { recursive: true });
 	writeFileSync(join(fakeCliDir, "cli.js"), "// fake cli for tests\n", "utf-8");
 	process.env.APPDATA = fakeAppDataRoot;
@@ -91,7 +101,11 @@ beforeEach(() => {
 afterEach(() => {
 	process.env.APPDATA = originalAppData;
 	if (fakeAppDataRoot) {
-		try { rmSync(fakeAppDataRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+		try {
+			rmSync(fakeAppDataRoot, { recursive: true, force: true });
+		} catch {
+			/* best effort */
+		}
 	}
 	lastSpawnedProc = null;
 	onStdinWrite = null;
@@ -230,29 +244,34 @@ describe("5.x: Runtime behavioral emission (TP-111)", () => {
 			if (chunk.includes('"type":"prompt"')) timeline.push("prompt_write");
 		};
 
-		const { promise } = spawnAgent({
-			agentId: "orch-test-lane-1-worker",
-			role: "worker",
-			batchId: "batch-tp111",
-			laneNumber: 1,
-			taskId: "TP-111",
-			repoId: "default",
-			cwd: process.cwd(),
-			prompt: "P".repeat(2200),
-			mailboxDir: null,
-			stateRoot: null,
-		}, (evt) => {
-			events.push(evt);
-			timeline.push(`event:${evt.type}`);
-		});
+		const { promise } = spawnAgent(
+			{
+				agentId: "orch-test-lane-1-worker",
+				role: "worker",
+				batchId: "batch-tp111",
+				laneNumber: 1,
+				taskId: "TP-111",
+				repoId: "default",
+				cwd: process.cwd(),
+				prompt: "P".repeat(2200),
+				mailboxDir: null,
+				stateRoot: null,
+			},
+			(evt) => {
+				events.push(evt);
+				timeline.push(`event:${evt.type}`);
+			},
+		);
 
 		expect(mockSpawn).toHaveBeenCalledTimes(1);
 		expect(lastSpawnedProc).toBeDefined();
 
-		lastSpawnedProc!.stdout.write(JSON.stringify({
-			type: "message_end",
-			message: { role: "assistant", content: "A".repeat(2600) },
-		}) + "\n");
+		lastSpawnedProc!.stdout.write(
+			JSON.stringify({
+				type: "message_end",
+				message: { role: "assistant", content: "A".repeat(2600) },
+			}) + "\n",
+		);
 		lastSpawnedProc!.stdout.write(JSON.stringify({ type: "agent_end" }) + "\n");
 		lastSpawnedProc!.emit("close", 0, null);
 
@@ -261,8 +280,8 @@ describe("5.x: Runtime behavioral emission (TP-111)", () => {
 		expect(timeline.indexOf("prompt_write")).toBeGreaterThan(-1);
 		expect(timeline.indexOf("event:prompt_sent")).toBeGreaterThan(timeline.indexOf("prompt_write"));
 
-		const promptEvt = events.find(e => e.type === "prompt_sent");
-		const assistantEvt = events.find(e => e.type === "assistant_message");
+		const promptEvt = events.find((e) => e.type === "prompt_sent");
+		const assistantEvt = events.find((e) => e.type === "assistant_message");
 		expect(promptEvt).toBeDefined();
 		expect(assistantEvt).toBeDefined();
 
@@ -279,38 +298,45 @@ describe("5.x: Runtime behavioral emission (TP-111)", () => {
 		const huge = "X".repeat(5000);
 		const longPath = `/tmp/${"p".repeat(400)}.txt`;
 
-		const { promise } = spawnAgent({
-			agentId: "orch-test-lane-2-worker",
-			role: "worker",
-			batchId: "batch-tp111",
-			laneNumber: 2,
-			taskId: "TP-111",
-			repoId: "default",
-			cwd: process.cwd(),
-			prompt: "run",
-			mailboxDir: null,
-			stateRoot: null,
-		}, evt => events.push(evt));
+		const { promise } = spawnAgent(
+			{
+				agentId: "orch-test-lane-2-worker",
+				role: "worker",
+				batchId: "batch-tp111",
+				laneNumber: 2,
+				taskId: "TP-111",
+				repoId: "default",
+				cwd: process.cwd(),
+				prompt: "run",
+				mailboxDir: null,
+				stateRoot: null,
+			},
+			(evt) => events.push(evt),
+		);
 
 		expect(lastSpawnedProc).toBeDefined();
 
-		lastSpawnedProc!.stdout.write(JSON.stringify({
-			type: "tool_execution_start",
-			toolName: "write",
-			args: { content: huge, path: longPath },
-		}) + "\n");
-		lastSpawnedProc!.stdout.write(JSON.stringify({
-			type: "tool_execution_end",
-			toolName: "write",
-			result: huge,
-		}) + "\n");
+		lastSpawnedProc!.stdout.write(
+			JSON.stringify({
+				type: "tool_execution_start",
+				toolName: "write",
+				args: { content: huge, path: longPath },
+			}) + "\n",
+		);
+		lastSpawnedProc!.stdout.write(
+			JSON.stringify({
+				type: "tool_execution_end",
+				toolName: "write",
+				result: huge,
+			}) + "\n",
+		);
 		lastSpawnedProc!.stdout.write(JSON.stringify({ type: "agent_end" }) + "\n");
 		lastSpawnedProc!.emit("close", 0, null);
 
 		await promise;
 
-		const toolCall = events.find(e => e.type === "tool_call");
-		const toolResult = events.find(e => e.type === "tool_result");
+		const toolCall = events.find((e) => e.type === "tool_call");
+		const toolResult = events.find((e) => e.type === "tool_result");
 		expect(toolCall).toBeDefined();
 		expect(toolResult).toBeDefined();
 
@@ -326,34 +352,39 @@ describe("5.x: Runtime behavioral emission (TP-111)", () => {
 	it("5.3: malformed assistant content arrays do not crash and still emit text blocks", async () => {
 		const events: RuntimeAgentEvent[] = [];
 
-		const { promise } = spawnAgent({
-			agentId: "orch-test-lane-3-worker",
-			role: "worker",
-			batchId: "batch-tp111",
-			laneNumber: 3,
-			taskId: "TP-111",
-			repoId: "default",
-			cwd: process.cwd(),
-			prompt: "run",
-			mailboxDir: null,
-			stateRoot: null,
-		}, evt => events.push(evt));
+		const { promise } = spawnAgent(
+			{
+				agentId: "orch-test-lane-3-worker",
+				role: "worker",
+				batchId: "batch-tp111",
+				laneNumber: 3,
+				taskId: "TP-111",
+				repoId: "default",
+				cwd: process.cwd(),
+				prompt: "run",
+				mailboxDir: null,
+				stateRoot: null,
+			},
+			(evt) => events.push(evt),
+		);
 
 		expect(lastSpawnedProc).toBeDefined();
 
-		lastSpawnedProc!.stdout.write(JSON.stringify({
-			type: "message_end",
-			message: {
-				role: "assistant",
-				content: [null, { type: "text", text: "OK" }, undefined, 42, { type: "text" }],
-			},
-		}) + "\n");
+		lastSpawnedProc!.stdout.write(
+			JSON.stringify({
+				type: "message_end",
+				message: {
+					role: "assistant",
+					content: [null, { type: "text", text: "OK" }, undefined, 42, { type: "text" }],
+				},
+			}) + "\n",
+		);
 		lastSpawnedProc!.stdout.write(JSON.stringify({ type: "agent_end" }) + "\n");
 		lastSpawnedProc!.emit("close", 0, null);
 
 		await promise;
 
-		const assistantEvt = events.find(e => e.type === "assistant_message");
+		const assistantEvt = events.find((e) => e.type === "assistant_message");
 		expect(assistantEvt).toBeDefined();
 		expect((assistantEvt!.payload as any).text).toBe("OK");
 	});

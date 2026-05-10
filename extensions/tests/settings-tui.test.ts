@@ -26,13 +26,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
-import {
-	mkdirSync,
-	writeFileSync,
-	readFileSync,
-	existsSync,
-	rmSync,
-} from "fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -61,11 +55,7 @@ import {
 	GLOBAL_PREFERENCES_FILENAME,
 	GLOBAL_PREFERENCES_SUBDIR,
 } from "../taskplane/config-schema.ts";
-import type {
-	TaskplaneConfig,
-	GlobalPreferences,
-} from "../taskplane/config-schema.ts";
-
+import type { TaskplaneConfig, GlobalPreferences } from "../taskplane/config-schema.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -126,7 +116,6 @@ function makeL2NumberField(overrides: Partial<FieldDef> = {}): FieldDef {
 		...overrides,
 	};
 }
-
 
 // ── 9.x detectFieldSource ────────────────────────────────────────────
 
@@ -304,7 +293,6 @@ describe("9. detectFieldSource", () => {
 	});
 });
 
-
 // ── 10.x getFieldDisplayValue ────────────────────────────────────────
 
 describe("10. getFieldDisplayValue", () => {
@@ -367,11 +355,9 @@ describe("10. getFieldDisplayValue", () => {
 	});
 });
 
-
 // ── 11.x validateFieldInput ──────────────────────────────────────────
 
 describe("11. validateFieldInput", () => {
-
 	// 11.1 — Number validation
 
 	describe("11.1 Number validation", () => {
@@ -504,7 +490,6 @@ describe("11. validateFieldInput", () => {
 	});
 });
 
-
 // ── 12.x SECTIONS coverage ──────────────────────────────────────────
 
 describe("12. SECTIONS schema coverage", () => {
@@ -570,16 +555,15 @@ describe("12. SECTIONS schema coverage", () => {
 	});
 
 	it("12.8 merge thinking remains L1+L2 with prefs destination", () => {
-		const mergeThinking = SECTIONS
-			.flatMap((section) => section.fields)
-			.find((f) => f.configPath === "orchestrator.merge.thinking");
+		const mergeThinking = SECTIONS.flatMap((section) => section.fields).find(
+			(f) => f.configPath === "orchestrator.merge.thinking",
+		);
 		expect(mergeThinking).toBeDefined();
 		expect(mergeThinking!.layer).toBe("L1+L2");
 		expect(mergeThinking!.prefsKey).toBe("mergeThinking");
 		expect(getDefaultWriteDestination(mergeThinking!)).toBe("prefs");
 	});
 });
-
 
 // ── Write-Back Test Fixtures ─────────────────────────────────────────
 
@@ -607,7 +591,6 @@ function writeJsonConfig(root: string, obj: any): void {
 function readJsonFile(path: string): any {
 	return JSON.parse(readFileSync(path, "utf-8"));
 }
-
 
 // ── 13.x coerceValueForWrite ─────────────────────────────────────────
 
@@ -695,7 +678,6 @@ describe("13. coerceValueForWrite", () => {
 	});
 });
 
-
 // ── 14.x writeProjectConfigField ─────────────────────────────────────
 
 describe("14. writeProjectConfigField", () => {
@@ -717,7 +699,9 @@ describe("14. writeProjectConfigField", () => {
 		delete process.env.TASKPLANE_WORKSPACE_ROOT;
 		try {
 			rmSync(writeTestRoot, { recursive: true, force: true });
-		} catch { /* best effort on Windows */ }
+		} catch {
+			/* best effort on Windows */
+		}
 	});
 
 	it("14.1 writes new value to existing JSON config", () => {
@@ -767,19 +751,23 @@ describe("14. writeProjectConfigField", () => {
 		const dir = makeWriteTestDir("malformed");
 		writePiFile(dir, PROJECT_CONFIG_FILENAME, "{ bad json !!!");
 
-		expect(() =>
-			writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5),
-		).toThrow(/malformed JSON/i);
+		expect(() => writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5)).toThrow(
+			/malformed JSON/i,
+		);
 	});
 
 	it("14.5 seeds first JSON override from YAML-only project (preserves YAML overrides)", () => {
 		const dir = makeWriteTestDir("yaml-only");
 		// Write a YAML config with a custom value
-		writePiFile(dir, "task-orchestrator.yaml", `
+		writePiFile(
+			dir,
+			"task-orchestrator.yaml",
+			`
 orchestrator:
   max_lanes: 7
   spawn_mode: subprocess
-`);
+`,
+		);
 
 		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "test-wt");
 
@@ -797,11 +785,15 @@ orchestrator:
 
 	it("14.5b removing a seeded project override keeps unrelated YAML overrides", () => {
 		const dir = makeWriteTestDir("yaml-remove-override");
-		writePiFile(dir, "task-orchestrator.yaml", `
+		writePiFile(
+			dir,
+			"task-orchestrator.yaml",
+			`
 orchestrator:
   max_lanes: 7
   spawn_mode: subprocess
-`);
+`,
+		);
 
 		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "temp-prefix");
 		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", undefined);
@@ -814,18 +806,26 @@ orchestrator:
 
 	it("14.5c first write preserves YAML keys outside source-detection mapper", () => {
 		const dir = makeWriteTestDir("yaml-preserve-extra-keys");
-		writePiFile(dir, "task-runner.yaml", `
+		writePiFile(
+			dir,
+			"task-runner.yaml",
+			`
 quality_gate:
   enabled: true
 model_fallback: fail
-`);
-		writePiFile(dir, "task-orchestrator.yaml", `
+`,
+		);
+		writePiFile(
+			dir,
+			"task-orchestrator.yaml",
+			`
 supervisor:
   model: custom-super
 verification:
   enabled: true
   mode: strict
-`);
+`,
+		);
 
 		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "seeded-prefix");
 
@@ -839,7 +839,10 @@ verification:
 
 	it("14.5d first write preserves taskplane-workspace.yaml overrides", () => {
 		const dir = makeWriteTestDir("yaml-preserve-workspace");
-		writePiFile(dir, "taskplane-workspace.yaml", `
+		writePiFile(
+			dir,
+			"taskplane-workspace.yaml",
+			`
 repos:
   docs:
     path: ../docs
@@ -847,7 +850,8 @@ routing:
   tasks_root: taskplane-tasks
   default_repo: docs
   task_packet_repo: docs
-`);
+`,
+		);
 
 		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "with-workspace");
 
@@ -932,7 +936,11 @@ routing:
 		const workspaceRoot = makeWriteTestDir("pointer-flat-workspace");
 		const pointerRoot = join(workspaceRoot, "config-repo", ".taskplane");
 		mkdirSync(pointerRoot, { recursive: true });
-		writeFileSync(join(pointerRoot, "task-orchestrator.yaml"), "orchestrator:\n  max_lanes: 6\n", "utf-8");
+		writeFileSync(
+			join(pointerRoot, "task-orchestrator.yaml"),
+			"orchestrator:\n  max_lanes: 6\n",
+			"utf-8",
+		);
 
 		writeProjectConfigField(
 			workspaceRoot,
@@ -950,12 +958,14 @@ routing:
 	});
 });
 
-
 // ── 15.x writeGlobalPreference ─────────────────────────────────────────
 
 describe("15. writeGlobalPreference", () => {
 	beforeEach(() => {
-		writeTestRoot = join(tmpdir(), `tp-prefs-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		writeTestRoot = join(
+			tmpdir(),
+			`tp-prefs-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		);
 		mkdirSync(writeTestRoot, { recursive: true });
 		writeCounter = 0;
 		savedAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -971,7 +981,9 @@ describe("15. writeGlobalPreference", () => {
 		}
 		try {
 			rmSync(writeTestRoot, { recursive: true, force: true });
-		} catch { /* best effort on Windows */ }
+		} catch {
+			/* best effort on Windows */
+		}
 	});
 
 	function getPrefsPath(): string {
@@ -1073,7 +1085,10 @@ describe("16. YAML source detection", () => {
 
 	function makeYamlTestDir(suffix?: string): string {
 		yamlCounter++;
-		const dir = join(tmpdir(), `tp-yaml-test-${Date.now()}-${yamlCounter}${suffix ? `-${suffix}` : ""}`);
+		const dir = join(
+			tmpdir(),
+			`tp-yaml-test-${Date.now()}-${yamlCounter}${suffix ? `-${suffix}` : ""}`,
+		);
 		mkdirSync(dir, { recursive: true });
 		return dir;
 	}
@@ -1087,10 +1102,18 @@ describe("16. YAML source detection", () => {
 			const dir = makeYamlTestDir("json-only");
 			const piDir = join(dir, ".pi");
 			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, PROJECT_CONFIG_FILENAME), JSON.stringify({
-				configVersion: CONFIG_VERSION,
-				orchestrator: { orchestrator: { maxLanes: 5, spawnMode: "tmux" } },
-			}, null, 2), "utf-8");
+			writeFileSync(
+				join(piDir, PROJECT_CONFIG_FILENAME),
+				JSON.stringify(
+					{
+						configVersion: CONFIG_VERSION,
+						orchestrator: { orchestrator: { maxLanes: 5, spawnMode: "tmux" } },
+					},
+					null,
+					2,
+				),
+				"utf-8",
+			);
 
 			const raw = readRawProjectJson(dir);
 			expect(raw).not.toBeNull();
@@ -1115,10 +1138,18 @@ describe("16. YAML source detection", () => {
 
 		it("16.1.4 readRawProjectJson supports flat pointer layout", () => {
 			const dir = makeYamlTestDir("json-flat");
-			writeFileSync(join(dir, PROJECT_CONFIG_FILENAME), JSON.stringify({
-				configVersion: CONFIG_VERSION,
-				orchestrator: { orchestrator: { maxLanes: 9 } },
-			}, null, 2), "utf-8");
+			writeFileSync(
+				join(dir, PROJECT_CONFIG_FILENAME),
+				JSON.stringify(
+					{
+						configVersion: CONFIG_VERSION,
+						orchestrator: { orchestrator: { maxLanes: 9 } },
+					},
+					null,
+					2,
+				),
+				"utf-8",
+			);
 
 			const raw = readRawProjectJson(dir);
 			expect(raw).not.toBeNull();
@@ -1131,15 +1162,19 @@ describe("16. YAML source detection", () => {
 			const dir = makeYamlTestDir("yaml-orch");
 			const piDir = join(dir, ".pi");
 			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, "task-orchestrator.yaml"), [
-				"orchestrator:",
-				"  max_lanes: 7",
-				"  spawn_mode: tmux",
-				"  worktree_prefix: test-wt",
-				"failure:",
-				"  stall_timeout: 60",
-				"  on_task_failure: stop-all",
-			].join("\n"), "utf-8");
+			writeFileSync(
+				join(piDir, "task-orchestrator.yaml"),
+				[
+					"orchestrator:",
+					"  max_lanes: 7",
+					"  spawn_mode: tmux",
+					"  worktree_prefix: test-wt",
+					"failure:",
+					"  stall_timeout: 60",
+					"  on_task_failure: stop-all",
+				].join("\n"),
+				"utf-8",
+			);
 
 			const raw = readRawYamlConfigs(dir);
 			expect(raw).not.toBeNull();
@@ -1154,13 +1189,17 @@ describe("16. YAML source detection", () => {
 			const dir = makeYamlTestDir("yaml-tr");
 			const piDir = join(dir, ".pi");
 			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, "task-runner.yaml"), [
-				"worker:",
-				"  model: gpt-4",
-				"context:",
-				"  worker_context_window: 200000",
-				"  max_worker_iterations: 10",
-			].join("\n"), "utf-8");
+			writeFileSync(
+				join(piDir, "task-runner.yaml"),
+				[
+					"worker:",
+					"  model: gpt-4",
+					"context:",
+					"  worker_context_window: 200000",
+					"  max_worker_iterations: 10",
+				].join("\n"),
+				"utf-8",
+			);
 
 			const raw = readRawYamlConfigs(dir);
 			expect(raw).not.toBeNull();
@@ -1190,12 +1229,11 @@ describe("16. YAML source detection", () => {
 			const dir = makeYamlTestDir("yaml-prewarm");
 			const piDir = join(dir, ".pi");
 			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, "task-orchestrator.yaml"), [
-				"pre_warm:",
-				"  auto_detect: true",
-				"  commands:",
-				"    npm: npm install",
-			].join("\n"), "utf-8");
+			writeFileSync(
+				join(piDir, "task-orchestrator.yaml"),
+				["pre_warm:", "  auto_detect: true", "  commands:", "    npm: npm install"].join("\n"),
+				"utf-8",
+			);
 
 			const raw = readRawYamlConfigs(dir);
 			expect(raw).not.toBeNull();
@@ -1207,13 +1245,13 @@ describe("16. YAML source detection", () => {
 			const dir = makeYamlTestDir("yaml-assign");
 			const piDir = join(dir, ".pi");
 			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, "task-orchestrator.yaml"), [
-				"assignment:",
-				"  strategy: round-robin",
-				"  size_weights:",
-				"    S: 1",
-				"    M: 2",
-			].join("\n"), "utf-8");
+			writeFileSync(
+				join(piDir, "task-orchestrator.yaml"),
+				["assignment:", "  strategy: round-robin", "  size_weights:", "    S: 1", "    M: 2"].join(
+					"\n",
+				),
+				"utf-8",
+			);
 
 			const raw = readRawYamlConfigs(dir);
 			expect(raw).not.toBeNull();
@@ -1223,10 +1261,11 @@ describe("16. YAML source detection", () => {
 
 		it("16.2.7 readRawYamlConfigs supports flat pointer layout", () => {
 			const dir = makeYamlTestDir("yaml-flat");
-			writeFileSync(join(dir, "task-orchestrator.yaml"), [
-				"orchestrator:",
-				"  max_lanes: 11",
-			].join("\n"), "utf-8");
+			writeFileSync(
+				join(dir, "task-orchestrator.yaml"),
+				["orchestrator:", "  max_lanes: 11"].join("\n"),
+				"utf-8",
+			);
 
 			const raw = readRawYamlConfigs(dir);
 			expect(raw).not.toBeNull();
@@ -1239,10 +1278,18 @@ describe("16. YAML source detection", () => {
 			const dir = makeYamlTestDir("both");
 			const piDir = join(dir, ".pi");
 			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, PROJECT_CONFIG_FILENAME), JSON.stringify({
-				configVersion: CONFIG_VERSION,
-				orchestrator: { orchestrator: { maxLanes: 10 } },
-			}, null, 2), "utf-8");
+			writeFileSync(
+				join(piDir, PROJECT_CONFIG_FILENAME),
+				JSON.stringify(
+					{
+						configVersion: CONFIG_VERSION,
+						orchestrator: { orchestrator: { maxLanes: 10 } },
+					},
+					null,
+					2,
+				),
+				"utf-8",
+			);
 			writeFileSync(join(piDir, "task-orchestrator.yaml"), "orchestrator:\n  max_lanes: 5\n", "utf-8");
 
 			const rawJson = readRawProjectJson(dir);
@@ -1256,10 +1303,22 @@ describe("16. YAML source detection", () => {
 			const dir = makeYamlTestDir("precedence");
 			const piDir = join(dir, ".pi");
 			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, PROJECT_CONFIG_FILENAME), JSON.stringify({
-				orchestrator: { orchestrator: { maxLanes: 10 } },
-			}, null, 2), "utf-8");
-			writeFileSync(join(piDir, "task-orchestrator.yaml"), "orchestrator:\n  max_lanes: 5\n  spawn_mode: tmux\n", "utf-8");
+			writeFileSync(
+				join(piDir, PROJECT_CONFIG_FILENAME),
+				JSON.stringify(
+					{
+						orchestrator: { orchestrator: { maxLanes: 10 } },
+					},
+					null,
+					2,
+				),
+				"utf-8",
+			);
+			writeFileSync(
+				join(piDir, "task-orchestrator.yaml"),
+				"orchestrator:\n  max_lanes: 5\n  spawn_mode: tmux\n",
+				"utf-8",
+			);
 
 			// Simulate the || fallback from loadConfigState
 			const rawProject = readRawProjectJson(dir) || readRawYamlConfigs(dir);
@@ -1299,7 +1358,6 @@ describe("16. YAML source detection", () => {
 	});
 });
 
-
 // ── 17.x Write-Decision Logic ────────────────────────────────────────
 // Tests the extracted resolveWriteAction + getDefaultWriteDestination
 // functions that encapsulate the destination/confirmation decision tree
@@ -1307,7 +1365,6 @@ describe("16. YAML source detection", () => {
 // tautological "file unchanged when we didn't write" assertions (R010 fix).
 
 describe("17. Write-decision logic (resolveWriteAction)", () => {
-
 	// 17.1 — getDefaultWriteDestination routing
 
 	describe("17.1 getDefaultWriteDestination", () => {
@@ -1413,7 +1470,9 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 
 		it("17.6.4 remove-project destination returns remove-project route", () => {
 			const field = makeL1L2StringField();
-			expect(resolveWriteAction(field, "Remove project override (revert to global)", true)).toBe("remove-project");
+			expect(resolveWriteAction(field, "Remove project override (revert to global)", true)).toBe(
+				"remove-project",
+			);
 		});
 	});
 
@@ -1437,17 +1496,27 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 			}
 			try {
 				rmSync(zeroMutRoot, { recursive: true, force: true });
-			} catch { /* best effort */ }
+			} catch {
+				/* best effort */
+			}
 		});
 
 		it("17.7.1 writeProjectConfigField with same value produces valid JSON (idempotent)", () => {
 			const piDir = join(zeroMutRoot, ".pi");
 			mkdirSync(piDir, { recursive: true });
 			const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
-			writeFileSync(configPath, JSON.stringify({
-				configVersion: CONFIG_VERSION,
-				orchestrator: { orchestrator: { maxLanes: 3 } },
-			}, null, 2), "utf-8");
+			writeFileSync(
+				configPath,
+				JSON.stringify(
+					{
+						configVersion: CONFIG_VERSION,
+						orchestrator: { orchestrator: { maxLanes: 3 } },
+					},
+					null,
+					2,
+				),
+				"utf-8",
+			);
 
 			writeProjectConfigField(zeroMutRoot, "orchestrator.orchestrator.maxLanes", 3);
 
@@ -1481,7 +1550,6 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 		});
 	});
 });
-
 
 // ── 18.x Advanced Section Discoverability ────────────────────────────
 // Verifies that uncovered/new fields appear in the Advanced section,
@@ -1517,7 +1585,7 @@ describe("18. Advanced section discoverability", () => {
 	it("18.3 getAdvancedItems surfaces collection/Record fields", () => {
 		const config = cloneConfig();
 		// Add some data to collection fields so they appear
-		config.taskRunner.testing = { commands: { "test": "npm test" } };
+		config.taskRunner.testing = { commands: { test: "npm test" } };
 		config.taskRunner.standards = { docs: ["README.md"], rules: ["rule1"] };
 		config.taskRunner.neverLoad = ["node_modules"];
 		config.orchestrator.merge.verify = ["lint"];
@@ -1547,7 +1615,7 @@ describe("18. Advanced section discoverability", () => {
 	it("18.5 Advanced item values are summarized correctly", () => {
 		const config = cloneConfig();
 		config.taskRunner.neverLoad = ["node_modules", ".git", "dist"];
-		config.taskRunner.testing = { commands: { "test": "npm test", "lint": "npm run lint" } };
+		config.taskRunner.testing = { commands: { test: "npm test", lint: "npm run lint" } };
 
 		const items = getAdvancedItems(config);
 
@@ -1614,7 +1682,9 @@ describe("19. model-change thinking suggestion helpers", () => {
 
 	it("19.1 modelSupportsThinking detects boolean, nested, and string thinking flags", () => {
 		expect(modelSupportsThinking({ supportsThinking: true })).toBe(true);
-		expect(modelSupportsThinking({ capabilities: { reasoningEffort: ["low", "medium"] } })).toBe(true);
+		expect(modelSupportsThinking({ capabilities: { reasoningEffort: ["low", "medium"] } })).toBe(
+			true,
+		);
 		expect(modelSupportsThinking({ thinking: "yes" })).toBe(true);
 		expect(modelSupportsThinking({ thinking: "no" })).toBe(false);
 		expect(modelSupportsThinking({ id: "plain-model" })).toBe(false);

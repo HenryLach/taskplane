@@ -67,7 +67,9 @@ function makeTmpDir(): string {
 	return mkdtempSync(join(tmpdir(), "auto-int-det-test-"));
 }
 
-function makeIntegrationBatchState(overrides?: Partial<OrchBatchRuntimeState>): OrchBatchRuntimeState {
+function makeIntegrationBatchState(
+	overrides?: Partial<OrchBatchRuntimeState>,
+): OrchBatchRuntimeState {
 	const state = freshOrchBatchState();
 	state.batchId = "20260322T120000";
 	state.baseBranch = "main";
@@ -95,8 +97,24 @@ function makeMockPi() {
 }
 
 function makeMockExecutor(
-	resultOrFn: { success: boolean; integratedLocally: boolean; commitCount: string; message: string; error?: string } |
-		((mode: string, context: any) => { success: boolean; integratedLocally: boolean; commitCount: string; message: string; error?: string }),
+	resultOrFn:
+		| {
+				success: boolean;
+				integratedLocally: boolean;
+				commitCount: string;
+				message: string;
+				error?: string;
+		  }
+		| ((
+				mode: string,
+				context: any,
+		  ) => {
+				success: boolean;
+				integratedLocally: boolean;
+				commitCount: string;
+				message: string;
+				error?: string;
+		  }),
 ): IntegrationExecutor & { calls: Array<{ mode: string; context: any }> } {
 	const calls: Array<{ mode: string; context: any }> = [];
 	const executor = ((mode: string, context: any) => {
@@ -134,7 +152,12 @@ function configureMockExecFileSync(
 		}
 
 		// gh api repos/.../protection -- branch protection check
-		if (cmd === "gh" && args[0] === "api" && typeof args[1] === "string" && args[1].includes("/protection")) {
+		if (
+			cmd === "gh" &&
+			args[0] === "api" &&
+			typeof args[1] === "string" &&
+			args[1].includes("/protection")
+		) {
 			if (protection === "protected") {
 				return "{}"; // 200 OK → protected
 			} else if (protection === "unprotected") {
@@ -313,9 +336,7 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 		expect(integrationMsg!.sendOpts.triggerTurn).toBe(false);
 
 		// NO confirmation-related messages (no triggerTurn: true)
-		const confirmMsgs = pi.messages.filter(
-			(m: any) => m.sendOpts && m.sendOpts.triggerTurn === true,
-		);
+		const confirmMsgs = pi.messages.filter((m: any) => m.sendOpts && m.sendOpts.triggerTurn === true);
 		expect(confirmMsgs).toHaveLength(0);
 
 		// Supervisor deactivated
@@ -332,7 +353,13 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 
 		const executor = makeMockExecutor((mode) => {
 			if (mode === "ff") {
-				return { success: false, integratedLocally: false, commitCount: "0", message: "not linear", error: "branches diverged" };
+				return {
+					success: false,
+					integratedLocally: false,
+					commitCount: "0",
+					message: "not linear",
+					error: "branches diverged",
+				};
 			}
 			return { success: true, integratedLocally: true, commitCount: "3", message: "Merged 3 commits" };
 		});
@@ -354,9 +381,7 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 		expect(resultMsg!.opts.content[0].text).toContain("Fell back to merge");
 
 		// No confirmation prompts
-		const confirmMsgs = pi.messages.filter(
-			(m: any) => m.sendOpts && m.sendOpts.triggerTurn === true,
-		);
+		const confirmMsgs = pi.messages.filter((m: any) => m.sendOpts && m.sendOpts.triggerTurn === true);
 		expect(confirmMsgs).toHaveLength(0);
 
 		expect(state.active).toBe(false);
@@ -395,9 +420,7 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 		expect(resultMsg!.opts.content[0].text).toContain("/orch-integrate");
 
 		// No confirmation prompts
-		const confirmMsgs = pi.messages.filter(
-			(m: any) => m.sendOpts && m.sendOpts.triggerTurn === true,
-		);
+		const confirmMsgs = pi.messages.filter((m: any) => m.sendOpts && m.sendOpts.triggerTurn === true);
 		expect(confirmMsgs).toHaveLength(0);
 
 		expect(state.active).toBe(false);
@@ -416,7 +439,8 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 		// Fallback message with /orch-integrate instruction
 		expect(pi.messages.length).toBeGreaterThanOrEqual(1);
 		const fallbackMsg = pi.messages.find(
-			(m: any) => m.opts.content[0].text.includes("executor unavailable") ||
+			(m: any) =>
+				m.opts.content[0].text.includes("executor unavailable") ||
 				m.opts.content[0].text.includes("/orch-integrate"),
 		);
 		expect(fallbackMsg).toBeDefined();
@@ -454,9 +478,7 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 		expect(progressMsg!.opts.content[0].text).toContain("CI");
 
 		// No confirmation prompts
-		const confirmMsgs = pi.messages.filter(
-			(m: any) => m.sendOpts && m.sendOpts.triggerTurn === true,
-		);
+		const confirmMsgs = pi.messages.filter((m: any) => m.sendOpts && m.sendOpts.triggerTurn === true);
 		expect(confirmMsgs).toHaveLength(0);
 	});
 
@@ -557,9 +579,7 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 		deactivateSupervisor(pi as any, state);
 
 		// Summary message sent
-		const summaryMsg = pi.messages.find(
-			(m: any) => m.opts.customType === "supervisor-batch-summary",
-		);
+		const summaryMsg = pi.messages.find((m: any) => m.opts.customType === "supervisor-batch-summary");
 		expect(summaryMsg).toBeDefined();
 		expect(summaryMsg!.opts.content[0].text).toContain("📊 **Batch Summary**");
 		expect(summaryMsg!.opts.content[0].text).toContain("4/5 tasks succeeded");
@@ -569,7 +589,8 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 
 		// No integration-related messages (no /orch-integrate execution)
 		const integrationMsgs = pi.messages.filter(
-			(m: any) => m.opts.customType === "supervisor-integration-result" ||
+			(m: any) =>
+				m.opts.customType === "supervisor-integration-result" ||
 				m.opts.customType === "supervisor-integration-progress",
 		);
 		expect(integrationMsgs).toHaveLength(0);
@@ -643,9 +664,7 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 		expect(executor.calls[0].mode).toBe("pr");
 
 		// No confirmation prompt (triggerTurn: true)
-		const confirmMsgs = pi.messages.filter(
-			(m: any) => m.sendOpts && m.sendOpts.triggerTurn === true,
-		);
+		const confirmMsgs = pi.messages.filter((m: any) => m.sendOpts && m.sendOpts.triggerTurn === true);
 		expect(confirmMsgs).toHaveLength(0);
 	});
 });

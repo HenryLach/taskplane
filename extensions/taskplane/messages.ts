@@ -2,7 +2,17 @@
  * User-facing message templates (ORCH_MESSAGES)
  * @module orch/messages
  */
-import type { AbortMode, MergeFailureClassification, MergeRetryCallbacks, MergeRetryDecision, MergeRetryLoopOutcome, MergeRetryPolicy, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome } from "./types.ts";
+import type {
+	AbortMode,
+	MergeFailureClassification,
+	MergeRetryCallbacks,
+	MergeRetryDecision,
+	MergeRetryLoopOutcome,
+	MergeRetryPolicy,
+	MergeWaveResult,
+	OrchestratorConfig,
+	RepoMergeOutcome,
+} from "./types.ts";
 import { MERGE_RETRY_POLICY_MATRIX } from "./types.ts";
 
 // ── Message Templates ────────────────────────────────────────────────
@@ -17,7 +27,13 @@ export const ORCH_MESSAGES = {
 		`🚀 Starting batch ${batchId}: ${waves} wave(s), ${tasks} task(s)`,
 	orchWaveStart: (waveNum: number, totalWaves: number, tasks: number, lanes: number) =>
 		`\n🌊 Wave ${waveNum}/${totalWaves}: ${tasks} task(s) across ${lanes} lane(s)`,
-	orchWaveComplete: (waveNum: number, succeeded: number, failed: number, skipped: number, elapsedSec: number) =>
+	orchWaveComplete: (
+		waveNum: number,
+		succeeded: number,
+		failed: number,
+		skipped: number,
+		elapsedSec: number,
+	) =>
 		`✅ Wave ${waveNum} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped (${elapsedSec}s)`,
 	orchMergeStart: (waveNum: number, laneCount: number) =>
 		`🔀 [Wave ${waveNum}] Merging ${laneCount} lane(s) into target branch...`,
@@ -31,14 +47,24 @@ export const ORCH_MESSAGES = {
 		`🔀 [Wave ${waveNum}] Merge complete: ${mergedCount} lane(s) merged (${totalSec}s)`,
 	orchMergeFailed: (waveNum: number, laneNum: number, reason: string) =>
 		`❌ [Wave ${waveNum}] Merge failed at lane ${laneNum}: ${reason}`,
-	orchMergeSkipped: (waveNum: number) =>
-		`📝 [Wave ${waveNum}] No successful lanes to merge`,
+	orchMergeSkipped: (waveNum: number) => `📝 [Wave ${waveNum}] No successful lanes to merge`,
 	orchMergePlaceholder: (waveNum: number) =>
 		`🔀 [Wave ${waveNum}] Merge: placeholder — Step 3 (TS-008) will replace with mergeWave()`,
 	orchWorktreeReset: (waveNum: number, lanes: number) =>
 		`🔄 Resetting ${lanes} worktree(s) to target branch HEAD after wave ${waveNum}`,
-	orchBatchComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number, orchBranch?: string, baseBranch?: string) => {
-		const lines = [`\n🏁 Batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s)`];
+	orchBatchComplete: (
+		batchId: string,
+		succeeded: number,
+		failed: number,
+		skipped: number,
+		blocked: number,
+		elapsedSec: number,
+		orchBranch?: string,
+		baseBranch?: string,
+	) => {
+		const lines = [
+			`\n🏁 Batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s)`,
+		];
 		if (failed > 0 || blocked > 0) {
 			lines.push("");
 			if (blocked > 0) {
@@ -66,8 +92,7 @@ export const ORCH_MESSAGES = {
 		}
 		return lines.join("\n");
 	},
-	orchBatchFailed: (batchId: string, reason: string) =>
-		`\n❌ Batch ${batchId} failed: ${reason}`,
+	orchBatchFailed: (batchId: string, reason: string) => `\n❌ Batch ${batchId} failed: ${reason}`,
 	orchBatchStopped: (batchId: string, policy: string) =>
 		`\n⛔ Batch ${batchId} stopped by ${policy} policy`,
 
@@ -88,17 +113,22 @@ export const ORCH_MESSAGES = {
 	orphanDetectionAbort: (sessionCount: number) =>
 		`⚠️ Found ${sessionCount} orphan orchestrator session(s) without usable state.\n` +
 		`   Use /orch-abort to clean up before starting a new batch.`,
-	orphanDetectionCleanup: () =>
-		`🧹 Cleaned up stale batch state file. Starting fresh.`,
+	orphanDetectionCleanup: () => `🧹 Cleaned up stale batch state file. Starting fresh.`,
 
 	// /orch-resume
 	resumeStarting: (batchId: string, phase: string) =>
 		`🔄 Resuming batch ${batchId} (was: ${phase})...`,
-	resumeReconciled: (batchId: string, completed: number, pending: number, failed: number, reconnecting: number, reExecuting: number = 0) =>
+	resumeReconciled: (
+		batchId: string,
+		completed: number,
+		pending: number,
+		failed: number,
+		reconnecting: number,
+		reExecuting: number = 0,
+	) =>
 		`📊 Batch ${batchId} reconciliation: ${completed} completed, ${pending} pending, ${failed} failed, ${reconnecting} reconnecting` +
 		(reExecuting > 0 ? `, ${reExecuting} re-executing` : ""),
-	resumeSkippedWaves: (skippedCount: number) =>
-		`⏭️  Skipping ${skippedCount} completed wave(s)`,
+	resumeSkippedWaves: (skippedCount: number) => `⏭️  Skipping ${skippedCount} completed wave(s)`,
 	resumeReconnecting: (sessionCount: number) =>
 		`🔗 Reconnecting to ${sessionCount} alive session(s)...`,
 	resumeNoState: () =>
@@ -128,9 +158,15 @@ export const ORCH_MESSAGES = {
 		`   Error: ${error}\n` +
 		`   Delete .pi/batch-state.json and start a new batch.`,
 	resumePhaseNotResumable: (batchId: string, phase: string, reason: string) =>
-		`❌ Cannot resume batch ${batchId} (phase: ${phase}).\n` +
-		`   ${reason}`,
-	resumeComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number) =>
+		`❌ Cannot resume batch ${batchId} (phase: ${phase}).\n` + `   ${reason}`,
+	resumeComplete: (
+		batchId: string,
+		succeeded: number,
+		failed: number,
+		skipped: number,
+		blocked: number,
+		elapsedSec: number,
+	) =>
 		`\n🏁 Resumed batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s total)`,
 
 	// /orch-resume --force
@@ -147,7 +183,12 @@ export const ORCH_MESSAGES = {
 		`⏳ Waiting up to ${graceSec}s for sessions to checkpoint and exit...`,
 	abortGracefulForceKill: (count: number) =>
 		`⚠️ Force-killing ${count} session(s) that did not exit within timeout`,
-	abortGracefulComplete: (batchId: string, graceful: number, forceKilled: number, durationSec: number) =>
+	abortGracefulComplete: (
+		batchId: string,
+		graceful: number,
+		forceKilled: number,
+		durationSec: number,
+	) =>
 		`✅ Graceful abort complete for batch ${batchId}: ${graceful} exited gracefully, ${forceKilled} force-killed (${durationSec}s)`,
 	abortHardStarting: (batchId: string, sessionCount: number) =>
 		`⚡ Hard abort of batch ${batchId}: killing ${sessionCount} session(s) immediately...`,
@@ -155,8 +196,7 @@ export const ORCH_MESSAGES = {
 		`✅ Hard abort complete for batch ${batchId}: ${killed} session(s) killed (${durationSec}s)`,
 	abortPartialFailure: (failureCount: number) =>
 		`⚠️ ${failureCount} error(s) during abort (see details above)`,
-	abortNoBatch: () =>
-		`No active batch to abort. Use /orch <areas|all> to start a batch.`,
+	abortNoBatch: () => `No active batch to abort. Use /orch <areas|all> to start a batch.`,
 	abortComplete: (mode: AbortMode, sessionsKilled: number) =>
 		`🏁 Abort (${mode}) complete: ${sessionsKilled} session(s) terminated. Worktrees and branches preserved.`,
 	// /orch merge — repo-scoped partial summary (TP-005 Step 1)
@@ -182,7 +222,6 @@ export const ORCH_MESSAGES = {
 	},
 } as const;
 
-
 // ── Repo-Scoped Merge Summary (TP-005) ──────────────────────────────
 
 /**
@@ -190,10 +229,14 @@ export const ORCH_MESSAGES = {
  */
 function repoStatusIcon(status: RepoMergeOutcome["status"]): string {
 	switch (status) {
-		case "succeeded": return "✅";
-		case "partial": return "⚠️";
-		case "failed": return "❌";
-		default: return "❓";
+		case "succeeded":
+			return "✅";
+		case "partial":
+			return "⚠️";
+		case "failed":
+			return "❌";
+		default:
+			return "❓";
 	}
 }
 
@@ -228,7 +271,7 @@ export function formatRepoMergeSummary(mergeResult: MergeWaveResult): string | n
 	}
 
 	// Check for actual divergence: are there different statuses across repos?
-	const statuses = new Set(repoResults.map(r => r.status));
+	const statuses = new Set(repoResults.map((r) => r.status));
 	if (statuses.size < 2) {
 		// All repos have the same status (e.g., all "partial") —
 		// the partial is from within-repo lane failures, not cross-repo divergence
@@ -236,12 +279,13 @@ export function formatRepoMergeSummary(mergeResult: MergeWaveResult): string | n
 	}
 
 	// Build per-repo summary lines (sorted by repoId, which repoResults already is)
-	const repoLines = repoResults.map(r => {
+	const repoLines = repoResults.map((r) => {
 		const repoLabel = r.repoId ?? "(default)";
 		const icon = repoStatusIcon(r.status);
 		// TP-032 R006-3: Exclude verification_new_failure lanes from success count
 		const mergedCount = r.laneResults.filter(
-			lr => !lr.error && (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED"),
+			(lr) =>
+				!lr.error && (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED"),
 		).length;
 		const totalCount = r.laneResults.length;
 		let detail = `${mergedCount}/${totalCount} lane(s) merged`;
@@ -253,7 +297,6 @@ export function formatRepoMergeSummary(mergeResult: MergeWaveResult): string | n
 
 	return ORCH_MESSAGES.orchMergePartialRepoSummary(mergeResult.waveIndex, repoLines);
 }
-
 
 // ── Merge Failure Policy Application (TP-005 Step 2) ─────────────────
 
@@ -328,8 +371,11 @@ export function computeMergeFailurePolicy(
 	//   3. Repo-level: repos with non-succeeded status from repoResults
 	//      (catches setup failures where failedLane=null and no lane results)
 	let failedLaneIds = mergeResult.laneResults
-		.filter(r => r.result?.status === "CONFLICT_UNRESOLVED" || r.result?.status === "BUILD_FAILURE" || r.error)
-		.map(r => `lane-${r.laneNumber}`)
+		.filter(
+			(r) =>
+				r.result?.status === "CONFLICT_UNRESOLVED" || r.result?.status === "BUILD_FAILURE" || r.error,
+		)
+		.map((r) => `lane-${r.laneNumber}`)
 		.join(", ");
 	if (!failedLaneIds && mergeResult.failedLane !== null) {
 		failedLaneIds = `lane-${mergeResult.failedLane}`;
@@ -338,8 +384,8 @@ export function computeMergeFailurePolicy(
 		// Repo-level fallback for setup failures (no lane results, failedLane=null).
 		// Uses sorted repoResults order for determinism.
 		failedLaneIds = mergeResult.repoResults
-			.filter(r => r.status !== "succeeded")
-			.map(r => `repo:${r.repoId ?? "default"}`)
+			.filter((r) => r.status !== "succeeded")
+			.map((r) => `repo:${r.repoId ?? "default"}`)
 			.join(", ");
 	}
 
@@ -383,7 +429,6 @@ export function computeMergeFailurePolicy(
 		logDetails,
 	};
 }
-
 
 // ── Cleanup Gate Policy (TP-029 Step 2) ──────────────────────────────
 
@@ -456,12 +501,12 @@ export function computeCleanupGatePolicy(
 	const failedRepoCount = failures.length;
 	const totalStaleWorktrees = failures.reduce((sum, f) => sum + f.staleWorktrees.length, 0);
 
-	const repos = failures.map(f => ({
+	const repos = failures.map((f) => ({
 		repoId: f.repoId ?? "(default)",
 		staleCount: f.staleWorktrees.length,
 	}));
 
-	const repoDetail = repos.map(r => `${r.repoId} (${r.staleCount} stale)`).join(", ");
+	const repoDetail = repos.map((r) => `${r.repoId} (${r.staleCount} stale)`).join(", ");
 
 	const errorMessage =
 		`Post-merge cleanup failed at wave ${waveNum}: ${totalStaleWorktrees} stale worktree(s) ` +
@@ -481,7 +526,8 @@ export function computeCleanupGatePolicy(
 		`⏸️  Batch paused: post-merge cleanup failed at wave ${waveNum}.\n` +
 		`   ${totalStaleWorktrees} stale worktree(s) in ${failedRepoCount} repo(s): ${repoDetail}\n` +
 		`   Manual recovery:\n` +
-		recoveryLines.join("\n") + "\n" +
+		recoveryLines.join("\n") +
+		"\n" +
 		`   Then: /orch-resume`;
 
 	return {
@@ -522,7 +568,9 @@ export function computeCleanupGatePolicy(
  * @returns Classification or null if no merge-retry class matches
  * @since TP-033
  */
-export function classifyMergeFailure(mergeResult: MergeWaveResult): MergeFailureClassification | null {
+export function classifyMergeFailure(
+	mergeResult: MergeWaveResult,
+): MergeFailureClassification | null {
 	// Check lane-level errors first (most specific)
 	for (const lr of mergeResult.laneResults) {
 		if (lr.error && lr.error.startsWith("verification_new_failure")) {
@@ -619,7 +667,8 @@ export function computeMergeRetryDecision(
 	return {
 		shouldRetry: true,
 		cooldownMs: policy.cooldownMs,
-		reason: `${classification} retry ${currentRetryCount + 1}/${policy.maxAttempts}` +
+		reason:
+			`${classification} retry ${currentRetryCount + 1}/${policy.maxAttempts}` +
 			(policy.cooldownMs > 0 ? ` (cooldown: ${policy.cooldownMs}ms)` : ""),
 		currentAttempt: currentRetryCount + 1,
 		maxAttempts: policy.maxAttempts,
@@ -678,8 +727,11 @@ export function extractFailedRepoId(mergeResult: MergeWaveResult): string | unde
 	// 1. Try lane-level extraction
 	if (failedLaneNum !== null && failedLaneNum !== undefined) {
 		const failedLaneResult = mergeResult.laneResults.find(
-			lr => lr.laneNumber === failedLaneNum &&
-				(lr.error || lr.result?.status === "CONFLICT_UNRESOLVED" || lr.result?.status === "BUILD_FAILURE"),
+			(lr) =>
+				lr.laneNumber === failedLaneNum &&
+				(lr.error ||
+					lr.result?.status === "CONFLICT_UNRESOLVED" ||
+					lr.result?.status === "BUILD_FAILURE"),
 		);
 		if (failedLaneResult?.repoId) return failedLaneResult.repoId;
 	}
@@ -687,7 +739,7 @@ export function extractFailedRepoId(mergeResult: MergeWaveResult): string | unde
 	// 2. Repo-level fallback for setup failures (failedLane === null)
 	if (mergeResult.repoResults && mergeResult.repoResults.length > 0) {
 		const failedRepo = mergeResult.repoResults.find(
-			rr => rr.status === "failed" || rr.status === "partial",
+			(rr) => rr.status === "failed" || rr.status === "partial",
 		);
 		if (failedRepo?.repoId) return failedRepo.repoId;
 	}
@@ -783,7 +835,9 @@ export async function applyMergeRetryLoop(
 
 		callbacks.notify(
 			`🔄 Merge retry (${lastDecision.reason}) at wave ${waveIdx + 1}. ` +
-			(lastDecision.cooldownMs > 0 ? `Waiting ${lastDecision.cooldownMs}ms before retry...` : "Retrying immediately..."),
+				(lastDecision.cooldownMs > 0
+					? `Waiting ${lastDecision.cooldownMs}ms before retry...`
+					: "Retrying immediately..."),
 			"warning",
 		);
 
@@ -811,7 +865,8 @@ export async function applyMergeRetryLoop(
 
 		if (currentResult.rollbackFailed) {
 			// Safe-stop takes priority
-			const hasPersistErrors = currentResult.persistenceErrors && currentResult.persistenceErrors.length > 0;
+			const hasPersistErrors =
+				currentResult.persistenceErrors && currentResult.persistenceErrors.length > 0;
 			const persistWarning = hasPersistErrors
 				? ` WARNING: ${currentResult.persistenceErrors!.length} transaction record(s) failed to persist.`
 				: "";
@@ -824,10 +879,12 @@ export async function applyMergeRetryLoop(
 				lastDecision,
 				errorMessage:
 					`Safe-stop at wave ${waveIdx + 1}: verification rollback failed after retry. ` +
-					`Merge worktree and temp branch preserved for recovery.` + persistWarning,
+					`Merge worktree and temp branch preserved for recovery.` +
+					persistWarning,
 				notifyMessage:
 					`🛑 Safe-stop: verification rollback failed at wave ${waveIdx + 1} after retry. ` +
-					`Batch force-paused.` + persistWarning,
+					`Batch force-paused.` +
+					persistWarning,
 			};
 		}
 
@@ -907,12 +964,13 @@ export function computeIntegrateCleanupResult(
 	repoFindings: IntegrateCleanupRepoFindings[],
 ): IntegrateCleanupResult {
 	// Filter to repos that have at least one issue
-	const dirtyRepos = repoFindings.filter(r =>
-		r.staleWorktrees.length > 0 ||
-		r.staleLaneBranches.length > 0 ||
-		r.staleOrchBranches.length > 0 ||
-		r.staleAutostashEntries.length > 0 ||
-		r.nonEmptyWorktreeContainers.length > 0,
+	const dirtyRepos = repoFindings.filter(
+		(r) =>
+			r.staleWorktrees.length > 0 ||
+			r.staleLaneBranches.length > 0 ||
+			r.staleOrchBranches.length > 0 ||
+			r.staleAutostashEntries.length > 0 ||
+			r.nonEmptyWorktreeContainers.length > 0,
 	);
 
 	if (dirtyRepos.length === 0) {

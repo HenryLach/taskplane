@@ -11,15 +11,10 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
-import {
-	resolveContextWindow,
-	FALLBACK_CONTEXT_WINDOW,
-} from "../taskplane/context-window.ts";
+import { resolveContextWindow, FALLBACK_CONTEXT_WINDOW } from "../taskplane/context-window.ts";
 import { loadConfig } from "../taskplane/config-loader.ts";
 
-import {
-	DEFAULT_TASK_RUNNER_SECTION,
-} from "../taskplane/config-schema.ts";
+import { DEFAULT_TASK_RUNNER_SECTION } from "../taskplane/config-schema.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

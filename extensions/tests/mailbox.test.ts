@@ -10,7 +10,16 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
 import { join, dirname } from "path";
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, statSync, utimesSync } from "fs";
+import {
+	mkdirSync,
+	writeFileSync,
+	readFileSync,
+	readdirSync,
+	existsSync,
+	rmSync,
+	statSync,
+	utimesSync,
+} from "fs";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 
@@ -42,13 +51,20 @@ import {
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function makeTmpDir(prefix: string): string {
-	const dir = join(tmpdir(), `mailbox-test-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+	const dir = join(
+		tmpdir(),
+		`mailbox-test-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+	);
 	mkdirSync(dir, { recursive: true });
 	return dir;
 }
 
 function cleanupDir(dir: string): void {
-	try { rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort */ }
+	try {
+		rmSync(dir, { recursive: true, force: true });
+	} catch {
+		/* best-effort */
+	}
 }
 
 // ── 1. Path Helpers ──────────────────────────────────────────────────
@@ -61,17 +77,23 @@ describe("Mailbox path helpers", () => {
 
 	it("sessionInboxDir returns correct path", () => {
 		const result = sessionInboxDir("/workspace", "20260329T120000", "orch-lane-1-worker");
-		expect(result).toBe(join("/workspace", ".pi", MAILBOX_DIR_NAME, "20260329T120000", "orch-lane-1-worker", "inbox"));
+		expect(result).toBe(
+			join("/workspace", ".pi", MAILBOX_DIR_NAME, "20260329T120000", "orch-lane-1-worker", "inbox"),
+		);
 	});
 
 	it("sessionAckDir returns correct path", () => {
 		const result = sessionAckDir("/workspace", "20260329T120000", "orch-lane-1-worker");
-		expect(result).toBe(join("/workspace", ".pi", MAILBOX_DIR_NAME, "20260329T120000", "orch-lane-1-worker", "ack"));
+		expect(result).toBe(
+			join("/workspace", ".pi", MAILBOX_DIR_NAME, "20260329T120000", "orch-lane-1-worker", "ack"),
+		);
 	});
 
 	it("broadcastInboxDir returns correct path", () => {
 		const result = broadcastInboxDir("/workspace", "20260329T120000");
-		expect(result).toBe(join("/workspace", ".pi", MAILBOX_DIR_NAME, "20260329T120000", "_broadcast", "inbox"));
+		expect(result).toBe(
+			join("/workspace", ".pi", MAILBOX_DIR_NAME, "20260329T120000", "_broadcast", "inbox"),
+		);
 	});
 });
 
@@ -238,9 +260,33 @@ describe("readInbox", () => {
 		mkdirSync(inboxDir, { recursive: true });
 
 		// Write messages with different timestamps
-		const msg1 = { id: "1000-aaa00", batchId: "batch-1", from: "supervisor", to: "session-1", timestamp: 1000, type: "steer", content: "first" };
-		const msg3 = { id: "3000-ccc00", batchId: "batch-1", from: "supervisor", to: "session-1", timestamp: 3000, type: "steer", content: "third" };
-		const msg2 = { id: "2000-bbb00", batchId: "batch-1", from: "supervisor", to: "session-1", timestamp: 2000, type: "steer", content: "second" };
+		const msg1 = {
+			id: "1000-aaa00",
+			batchId: "batch-1",
+			from: "supervisor",
+			to: "session-1",
+			timestamp: 1000,
+			type: "steer",
+			content: "first",
+		};
+		const msg3 = {
+			id: "3000-ccc00",
+			batchId: "batch-1",
+			from: "supervisor",
+			to: "session-1",
+			timestamp: 3000,
+			type: "steer",
+			content: "third",
+		};
+		const msg2 = {
+			id: "2000-bbb00",
+			batchId: "batch-1",
+			from: "supervisor",
+			to: "session-1",
+			timestamp: 2000,
+			type: "steer",
+			content: "second",
+		};
 
 		// Write in non-sorted order
 		writeFileSync(join(inboxDir, "3000-ccc00.msg.json"), JSON.stringify(msg3));
@@ -258,7 +304,15 @@ describe("readInbox", () => {
 		const inboxDir = join(tmpDir, "inbox");
 		mkdirSync(inboxDir, { recursive: true });
 
-		const validMsg = { id: "1000-aaa00", batchId: "batch-1", from: "sup", to: "s1", timestamp: 1000, type: "steer", content: "valid" };
+		const validMsg = {
+			id: "1000-aaa00",
+			batchId: "batch-1",
+			from: "sup",
+			to: "s1",
+			timestamp: 1000,
+			type: "steer",
+			content: "valid",
+		};
 		writeFileSync(join(inboxDir, "1000-aaa00.msg.json"), JSON.stringify(validMsg));
 		writeFileSync(join(inboxDir, "1000-aaa00.msg.json.tmp"), JSON.stringify(validMsg)); // temp file
 		writeFileSync(join(inboxDir, "random.txt"), "not a message");
@@ -278,8 +332,24 @@ describe("readInbox", () => {
 		const inboxDir = join(tmpDir, "inbox");
 		mkdirSync(inboxDir, { recursive: true });
 
-		const wrongBatch = { id: "1000-aaa00", batchId: "wrong-batch", from: "sup", to: "s1", timestamp: 1000, type: "steer", content: "wrong" };
-		const rightBatch = { id: "2000-bbb00", batchId: "batch-1", from: "sup", to: "s1", timestamp: 2000, type: "steer", content: "right" };
+		const wrongBatch = {
+			id: "1000-aaa00",
+			batchId: "wrong-batch",
+			from: "sup",
+			to: "s1",
+			timestamp: 1000,
+			type: "steer",
+			content: "wrong",
+		};
+		const rightBatch = {
+			id: "2000-bbb00",
+			batchId: "batch-1",
+			from: "sup",
+			to: "s1",
+			timestamp: 2000,
+			type: "steer",
+			content: "right",
+		};
 		writeFileSync(join(inboxDir, "1000-aaa00.msg.json"), JSON.stringify(wrongBatch));
 		writeFileSync(join(inboxDir, "2000-bbb00.msg.json"), JSON.stringify(rightBatch));
 
@@ -296,7 +366,15 @@ describe("readInbox", () => {
 		mkdirSync(inboxDir, { recursive: true });
 
 		writeFileSync(join(inboxDir, "bad-json.msg.json"), "not valid json {{{");
-		const validMsg = { id: "1000-aaa00", batchId: "batch-1", from: "sup", to: "s1", timestamp: 1000, type: "steer", content: "valid" };
+		const validMsg = {
+			id: "1000-aaa00",
+			batchId: "batch-1",
+			from: "sup",
+			to: "s1",
+			timestamp: 1000,
+			type: "steer",
+			content: "valid",
+		};
 		writeFileSync(join(inboxDir, "1000-aaa00.msg.json"), JSON.stringify(validMsg));
 
 		const results = readInbox(inboxDir, "batch-1");
@@ -309,15 +387,37 @@ describe("readInbox", () => {
 		mkdirSync(inboxDir, { recursive: true });
 
 		// Missing 'type' field
-		const incomplete = { id: "1000-aaa00", batchId: "batch-1", from: "sup", to: "s1", timestamp: 1000, content: "test" };
+		const incomplete = {
+			id: "1000-aaa00",
+			batchId: "batch-1",
+			from: "sup",
+			to: "s1",
+			timestamp: 1000,
+			content: "test",
+		};
 		writeFileSync(join(inboxDir, "1000-aaa00.msg.json"), JSON.stringify(incomplete));
 
 		// Missing 'id' field
-		const noId = { batchId: "batch-1", from: "sup", to: "s1", timestamp: 1000, type: "steer", content: "test" };
+		const noId = {
+			batchId: "batch-1",
+			from: "sup",
+			to: "s1",
+			timestamp: 1000,
+			type: "steer",
+			content: "test",
+		};
 		writeFileSync(join(inboxDir, "no-id.msg.json"), JSON.stringify(noId));
 
 		// Non-finite timestamp
-		const badTs = { id: "2000-bbb00", batchId: "batch-1", from: "sup", to: "s1", timestamp: NaN, type: "steer", content: "test" };
+		const badTs = {
+			id: "2000-bbb00",
+			batchId: "batch-1",
+			from: "sup",
+			to: "s1",
+			timestamp: NaN,
+			type: "steer",
+			content: "test",
+		};
 		writeFileSync(join(inboxDir, "2000-bbb00.msg.json"), JSON.stringify(badTs));
 
 		const results = readInbox(inboxDir, "batch-1");
@@ -406,11 +506,31 @@ describe("isValidMailboxMessage", () => {
 
 	it("rejects missing required fields", () => {
 		// Missing id
-		expect(isValidMailboxMessage({ batchId: "b", from: "f", to: "t", timestamp: 1, type: "steer", content: "c" })).toBe(false);
+		expect(
+			isValidMailboxMessage({
+				batchId: "b",
+				from: "f",
+				to: "t",
+				timestamp: 1,
+				type: "steer",
+				content: "c",
+			}),
+		).toBe(false);
 		// Missing content
-		expect(isValidMailboxMessage({ id: "i", batchId: "b", from: "f", to: "t", timestamp: 1, type: "steer" })).toBe(false);
+		expect(
+			isValidMailboxMessage({
+				id: "i",
+				batchId: "b",
+				from: "f",
+				to: "t",
+				timestamp: 1,
+				type: "steer",
+			}),
+		).toBe(false);
 		// Missing type
-		expect(isValidMailboxMessage({ id: "i", batchId: "b", from: "f", to: "t", timestamp: 1, content: "c" })).toBe(false);
+		expect(
+			isValidMailboxMessage({ id: "i", batchId: "b", from: "f", to: "t", timestamp: 1, content: "c" }),
+		).toBe(false);
 	});
 
 	it("rejects invalid type value", () => {
@@ -656,7 +776,9 @@ function sanitizeSteeringContent(content: string): string {
 function appendTableRow(statusPath: string, sectionName: string, row: string): void {
 	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
 	const lines = content.split("\n");
-	let insertIdx = -1, inSection = false, lastTableRow = -1;
+	let insertIdx = -1,
+		inSection = false,
+		lastTableRow = -1;
 	for (let i = 0; i < lines.length; i++) {
 		if (lines[i].match(new RegExp(`^##\\s+${sectionName}`))) {
 			inSection = true;
@@ -688,7 +810,7 @@ function processSteeringPending(taskFolder: string, statusPath: string): number 
 	let annotated = 0;
 	if (existsSync(steeringFlagPath)) {
 		const raw = readFileSync(steeringFlagPath, "utf-8");
-		const lines = raw.split("\n").filter(l => l.trim());
+		const lines = raw.split("\n").filter((l) => l.trim());
 		for (const line of lines) {
 			try {
 				const entry = JSON.parse(line) as { ts: number; content: string; id: string };
@@ -771,7 +893,7 @@ describe("TP-090: Steering-pending annotation", () => {
 			{ ts: 1774800000000, content: "First steering.", id: "1000-aaa00" },
 			{ ts: 1774800001000, content: "Second steering.", id: "2000-bbb00" },
 		];
-		const jsonl = entries.map(e => JSON.stringify(e)).join("\n") + "\n";
+		const jsonl = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
 		writeFileSync(join(tmpDir, ".steering-pending"), jsonl);
 
 		const count = processSteeringPending(tmpDir, statusPath);
@@ -786,8 +908,10 @@ describe("TP-090: Steering-pending annotation", () => {
 		const statusPath = join(tmpDir, "STATUS.md");
 		writeFileSync(statusPath, SAMPLE_STATUS_MD);
 
-		const jsonl = '{invalid json\n' +
-			JSON.stringify({ ts: 1774800000000, content: "Valid entry.", id: "3000-ccc00" }) + '\n';
+		const jsonl =
+			"{invalid json\n" +
+			JSON.stringify({ ts: 1774800000000, content: "Valid entry.", id: "3000-ccc00" }) +
+			"\n";
 		writeFileSync(join(tmpDir, ".steering-pending"), jsonl);
 
 		const count = processSteeringPending(tmpDir, statusPath);
@@ -838,4 +962,3 @@ describe("TP-090: sanitizeSteeringContent", () => {
 		expect(sanitizeSteeringContent("a\nb|c")).toBe("a / b\\|c");
 	});
 });
-

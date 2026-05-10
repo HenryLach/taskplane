@@ -80,9 +80,18 @@ describe("1.x — Template file existence", () => {
 
 describe("2.x — Template content: required sections and placeholders", () => {
 	// Normalize CRLF→LF for cross-platform compatibility
-	const supervisorTemplate = readFileSync(join(TEMPLATES_DIR, "supervisor.md"), "utf-8").replace(/\r\n/g, "\n");
-	const routingTemplate = readFileSync(join(TEMPLATES_DIR, "supervisor-routing.md"), "utf-8").replace(/\r\n/g, "\n");
-	const localTemplate = readFileSync(join(TEMPLATES_DIR, "local", "supervisor.md"), "utf-8").replace(/\r\n/g, "\n");
+	const supervisorTemplate = readFileSync(join(TEMPLATES_DIR, "supervisor.md"), "utf-8").replace(
+		/\r\n/g,
+		"\n",
+	);
+	const routingTemplate = readFileSync(
+		join(TEMPLATES_DIR, "supervisor-routing.md"),
+		"utf-8",
+	).replace(/\r\n/g, "\n");
+	const localTemplate = readFileSync(join(TEMPLATES_DIR, "local", "supervisor.md"), "utf-8").replace(
+		/\r\n/g,
+		"\n",
+	);
 
 	it("2.1: supervisor template has frontmatter with name", () => {
 		expect(supervisorTemplate).toMatch(/^---\n/);
@@ -162,11 +171,14 @@ describe("3.x — Template composition: base + local override", () => {
 	it("3.2: composes base + local override", () => {
 		const agentDir = join(tmpDir, ".pi", "agents");
 		mkdirSync(agentDir, { recursive: true });
-		writeFileSync(join(agentDir, "supervisor.md"), `---
+		writeFileSync(
+			join(agentDir, "supervisor.md"),
+			`---
 name: supervisor
 ---
 Always run the linter before integration.
-`);
+`,
+		);
 
 		const result = loadSupervisorTemplate("supervisor", tmpDir);
 		expect(result).not.toBeNull();
@@ -180,12 +192,15 @@ Always run the linter before integration.
 	it("3.3: standalone mode uses local only, ignores base", () => {
 		const agentDir = join(tmpDir, ".pi", "agents");
 		mkdirSync(agentDir, { recursive: true });
-		writeFileSync(join(agentDir, "supervisor.md"), `---
+		writeFileSync(
+			join(agentDir, "supervisor.md"),
+			`---
 name: supervisor
 standalone: true
 ---
 Custom standalone supervisor prompt.
-`);
+`,
+		);
 
 		const result = loadSupervisorTemplate("supervisor", tmpDir);
 		expect(result).not.toBeNull();
@@ -246,11 +261,14 @@ describe("4.x — Prompt builder: template loading + variable replacement", () =
 	it("4.2: buildSupervisorSystemPrompt includes local override content", () => {
 		const agentDir = join(tmpDir, ".pi", "agents");
 		mkdirSync(agentDir, { recursive: true });
-		writeFileSync(join(agentDir, "supervisor.md"), `---
+		writeFileSync(
+			join(agentDir, "supervisor.md"),
+			`---
 name: supervisor
 ---
 Check CI dashboard at https://ci.example.com before approving merges.
-`);
+`,
+		);
 
 		const batchState = makeTestBatchState();
 		const config = DEFAULT_ORCHESTRATOR_CONFIG;

@@ -121,6 +121,47 @@ and `@mariozechner/pi-tui` to local mock stubs so tests don't need the real pack
 
 ---
 
+## Code style and `git blame.ignoreRevsFile` (recommended one-time config)
+
+Taskplane uses [Biome](https://biomejs.dev) as both linter and formatter. The
+formatter rules are pinned in `biome.json` and applied uniformly across the
+codebase.
+
+Available scripts (run from the repo root):
+
+```bash
+npm run lint            # report lint issues (no fixes)
+npm run lint:fix        # apply safe lint autofixes
+npm run format          # format files in-place
+npm run format:check    # check formatting (CI-style; non-zero exit on diff)
+```
+
+### `.git-blame-ignore-revs`
+
+The repo ships a `.git-blame-ignore-revs` file at the root that lists
+commits whose changes are purely mechanical — chiefly the one-shot Biome
+formatter adoption commit (TP-193). Without this file, `git blame` would
+bottom out on the formatter commit for nearly every line in the codebase
+and hide the real authoring history.
+
+**Recommended one-time per-developer setup:**
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+This is **recommended, not required**. Without it, `git blame` still works
+— it just attributes every formatter-touched line to the format-adoption
+commit instead of the underlying author. The same `.git-blame-ignore-revs`
+file is also picked up automatically by GitHub's web `Blame` view (no
+client-side config needed there).
+
+When you add a future bulk-mechanical commit (e.g., a one-shot codemod or
+another formatter migration), append its full 40-character SHA + a
+comment block describing what it did to `.git-blame-ignore-revs`.
+
+---
+
 ## Recommended local dev loop
 
 1. Edit extension/CLI/template code

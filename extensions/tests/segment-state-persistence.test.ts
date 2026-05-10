@@ -35,12 +35,14 @@ describe("TP-135 segment state persistence", () => {
 				laneSessionId: "orch-lane-1",
 				worktreePath: "/tmp/worktree-1",
 				branch: "task/lane-1",
-				tasks: [{
-					taskId: "TP-100",
-					order: 0,
-					task,
-					estimatedMinutes: 5,
-				}],
+				tasks: [
+					{
+						taskId: "TP-100",
+						order: 0,
+						task,
+						estimatedMinutes: 5,
+					},
+				],
 				strategy: "round-robin",
 				estimatedLoad: 1,
 				estimatedMinutes: 5,
@@ -68,21 +70,23 @@ describe("TP-135 segment state persistence", () => {
 			batchState.totalWaves = 1;
 			batchState.totalTasks = 1;
 			batchState.currentLanes = [lane];
-			batchState.segments = [{
-				segmentId: "TP-100::api",
-				taskId: "TP-100",
-				repoId: "api",
-				status: "running",
-				laneId: "lane-1",
-				sessionName: "orch-lane-1",
-				worktreePath: "/tmp/worktree-1",
-				branch: "task/lane-1",
-				startedAt: Date.now() - 1000,
-				endedAt: null,
-				retries: 0,
-				exitReason: "Segment running",
-				dependsOnSegmentIds: [],
-			}];
+			batchState.segments = [
+				{
+					segmentId: "TP-100::api",
+					taskId: "TP-100",
+					repoId: "api",
+					status: "running",
+					laneId: "lane-1",
+					sessionName: "orch-lane-1",
+					worktreePath: "/tmp/worktree-1",
+					branch: "task/lane-1",
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					retries: 0,
+					exitReason: "Segment running",
+					dependsOnSegmentIds: [],
+				},
+			];
 
 			persistRuntimeState(
 				"segment-start",

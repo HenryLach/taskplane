@@ -61,7 +61,7 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 		const mergeSource = readSource("merge.ts");
 
 		// Both statuses should be accepted at timeout
-		expect(mergeSource).toContain('const SUCCESSFUL_MERGE_STATUSES = new Set');
+		expect(mergeSource).toContain("const SUCCESSFUL_MERGE_STATUSES = new Set");
 		expect(mergeSource).toContain('"SUCCESS"');
 		expect(mergeSource).toContain('"CONFLICT_RESOLVED"');
 	});
@@ -109,7 +109,9 @@ describe("2.x — Kill-and-retry: timeout triggers retry with 2x timeout", () =>
 
 		// The retry loop must reference the constant
 		expect(mergeSource).toContain("MERGE_TIMEOUT_MAX_RETRIES");
-		expect(mergeSource).toContain("for (let attempt = 0; attempt <= MERGE_TIMEOUT_MAX_RETRIES; attempt++)");
+		expect(mergeSource).toContain(
+			"for (let attempt = 0; attempt <= MERGE_TIMEOUT_MAX_RETRIES; attempt++)",
+		);
 	});
 
 	it("2.2: MERGE_TIMEOUT_MAX_RETRIES is set to 2", () => {
@@ -153,13 +155,15 @@ describe("2.x — Kill-and-retry: timeout triggers retry with 2x timeout", () =>
 			mergeSource.indexOf("// First attempt: spawn merge agent"),
 		);
 		expect(retrySection).toContain("killMergeAgentV2(sessionName)");
-		expect(retrySection).toContain("spawnMergeAgentV2(sessionName");
+		expect(retrySection).toContainNormalized("spawnMergeAgentV2(sessionName");
 	});
 
 	it("2.7: retry logs attempt number and new timeout values", () => {
 		const mergeSource = readSource("merge.ts");
 
-		expect(mergeSource).toContain("retry ${attempt}/${MERGE_TIMEOUT_MAX_RETRIES} after timeout — respawning merge agent");
+		expect(mergeSource).toContain(
+			"retry ${attempt}/${MERGE_TIMEOUT_MAX_RETRIES} after timeout — respawning merge agent",
+		);
 		expect(mergeSource).toContain("newTimeoutMs: currentTimeoutMs");
 		expect(mergeSource).toContain("newTimeoutMin:");
 	});
@@ -198,9 +202,9 @@ describe("3.x — Second retry uses 4x timeout (backoff verification)", () => {
 		const attempt1Timeout = baseTimeout * Math.pow(2, 1);
 		const attempt2Timeout = baseTimeout * Math.pow(2, 2);
 
-		expect(attempt0Timeout).toBe(600_000);   // 10 min
-		expect(attempt1Timeout).toBe(1_200_000);  // 20 min (2x)
-		expect(attempt2Timeout).toBe(2_400_000);  // 40 min (4x)
+		expect(attempt0Timeout).toBe(600_000); // 10 min
+		expect(attempt1Timeout).toBe(1_200_000); // 20 min (2x)
+		expect(attempt2Timeout).toBe(2_400_000); // 40 min (4x)
 
 		// Verify the progression ratio
 		expect(attempt1Timeout / baseTimeout).toBe(2);
@@ -228,7 +232,9 @@ describe("3.x — Second retry uses 4x timeout (backoff verification)", () => {
 		const mergeSource = readSource("merge.ts");
 
 		// The retry loop calls waitForMergeResult with the computed timeout + backend
-		expect(mergeSource).toContain("waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs, runtimeBackend)");
+		expect(mergeSource).toContainNormalized(
+			"waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs, runtimeBackend)",
+		);
 	});
 
 	it("3.5: with custom config timeout of 15 min, retries use 30 min and 60 min", () => {
@@ -261,7 +267,7 @@ describe("4.x — All retries exhausted: failure propagation", () => {
 		// On the final attempt, the catch condition fails (attempt === MAX_RETRIES),
 		// so it falls through to "throw waitErr"
 		const catchBlock = mergeSource.substring(
-			mergeSource.indexOf("waitErr.code === \"MERGE_TIMEOUT\""),
+			mergeSource.indexOf('waitErr.code === "MERGE_TIMEOUT"'),
 			mergeSource.indexOf("throw waitErr") + 20,
 		);
 		expect(catchBlock).toContain("attempt < MERGE_TIMEOUT_MAX_RETRIES");
@@ -278,7 +284,7 @@ describe("4.x — All retries exhausted: failure propagation", () => {
 		const mergeSource = readSource("merge.ts");
 
 		// waitForMergeResult throws MERGE_TIMEOUT on timeout
-		expect(mergeSource).toContain('throw new MergeError(');
+		expect(mergeSource).toContain("throw new MergeError(");
 		expect(mergeSource).toContain('"MERGE_TIMEOUT"');
 		// Both patterns appear in the same function (waitForMergeResult)
 		const waitFn = mergeSource.substring(

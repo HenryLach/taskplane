@@ -127,9 +127,7 @@ describe("TP-188 sub-fix B (#543): worktree.ts source patterns", () => {
 		const body = worktreeSrc.slice(fnStart, fnEnd > -1 ? fnEnd : undefined);
 		// When the cmd rd fallback also fails, the operator should see both
 		// the original git error and the rescue's stderr in the throw message.
-		expect(body).toMatch(
-			/git worktree remove failed[\s\S]{0,200}cmd rd[\s\S]{0,200}fallback failed/,
-		);
+		expect(body).toMatch(/git worktree remove failed[\s\S]{0,200}cmd rd[\s\S]{0,200}fallback failed/);
 	});
 });
 

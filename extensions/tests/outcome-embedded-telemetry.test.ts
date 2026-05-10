@@ -31,20 +31,30 @@ describe("TP-116: outcome-embedded telemetry for batch history", () => {
 				durationMs: 9_000,
 			},
 		});
-		const v2Fallback = new Map<number, TokenCounts>([[2, {
-			input: 9,
-			output: 9,
-			cacheRead: 9,
-			cacheWrite: 9,
-			costUsd: 9,
-		}]]);
-		const legacyFallback = new Map<string, TokenCounts>([["orch-op-lane-2", {
-			input: 8,
-			output: 8,
-			cacheRead: 8,
-			cacheWrite: 8,
-			costUsd: 8,
-		}]]);
+		const v2Fallback = new Map<number, TokenCounts>([
+			[
+				2,
+				{
+					input: 9,
+					output: 9,
+					cacheRead: 9,
+					cacheWrite: 9,
+					costUsd: 9,
+				},
+			],
+		]);
+		const legacyFallback = new Map<string, TokenCounts>([
+			[
+				"orch-op-lane-2",
+				{
+					input: 8,
+					output: 8,
+					cacheRead: 8,
+					cacheWrite: 8,
+					costUsd: 8,
+				},
+			],
+		]);
 
 		const tokens = resolveBatchHistoryTaskTokens(outcome, 2, v2Fallback, legacyFallback);
 		expect(tokens).toEqual({
@@ -57,14 +67,23 @@ describe("TP-116: outcome-embedded telemetry for batch history", () => {
 	});
 
 	it("falls back to V2 lane snapshot tokens when telemetry is absent", () => {
-		const outcome = makeOutcome({ telemetry: undefined, laneNumber: 3, sessionName: "orch-op-lane-3-worker" });
-		const v2Fallback = new Map<number, TokenCounts>([[3, {
-			input: 10,
-			output: 20,
-			cacheRead: 30,
-			cacheWrite: 40,
-			costUsd: 0.12,
-		}]]);
+		const outcome = makeOutcome({
+			telemetry: undefined,
+			laneNumber: 3,
+			sessionName: "orch-op-lane-3-worker",
+		});
+		const v2Fallback = new Map<number, TokenCounts>([
+			[
+				3,
+				{
+					input: 10,
+					output: 20,
+					cacheRead: 30,
+					cacheWrite: 40,
+					costUsd: 0.12,
+				},
+			],
+		]);
 
 		const tokens = resolveBatchHistoryTaskTokens(outcome, 3, v2Fallback, new Map());
 		expect(tokens).toEqual({
@@ -86,13 +105,18 @@ describe("TP-116: outcome-embedded telemetry for batch history", () => {
 			laneNumber: 4,
 			sessionName: "orch-op-lane-4-worker",
 		});
-		const v2Fallback = new Map<number, TokenCounts>([[4, {
-			input: 999,
-			output: 999,
-			cacheRead: 999,
-			cacheWrite: 999,
-			costUsd: 9.99,
-		}]]);
+		const v2Fallback = new Map<number, TokenCounts>([
+			[
+				4,
+				{
+					input: 999,
+					output: 999,
+					cacheRead: 999,
+					cacheWrite: 999,
+					costUsd: 9.99,
+				},
+			],
+		]);
 
 		const tokens = resolveBatchHistoryTaskTokens(outcome, 4, v2Fallback, new Map());
 		expect(tokens).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 });

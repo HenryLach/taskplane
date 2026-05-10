@@ -24,8 +24,14 @@ import type { OrchBatchRuntimeState } from "../taskplane/types.ts";
 describe("1.x — orchBatchComplete integrate guidance", () => {
 	it("1.1: includes /orch-integrate command when orch branch exists and tasks succeeded", () => {
 		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 3, 0, 0, 0, 120,
-			"orch/op-batch-123", "main",
+			"batch-123",
+			3,
+			0,
+			0,
+			0,
+			120,
+			"orch/op-batch-123",
+			"main",
 		);
 		expect(msg).toContain("/orch-integrate");
 		expect(msg).toContain("/orch-integrate --pr");
@@ -33,8 +39,14 @@ describe("1.x — orchBatchComplete integrate guidance", () => {
 
 	it("1.2: includes visual box separator for integrate guidance", () => {
 		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 3, 0, 0, 0, 120,
-			"orch/op-batch-123", "main",
+			"batch-123",
+			3,
+			0,
+			0,
+			0,
+			120,
+			"orch/op-batch-123",
+			"main",
 		);
 		// Check for the box drawing characters
 		expect(msg).toContain("┌─");
@@ -44,40 +56,62 @@ describe("1.x — orchBatchComplete integrate guidance", () => {
 
 	it("1.3: shows orch branch name in integrate guidance", () => {
 		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 3, 0, 0, 0, 120,
-			"orch/op-batch-123", "main",
+			"batch-123",
+			3,
+			0,
+			0,
+			0,
+			120,
+			"orch/op-batch-123",
+			"main",
 		);
 		expect(msg).toContain("orch/op-batch-123");
 	});
 
 	it("1.4: includes preview command with base branch", () => {
 		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 3, 0, 0, 0, 120,
-			"orch/op-batch-123", "main",
+			"batch-123",
+			3,
+			0,
+			0,
+			0,
+			120,
+			"orch/op-batch-123",
+			"main",
 		);
 		expect(msg).toContain("git log main..orch/op-batch-123");
 	});
 
 	it("1.5: omits integrate guidance when no orch branch", () => {
-		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 3, 0, 0, 0, 120,
-		);
+		const msg = ORCH_MESSAGES.orchBatchComplete("batch-123", 3, 0, 0, 0, 120);
 		expect(msg).not.toContain("/orch-integrate");
 		expect(msg).not.toContain("┌─");
 	});
 
 	it("1.6: omits integrate guidance when no succeeded tasks", () => {
 		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 0, 3, 0, 0, 120,
-			"orch/op-batch-123", "main",
+			"batch-123",
+			0,
+			3,
+			0,
+			0,
+			120,
+			"orch/op-batch-123",
+			"main",
 		);
 		expect(msg).not.toContain("/orch-integrate");
 	});
 
 	it("1.7: shows failure guidance when tasks failed", () => {
 		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 2, 1, 0, 0, 120,
-			"orch/op-batch-123", "main",
+			"batch-123",
+			2,
+			1,
+			0,
+			0,
+			120,
+			"orch/op-batch-123",
+			"main",
 		);
 		// Should have both failure guidance and integrate guidance (partial success)
 		expect(msg).toContain("/orch-status");
@@ -86,8 +120,14 @@ describe("1.x — orchBatchComplete integrate guidance", () => {
 
 	it("1.8: mentions working branch was not modified", () => {
 		const msg = ORCH_MESSAGES.orchBatchComplete(
-			"batch-123", 3, 0, 0, 0, 120,
-			"orch/op-batch-123", "main",
+			"batch-123",
+			3,
+			0,
+			0,
+			0,
+			120,
+			"orch/op-batch-123",
+			"main",
 		);
 		expect(msg).toContain("main branch was not modified");
 	});
@@ -132,11 +172,7 @@ describe("2.x — branch protection detection", () => {
 			succeededTasks: 3,
 			failedTasks: 0,
 		};
-		const plan = buildIntegrationPlan(
-			batchState as OrchBatchRuntimeState,
-			process.cwd(),
-			"unknown",
-		);
+		const plan = buildIntegrationPlan(batchState as OrchBatchRuntimeState, process.cwd(), "unknown");
 		expect(plan).not.toBeNull();
 		// TP-149: unknown protection now falls through to FF/merge instead of defaulting to PR
 		expect(["ff", "merge"]).toContain(plan!.mode);
@@ -168,13 +204,17 @@ describe("3.x — protection hint in merge failure messages", () => {
 			deleteBatchState: () => {},
 		};
 
-		const result = executeIntegration("ff", {
-			orchBranch: "orch/test",
-			baseBranch: "main",
-			batchId: "test-123",
-			currentBranch: "main",
-			notices: [],
-		}, deps);
+		const result = executeIntegration(
+			"ff",
+			{
+				orchBranch: "orch/test",
+				baseBranch: "main",
+				batchId: "test-123",
+				currentBranch: "main",
+				notices: [],
+			},
+			deps,
+		);
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain("--pr");
@@ -200,13 +240,17 @@ describe("3.x — protection hint in merge failure messages", () => {
 			deleteBatchState: () => {},
 		};
 
-		const result = executeIntegration("ff", {
-			orchBranch: "orch/test",
-			baseBranch: "main",
-			batchId: "test-123",
-			currentBranch: "main",
-			notices: [],
-		}, deps);
+		const result = executeIntegration(
+			"ff",
+			{
+				orchBranch: "orch/test",
+				baseBranch: "main",
+				batchId: "test-123",
+				currentBranch: "main",
+				notices: [],
+			},
+			deps,
+		);
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain("--pr");
@@ -232,13 +276,17 @@ describe("3.x — protection hint in merge failure messages", () => {
 			deleteBatchState: () => {},
 		};
 
-		const result = executeIntegration("merge", {
-			orchBranch: "orch/test",
-			baseBranch: "main",
-			batchId: "test-123",
-			currentBranch: "main",
-			notices: [],
-		}, deps);
+		const result = executeIntegration(
+			"merge",
+			{
+				orchBranch: "orch/test",
+				baseBranch: "main",
+				batchId: "test-123",
+				currentBranch: "main",
+				notices: [],
+			},
+			deps,
+		);
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain("--pr");

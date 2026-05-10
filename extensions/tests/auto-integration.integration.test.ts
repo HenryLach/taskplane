@@ -17,7 +17,15 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from "fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+	appendFileSync,
+} from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
@@ -76,7 +84,9 @@ function makeTmpDir(): string {
  * Build a batch state suitable for integration testing.
  * Has orchBranch, baseBranch, and some succeeded tasks.
  */
-function makeIntegrationBatchState(overrides?: Partial<OrchBatchRuntimeState>): OrchBatchRuntimeState {
+function makeIntegrationBatchState(
+	overrides?: Partial<OrchBatchRuntimeState>,
+): OrchBatchRuntimeState {
 	const state = freshOrchBatchState();
 	state.batchId = "20260322T120000";
 	state.baseBranch = "main";
@@ -109,9 +119,13 @@ function makeMockPi() {
 /**
  * Create a mock integration executor.
  */
-function makeMockExecutor(
-	result: { success: boolean; integratedLocally: boolean; commitCount: string; message: string; error?: string },
-): IntegrationExecutor {
+function makeMockExecutor(result: {
+	success: boolean;
+	integratedLocally: boolean;
+	commitCount: string;
+	message: string;
+	error?: string;
+}): IntegrationExecutor {
 	const calls: Array<{ mode: string; context: any }> = [];
 	const executor = ((mode: string, context: any) => {
 		calls.push({ mode, context });
@@ -124,7 +138,9 @@ function makeMockExecutor(
 /**
  * Create mock CI deps.
  */
-function makeMockCiDeps(overrides?: Partial<CiDeps>): CiDeps & { commandCalls: Array<{ cmd: string; args: string[] }> } {
+function makeMockCiDeps(
+	overrides?: Partial<CiDeps>,
+): CiDeps & { commandCalls: Array<{ cmd: string; args: string[] }> } {
 	const commandCalls: Array<{ cmd: string; args: string[] }> = [];
 	return {
 		commandCalls,
@@ -148,7 +164,8 @@ function makeMockCiDeps(overrides?: Partial<CiDeps>): CiDeps & { commandCalls: A
  */
 function createLinearGitRepo(): { dir: string; orchBranch: string; baseBranch: string } {
 	const dir = makeTmpDir();
-	const run = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+	const run = (args: string[]) =>
+		execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
 
 	run(["init", "--initial-branch=main"]);
 	run(["config", "user.email", "test@test.com"]);
@@ -177,7 +194,8 @@ function createLinearGitRepo(): { dir: string; orchBranch: string; baseBranch: s
  */
 function createDivergedGitRepo(): { dir: string; orchBranch: string; baseBranch: string } {
 	const dir = makeTmpDir();
-	const run = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+	const run = (args: string[]) =>
+		execFileSync("git", args, { cwd: dir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
 
 	run(["init", "--initial-branch=main"]);
 	run(["config", "user.email", "test@test.com"]);
@@ -486,9 +504,7 @@ describe("11.x — pollPrCiStatus", () => {
 		const deps = makeMockCiDeps({
 			runCommand: (cmd, args) => ({
 				ok: true,
-				stdout: JSON.stringify([
-					{ name: "ci", state: "PENDING", conclusion: "" },
-				]),
+				stdout: JSON.stringify([{ name: "ci", state: "PENDING", conclusion: "" }]),
 				stderr: "",
 			}),
 		});
@@ -652,7 +668,12 @@ describe("12.x — Auto mode: triggerSupervisorIntegration", () => {
 		const executorCalls: Array<{ mode: string; context: any }> = [];
 		const executor: IntegrationExecutor = (mode, context) => {
 			executorCalls.push({ mode, context });
-			return { success: true, integratedLocally: true, commitCount: "2", message: "Fast-forwarded 2 commits" };
+			return {
+				success: true,
+				integratedLocally: true,
+				commitCount: "2",
+				message: "Fast-forwarded 2 commits",
+			};
 		};
 
 		// TP-149: test repo has no remotes → protection skipped → FF plan.
@@ -694,7 +715,7 @@ describe("12.x — Auto mode: triggerSupervisorIntegration", () => {
 		triggerSupervisorIntegration(pi as any, state, batchState, "auto", gitRepo.dir, executor);
 
 		// Should have a success message containing integration outcome
-		const allText = pi.messages.map(m => m.opts.content[0].text).join("\n");
+		const allText = pi.messages.map((m) => m.opts.content[0].text).join("\n");
 		// formatIntegrationOutcome for success includes "✅" and "Integration complete"
 		expect(allText).toContain("✅");
 		expect(allText).toContain("Integration complete");
@@ -709,14 +730,25 @@ describe("12.x — Auto mode: triggerSupervisorIntegration", () => {
 		const batchState = makeIntegrationBatchState({ succeededTasks: 0 });
 
 		const summaryDeps: SummaryDeps = { opId: "testop", diagnostics: null, mergeResults: [] };
-		triggerSupervisorIntegration(pi as any, state, batchState, "auto", tmpDir, undefined, undefined, summaryDeps);
+		triggerSupervisorIntegration(
+			pi as any,
+			state,
+			batchState,
+			"auto",
+			tmpDir,
+			undefined,
+			undefined,
+			summaryDeps,
+		);
 
 		// Should deactivate since no plan (0 succeeded tasks)
 		expect(state.active).toBe(false);
 		// Should send no-integration message
-		expect(pi.messages.some(m => m.opts.content[0].text.includes("No integration needed"))).toBe(true);
+		expect(pi.messages.some((m) => m.opts.content[0].text.includes("No integration needed"))).toBe(
+			true,
+		);
 		// Summary should have been presented (presentBatchSummary called via summarizeAndDeactivate)
-		const hasSummary = pi.messages.some(m => m.opts.customType === "supervisor-batch-summary");
+		const hasSummary = pi.messages.some((m) => m.opts.customType === "supervisor-batch-summary");
 		expect(hasSummary).toBe(true);
 	});
 });
@@ -751,7 +783,13 @@ describe("13.x — Integration conflict handling: ff → merge fallback", () => 
 		const executor: IntegrationExecutor = (mode, context) => {
 			calls.push({ mode });
 			if (mode === "ff") {
-				return { success: false, integratedLocally: false, commitCount: "0", message: "not linear", error: "branches diverged" };
+				return {
+					success: false,
+					integratedLocally: false,
+					commitCount: "0",
+					message: "not linear",
+					error: "branches diverged",
+				};
 			}
 			return { success: true, integratedLocally: true, commitCount: "3", message: "Merged OK" };
 		};
@@ -768,10 +806,22 @@ describe("13.x — Integration conflict handling: ff → merge fallback", () => 
 		//     }
 		//   }
 		// Simulate this logic:
-		let result = executor("ff", { orchBranch: "o", baseBranch: "m", batchId: "b", currentBranch: "m", notices: [] });
+		let result = executor("ff", {
+			orchBranch: "o",
+			baseBranch: "m",
+			batchId: "b",
+			currentBranch: "m",
+			notices: [],
+		});
 		expect(result.success).toBe(false);
 
-		const fallbackResult = executor("merge", { orchBranch: "o", baseBranch: "m", batchId: "b", currentBranch: "m", notices: [] });
+		const fallbackResult = executor("merge", {
+			orchBranch: "o",
+			baseBranch: "m",
+			batchId: "b",
+			currentBranch: "m",
+			notices: [],
+		});
 		expect(fallbackResult.success).toBe(true);
 
 		// Verify the calls were made in order: ff first, then merge
@@ -791,9 +841,21 @@ describe("13.x — Integration conflict handling: ff → merge fallback", () => 
 		};
 
 		// Simulate the fallback logic from the source
-		let result = failingExecutor("ff", { orchBranch: "o", baseBranch: "m", batchId: "b", currentBranch: "m", notices: [] });
+		let result = failingExecutor("ff", {
+			orchBranch: "o",
+			baseBranch: "m",
+			batchId: "b",
+			currentBranch: "m",
+			notices: [],
+		});
 		if (!result.success) {
-			const fallbackResult = failingExecutor("merge", { orchBranch: "o", baseBranch: "m", batchId: "b", currentBranch: "m", notices: [] });
+			const fallbackResult = failingExecutor("merge", {
+				orchBranch: "o",
+				baseBranch: "m",
+				batchId: "b",
+				currentBranch: "m",
+				notices: [],
+			});
 			if (!fallbackResult.success) {
 				// Result stays as the merge failure
 				result = fallbackResult;
@@ -922,7 +984,9 @@ describe("14.x — Supervised mode: triggerSupervisorIntegration", () => {
 describe("15.x — Manual/supervised/auto config type and source verification", () => {
 	it("15.1: types.ts includes 'supervised' in integration mode type", () => {
 		const source = readSource("types.ts");
-		const line = source.split("\n").find(l => l.includes("integration") && l.includes("manual") && l.includes("auto"));
+		const line = source
+			.split("\n")
+			.find((l) => l.includes("integration") && l.includes("manual") && l.includes("auto"));
 		expect(line).toBeDefined();
 		expect(line).toContain("supervised");
 	});
@@ -992,9 +1056,24 @@ describe("16.x — readTier0EventsForBatch", () => {
 	});
 
 	it("16.2: filters only Tier 0 event types", () => {
-		writeEventLine(tmpDir, { timestamp: "t1", type: "tier0_recovery_attempt", batchId: "b1", pattern: "MERGE_TIMEOUT", attempt: 1, maxAttempts: 3 });
+		writeEventLine(tmpDir, {
+			timestamp: "t1",
+			type: "tier0_recovery_attempt",
+			batchId: "b1",
+			pattern: "MERGE_TIMEOUT",
+			attempt: 1,
+			maxAttempts: 3,
+		});
 		writeEventLine(tmpDir, { timestamp: "t2", type: "wave_start", batchId: "b1", waveIndex: 0 });
-		writeEventLine(tmpDir, { timestamp: "t3", type: "tier0_recovery_success", batchId: "b1", pattern: "MERGE_TIMEOUT", attempt: 1, maxAttempts: 3, resolution: "retried OK" });
+		writeEventLine(tmpDir, {
+			timestamp: "t3",
+			type: "tier0_recovery_success",
+			batchId: "b1",
+			pattern: "MERGE_TIMEOUT",
+			attempt: 1,
+			maxAttempts: 3,
+			resolution: "retried OK",
+		});
 
 		const events = readTier0EventsForBatch(tmpDir, "b1");
 		expect(events).toHaveLength(2);
@@ -1003,8 +1082,22 @@ describe("16.x — readTier0EventsForBatch", () => {
 	});
 
 	it("16.3: filters by batchId", () => {
-		writeEventLine(tmpDir, { timestamp: "t1", type: "tier0_escalation", batchId: "batch-A", pattern: "WORKER_CRASH", attempt: 1, maxAttempts: 1 });
-		writeEventLine(tmpDir, { timestamp: "t2", type: "tier0_escalation", batchId: "batch-B", pattern: "WORKER_CRASH", attempt: 1, maxAttempts: 1 });
+		writeEventLine(tmpDir, {
+			timestamp: "t1",
+			type: "tier0_escalation",
+			batchId: "batch-A",
+			pattern: "WORKER_CRASH",
+			attempt: 1,
+			maxAttempts: 1,
+		});
+		writeEventLine(tmpDir, {
+			timestamp: "t2",
+			type: "tier0_escalation",
+			batchId: "batch-B",
+			pattern: "WORKER_CRASH",
+			attempt: 1,
+			maxAttempts: 1,
+		});
 
 		const events = readTier0EventsForBatch(tmpDir, "batch-A");
 		expect(events).toHaveLength(1);
@@ -1012,14 +1105,45 @@ describe("16.x — readTier0EventsForBatch", () => {
 	});
 
 	it("16.4: includes all Tier 0 event types", () => {
-		writeEventLine(tmpDir, { timestamp: "t1", type: "tier0_recovery_attempt", batchId: "b1", pattern: "P", attempt: 1, maxAttempts: 3 });
-		writeEventLine(tmpDir, { timestamp: "t2", type: "tier0_recovery_success", batchId: "b1", pattern: "P", attempt: 1, maxAttempts: 3, resolution: "ok" });
-		writeEventLine(tmpDir, { timestamp: "t3", type: "tier0_recovery_exhausted", batchId: "b1", pattern: "P", attempt: 3, maxAttempts: 3, error: "gave up" });
-		writeEventLine(tmpDir, { timestamp: "t4", type: "tier0_escalation", batchId: "b1", pattern: "P", attempt: 3, maxAttempts: 3, suggestion: "check logs" });
+		writeEventLine(tmpDir, {
+			timestamp: "t1",
+			type: "tier0_recovery_attempt",
+			batchId: "b1",
+			pattern: "P",
+			attempt: 1,
+			maxAttempts: 3,
+		});
+		writeEventLine(tmpDir, {
+			timestamp: "t2",
+			type: "tier0_recovery_success",
+			batchId: "b1",
+			pattern: "P",
+			attempt: 1,
+			maxAttempts: 3,
+			resolution: "ok",
+		});
+		writeEventLine(tmpDir, {
+			timestamp: "t3",
+			type: "tier0_recovery_exhausted",
+			batchId: "b1",
+			pattern: "P",
+			attempt: 3,
+			maxAttempts: 3,
+			error: "gave up",
+		});
+		writeEventLine(tmpDir, {
+			timestamp: "t4",
+			type: "tier0_escalation",
+			batchId: "b1",
+			pattern: "P",
+			attempt: 3,
+			maxAttempts: 3,
+			suggestion: "check logs",
+		});
 
 		const events = readTier0EventsForBatch(tmpDir, "b1");
 		expect(events).toHaveLength(4);
-		const types = events.map(e => e.type);
+		const types = events.map((e) => e.type);
 		expect(types).toContain("tier0_recovery_attempt");
 		expect(types).toContain("tier0_recovery_success");
 		expect(types).toContain("tier0_recovery_exhausted");
@@ -1030,10 +1154,27 @@ describe("16.x — readTier0EventsForBatch", () => {
 		const dir = join(tmpDir, ".pi", "supervisor");
 		mkdirSync(dir, { recursive: true });
 		const path = join(dir, "events.jsonl");
-		writeFileSync(path,
-			JSON.stringify({ timestamp: "t1", type: "tier0_recovery_attempt", batchId: "b1", pattern: "P", attempt: 1, maxAttempts: 3 }) + "\n" +
-			"not-json\n" +
-			JSON.stringify({ timestamp: "t3", type: "tier0_escalation", batchId: "b1", pattern: "P", attempt: 1, maxAttempts: 1 }) + "\n",
+		writeFileSync(
+			path,
+			JSON.stringify({
+				timestamp: "t1",
+				type: "tier0_recovery_attempt",
+				batchId: "b1",
+				pattern: "P",
+				attempt: 1,
+				maxAttempts: 3,
+			}) +
+				"\n" +
+				"not-json\n" +
+				JSON.stringify({
+					timestamp: "t3",
+					type: "tier0_escalation",
+					batchId: "b1",
+					pattern: "P",
+					attempt: 1,
+					maxAttempts: 1,
+				}) +
+				"\n",
 			"utf-8",
 		);
 
@@ -1068,23 +1209,28 @@ describe("16.x — collectBatchSummaryData", () => {
 		const batchState = makeIntegrationBatchState();
 		const diagnostics = {
 			taskExits: {
-				"T-001": { classification: "clean", cost: 0.50, durationSec: 300 },
+				"T-001": { classification: "clean", cost: 0.5, durationSec: 300 },
 			},
-			batchCost: 2.50,
+			batchCost: 2.5,
 		};
 		const data = collectBatchSummaryData(batchState, tmpDir, diagnostics);
 
-		expect(data.batchCost).toBe(2.50);
+		expect(data.batchCost).toBe(2.5);
 		expect(data.taskExits["T-001"]).toBeDefined();
-		expect(data.taskExits["T-001"].cost).toBe(0.50);
+		expect(data.taskExits["T-001"].cost).toBe(0.5);
 	});
 
 	it("16.8: includes audit trail entries for the batch", () => {
 		const batchState = makeIntegrationBatchState();
 		appendAuditEntry(tmpDir, {
-			ts: "t1", action: "merge_retry", classification: "tier0_known",
-			context: "wave 1 merge timeout", command: "git merge",
-			result: "success", detail: "ok", batchId: "20260322T120000",
+			ts: "t1",
+			action: "merge_retry",
+			classification: "tier0_known",
+			context: "wave 1 merge timeout",
+			command: "git merge",
+			result: "success",
+			detail: "ok",
+			batchId: "20260322T120000",
 		});
 
 		const data = collectBatchSummaryData(batchState, tmpDir);
@@ -1095,8 +1241,12 @@ describe("16.x — collectBatchSummaryData", () => {
 	it("16.9: includes Tier 0 events (R003)", () => {
 		const batchState = makeIntegrationBatchState();
 		writeEventLine(tmpDir, {
-			timestamp: "t1", type: "tier0_recovery_attempt", batchId: "20260322T120000",
-			pattern: "MERGE_TIMEOUT", attempt: 1, maxAttempts: 3,
+			timestamp: "t1",
+			type: "tier0_recovery_attempt",
+			batchId: "20260322T120000",
+			pattern: "MERGE_TIMEOUT",
+			attempt: 1,
+			maxAttempts: 3,
 		});
 
 		const data = collectBatchSummaryData(batchState, tmpDir);
@@ -1125,7 +1275,7 @@ describe("16.x — formatBatchSummary", () => {
 			failedTasks: 1,
 			skippedTasks: 0,
 			blockedTasks: 0,
-			batchCost: 2.50,
+			batchCost: 2.5,
 			wavePlan: [],
 			waveResults: [],
 			taskExits: {},
@@ -1345,7 +1495,7 @@ describe("16.x — formatBatchSummary", () => {
 			wavePlan: [],
 			waveResults: [],
 			taskExits: {
-				"T-001": { classification: "clean", cost: 1.00, durationSec: 7200 },
+				"T-001": { classification: "clean", cost: 1.0, durationSec: 7200 },
 			},
 			mergeResults: [],
 			auditEntries: [],
@@ -1370,7 +1520,7 @@ describe("16.x — formatBatchSummary", () => {
 			failedTasks: 0,
 			skippedTasks: 0,
 			blockedTasks: 0,
-			batchCost: 3.50,
+			batchCost: 3.5,
 			wavePlan: [],
 			waveResults: [
 				{
@@ -1384,8 +1534,8 @@ describe("16.x — formatBatchSummary", () => {
 				},
 			],
 			taskExits: {
-				"T-1": { classification: "clean", cost: 1.50, durationSec: 200 },
-				"T-2": { classification: "clean", cost: 2.00, durationSec: 250 },
+				"T-1": { classification: "clean", cost: 1.5, durationSec: 200 },
+				"T-2": { classification: "clean", cost: 2.0, durationSec: 250 },
 			},
 			mergeResults: [],
 			auditEntries: [],
@@ -1485,9 +1635,9 @@ describe("16.x — generateBatchSummary + file output", () => {
 		const batchState = makeIntegrationBatchState();
 		const diagnostics = {
 			taskExits: {
-				"T-001": { classification: "clean", cost: 1.50, durationSec: 300 },
+				"T-001": { classification: "clean", cost: 1.5, durationSec: 300 },
 			},
-			batchCost: 1.50,
+			batchCost: 1.5,
 		};
 		const markdown = generateBatchSummary(batchState, tmpDir, "op1", diagnostics);
 
@@ -1589,7 +1739,7 @@ describe("17.x — Manual mode: operator told to /orch-integrate (R006)", () => 
 
 		// Find the onTerminal callback that handles manual mode
 		// The pattern: phase !== "completed" OR manual mode → presentBatchSummary + deactivateSupervisor
-		expect(source).toContain("presentBatchSummary(pi, orchBatchState");
+		expect(source).toContainNormalized("presentBatchSummary(pi, orchBatchState");
 		expect(source).toContain("deactivateSupervisor(pi, supervisorState)");
 
 		// Verify manual mode does NOT call triggerSupervisorIntegration
@@ -1662,7 +1812,8 @@ describe("18.x — Branch protection detected → defaults to PR mode (R006)", (
 		const tmpDir = makeTmpDir();
 		try {
 			// Init a local-only git repo (no remote)
-			const run = (args: string[]) => execFileSync("git", args, { cwd: tmpDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+			const run = (args: string[]) =>
+				execFileSync("git", args, { cwd: tmpDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
 			run(["init", "--initial-branch=main"]);
 			run(["config", "user.email", "test@test.com"]);
 			run(["config", "user.name", "Test"]);
@@ -1739,7 +1890,7 @@ describe("18.x — Branch protection detected → defaults to PR mode (R006)", (
 			expect(executorCalls[0].mode).toBe("ff");
 
 			// Messages should mention integration success
-			const allText = pi.messages.map(m => m.opts.content[0].text).join("\n");
+			const allText = pi.messages.map((m) => m.opts.content[0].text).join("\n");
 			expect(allText).toContain("Integration complete");
 		} finally {
 			rmSync(repo.dir, { recursive: true, force: true });

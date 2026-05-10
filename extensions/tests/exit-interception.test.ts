@@ -20,13 +20,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const agentHostSrc = readFileSync(join(__dirname, "..", "taskplane", "agent-host.ts"), "utf-8");
 const laneRunnerSrc = readFileSync(join(__dirname, "..", "taskplane", "lane-runner.ts"), "utf-8");
 const typesSrc = readFileSync(join(__dirname, "..", "taskplane", "types.ts"), "utf-8");
-const supervisorPrimerSrc = readFileSync(join(__dirname, "..", "taskplane", "supervisor-primer.md"), "utf-8");
+const supervisorPrimerSrc = readFileSync(
+	join(__dirname, "..", "taskplane", "supervisor-primer.md"),
+	"utf-8",
+);
 
 // ── 1. Agent-host exit interception contract ────────────────────────
 
 describe("1.x: Agent-host exit interception (TP-172)", () => {
 	it("1.1: AgentHostOptions has onPrematureExit callback", () => {
-		expect(agentHostSrc).toContain("onPrematureExit?: (assistantMessage: string) => Promise<string | null>");
+		expect(agentHostSrc).toContain(
+			"onPrematureExit?: (assistantMessage: string) => Promise<string | null>",
+		);
 	});
 
 	it("1.2: AgentHostOptions has maxExitInterceptions option", () => {
@@ -73,8 +78,8 @@ describe("1.x: Agent-host exit interception (TP-172)", () => {
 		expect(agentHostSrc).toContain("interceptionCount:");
 		expect(agentHostSrc).toContain("assistantMessage:");
 		expect(agentHostSrc).toContain("supervisorConsulted:");
-		expect(agentHostSrc).toContain("action: \"reprompt\"");
-		expect(agentHostSrc).toContain("action: \"close\"");
+		expect(agentHostSrc).toContain('action: "reprompt"');
+		expect(agentHostSrc).toContain('action: "close"');
 	});
 
 	it("1.9: callback invocation is wrapped for synchronous throw safety", () => {
@@ -162,7 +167,9 @@ describe("2.x: Lane-runner supervisor escalation (TP-172)", () => {
 
 	it("2.11: close directives cause session to close normally", () => {
 		const closeIdx = laneRunnerSrc.indexOf("CLOSE_DIRECTIVES");
-		const closeBlock = laneRunnerSrc.slice(closeIdx, closeIdx + 800);
+		// Use a generous window so cosmetic re-wrapping by the formatter doesn't
+		// push `return null` outside the slice.
+		const closeBlock = laneRunnerSrc.slice(closeIdx, closeIdx + 1500);
 		expect(closeBlock).toContain('"skip"');
 		expect(closeBlock).toContain('"let it fail"');
 		expect(closeBlock).toContain('"close"');

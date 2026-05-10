@@ -31,27 +31,34 @@ describe("TP-121: dashboard reviewer lane-state synthesis", () => {
 	it("maps reviewer snapshot fields to legacy lane-state shape", () => {
 		const serverSrc = readFileSync(join(__dirname, "..", "..", "dashboard", "server.cjs"), "utf-8");
 		const fnSrc = extractFunction(serverSrc, "function synthesizeLaneStateFromSnapshot(");
-		const synthesize = new Function(`${fnSrc}; return synthesizeLaneStateFromSnapshot;`)() as
-			(key: string, snap: any, fallbackBatchId: string) => any;
+		const synthesize = new Function(`${fnSrc}; return synthesizeLaneStateFromSnapshot;`)() as (
+			key: string,
+			snap: any,
+			fallbackBatchId: string,
+		) => any;
 
-		const laneState = synthesize("lane-1", {
-			batchId: "batch-1",
-			taskId: "TP-121",
-			status: "running",
-			worker: { status: "running", elapsedMs: 1000, toolCalls: 2 },
-			reviewer: {
+		const laneState = synthesize(
+			"lane-1",
+			{
+				batchId: "batch-1",
+				taskId: "TP-121",
 				status: "running",
-				elapsedMs: 2500,
-				toolCalls: 3,
-				contextPct: 41,
-				lastTool: "read: STATUS.md",
-				costUsd: 0.12,
-				inputTokens: 111,
-				outputTokens: 222,
-				cacheReadTokens: 333,
-				cacheWriteTokens: 444,
+				worker: { status: "running", elapsedMs: 1000, toolCalls: 2 },
+				reviewer: {
+					status: "running",
+					elapsedMs: 2500,
+					toolCalls: 3,
+					contextPct: 41,
+					lastTool: "read: STATUS.md",
+					costUsd: 0.12,
+					inputTokens: 111,
+					outputTokens: 222,
+					cacheReadTokens: 333,
+					cacheWriteTokens: 444,
+				},
 			},
-		}, "fallback-batch");
+			"fallback-batch",
+		);
 
 		expect(laneState.reviewerStatus).toBe("running");
 		expect(laneState.reviewerElapsed).toBe(2500);
@@ -103,19 +110,33 @@ describe("TP-121: lane-runner reviewer-state ingestion", () => {
 			const { statusPath } = makeTaskDir(root);
 			const result = readReviewerTelemetrySnapshot(makeConfig(root), statusPath);
 			expect(result).toBe(null);
-		} finally { rmSync(root, { recursive: true, force: true }); }
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("returns snapshot when status is running with fresh updatedAt", () => {
 		const root = mkdtempSync(join(tmpdir(), "tp121-"));
 		try {
 			const { taskDir, statusPath } = makeTaskDir(root);
-			writeFileSync(join(taskDir, ".reviewer-state.json"), JSON.stringify({
-				status: "running", elapsedMs: 5000, toolCalls: 3, contextPct: 12,
-				costUsd: 0.05, lastTool: "read: foo.ts", inputTokens: 100, outputTokens: 50,
-				cacheReadTokens: 200, cacheWriteTokens: 0, updatedAt: Date.now(),
-				reviewType: "code", reviewStep: 2,
-			}));
+			writeFileSync(
+				join(taskDir, ".reviewer-state.json"),
+				JSON.stringify({
+					status: "running",
+					elapsedMs: 5000,
+					toolCalls: 3,
+					contextPct: 12,
+					costUsd: 0.05,
+					lastTool: "read: foo.ts",
+					inputTokens: 100,
+					outputTokens: 50,
+					cacheReadTokens: 200,
+					cacheWriteTokens: 0,
+					updatedAt: Date.now(),
+					reviewType: "code",
+					reviewStep: 2,
+				}),
+			);
 			const result = readReviewerTelemetrySnapshot(makeConfig(root), statusPath);
 			expect(result).not.toBe(null);
 			expect(result!.status).toBe("running");
@@ -123,32 +144,49 @@ describe("TP-121: lane-runner reviewer-state ingestion", () => {
 			expect(result!.costUsd).toBe(0.05);
 			expect((result as any).reviewType).toBe("code");
 			expect((result as any).reviewStep).toBe(2);
-		} finally { rmSync(root, { recursive: true, force: true }); }
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("returns null when status is done", () => {
 		const root = mkdtempSync(join(tmpdir(), "tp121-"));
 		try {
 			const { taskDir, statusPath } = makeTaskDir(root);
-			writeFileSync(join(taskDir, ".reviewer-state.json"), JSON.stringify({
-				status: "done", elapsedMs: 8000, toolCalls: 5, updatedAt: Date.now(),
-			}));
+			writeFileSync(
+				join(taskDir, ".reviewer-state.json"),
+				JSON.stringify({
+					status: "done",
+					elapsedMs: 8000,
+					toolCalls: 5,
+					updatedAt: Date.now(),
+				}),
+			);
 			const result = readReviewerTelemetrySnapshot(makeConfig(root), statusPath);
 			expect(result).toBe(null);
-		} finally { rmSync(root, { recursive: true, force: true }); }
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("returns null when updatedAt is stale (>2 minutes)", () => {
 		const root = mkdtempSync(join(tmpdir(), "tp121-"));
 		try {
 			const { taskDir, statusPath } = makeTaskDir(root);
-			writeFileSync(join(taskDir, ".reviewer-state.json"), JSON.stringify({
-				status: "running", elapsedMs: 5000, toolCalls: 3,
-				updatedAt: Date.now() - 180_000, // 3 minutes ago
-			}));
+			writeFileSync(
+				join(taskDir, ".reviewer-state.json"),
+				JSON.stringify({
+					status: "running",
+					elapsedMs: 5000,
+					toolCalls: 3,
+					updatedAt: Date.now() - 180_000, // 3 minutes ago
+				}),
+			);
 			const result = readReviewerTelemetrySnapshot(makeConfig(root), statusPath);
 			expect(result).toBe(null);
-		} finally { rmSync(root, { recursive: true, force: true }); }
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("returns null for malformed JSON", () => {
@@ -158,6 +196,8 @@ describe("TP-121: lane-runner reviewer-state ingestion", () => {
 			writeFileSync(join(taskDir, ".reviewer-state.json"), "not json at all");
 			const result = readReviewerTelemetrySnapshot(makeConfig(root), statusPath);
 			expect(result).toBe(null);
-		} finally { rmSync(root, { recursive: true, force: true }); }
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

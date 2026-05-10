@@ -23,7 +23,10 @@ import { tmpdir } from "os";
 // ── Test Helpers ─────────────────────────────────────────────────────
 
 function createTempDir(): string {
-	const dir = join(tmpdir(), `tp180-fwd-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+	const dir = join(
+		tmpdir(),
+		`tp180-fwd-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+	);
 	mkdirSync(dir, { recursive: true });
 	return dir;
 }

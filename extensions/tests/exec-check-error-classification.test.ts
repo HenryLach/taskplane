@@ -53,11 +53,7 @@ describe("execCheck — error classification", () => {
 
 	it("classifies a timeout as 'timeout' with the configured duration", () => {
 		// Spawn node with a long sleep, but cap the execCheck timeout at 250ms.
-		const result = execCheck(
-			`node -e "setTimeout(() => process.exit(0), 5000)"`,
-			undefined,
-			250,
-		);
+		const result = execCheck(`node -e "setTimeout(() => process.exit(0), 5000)"`, undefined, 250);
 		assert.strictEqual(result.ok, false);
 		assert.strictEqual(
 			result.errorKind,
@@ -87,11 +83,7 @@ describe("execCheck — error classification", () => {
 	it("does NOT misclassify a timeout as 'not-found' (regression for #TP-185)", () => {
 		// This is the exact failure mode that produced misleading "Pi not found"
 		// errors in production: a slow-but-installed binary on a cold start.
-		const result = execCheck(
-			`node -e "setTimeout(() => process.exit(0), 5000)"`,
-			undefined,
-			200,
-		);
+		const result = execCheck(`node -e "setTimeout(() => process.exit(0), 5000)"`, undefined, 200);
 		assert.strictEqual(result.ok, false);
 		assert.notStrictEqual(
 			result.errorKind,

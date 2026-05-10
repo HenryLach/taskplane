@@ -9,7 +9,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseStepSegmentMapping, SEGMENT_FALLBACK_REPO_PLACEHOLDER } from "../taskplane/discovery.ts";
+import {
+	parseStepSegmentMapping,
+	SEGMENT_FALLBACK_REPO_PLACEHOLDER,
+} from "../taskplane/discovery.ts";
 
 const WORKSPACE_ROOT = "C:/dev/tp-test-workspace";
 const TASKS_ROOT = resolve(WORKSPACE_ROOT, "shared-libs/task-management/platform/general");
@@ -24,7 +27,9 @@ function readPrompt(taskFolder: string): string {
 
 const WORKSPACE_EXISTS = existsSync(TASKS_ROOT);
 
-describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS && "polyrepo test workspace not available" }, () => {
+describe("TP-177: Polyrepo segment marker validation", {
+	skip: !WORKSPACE_EXISTS && "polyrepo test workspace not available",
+}, () => {
 	// ── Single-segment tasks should have NO segment markers ──
 	describe("Single-segment tasks (no segment markers expected)", () => {
 		for (const task of [
@@ -36,8 +41,16 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 				const content = readPrompt(task.folder);
 				const result = parseStepSegmentMapping(content, task.id, task.repo);
 
-				assert.equal(result.errors.length, 0, `Expected no errors, got: ${JSON.stringify(result.errors)}`);
-				assert.equal(result.warnings.length, 0, `Expected no warnings, got: ${JSON.stringify(result.warnings)}`);
+				assert.equal(
+					result.errors.length,
+					0,
+					`Expected no errors, got: ${JSON.stringify(result.errors)}`,
+				);
+				assert.equal(
+					result.warnings.length,
+					0,
+					`Expected no warnings, got: ${JSON.stringify(result.warnings)}`,
+				);
 				assert.ok(result.mapping.length > 0, "Expected at least one step");
 
 				// All segments should use the fallback repo
@@ -65,7 +78,7 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 			const result = parseStepSegmentMapping(content, "TP-004", "shared-libs");
 
 			// Step 0: Preflight → shared-libs + web-client
-			const step0 = result.mapping.find(s => s.stepNumber === 0);
+			const step0 = result.mapping.find((s) => s.stepNumber === 0);
 			assert.ok(step0, "Step 0 must exist");
 			assert.equal(step0.segments.length, 2, "Step 0 should have 2 segments");
 			assert.equal(step0.segments[0].repoId, "shared-libs");
@@ -74,21 +87,21 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 			assert.ok(step0.segments[1].checkboxes.length > 0, "web-client segment has checkboxes");
 
 			// Step 1: shared-libs only
-			const step1 = result.mapping.find(s => s.stepNumber === 1);
+			const step1 = result.mapping.find((s) => s.stepNumber === 1);
 			assert.ok(step1, "Step 1 must exist");
 			assert.equal(step1.segments.length, 1, "Step 1 should have 1 segment");
 			assert.equal(step1.segments[0].repoId, "shared-libs");
 			assert.equal(step1.segments[0].checkboxes.length, 3);
 
 			// Step 2: web-client only
-			const step2 = result.mapping.find(s => s.stepNumber === 2);
+			const step2 = result.mapping.find((s) => s.stepNumber === 2);
 			assert.ok(step2, "Step 2 must exist");
 			assert.equal(step2.segments.length, 1, "Step 2 should have 1 segment");
 			assert.equal(step2.segments[0].repoId, "web-client");
 			assert.equal(step2.segments[0].checkboxes.length, 4);
 
 			// Step 3: Documentation → shared-libs (packet repo)
-			const step3 = result.mapping.find(s => s.stepNumber === 3);
+			const step3 = result.mapping.find((s) => s.stepNumber === 3);
 			assert.ok(step3, "Step 3 must exist");
 			assert.equal(step3.segments.length, 1, "Step 3 should have 1 segment");
 			assert.equal(step3.segments[0].repoId, "shared-libs");
@@ -110,28 +123,28 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 			const result = parseStepSegmentMapping(content, "TP-005", "shared-libs");
 
 			// Step 0: Preflight → shared-libs + api-service
-			const step0 = result.mapping.find(s => s.stepNumber === 0);
+			const step0 = result.mapping.find((s) => s.stepNumber === 0);
 			assert.ok(step0, "Step 0 must exist");
 			assert.equal(step0.segments.length, 2);
 			assert.equal(step0.segments[0].repoId, "shared-libs");
 			assert.equal(step0.segments[1].repoId, "api-service");
 
 			// Step 1: shared-libs only
-			const step1 = result.mapping.find(s => s.stepNumber === 1);
+			const step1 = result.mapping.find((s) => s.stepNumber === 1);
 			assert.ok(step1, "Step 1 must exist");
 			assert.equal(step1.segments.length, 1);
 			assert.equal(step1.segments[0].repoId, "shared-libs");
 			assert.equal(step1.segments[0].checkboxes.length, 4);
 
 			// Step 2: api-service only
-			const step2 = result.mapping.find(s => s.stepNumber === 2);
+			const step2 = result.mapping.find((s) => s.stepNumber === 2);
 			assert.ok(step2, "Step 2 must exist");
 			assert.equal(step2.segments.length, 1);
 			assert.equal(step2.segments[0].repoId, "api-service");
 			assert.equal(step2.segments[0].checkboxes.length, 4);
 
 			// Step 3: Documentation → shared-libs
-			const step3 = result.mapping.find(s => s.stepNumber === 3);
+			const step3 = result.mapping.find((s) => s.stepNumber === 3);
 			assert.ok(step3, "Step 3 must exist");
 			assert.equal(step3.segments.length, 1);
 			assert.equal(step3.segments[0].repoId, "shared-libs");
@@ -153,35 +166,35 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 			const result = parseStepSegmentMapping(content, "TP-006", "shared-libs");
 
 			// Step 0: Preflight → shared-libs + api-service + web-client
-			const step0 = result.mapping.find(s => s.stepNumber === 0);
+			const step0 = result.mapping.find((s) => s.stepNumber === 0);
 			assert.ok(step0, "Step 0 must exist");
 			assert.equal(step0.segments.length, 3, "Step 0 should have 3 segments");
-			const step0Repos = step0.segments.map(s => s.repoId).sort();
+			const step0Repos = step0.segments.map((s) => s.repoId).sort();
 			assert.deepEqual(step0Repos, ["api-service", "shared-libs", "web-client"]);
 
 			// Step 1: shared-libs only
-			const step1 = result.mapping.find(s => s.stepNumber === 1);
+			const step1 = result.mapping.find((s) => s.stepNumber === 1);
 			assert.ok(step1, "Step 1 must exist");
 			assert.equal(step1.segments.length, 1);
 			assert.equal(step1.segments[0].repoId, "shared-libs");
 			assert.equal(step1.segments[0].checkboxes.length, 3);
 
 			// Step 2: api-service only
-			const step2 = result.mapping.find(s => s.stepNumber === 2);
+			const step2 = result.mapping.find((s) => s.stepNumber === 2);
 			assert.ok(step2, "Step 2 must exist");
 			assert.equal(step2.segments.length, 1);
 			assert.equal(step2.segments[0].repoId, "api-service");
 			assert.equal(step2.segments[0].checkboxes.length, 2);
 
 			// Step 3: web-client only
-			const step3 = result.mapping.find(s => s.stepNumber === 3);
+			const step3 = result.mapping.find((s) => s.stepNumber === 3);
 			assert.ok(step3, "Step 3 must exist");
 			assert.equal(step3.segments.length, 1);
 			assert.equal(step3.segments[0].repoId, "web-client");
 			assert.equal(step3.segments[0].checkboxes.length, 2);
 
 			// Step 4: Documentation → shared-libs
-			const step4 = result.mapping.find(s => s.stepNumber === 4);
+			const step4 = result.mapping.find((s) => s.stepNumber === 4);
 			assert.ok(step4, "Step 4 must exist");
 			assert.equal(step4.segments.length, 1);
 			assert.equal(step4.segments[0].repoId, "shared-libs");
@@ -226,7 +239,7 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 				for (const expected of task.expectedSegments) {
 					assert.ok(
 						foundSegments.has(expected),
-						`STATUS.md should contain #### Segment: ${expected}. Found: ${[...foundSegments].join(", ")}`
+						`STATUS.md should contain #### Segment: ${expected}. Found: ${[...foundSegments].join(", ")}`,
 					);
 				}
 			});
@@ -239,7 +252,7 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 				// For each segment marker, verify there are checkboxes below it
 				for (const seg of task.expectedSegments) {
 					const segHeaderPattern = new RegExp(`^####\\s+Segment:\\s*${seg}\\s*$`);
-					const segHeaderIdx = lines.findIndex(l => segHeaderPattern.test(l));
+					const segHeaderIdx = lines.findIndex((l) => segHeaderPattern.test(l));
 					assert.ok(segHeaderIdx >= 0, `Should find #### Segment: ${seg} header line`);
 
 					// Count checkboxes from the header line until next header or end
@@ -250,7 +263,7 @@ describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS
 					}
 					assert.ok(
 						checkboxCount > 0,
-						`Segment ${seg} in STATUS.md should have at least one checkbox, found ${checkboxCount}`
+						`Segment ${seg} in STATUS.md should have at least one checkbox, found ${checkboxCount}`,
 					);
 				}
 			});

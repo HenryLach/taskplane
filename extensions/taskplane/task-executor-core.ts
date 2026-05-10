@@ -80,10 +80,16 @@ export function parsePromptMd(content: string, promptPath: string): CoreParsedTa
 	const taskFolder = dirname(resolve(promptPath));
 
 	// Task ID and name
-	let taskId = "", taskName = "";
+	let taskId = "",
+		taskName = "";
 	const titleMatch = text.match(/^#\s+(?:Task:\s*)?(\S+-\d+)\s*[-–:]\s*(.+)/m);
-	if (titleMatch) { taskId = titleMatch[1]; taskName = titleMatch[2].trim(); }
-	else { taskId = basename(taskFolder); taskName = taskId; }
+	if (titleMatch) {
+		taskId = titleMatch[1];
+		taskName = titleMatch[2].trim();
+	} else {
+		taskId = basename(taskFolder);
+		taskName = taskId;
+	}
 
 	// Review level
 	let reviewLevel = 0;
@@ -104,7 +110,10 @@ export function parsePromptMd(content: string, promptPath: string): CoreParsedTa
 		positions.push({ number: parseInt(m[1]), name: m[2].trim(), start: m.index });
 	}
 	for (let i = 0; i < positions.length; i++) {
-		const section = text.slice(positions[i].start, i + 1 < positions.length ? positions[i + 1].start : text.length);
+		const section = text.slice(
+			positions[i].start,
+			i + 1 < positions.length ? positions[i + 1].start : text.length,
+		);
 		const checkboxes: { text: string; checked: boolean }[] = [];
 		const cbRegex = /^\s*-\s*\[([ xX])\]\s*(.*)/gm;
 		let cb: RegExpExecArray | null;
@@ -112,9 +121,11 @@ export function parsePromptMd(content: string, promptPath: string): CoreParsedTa
 			checkboxes.push({ text: cb[2].trim(), checked: cb[1].toLowerCase() === "x" });
 		}
 		steps.push({
-			number: positions[i].number, name: positions[i].name,
-			status: "not-started", checkboxes,
-			totalChecked: checkboxes.filter(c => c.checked).length,
+			number: positions[i].number,
+			name: positions[i].name,
+			status: "not-started",
+			checkboxes,
+			totalChecked: checkboxes.filter((c) => c.checked).length,
 			totalItems: checkboxes.length,
 		});
 	}
@@ -145,7 +156,8 @@ export function parseStatusMd(content: string): ParsedStatus {
 	const text = content.replace(/\r\n/g, "\n");
 	const steps: StepInfo[] = [];
 	let currentStep: StepInfo | null = null;
-	let reviewCounter = 0, iteration = 0;
+	let reviewCounter = 0,
+		iteration = 0;
 
 	for (const line of text.split("\n")) {
 		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
@@ -156,11 +168,18 @@ export function parseStatusMd(content: string): ParsedStatus {
 		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
 		if (stepMatch) {
 			if (currentStep) {
-				currentStep.totalChecked = currentStep.checkboxes.filter(c => c.checked).length;
+				currentStep.totalChecked = currentStep.checkboxes.filter((c) => c.checked).length;
 				currentStep.totalItems = currentStep.checkboxes.length;
 				steps.push(currentStep);
 			}
-			currentStep = { number: parseInt(stepMatch[1]), name: stepMatch[2].trim(), status: "not-started", checkboxes: [], totalChecked: 0, totalItems: 0 };
+			currentStep = {
+				number: parseInt(stepMatch[1]),
+				name: stepMatch[2].trim(),
+				status: "not-started",
+				checkboxes: [],
+				totalChecked: 0,
+				totalItems: 0,
+			};
 			continue;
 		}
 		if (currentStep) {
@@ -168,14 +187,16 @@ export function parseStatusMd(content: string): ParsedStatus {
 			if (ss) {
 				const s = ss[1];
 				if (s.includes("✅") || s.toLowerCase().includes("complete")) currentStep.status = "complete";
-				else if (s.includes("🟨") || s.toLowerCase().includes("progress")) currentStep.status = "in-progress";
+				else if (s.includes("🟨") || s.toLowerCase().includes("progress"))
+					currentStep.status = "in-progress";
 			}
 			const cb = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)/);
-			if (cb) currentStep.checkboxes.push({ text: cb[2].trim(), checked: cb[1].toLowerCase() === "x" });
+			if (cb)
+				currentStep.checkboxes.push({ text: cb[2].trim(), checked: cb[1].toLowerCase() === "x" });
 		}
 	}
 	if (currentStep) {
-		currentStep.totalChecked = currentStep.checkboxes.filter(c => c.checked).length;
+		currentStep.totalChecked = currentStep.checkboxes.filter((c) => c.checked).length;
 		currentStep.totalItems = currentStep.checkboxes.length;
 		steps.push(currentStep);
 	}
@@ -190,17 +211,27 @@ export function parseStatusMd(content: string): ParsedStatus {
  * @param task - Parsed task (from parsePromptMd or orchestrator ParsedTask)
  * @returns Complete STATUS.md content string
  */
-export function generateStatusMd(task: { taskId: string; taskName: string; reviewLevel: number; size: string; steps: StepInfo[] }): string {
+export function generateStatusMd(task: {
+	taskId: string;
+	taskName: string;
+	reviewLevel: number;
+	size: string;
+	steps: StepInfo[];
+}): string {
 	const now = new Date().toISOString().slice(0, 10);
 	const lines: string[] = [
-		`# ${task.taskId}: ${task.taskName} — Status`, "",
+		`# ${task.taskId}: ${task.taskName} — Status`,
+		"",
 		`**Current Step:** Not Started`,
 		`**Status:** 🔵 Ready for Execution`,
 		`**Last Updated:** ${now}`,
 		`**Review Level:** ${task.reviewLevel}`,
 		`**Review Counter:** 0`,
 		`**Iteration:** 0`,
-		`**Size:** ${task.size}`, "", "---", "",
+		`**Size:** ${task.size}`,
+		"",
+		"---",
+		"",
 	];
 	for (const step of task.steps) {
 		lines.push(`### Step ${step.number}: ${step.name}`, `**Status:** ⬜ Not Started`, "");
@@ -208,11 +239,37 @@ export function generateStatusMd(task: { taskId: string; taskName: string; revie
 		lines.push("", "---", "");
 	}
 	lines.push(
-		"## Reviews", "", "| # | Type | Step | Verdict | File |", "|---|------|------|---------|------|", "", "---", "",
-		"## Discoveries", "", "| Discovery | Disposition | Location |", "|-----------|-------------|----------|", "", "---", "",
-		"## Execution Log", "", "| Timestamp | Action | Outcome |", "|-----------|--------|---------|",
-		`| ${now} | Task staged | STATUS.md auto-generated by task-runner |`, "", "---", "",
-		"## Blockers", "", "*None*", "", "---", "", "## Notes", "", "*Reserved for execution notes*",
+		"## Reviews",
+		"",
+		"| # | Type | Step | Verdict | File |",
+		"|---|------|------|---------|------|",
+		"",
+		"---",
+		"",
+		"## Discoveries",
+		"",
+		"| Discovery | Disposition | Location |",
+		"|-----------|-------------|----------|",
+		"",
+		"---",
+		"",
+		"## Execution Log",
+		"",
+		"| Timestamp | Action | Outcome |",
+		"|-----------|--------|---------|",
+		`| ${now} | Task staged | STATUS.md auto-generated by task-runner |`,
+		"",
+		"---",
+		"",
+		"## Blockers",
+		"",
+		"*None*",
+		"",
+		"---",
+		"",
+		"## Notes",
+		"",
+		"*Reserved for execution notes*",
 	);
 	return lines.join("\n");
 }
@@ -230,7 +287,9 @@ export function generateStatusMd(task: { taskId: string; taskName: string; revie
  */
 export function updateStatusField(statusPath: string, field: string, value: string): void {
 	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
-	const pattern = new RegExp(`(\\*\\*${field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\*\\*\\s*)(.+)`);
+	const pattern = new RegExp(
+		`(\\*\\*${field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\*\\*\\s*)(.+)`,
+	);
 	if (pattern.test(content)) {
 		content = content.replace(pattern, `$1${value}`);
 	} else {
@@ -246,9 +305,18 @@ export function updateStatusField(statusPath: string, field: string, value: stri
  * @param stepNum - Step number to update
  * @param status - New status
  */
-export function updateStepStatus(statusPath: string, stepNum: number, status: "not-started" | "in-progress" | "complete"): void {
+export function updateStepStatus(
+	statusPath: string,
+	stepNum: number,
+	status: "not-started" | "in-progress" | "complete",
+): void {
 	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
-	const emoji = status === "complete" ? "✅ Complete" : status === "in-progress" ? "🟨 In Progress" : "⬜ Not Started";
+	const emoji =
+		status === "complete"
+			? "✅ Complete"
+			: status === "in-progress"
+				? "🟨 In Progress"
+				: "⬜ Not Started";
 	const lines = content.split("\n");
 	let inTarget = false;
 	for (let i = 0; i < lines.length; i++) {
@@ -272,7 +340,9 @@ export function updateStepStatus(statusPath: string, stepNum: number, status: "n
 export function appendTableRow(statusPath: string, sectionName: string, row: string): void {
 	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
 	const lines = content.split("\n");
-	let insertIdx = -1, inSection = false, lastTableRow = -1;
+	let insertIdx = -1,
+		inSection = false,
+		lastTableRow = -1;
 	for (let i = 0; i < lines.length; i++) {
 		if (lines[i].match(new RegExp(`^##\\s+${sectionName}`))) {
 			inSection = true;
@@ -306,8 +376,19 @@ export function logExecution(statusPath: string, action: string, outcome: string
 /**
  * Log a review entry to the Reviews table in STATUS.md.
  */
-export function logReview(statusPath: string, num: string, type: string, stepNum: number, verdict: string, file: string): void {
-	appendTableRow(statusPath, "Reviews", `| ${num} | ${type} | Step ${stepNum} | ${verdict} | ${file} |`);
+export function logReview(
+	statusPath: string,
+	num: string,
+	type: string,
+	stepNum: number,
+	verdict: string,
+	file: string,
+): void {
+	appendTableRow(
+		statusPath,
+		"Reviews",
+		`| ${num} | ${type} | Step ${stepNum} | ${verdict} | ${file} |`,
+	);
 }
 
 /**
@@ -370,8 +451,18 @@ export function extractVerdict(reviewContent: string): string {
 
 	// Tolerate non-standard verdict formats
 	const lower = reviewContent.toLowerCase();
-	if (lower.includes("changes requested") || lower.includes("request changes") || lower.includes("needs revision")) return "REVISE";
-	if (lower.includes("approve") && !lower.includes("do not approve") && !lower.includes("cannot approve")) return "APPROVE";
+	if (
+		lower.includes("changes requested") ||
+		lower.includes("request changes") ||
+		lower.includes("needs revision")
+	)
+		return "REVISE";
+	if (
+		lower.includes("approve") &&
+		!lower.includes("do not approve") &&
+		!lower.includes("cannot approve")
+	)
+		return "APPROVE";
 	if (lower.includes("rethink") || lower.includes("re-think")) return "RETHINK";
 
 	return "UNKNOWN";
@@ -409,7 +500,17 @@ export function getHeadCommitSha(): string {
  */
 export function findStepBoundaryCommit(stepNumber: number, taskId: string, since?: string): string {
 	try {
-		const args = ["log", "--oneline", "--grep", `complete Step ${stepNumber}`, "--grep", taskId, "--all-match", "-1", "--format=%H"];
+		const args = [
+			"log",
+			"--oneline",
+			"--grep",
+			`complete Step ${stepNumber}`,
+			"--grep",
+			taskId,
+			"--all-match",
+			"-1",
+			"--format=%H",
+		];
 		if (since) args.push(`${since}..HEAD`);
 		const result = spawnSync("git", args, {
 			encoding: "utf-8",
@@ -443,7 +544,7 @@ export interface StandardsConfig {
 export function resolveStandards(
 	globalStandards: StandardsConfig,
 	overrides: Record<string, Partial<StandardsConfig>>,
-	taskAreas: Record<string, { path: string;[key: string]: any }>,
+	taskAreas: Record<string, { path: string; [key: string]: any }>,
 	taskFolder: string,
 ): StandardsConfig {
 	const normalizedFolder = taskFolder.replace(/\\/g, "/");
@@ -488,44 +589,60 @@ export function generateReviewRequest(
 	outputPath: string,
 	stepBaselineCommit?: string,
 ): string {
-	const standardsDocs = standards.docs.map(d => `   - ${d}`).join("\n");
-	const standardsRules = standards.rules.map(r => `- ${r}`).join("\n");
+	const standardsDocs = standards.docs.map((d) => `   - ${d}`).join("\n");
+	const standardsRules = standards.rules.map((r) => `- ${r}`).join("\n");
 	const statusPath = join(taskFolder, "STATUS.md");
 
 	if (type === "plan") {
 		return [
-			`# Review Request: Plan Review`, "",
+			`# Review Request: Plan Review`,
+			"",
 			`You are reviewing an implementation plan for a ${projectName} task.`,
-			`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`, "",
-			`## Task Context`, "",
+			`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`,
+			"",
+			`## Task Context`,
+			"",
 			`- **Task PROMPT:** ${taskPromptPath}`,
 			`- **Task STATUS:** ${statusPath}`,
-			`- **Step being planned:** Step ${stepNum}: ${stepName}`, "",
-			`## Instructions`, "",
+			`- **Step being planned:** Step ${stepNum}: ${stepName}`,
+			"",
+			`## Instructions`,
+			"",
 			`1. Read the PROMPT.md for full requirements`,
 			`2. Read STATUS.md for progress so far`,
 			`3. Check relevant source files for existing patterns:`,
-			standardsDocs, "",
-			`## Project Standards`, "", standardsRules, "",
-			`## Output`, "",
+			standardsDocs,
+			"",
+			`## Project Standards`,
+			"",
+			standardsRules,
+			"",
+			`## Output`,
+			"",
 			`Write your review to: \`${outputPath}\``,
 		].join("\n");
 	}
 
-	const diffCmd = stepBaselineCommit ? `git diff ${stepBaselineCommit}..HEAD --name-only` : `git diff --name-only`;
+	const diffCmd = stepBaselineCommit
+		? `git diff ${stepBaselineCommit}..HEAD --name-only`
+		: `git diff --name-only`;
 	const diffFullCmd = stepBaselineCommit ? `git diff ${stepBaselineCommit}..HEAD` : `git diff`;
 
 	return [
-		`# Review Request: Code Review`, "",
+		`# Review Request: Code Review`,
+		"",
 		`You are reviewing code changes for a ${projectName} task.`,
-		`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`, "",
-		`## Task Context`, "",
+		`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`,
+		"",
+		`## Task Context`,
+		"",
 		`- **Task PROMPT:** ${taskPromptPath}`,
 		`- **Task STATUS:** ${statusPath}`,
 		`- **Step reviewed:** Step ${stepNum}: ${stepName}`,
 		...(stepBaselineCommit ? [`- **Step baseline commit:** ${stepBaselineCommit}`] : []),
 		"",
-		`## Instructions`, "",
+		`## Instructions`,
+		"",
 		`1. Run \`${diffCmd}\` to see files changed in this step`,
 		`   Then \`${diffFullCmd}\` for the full diff`,
 		`   **Important:** The worker commits code via checkpoints, so plain \`git diff\` may show nothing.`,
@@ -533,9 +650,14 @@ export function generateReviewRequest(
 		`2. Read changed files in full for context`,
 		`3. Check neighboring files for pattern consistency`,
 		`4. Check standards:`,
-		standardsDocs, "",
-		`## Project Standards`, "", standardsRules, "",
-		`## Output`, "",
+		standardsDocs,
+		"",
+		`## Project Standards`,
+		"",
+		standardsRules,
+		"",
+		`## Output`,
+		"",
 		`Write your review to: \`${outputPath}\``,
 	].join("\n");
 }
@@ -546,5 +668,8 @@ export function generateReviewRequest(
  * Convert a kebab-case name to Title Case for display.
  */
 export function displayName(name: string): string {
-	return name.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+	return name
+		.split("-")
+		.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+		.join(" ");
 }

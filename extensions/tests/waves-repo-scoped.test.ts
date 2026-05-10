@@ -31,15 +31,13 @@ import {
 } from "../taskplane/waves.ts";
 import { buildSegmentFrontierWaves } from "../taskplane/engine.ts";
 
-import type {
-	WorkspaceConfig,
-	WorkspaceRepoConfig,
-	ParsedTask,
-} from "../taskplane/types.ts";
+import type { WorkspaceConfig, WorkspaceRepoConfig, ParsedTask } from "../taskplane/types.ts";
 
 // ── Test Helpers ──────────────────────────────────────────────────────
 
-function makeWorkspaceConfig(repos: Record<string, { path: string; defaultBranch?: string }>): WorkspaceConfig {
+function makeWorkspaceConfig(
+	repos: Record<string, { path: string; defaultBranch?: string }>,
+): WorkspaceConfig {
 	const repoMap = new Map<string, WorkspaceRepoConfig>();
 	for (const [id, cfg] of Object.entries(repos)) {
 		repoMap.set(id, { id, path: cfg.path, defaultBranch: cfg.defaultBranch });
@@ -237,7 +235,9 @@ describe("generateLaneSessionId", () => {
 
 	it("generates workspace-mode format with opId when repoId is set", () => {
 		expect(generateLaneSessionId("orch", 1, "henrylach", "api")).toBe("orch-henrylach-api-lane-1");
-		expect(generateLaneSessionId("orch", 2, "ci-runner", "frontend")).toBe("orch-ci-runner-frontend-lane-2");
+		expect(generateLaneSessionId("orch", 2, "ci-runner", "frontend")).toBe(
+			"orch-ci-runner-frontend-lane-2",
+		);
 	});
 
 	it("uses custom prefix with opId", () => {
@@ -306,8 +306,14 @@ describe("segment planning", () => {
 
 	it("falls back to singleton repo segment when there are no multi-repo signals", () => {
 		const pending = new Map<string, ParsedTask>([
-			["TP-901", makeParsedTask("TP-901", { resolvedRepoId: "backend", fileScope: [], dependencies: [] })],
-			["TP-902", makeParsedTask("TP-902", { fileScope: ["src/index.ts", "lib/util.ts"], dependencies: [] })],
+			[
+				"TP-901",
+				makeParsedTask("TP-901", { resolvedRepoId: "backend", fileScope: [], dependencies: [] }),
+			],
+			[
+				"TP-902",
+				makeParsedTask("TP-902", { fileScope: ["src/index.ts", "lib/util.ts"], dependencies: [] }),
+			],
 		]);
 
 		const plans = buildTaskSegmentPlans(pending);
@@ -486,14 +492,16 @@ describe("TP-166 global lane cap regression", () => {
 					globalLane: offset + i,
 					localLane: i,
 					repoId,
-					assignments: [{
-						taskId,
-						lane: i,
-						task: makeParsedTask(taskId, {
-							resolvedRepoId: repoId,
-							fileScope: [`${repoId}/src/module${i}.ts`],
-						}),
-					}],
+					assignments: [
+						{
+							taskId,
+							lane: i,
+							task: makeParsedTask(taskId, {
+								resolvedRepoId: repoId,
+								fileScope: [`${repoId}/src/module${i}.ts`],
+							}),
+						},
+					],
 				});
 			}
 			offset += 4;
@@ -507,15 +515,15 @@ describe("TP-166 global lane cap regression", () => {
 		expect(entries.length).toBe(4);
 
 		// All 12 task IDs should still be present
-		const allTaskIds = entries.flatMap(e => e.assignments.map(a => a.taskId)).sort();
+		const allTaskIds = entries.flatMap((e) => e.assignments.map((a) => a.taskId)).sort();
 		expect(allTaskIds.length).toBe(12);
 
 		// Each repo should have at least 1 lane
-		const repoIds = new Set(entries.map(e => e.repoId));
+		const repoIds = new Set(entries.map((e) => e.repoId));
 		expect(repoIds.size).toBe(3);
 
 		// Global lane numbers should be sequential 1..4
-		expect(entries.map(e => e.globalLane)).toEqual([1, 2, 3, 4]);
+		expect(entries.map((e) => e.globalLane)).toEqual([1, 2, 3, 4]);
 	});
 
 	it("single-repo mode (no repoId) stays within maxLanes", () => {
@@ -531,18 +539,20 @@ describe("TP-166 global lane cap regression", () => {
 				globalLane: i,
 				localLane: i,
 				repoId: undefined,
-				assignments: [{
-					taskId: `TP-${String(i).padStart(3, '0')}`,
-					lane: i,
-					task: makeParsedTask(`TP-${String(i).padStart(3, '0')}`),
-				}],
+				assignments: [
+					{
+						taskId: `TP-${String(i).padStart(3, "0")}`,
+						lane: i,
+						task: makeParsedTask(`TP-${String(i).padStart(3, "0")}`),
+					},
+				],
 			});
 		}
 
 		enforceGlobalLaneCap(entries, 3);
 
 		expect(entries.length).toBe(3);
-		const allTaskIds = entries.flatMap(e => e.assignments.map(a => a.taskId)).sort();
+		const allTaskIds = entries.flatMap((e) => e.assignments.map((a) => a.taskId)).sort();
 		expect(allTaskIds.length).toBe(6);
 	});
 });
@@ -554,14 +564,58 @@ describe("TP-166 wave count regression", () => {
 		// Wave 2: TP-004 (depends on 001,002), TP-005 (depends on 002,003)
 		// Wave 3: TP-006 (depends on 004), TP-007 (depends on 004,005), TP-008 (depends on 005)
 		const pending = new Map<string, ParsedTask>();
-		pending.set("TP-001", makeParsedTask("TP-001", { resolvedRepoId: "api", fileScope: ["api/src/a.ts"] }));
-		pending.set("TP-002", makeParsedTask("TP-002", { resolvedRepoId: "web", fileScope: ["web/src/b.ts"] }));
-		pending.set("TP-003", makeParsedTask("TP-003", { resolvedRepoId: "api", fileScope: ["api/src/c.ts"] }));
-		pending.set("TP-004", makeParsedTask("TP-004", { resolvedRepoId: "api", dependencies: ["TP-001", "TP-002"], fileScope: ["api/src/d.ts", "web/src/d.ts"] }));
-		pending.set("TP-005", makeParsedTask("TP-005", { resolvedRepoId: "web", dependencies: ["TP-002", "TP-003"], fileScope: ["web/src/e.ts", "api/src/e.ts"] }));
-		pending.set("TP-006", makeParsedTask("TP-006", { resolvedRepoId: "api", dependencies: ["TP-004"], fileScope: ["api/src/f.ts"] }));
-		pending.set("TP-007", makeParsedTask("TP-007", { resolvedRepoId: "web", dependencies: ["TP-004", "TP-005"], fileScope: ["web/src/g.ts", "api/src/g.ts"] }));
-		pending.set("TP-008", makeParsedTask("TP-008", { resolvedRepoId: "api", dependencies: ["TP-005"], fileScope: ["api/src/h.ts", "web/src/h.ts"] }));
+		pending.set(
+			"TP-001",
+			makeParsedTask("TP-001", { resolvedRepoId: "api", fileScope: ["api/src/a.ts"] }),
+		);
+		pending.set(
+			"TP-002",
+			makeParsedTask("TP-002", { resolvedRepoId: "web", fileScope: ["web/src/b.ts"] }),
+		);
+		pending.set(
+			"TP-003",
+			makeParsedTask("TP-003", { resolvedRepoId: "api", fileScope: ["api/src/c.ts"] }),
+		);
+		pending.set(
+			"TP-004",
+			makeParsedTask("TP-004", {
+				resolvedRepoId: "api",
+				dependencies: ["TP-001", "TP-002"],
+				fileScope: ["api/src/d.ts", "web/src/d.ts"],
+			}),
+		);
+		pending.set(
+			"TP-005",
+			makeParsedTask("TP-005", {
+				resolvedRepoId: "web",
+				dependencies: ["TP-002", "TP-003"],
+				fileScope: ["web/src/e.ts", "api/src/e.ts"],
+			}),
+		);
+		pending.set(
+			"TP-006",
+			makeParsedTask("TP-006", {
+				resolvedRepoId: "api",
+				dependencies: ["TP-004"],
+				fileScope: ["api/src/f.ts"],
+			}),
+		);
+		pending.set(
+			"TP-007",
+			makeParsedTask("TP-007", {
+				resolvedRepoId: "web",
+				dependencies: ["TP-004", "TP-005"],
+				fileScope: ["web/src/g.ts", "api/src/g.ts"],
+			}),
+		);
+		pending.set(
+			"TP-008",
+			makeParsedTask("TP-008", {
+				resolvedRepoId: "api",
+				dependencies: ["TP-005"],
+				fileScope: ["api/src/h.ts", "web/src/h.ts"],
+			}),
+		);
 
 		const completed = new Set<string>();
 		const graph = buildDependencyGraph(pending, completed);
@@ -606,8 +660,14 @@ describe("TP-166 wave count regression", () => {
 		const pending = new Map<string, ParsedTask>();
 		pending.set("TP-001", makeParsedTask("TP-001", { resolvedRepoId: "default" }));
 		pending.set("TP-002", makeParsedTask("TP-002", { resolvedRepoId: "default" }));
-		pending.set("TP-003", makeParsedTask("TP-003", { resolvedRepoId: "default", dependencies: ["TP-001"] }));
-		pending.set("TP-004", makeParsedTask("TP-004", { resolvedRepoId: "default", dependencies: ["TP-002"] }));
+		pending.set(
+			"TP-003",
+			makeParsedTask("TP-003", { resolvedRepoId: "default", dependencies: ["TP-001"] }),
+		);
+		pending.set(
+			"TP-004",
+			makeParsedTask("TP-004", { resolvedRepoId: "default", dependencies: ["TP-002"] }),
+		);
 
 		const completed = new Set<string>();
 		const graph = buildDependencyGraph(pending, completed);

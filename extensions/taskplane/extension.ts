@@ -2,27 +2,69 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync, createWriteStream, renameSync } from "fs";
+import {
+	writeFileSync,
+	unlinkSync,
+	mkdirSync,
+	existsSync,
+	readdirSync,
+	readFileSync,
+	statSync,
+	createWriteStream,
+	renameSync,
+} from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "child_process";
 
 // Direct imports — avoid barrel (index.ts) to prevent loading the entire module graph.
 // Each import targets the specific module where the symbol is defined.
-import { DEFAULT_ORCHESTRATOR_CONFIG, DEFAULT_TASK_RUNNER_CONFIG, FATAL_DISCOVERY_CODES, StateFileError, WorkspaceConfigError, freshOrchBatchState } from "./types.ts";
-import type { AbortMode, ExecutionContext, MonitorState, OrchestratorConfig, PersistedBatchState, TaskRunnerConfig } from "./types.ts";
+import {
+	DEFAULT_ORCHESTRATOR_CONFIG,
+	DEFAULT_TASK_RUNNER_CONFIG,
+	FATAL_DISCOVERY_CODES,
+	StateFileError,
+	WorkspaceConfigError,
+	freshOrchBatchState,
+} from "./types.ts";
+import type {
+	AbortMode,
+	ExecutionContext,
+	MonitorState,
+	OrchestratorConfig,
+	PersistedBatchState,
+	TaskRunnerConfig,
+} from "./types.ts";
 import { ORCH_MESSAGES, computeIntegrateCleanupResult } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
-import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, updateBatchHistoryIntegration } from "./persistence.ts";
-import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
+import {
+	deleteBatchState,
+	loadBatchState,
+	saveBatchState,
+	detectOrphanSessions,
+	updateBatchHistoryIntegration,
+} from "./persistence.ts";
+import {
+	deleteStaleBranches,
+	listWorktrees,
+	resolveWorktreeBasePath,
+	formatPreflightResults,
+	runPreflight,
+} from "./worktree.ts";
 import { computeTransitiveDependents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
-import { hasConfigFiles, resolveConfigRoot, loadOrchestratorConfig, loadSupervisorConfig, loadTaskRunnerConfig } from "./config.ts";
+import {
+	hasConfigFiles,
+	resolveConfigRoot,
+	loadOrchestratorConfig,
+	loadSupervisorConfig,
+	loadTaskRunnerConfig,
+} from "./config.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { reconstructAllocatedLanes, resumeOrchBatch } from "./resume.ts";
 import { buildExecutionContext } from "./workspace.ts";
@@ -30,9 +72,20 @@ import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
 import { runMigrations } from "./migrations.ts";
 import { executeAbort } from "./abort.ts";
-import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
+import {
+	serializeWorkspaceConfig,
+	applySerializedState,
+	deserializeWorkspaceConfig,
+} from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
-import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
+import {
+	cleanupPostIntegrate,
+	formatPostIntegrateCleanup,
+	sweepStaleArtifacts,
+	formatPreflightSweep,
+	rotateSupervisorLogs,
+	formatLogRotation,
+} from "./cleanup.ts";
 import {
 	writeMailboxMessage,
 	readOutbox,
@@ -65,7 +118,13 @@ import {
 	presentBatchSummary,
 	resolveModelFromString,
 } from "./supervisor.ts";
-import type { SupervisorConfig, SupervisorRoutingContext, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
+import type {
+	SupervisorConfig,
+	SupervisorRoutingContext,
+	IntegrationExecutor,
+	CiDeps,
+	SummaryDeps,
+} from "./supervisor.ts";
 
 // ── Integrate Args Parsing ────────────────────────────────────────────
 
@@ -118,7 +177,9 @@ export function parseIntegrateArgs(raw: string | undefined): IntegrateArgs | { e
 	if (hasPr) mode = "pr";
 
 	if (positionals.length > 1) {
-		return { error: `Expected at most one branch argument, got ${positionals.length}: ${positionals.join(", ")}` };
+		return {
+			error: `Expected at most one branch argument, got ${positionals.length}: ${positionals.join(", ")}`,
+		};
 	}
 
 	return {
@@ -153,7 +214,10 @@ export function parseResumeArgs(raw: string | undefined): ResumeArgs | { error: 
 		if (token === "--force") {
 			force = true;
 		} else if (token === "--help") {
-			return { error: "Usage: /orch-resume [--force]\n\n  --force   Resume from stopped or failed state (runs pre-resume diagnostics first)" };
+			return {
+				error:
+					"Usage: /orch-resume [--force]\n\n  --force   Resume from stopped or failed state (runs pre-resume diagnostics first)",
+			};
 		} else if (token.startsWith("--")) {
 			return { error: `Unknown flag: ${token}\n\nUsage: /orch-resume [--force]` };
 		} else {
@@ -250,13 +314,14 @@ export function resolveIntegrationContext(
 		}
 	} catch (err: unknown) {
 		// Capture the error but don't return yet — user may have provided a branch arg
-		const msg = err instanceof StateFileError
-			? (err.code === "STATE_FILE_IO_ERROR"
-				? `Could not read batch state file: ${err.message}`
-				: err.code === "STATE_FILE_PARSE_ERROR"
-					? `Batch state file contains invalid JSON: ${err.message}`
-					: `Batch state file has invalid schema: ${err.message}`)
-			: `Unexpected error loading batch state: ${(err as Error).message}`;
+		const msg =
+			err instanceof StateFileError
+				? err.code === "STATE_FILE_IO_ERROR"
+					? `Could not read batch state file: ${err.message}`
+					: err.code === "STATE_FILE_PARSE_ERROR"
+						? `Batch state file contains invalid JSON: ${err.message}`
+						: `Batch state file has invalid schema: ${err.message}`
+				: `Unexpected error loading batch state: ${(err as Error).message}`;
 		if (!parsed.orchBranchArg) {
 			return {
 				error: `⚠️ ${msg}\nYou can specify the orch branch directly: /orch-integrate <orch-branch>`,
@@ -289,7 +354,7 @@ export function resolveIntegrationContext(
 			return {
 				error:
 					`❌ No batch state found and multiple orch branches exist:\n` +
-					candidates.map(b => `  • ${b}`).join("\n") +
+					candidates.map((b) => `  • ${b}`).join("\n") +
 					`\n\nSpecify which branch to integrate: /orch-integrate <orch-branch>`,
 				severity: "error",
 			};
@@ -458,7 +523,13 @@ export function executeIntegration(
 		let stashed = false;
 		const statusCheck = deps.runGit(["status", "--porcelain"]);
 		if (statusCheck.ok && statusCheck.stdout.trim()) {
-			deps.runGit(["stash", "push", "--include-untracked", "-m", `orch-integrate-autostash-${batchId}`]);
+			deps.runGit([
+				"stash",
+				"push",
+				"--include-untracked",
+				"-m",
+				`orch-integrate-autostash-${batchId}`,
+			]);
 			stashed = true;
 		}
 
@@ -471,9 +542,10 @@ export function executeIntegration(
 
 		if (!result.ok) {
 			// TP-052: Include branch protection hint when merge fails
-			const protectionHint = result.stderr.includes("protected") || result.stderr.includes("permission")
-				? `\n\n  💡 If the branch is protected, use --pr to create a pull request.`
-				: "";
+			const protectionHint =
+				result.stderr.includes("protected") || result.stderr.includes("permission")
+					? `\n\n  💡 If the branch is protected, use --pr to create a pull request.`
+					: "";
 			return {
 				success: false,
 				integratedLocally: false,
@@ -508,7 +580,13 @@ export function executeIntegration(
 		let mergeStashed = false;
 		const mergeStatusCheck = deps.runGit(["status", "--porcelain"]);
 		if (mergeStatusCheck.ok && mergeStatusCheck.stdout.trim()) {
-			deps.runGit(["stash", "push", "--include-untracked", "-m", `orch-integrate-autostash-${batchId}`]);
+			deps.runGit([
+				"stash",
+				"push",
+				"--include-untracked",
+				"-m",
+				`orch-integrate-autostash-${batchId}`,
+			]);
 			mergeStashed = true;
 		}
 
@@ -520,9 +598,10 @@ export function executeIntegration(
 
 		if (!result.ok) {
 			// TP-052: Include branch protection hint when merge fails
-			const mergeProtectionHint = result.stderr.includes("protected") || result.stderr.includes("permission")
-				? `\n\n  💡 If the branch is protected, use --pr to create a pull request.`
-				: "";
+			const mergeProtectionHint =
+				result.stderr.includes("protected") || result.stderr.includes("permission")
+					? `\n\n  💡 If the branch is protected, use --pr to create a pull request.`
+					: "";
 			return {
 				success: false,
 				integratedLocally: false,
@@ -561,14 +640,16 @@ export function executeIntegration(
 	}
 
 	// Step 2: Create pull request via gh CLI
-	const prTitle = batchId
-		? `Integrate orch batch ${batchId}`
-		: `Integrate ${orchBranch}`;
+	const prTitle = batchId ? `Integrate orch batch ${batchId}` : `Integrate ${orchBranch}`;
 	const ghResult = deps.runCommand("gh", [
-		"pr", "create",
-		"--base", currentBranch,
-		"--head", orchBranch,
-		"--title", prTitle,
+		"pr",
+		"create",
+		"--base",
+		currentBranch,
+		"--head",
+		orchBranch,
+		"--title",
+		prTitle,
 		"--fill",
 	]);
 	if (!ghResult.ok) {
@@ -714,8 +795,10 @@ export function collectRepoCleanupFindings(
 	// 1. Stale lane worktrees — check for any worktrees belonging to this operator+batch
 	try {
 		const wts = listWorktrees(worktreePrefix, repoRoot, opId, batchId);
-		findings.staleWorktrees = wts.map(wt => wt.path);
-	} catch { /* best effort — git worktree list may fail in unusual states */ }
+		findings.staleWorktrees = wts.map((wt) => wt.path);
+	} catch {
+		/* best effort — git worktree list may fail in unusual states */
+	}
 
 	// 2. Lane branches — task/{opId}-lane-* and saved/task/{opId}-lane-*
 	try {
@@ -723,7 +806,7 @@ export function collectRepoCleanupFindings(
 		if (branchResult.ok && branchResult.stdout.trim()) {
 			findings.staleLaneBranches = branchResult.stdout
 				.split("\n")
-				.map(b => b.replace(/^\*?\s+/, "").trim())
+				.map((b) => b.replace(/^\*?\s+/, "").trim())
 				.filter(Boolean);
 		}
 		// Also detect saved lane branches (preserved refs from worktree removal)
@@ -731,11 +814,13 @@ export function collectRepoCleanupFindings(
 		if (savedBranchResult.ok && savedBranchResult.stdout.trim()) {
 			const savedBranches = savedBranchResult.stdout
 				.split("\n")
-				.map(b => b.replace(/^\*?\s+/, "").trim())
+				.map((b) => b.replace(/^\*?\s+/, "").trim())
 				.filter(Boolean);
 			findings.staleLaneBranches.push(...savedBranches);
 		}
-	} catch { /* best effort */ }
+	} catch {
+		/* best effort */
+	}
 
 	// 3. Orch branch — check if the specific orch branch still exists
 	// Skip in PR mode where the orch branch is intentionally preserved for the PR.
@@ -745,7 +830,9 @@ export function collectRepoCleanupFindings(
 			if (orchCheck.ok) {
 				findings.staleOrchBranches = [orchBranch];
 			}
-		} catch { /* best effort */ }
+		} catch {
+			/* best effort */
+		}
 	}
 
 	// 4. Autostash entries — same patterns as dropBatchAutostash
@@ -766,7 +853,9 @@ export function collectRepoCleanupFindings(
 					}
 				}
 			}
-		} catch { /* best effort */ }
+		} catch {
+			/* best effort */
+		}
 	}
 
 	// 5. Non-empty .worktrees/ containers (subdirectory mode only)
@@ -779,7 +868,9 @@ export function collectRepoCleanupFindings(
 					findings.nonEmptyWorktreeContainers = [basePath];
 				}
 			}
-		} catch { /* best effort */ }
+		} catch {
+			/* best effort */
+		}
 	}
 
 	return findings;
@@ -853,8 +944,14 @@ export function validateModelAvailability(
 	agentModels?: { workerModel?: string; reviewerModel?: string },
 ): ModelCheckResult[] {
 	const entries: ModelCheckEntry[] = [
-		{ role: "Worker", modelStr: agentModels?.workerModel ?? (runnerConfig as any).worker?.model ?? "" },
-		{ role: "Reviewer", modelStr: agentModels?.reviewerModel ?? (runnerConfig as any).reviewer?.model ?? "" },
+		{
+			role: "Worker",
+			modelStr: agentModels?.workerModel ?? (runnerConfig as any).worker?.model ?? "",
+		},
+		{
+			role: "Reviewer",
+			modelStr: agentModels?.reviewerModel ?? (runnerConfig as any).reviewer?.model ?? "",
+		},
 		{ role: "Merger", modelStr: orchConfig.merge?.model ?? "" },
 		{ role: "Supervisor", modelStr: supervisorConfig.model ?? "" },
 	];
@@ -954,7 +1051,7 @@ export function startBatchAsync(
 				}
 				ctx.ui.notify(
 					`❌ Engine crashed with unhandled error: ${errMsg}\n` +
-					`   Batch ${batchState.batchId} marked as failed.`,
+						`   Batch ${batchState.batchId} marked as failed.`,
 					"error",
 				);
 				updateWidget();
@@ -1050,40 +1147,53 @@ export function startBatchInWorker(
 		const wsConfig = wkData.workspaceConfig
 			? deserializeWorkspaceConfig(wkData.workspaceConfig)
 			: undefined;
-		const fallbackFn = wkData.mode === "resume"
-			? () => resumeOrchBatch(
-				wkData.orchConfig,
-				wkData.runnerConfig,
-				wkData.cwd,
-				batchState,
-				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
-				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
-				wsConfig,
-				wkData.workspaceRoot,
-				wkData.agentRoot,
-				wkData.force ?? false,
-				onSupervisorAlert ?? null,
-				wkData.supervisorAutonomy ?? "autonomous",
-				null, // onLaneTerminated — main-thread fallback path; alerts are local-only
-				null, // onLaneRespawned — main-thread fallback path; suppression maps stay clear
-			)
-			: () => executeOrchBatch(
-				wkData.args ?? "",
-				wkData.orchConfig,
-				wkData.runnerConfig,
-				wkData.cwd,
-				batchState,
-				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
-				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
-				wsConfig,
-				wkData.workspaceRoot,
-				wkData.agentRoot,
-				null, // onEngineEvent
-				onSupervisorAlert ?? null,
-				wkData.supervisorAutonomy ?? "autonomous",
-				null, // onLaneTerminated — main-thread fallback path
-				null, // onLaneRespawned — main-thread fallback path
-			);
+		const fallbackFn =
+			wkData.mode === "resume"
+				? () =>
+						resumeOrchBatch(
+							wkData.orchConfig,
+							wkData.runnerConfig,
+							wkData.cwd,
+							batchState,
+							(msg: string, lvl: "info" | "warning" | "error") => {
+								ctx.ui.notify(msg, lvl);
+								updateWidget();
+							},
+							(monState: import("./types.ts").MonitorState) => {
+								onMonitorUpdate?.(monState);
+							},
+							wsConfig,
+							wkData.workspaceRoot,
+							wkData.agentRoot,
+							wkData.force ?? false,
+							onSupervisorAlert ?? null,
+							wkData.supervisorAutonomy ?? "autonomous",
+							null, // onLaneTerminated — main-thread fallback path; alerts are local-only
+							null, // onLaneRespawned — main-thread fallback path; suppression maps stay clear
+						)
+				: () =>
+						executeOrchBatch(
+							wkData.args ?? "",
+							wkData.orchConfig,
+							wkData.runnerConfig,
+							wkData.cwd,
+							batchState,
+							(msg: string, lvl: "info" | "warning" | "error") => {
+								ctx.ui.notify(msg, lvl);
+								updateWidget();
+							},
+							(monState: import("./types.ts").MonitorState) => {
+								onMonitorUpdate?.(monState);
+							},
+							wsConfig,
+							wkData.workspaceRoot,
+							wkData.agentRoot,
+							null, // onEngineEvent
+							onSupervisorAlert ?? null,
+							wkData.supervisorAutonomy ?? "autonomous",
+							null, // onLaneTerminated — main-thread fallback path
+							null, // onLaneRespawned — main-thread fallback path
+						);
 		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
 		return null;
 	}
@@ -1095,7 +1205,9 @@ export function startBatchInWorker(
 	let stderrBatchId = toSafeBatchId(batchState.batchId || pendingBatchId);
 	let stderrLogPath = join(telemetryDir, `${stderrBatchId}-engine-worker-stderr.log`);
 	let stderrLogStream = createWriteStream(stderrLogPath, { flags: "a" });
-	stderrLogStream.on("error", () => { /* non-fatal: telemetry stream */ });
+	stderrLogStream.on("error", () => {
+		/* non-fatal: telemetry stream */
+	});
 	let stderrTailBuffer = "";
 
 	const appendStderr = (chunk: Buffer | string) => {
@@ -1128,7 +1240,9 @@ export function startBatchInWorker(
 		stderrBatchId = resolvedBatchId;
 		stderrLogPath = nextPath;
 		stderrLogStream = createWriteStream(stderrLogPath, { flags: "a" });
-		stderrLogStream.on("error", () => { /* non-fatal: telemetry stream */ });
+		stderrLogStream.on("error", () => {
+			/* non-fatal: telemetry stream */
+		});
 	};
 
 	const readStderrTail = (lineCount = 25): string => {
@@ -1138,7 +1252,9 @@ export function startBatchInWorker(
 		if (!content) {
 			try {
 				if (existsSync(stderrLogPath)) content = readFileSync(stderrLogPath, "utf-8");
-			} catch { /* fallback: empty */ }
+			} catch {
+				/* fallback: empty */
+			}
 		}
 		const lines = content.split(/\r?\n/).filter(Boolean);
 		if (lines.length === 0) return "(no stderr output captured)";
@@ -1221,8 +1337,8 @@ export function startBatchInWorker(
 				}
 				ctx.ui.notify(
 					`❌ Engine crashed with unhandled error${sourceLabel}: ${msg.message}\n` +
-					(stackLine ? `   ${stackLine}\n` : "") +
-					`   Batch ${batchState.batchId} marked as failed.`,
+						(stackLine ? `   ${stackLine}\n` : "") +
+						`   Batch ${batchState.batchId} marked as failed.`,
 					"error",
 				);
 				// Alert supervisor — this is the PRIMARY notification path for engine
@@ -1241,20 +1357,27 @@ export function startBatchInWorker(
 						`  - orch_status() to inspect state\n` +
 						`  - orch_resume(force=true) to retry from last checkpoint`,
 					context: {
-						batchProgress: batchState.totalTasks > 0 ? {
-							succeededTasks: batchState.succeededTasks,
-							failedTasks: batchState.failedTasks,
-							skippedTasks: batchState.skippedTasks,
-							blockedTasks: batchState.blockedTasks,
-							totalTasks: batchState.totalTasks,
-							currentWave: batchState.currentWaveIndex + 1,
-							totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
-						} : undefined,
+						batchProgress:
+							batchState.totalTasks > 0
+								? {
+										succeededTasks: batchState.succeededTasks,
+										failedTasks: batchState.failedTasks,
+										skippedTasks: batchState.skippedTasks,
+										blockedTasks: batchState.blockedTasks,
+										totalTasks: batchState.totalTasks,
+										currentWave: batchState.currentWaveIndex + 1,
+										totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
+									}
+								: undefined,
 					},
 				});
 				// Persist failed state to disk so dashboard/resume see it.
 				// The engine-worker is dead and can't persist — we must do it here.
-				try { saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd); } catch { /* best effort */ }
+				try {
+					saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd);
+				} catch {
+					/* best effort */
+				}
 				updateWidget();
 				break;
 			}
@@ -1270,8 +1393,7 @@ export function startBatchInWorker(
 			batchState.errors.push(`Engine process error: ${err.message}`);
 		}
 		ctx.ui.notify(
-			`❌ Engine process error: ${err.message}\n` +
-			`   Batch ${batchState.batchId} marked as failed.`,
+			`❌ Engine process error: ${err.message}\n` + `   Batch ${batchState.batchId} marked as failed.`,
 			"error",
 		);
 		updateWidget();
@@ -1287,15 +1409,18 @@ export function startBatchInWorker(
 				`  - orch_status() to inspect state\n` +
 				`  - orch_resume(force=true) to retry from last checkpoint`,
 			context: {
-				batchProgress: batchState.totalTasks > 0 ? {
-					succeededTasks: batchState.succeededTasks,
-					failedTasks: batchState.failedTasks,
-					skippedTasks: batchState.skippedTasks,
-					blockedTasks: batchState.blockedTasks,
-					totalTasks: batchState.totalTasks,
-					currentWave: batchState.currentWaveIndex + 1,
-					totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
-				} : undefined,
+				batchProgress:
+					batchState.totalTasks > 0
+						? {
+								succeededTasks: batchState.succeededTasks,
+								failedTasks: batchState.failedTasks,
+								skippedTasks: batchState.skippedTasks,
+								blockedTasks: batchState.blockedTasks,
+								totalTasks: batchState.totalTasks,
+								currentWave: batchState.currentWaveIndex + 1,
+								totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
+							}
+						: undefined,
 			},
 		});
 		settle();
@@ -1316,10 +1441,7 @@ export function startBatchInWorker(
 				batchState.endedAt = Date.now();
 				batchState.errors.push(`Engine process exited with code ${code}`);
 			}
-			ctx.ui.notify(
-				`❌ Engine process exited unexpectedly (code ${code}).`,
-				"error",
-			);
+			ctx.ui.notify(`❌ Engine process exited unexpectedly (code ${code}).`, "error");
 			updateWidget();
 			// ── TP-076: Alert supervisor about unexpected engine exit ──
 			onSupervisorAlert?.({
@@ -1333,19 +1455,26 @@ export function startBatchInWorker(
 					`  - orch_status() to inspect state\n` +
 					`  - orch_resume(force=true) to retry from last checkpoint`,
 				context: {
-					batchProgress: batchState.totalTasks > 0 ? {
-						succeededTasks: batchState.succeededTasks,
-						failedTasks: batchState.failedTasks,
-						skippedTasks: batchState.skippedTasks,
-						blockedTasks: batchState.blockedTasks,
-						totalTasks: batchState.totalTasks,
-						currentWave: batchState.currentWaveIndex + 1,
-						totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
-					} : undefined,
+					batchProgress:
+						batchState.totalTasks > 0
+							? {
+									succeededTasks: batchState.succeededTasks,
+									failedTasks: batchState.failedTasks,
+									skippedTasks: batchState.skippedTasks,
+									blockedTasks: batchState.blockedTasks,
+									totalTasks: batchState.totalTasks,
+									currentWave: batchState.currentWaveIndex + 1,
+									totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
+								}
+							: undefined,
 				},
 			});
 			// Persist failed state to disk (engine is dead, can't persist itself)
-			try { saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd); } catch { /* best effort */ }
+			try {
+				saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd);
+			} catch {
+				/* best effort */
+			}
 		}
 		settle();
 	});
@@ -1370,7 +1499,11 @@ export function startBatchInWorker(
  *
  * @since TP-043 R002
  */
-export function buildIntegrationExecutor(repoRoot: string, opId?: string, stateRoot?: string): IntegrationExecutor {
+export function buildIntegrationExecutor(
+	repoRoot: string,
+	opId?: string,
+	stateRoot?: string,
+): IntegrationExecutor {
 	return (mode, context) => {
 		// Ensure we're on the base branch before integrating
 		const currentBranch = getCurrentBranch(repoRoot);
@@ -1409,16 +1542,24 @@ export function buildIntegrationExecutor(repoRoot: string, opId?: string, stateR
 				}
 			},
 			deleteBatchState: () => {
-				try { deleteBatchState(stateRoot ?? repoRoot); } catch { /* best effort */ }
+				try {
+					deleteBatchState(stateRoot ?? repoRoot);
+				} catch {
+					/* best effort */
+				}
 			},
 		};
 
 		const effectiveStateRoot = stateRoot ?? repoRoot;
 		const result = withPreservedBatchHistory(effectiveStateRoot, () =>
-			executeIntegration(mode as IntegrateMode, {
-				...context,
-				currentBranch: context.baseBranch,
-			}, deps),
+			executeIntegration(
+				mode as IntegrateMode,
+				{
+					...context,
+					currentBranch: context.baseBranch,
+				},
+				deps,
+			),
 		);
 
 		// TP-051: Clean up stale task/* and saved/* branches after successful integration.
@@ -1428,18 +1569,24 @@ export function buildIntegrationExecutor(repoRoot: string, opId?: string, stateR
 			try {
 				deleteStaleBranches(repoRoot, opId, context.batchId);
 				dropBatchAutostash(repoRoot, context.batchId);
-			} catch { /* best effort — don't fail integration for cleanup errors */ }
+			} catch {
+				/* best effort — don't fail integration for cleanup errors */
+			}
 
 			// TP-065: Post-integrate artifact cleanup (Layer 1).
 			// Also runs on the supervisor auto-integration path.
 			try {
 				cleanupPostIntegrate(stateRoot ?? repoRoot, context.batchId);
-			} catch { /* best effort — don't fail integration for cleanup errors */ }
+			} catch {
+				/* best effort — don't fail integration for cleanup errors */
+			}
 
 			// TP-179: Write integratedAt to batch history before state is gone
 			try {
 				updateBatchHistoryIntegration(stateRoot ?? repoRoot, context.batchId, Date.now());
-			} catch { /* best effort */ }
+			} catch {
+				/* best effort */
+			}
 		}
 
 		return result;
@@ -1479,7 +1626,11 @@ export function buildCiDeps(repoRoot: string, stateRoot?: string): CiDeps {
 		},
 		runGit: (gitArgs: string[]) => runGit(gitArgs, repoRoot),
 		deleteBatchState: () => {
-			try { deleteBatchState(stateRoot ?? repoRoot); } catch { /* best effort */ }
+			try {
+				deleteBatchState(stateRoot ?? repoRoot);
+			} catch {
+				/* best effort */
+			}
 		},
 	};
 }
@@ -1617,16 +1768,16 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 	// Covers the case where batch-state.json was deleted but an orch branch remains.
 	const orchBranches = deps.listOrchBranches();
 	if (orchBranches.length > 0) {
-		const branchList = orchBranches.map(b => `\`${b}\``).join(", ");
+		const branchList = orchBranches.map((b) => `\`${b}\``).join(", ");
 		return {
 			state: "completed-batch",
 			orchBranch: orchBranches[0],
 			contextMessage:
 				orchBranches.length === 1
 					? `I found an orch branch (${branchList}) that hasn't been integrated yet. ` +
-					  `Want me to integrate it, or would you like to start fresh?`
+						`Want me to integrate it, or would you like to start fresh?`
 					: `I found ${orchBranches.length} orch branches (${branchList}) that haven't been integrated. ` +
-					  `Would you like to integrate one, or start fresh?`,
+						`Would you like to integrate one, or start fresh?`,
 		};
 	}
 
@@ -1702,7 +1853,7 @@ export default function (pi: ExtensionAPI) {
 		if (terminatedLanes.size === 0 && terminatedAgents.size === 0) return;
 		process.stderr.write(
 			`[taskplane:zombie-filter] cleared termination filter (reason: ${reason}, ` +
-			`lanes=${terminatedLanes.size}, agents=${terminatedAgents.size})\n`,
+				`lanes=${terminatedLanes.size}, agents=${terminatedAgents.size})\n`,
 		);
 		terminatedLanes.clear();
 		terminatedAgents.clear();
@@ -1755,7 +1906,8 @@ export default function (pi: ExtensionAPI) {
 		const ctx = alert.context;
 		if (!ctx) return false;
 		if (typeof ctx.laneNumber === "number" && terminatedLanes.has(ctx.laneNumber)) return true;
-		if (typeof ctx.agentId === "string" && ctx.agentId && terminatedAgents.has(ctx.agentId)) return true;
+		if (typeof ctx.agentId === "string" && ctx.agentId && terminatedAgents.has(ctx.agentId))
+			return true;
 		return false;
 	};
 
@@ -1792,8 +1944,10 @@ export default function (pi: ExtensionAPI) {
 	// ── Command Guard ────────────────────────────────────────────────
 
 	function getExecCtxInitErrorMessage(): string {
-		return execCtxInitError ??
-			"❌ Orchestrator not initialized. Startup failed before execution context was created.\nRestart the session after fixing configuration/setup issues.";
+		return (
+			execCtxInitError ??
+			"❌ Orchestrator not initialized. Startup failed before execution context was created.\nRestart the session after fixing configuration/setup issues."
+		);
 	}
 
 	/**
@@ -1833,13 +1987,19 @@ export default function (pi: ExtensionAPI) {
 				const detection = detectOrchState({
 					hasConfig: () => hasConfigFiles(resolvedConfigRoot),
 					loadBatchState: () => {
-						try { return loadBatchState(stateRoot); }
-						catch { return null; }
+						try {
+							return loadBatchState(stateRoot);
+						} catch {
+							return null;
+						}
 					},
 					listOrchBranches: () => {
 						const result = runGit(["branch", "--list", "orch/*"], repoRoot);
 						return result.ok
-							? result.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean)
+							? result.stdout
+									.split("\n")
+									.map((b) => b.replace(/^\*?\s+/, "").trim())
+									.filter(Boolean)
 							: [];
 					},
 					countPendingTasks: () => {
@@ -1851,7 +2011,9 @@ export default function (pi: ExtensionAPI) {
 								workspaceConfig: execCtx.workspaceConfig,
 							});
 							return discovery.pending.size;
-						} catch { return 0; }
+						} catch {
+							return 0;
+						}
 					},
 				});
 
@@ -1859,7 +2021,7 @@ export default function (pi: ExtensionAPI) {
 				if (detection.state === "active-batch") {
 					ctx.ui.notify(
 						`🔀 ${detection.contextMessage}\n\n` +
-						`Use /orch-status for full details, or /orch-pause to pause.`,
+							`Use /orch-status for full details, or /orch-pause to pause.`,
 						"info",
 					);
 					return;
@@ -1905,15 +2067,15 @@ export default function (pi: ExtensionAPI) {
 			if (!args?.trim()) {
 				ctx.ui.notify(
 					"Usage: /orch-plan <areas|paths|all> [--refresh]\n\n" +
-					"Shows the execution plan (tasks, waves, lane assignments)\n" +
-					"without actually executing anything.\n\n" +
-					"Options:\n" +
-					"  --refresh   Force re-scan of areas (bypass dependency cache)\n\n" +
-					"Examples:\n" +
-					"  /orch-plan all\n" +
-					"  /orch-plan time-off notifications\n" +
-					"  /orch-plan docs/task-management/domains/time-off/tasks\n" +
-					"  /orch-plan all --refresh",
+						"Shows the execution plan (tasks, waves, lane assignments)\n" +
+						"without actually executing anything.\n\n" +
+						"Options:\n" +
+						"  --refresh   Force re-scan of areas (bypass dependency cache)\n\n" +
+						"Examples:\n" +
+						"  /orch-plan all\n" +
+						"  /orch-plan time-off notifications\n" +
+						"  /orch-plan docs/task-management/domains/time-off/tasks\n" +
+						"  /orch-plan all --refresh",
 					"info",
 				);
 				return;
@@ -1927,7 +2089,7 @@ export default function (pi: ExtensionAPI) {
 			if (!cleanArgs) {
 				ctx.ui.notify(
 					"Usage: /orch-plan <areas|paths|all> [--refresh]\n" +
-					"Error: target argument required (e.g., 'all', area name, or path)",
+						"Error: target argument required (e.g., 'all', area name, or path)",
 					"error",
 				);
 				return;
@@ -1951,7 +2113,10 @@ export default function (pi: ExtensionAPI) {
 				useDependencyCache: orchConfig.dependencies.cache,
 				workspaceConfig: execCtx!.workspaceConfig,
 			});
-			ctx.ui.notify(formatDiscoveryResults(discovery), discovery.errors.length > 0 ? "warning" : "info");
+			ctx.ui.notify(
+				formatDiscoveryResults(discovery),
+				discovery.errors.length > 0 ? "warning" : "info",
+			);
 
 			// Check for fatal errors
 			const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
@@ -1967,14 +2132,12 @@ export default function (pi: ExtensionAPI) {
 						"info",
 					);
 				}
-				const hasStrictErrors = fatalErrors.some(
-					(e) => e.code === "TASK_ROUTING_STRICT",
-				);
+				const hasStrictErrors = fatalErrors.some((e) => e.code === "TASK_ROUTING_STRICT");
 				if (hasStrictErrors) {
 					ctx.ui.notify(
 						"💡 Strict routing is enabled (routing.strict: true). Every task must declare an explicit execution target.\n" +
-						"   Add a `## Execution Target` section with `Repo: <id>` to each task's PROMPT.md.\n" +
-						"   To disable strict routing, set `routing.strict: false` in workspace config.",
+							"   Add a `## Execution Target` section with `Repo: <id>` to each task's PROMPT.md.\n" +
+							"   To disable strict routing, set `routing.strict: false` in workspace config.",
 						"info",
 					);
 				}
@@ -1987,23 +2150,13 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// ── Section 3: Dependency Graph ──────────────────────────
-			ctx.ui.notify(
-				formatDependencyGraph(discovery.pending, discovery.completed),
-				"info",
-			);
+			ctx.ui.notify(formatDependencyGraph(discovery.pending, discovery.completed), "info");
 
 			// ── Section 4: Waves + Estimate ──────────────────────────
 			// Uses computeWaveAssignments pipeline only — NO re-parsing
-			const waveResult = computeWaveAssignments(
-				discovery.pending,
-				discovery.completed,
-				orchConfig,
-				{
-					workspaceRepoIds: execCtx!.workspaceConfig
-						? execCtx!.workspaceConfig.repos.keys()
-						: undefined,
-				},
-			);
+			const waveResult = computeWaveAssignments(discovery.pending, discovery.completed, orchConfig, {
+				workspaceRepoIds: execCtx!.workspaceConfig ? execCtx!.workspaceConfig.repos.keys() : undefined,
+			});
 
 			ctx.ui.notify(
 				formatWavePlan(waveResult, orchConfig.assignment.size_weights),
@@ -2029,12 +2182,16 @@ export default function (pi: ExtensionAPI) {
 	 *
 	 * @since TP-061
 	 */
-	async function doOrchStart(target: string, ctx: ExtensionContext): Promise<{ message: string; error?: boolean }> {
+	async function doOrchStart(
+		target: string,
+		ctx: ExtensionContext,
+	): Promise<{ message: string; error?: boolean }> {
 		// Target validation
 		const trimmedTarget = target?.trim();
 		if (!trimmedTarget) {
 			return {
-				message: "❌ Target is required. Use \"all\" to run all pending tasks, or specify a task area name or path.",
+				message:
+					'❌ Target is required. Use "all" to run all pending tasks, or specify a task area name or path.',
 				error: true,
 			};
 		}
@@ -2046,8 +2203,12 @@ export default function (pi: ExtensionAPI) {
 		// Skip if a batch is already active to avoid swapping config mid-run.
 		const _activePhase = orchBatchState.phase;
 		// Treat paused as active — config must not change for a resumable batch
-		const _isActiveBatch = _activePhase === "executing" || _activePhase === "launching"
-			|| _activePhase === "merging" || _activePhase === "planning" || _activePhase === "paused";
+		const _isActiveBatch =
+			_activePhase === "executing" ||
+			_activePhase === "launching" ||
+			_activePhase === "merging" ||
+			_activePhase === "planning" ||
+			_activePhase === "paused";
 		if (!_isActiveBatch) {
 			try {
 				// Build everything into temporaries first, then commit atomically
@@ -2055,10 +2216,7 @@ export default function (pi: ExtensionAPI) {
 				const freshCtx = buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig);
 				let freshSupervisor: SupervisorConfig;
 				try {
-					freshSupervisor = loadSupervisorConfig(
-						freshCtx.repoRoot,
-						freshCtx.pointer?.configRoot,
-					);
+					freshSupervisor = loadSupervisorConfig(freshCtx.repoRoot, freshCtx.pointer?.configRoot);
 				} catch {
 					freshSupervisor = { ...DEFAULT_SUPERVISOR_CONFIG };
 				}
@@ -2089,7 +2247,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (migrationResult.errors.length > 0) {
 				ctx.ui.notify(
-					`⚠️ Migration warnings:\n${migrationResult.errors.map(e => `  ⚠ ${e.id}: ${e.error}`).join("\n")}`,
+					`⚠️ Migration warnings:\n${migrationResult.errors.map((e) => `  ⚠ ${e.id}: ${e.error}`).join("\n")}`,
 					"warning",
 				);
 			}
@@ -2103,7 +2261,12 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Prevent concurrent batch execution
-		if (orchBatchState.phase !== "idle" && orchBatchState.phase !== "completed" && orchBatchState.phase !== "failed" && orchBatchState.phase !== "stopped") {
+		if (
+			orchBatchState.phase !== "idle" &&
+			orchBatchState.phase !== "completed" &&
+			orchBatchState.phase !== "failed" &&
+			orchBatchState.phase !== "stopped"
+		) {
 			return {
 				message: `⚠️ A batch is already ${orchBatchState.phase} (${orchBatchState.batchId}). Use /orch-pause to pause or wait for completion.`,
 				error: true,
@@ -2113,10 +2276,7 @@ export default function (pi: ExtensionAPI) {
 		const { repoRoot } = execCtx;
 
 		// Orphan detection
-		const orphanResult = detectOrphanSessions(
-			orchConfig.orchestrator.sessionPrefix,
-			repoRoot,
-		);
+		const orphanResult = detectOrphanSessions(orchConfig.orchestrator.sessionPrefix, repoRoot);
 
 		switch (orphanResult.recommendedAction) {
 			case "resume": {
@@ -2124,7 +2284,11 @@ export default function (pi: ExtensionAPI) {
 				const phase = orphanResult.loadedState?.phase ?? "";
 				const hasOrphans = orphanResult.orphanSessions.length > 0;
 				if (!hasOrphans && !resumablePhases.includes(phase)) {
-					try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+					try {
+						deleteBatchState(repoRoot);
+					} catch {
+						/* best effort */
+					}
 					ctx.ui.notify(
 						`🧹 Cleared non-resumable stale batch (${orphanResult.loadedState?.batchId}, phase=${phase}). Starting fresh.`,
 						"info",
@@ -2136,7 +2300,11 @@ export default function (pi: ExtensionAPI) {
 			case "abort-orphans":
 				return { message: orphanResult.userMessage, error: true };
 			case "cleanup-stale":
-				try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+				try {
+					deleteBatchState(repoRoot);
+				} catch {
+					/* best effort */
+				}
 				if (orphanResult.userMessage) {
 					ctx.ui.notify(orphanResult.userMessage, "info");
 				}
@@ -2158,14 +2326,23 @@ export default function (pi: ExtensionAPI) {
 				workerModel: fullConfig.taskRunner.worker.model || "",
 				reviewerModel: fullConfig.taskRunner.reviewer.model || "",
 			};
-		} catch { /* fall through */ }
-		const modelResults = validateModelAvailability(orchConfig, runnerConfig, supervisorConfig, ctx, agentModels);
-		const modelFailures = modelResults.filter(r => r.status === "not-found");
+		} catch {
+			/* fall through */
+		}
+		const modelResults = validateModelAvailability(
+			orchConfig,
+			runnerConfig,
+			supervisorConfig,
+			ctx,
+			agentModels,
+		);
+		const modelFailures = modelResults.filter((r) => r.status === "not-found");
 		ctx.ui.notify(formatModelValidation(modelResults), modelFailures.length > 0 ? "error" : "info");
 		if (modelFailures.length > 0) {
 			return {
-				message: `❌ Cannot start batch — ${modelFailures.length} model(s) not found: ` +
-					modelFailures.map(f => `${f.role} (${f.modelStr})`).join(", ") +
+				message:
+					`❌ Cannot start batch — ${modelFailures.length} model(s) not found: ` +
+					modelFailures.map((f) => `${f.role} (${f.modelStr})`).join(", ") +
 					`.\n\nFix the model configuration and try again.`,
 				error: true,
 			};
@@ -2175,11 +2352,16 @@ export default function (pi: ExtensionAPI) {
 		// This is a lightweight synchronous check before launching the async engine.
 		let pendingTaskCount = 0;
 		try {
-			const preDiscovery = runDiscovery(trimmedTarget, runnerConfig.task_areas, execCtx.workspaceRoot, {
-				dependencySource: orchConfig.dependencies.source,
-				useDependencyCache: orchConfig.dependencies.cache,
-				workspaceConfig: execCtx.workspaceConfig,
-			});
+			const preDiscovery = runDiscovery(
+				trimmedTarget,
+				runnerConfig.task_areas,
+				execCtx.workspaceRoot,
+				{
+					dependencySource: orchConfig.dependencies.source,
+					useDependencyCache: orchConfig.dependencies.cache,
+					workspaceConfig: execCtx.workspaceConfig,
+				},
+			);
 			pendingTaskCount = preDiscovery.pending.size;
 			if (pendingTaskCount === 0) {
 				return {
@@ -2222,13 +2404,15 @@ export default function (pi: ExtensionAPI) {
 			ctx,
 			updateOrchWidget,
 			(monState: MonitorState) => {
-				const changed = !latestMonitorState ||
+				const changed =
+					!latestMonitorState ||
 					latestMonitorState.totalDone !== monState.totalDone ||
 					latestMonitorState.totalFailed !== monState.totalFailed ||
-					latestMonitorState.lanes.some((l, i) =>
-						l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
-						l.currentStep !== monState.lanes[i]?.currentStep ||
-						l.completedChecks !== monState.lanes[i]?.completedChecks,
+					latestMonitorState.lanes.some(
+						(l, i) =>
+							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
+							l.currentStep !== monState.lanes[i]?.currentStep ||
+							l.completedChecks !== monState.lanes[i]?.completedChecks,
 					);
 				latestMonitorState = monState;
 				if (changed) updateOrchWidget();
@@ -2239,17 +2423,14 @@ export default function (pi: ExtensionAPI) {
 				const sDeps: SummaryDeps = {
 					opId,
 					diagnostics: orchBatchState.diagnostics ?? null,
-					mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
+					mergeResults: (orchBatchState.mergeResults || []).map((mr) => ({
 						waveIndex: mr.waveIndex,
 						status: mr.status,
 						failedLane: mr.failedLane,
 						failureReason: mr.failureReason,
 					})),
 				};
-				if (
-					orchBatchState.phase === "completed" &&
-					(mode === "supervised" || mode === "auto")
-				) {
+				if (orchBatchState.phase === "completed" && (mode === "supervised" || mode === "auto")) {
 					triggerSupervisorIntegration(
 						pi,
 						supervisorState,
@@ -2262,47 +2443,54 @@ export default function (pi: ExtensionAPI) {
 					);
 					return;
 				}
-				if (
-					(mode === "supervised" || mode === "auto") &&
-					orchBatchState.phase !== "completed"
-				) {
+				if ((mode === "supervised" || mode === "auto") && orchBatchState.phase !== "completed") {
 					pi.sendMessage(
 						{
 							customType: "supervisor-integration-skipped",
-							content: [{
-								type: "text",
-								text:
-									`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
-									`Integration skipped — only completed batches are eligible.\n` +
-									`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
-							}],
+							content: [
+								{
+									type: "text",
+									text:
+										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
+										`Integration skipped — only completed batches are eligible.\n` +
+										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
+								},
+							],
 							display: `Integration skipped — batch ${orchBatchState.phase}`,
 						},
 						{ triggerTurn: false },
 					);
 				}
-				presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
-				const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
-					? {
-						routingState: "completed-batch",
-						contextMessage:
-							`Batch **${orchBatchState.batchId}** completed — ` +
-							`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
-							`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
-							`Would you like me to integrate it, or would you prefer to review first?\n\n` +
-							`You can also:\n` +
-							`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
-							`• Create new tasks for the next batch\n` +
-							`• Run a health check`,
-					}
-					: {
-						routingState: "no-tasks",
-						contextMessage:
-							`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
-							`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
-							`${orchBatchState.skippedTasks} skipped.\n\n` +
-							`What would you like to do next?`,
-					};
+				presentBatchSummary(
+					pi,
+					orchBatchState,
+					execCtx!.workspaceRoot,
+					opId,
+					orchBatchState.diagnostics,
+					sDeps.mergeResults,
+				);
+				const postBatchContext: SupervisorRoutingContext =
+					orchBatchState.phase === "completed"
+						? {
+								routingState: "completed-batch",
+								contextMessage:
+									`Batch **${orchBatchState.batchId}** completed — ` +
+									`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
+									`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
+									`Would you like me to integrate it, or would you prefer to review first?\n\n` +
+									`You can also:\n` +
+									`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
+									`• Create new tasks for the next batch\n` +
+									`• Run a health check`,
+							}
+						: {
+								routingState: "no-tasks",
+								contextMessage:
+									`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+									`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
+									`${orchBatchState.skippedTasks} skipped.\n\n` +
+									`What would you like to do next?`,
+							};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
@@ -2312,7 +2500,7 @@ export default function (pi: ExtensionAPI) {
 				if (isAlertSuppressed(alert)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] dropped alert (category=${alert.category}, ` +
-						`lane=${alert.context?.laneNumber ?? "?"}, agent=${alert.context?.agentId ?? "?"})\n`,
+							`lane=${alert.context?.laneNumber ?? "?"}, agent=${alert.context?.agentId ?? "?"})\n`,
 					);
 					return;
 				}
@@ -2323,7 +2511,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(info.batchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
-						`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
+							`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}
@@ -2331,7 +2519,7 @@ export default function (pi: ExtensionAPI) {
 				if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
 				process.stderr.write(
 					`[taskplane:zombie-filter] lane ${info.laneNumber} (${info.agentId}) terminated ` +
-					`(reason: ${info.reason}); ${terminatedLanes.size} lane(s) suppressed\n`,
+						`(reason: ${info.reason}); ${terminatedLanes.size} lane(s) suppressed\n`,
 				);
 			},
 			// TP-187 (#538): Lane-respawned handler.
@@ -2339,7 +2527,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(incomingBatchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
-						`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
+							`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}
@@ -2360,7 +2548,8 @@ export default function (pi: ExtensionAPI) {
 		);
 
 		return {
-			message: `🚀 Batch launching (target: "${trimmedTarget}", ${pendingTaskCount} pending task${pendingTaskCount === 1 ? "" : "s"}). ` +
+			message:
+				`🚀 Batch launching (target: "${trimmedTarget}", ${pendingTaskCount} pending task${pendingTaskCount === 1 ? "" : "s"}). ` +
 				`Batch ID will be assigned during planning. ` +
 				`The engine is running asynchronously — use orch_status() to check progress.`,
 		};
@@ -2373,13 +2562,19 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function buildTaskSegmentProgressLabel(
-		task: { taskId: string; segmentIds?: string[]; activeSegmentId?: string | null; status?: string } | undefined,
-		segments: Array<{ taskId: string; segmentId: string; status: string; repoId: string }> | undefined,
+		task:
+			| { taskId: string; segmentIds?: string[]; activeSegmentId?: string | null; status?: string }
+			| undefined,
+		segments:
+			| Array<{ taskId: string; segmentId: string; status: string; repoId: string }>
+			| undefined,
 		preferredSegmentId?: string | null,
 	): string | null {
 		if (!task || !Array.isArray(task.segmentIds) || task.segmentIds.length <= 1) return null;
 
-		const segmentIds = task.segmentIds.filter(segmentId => typeof segmentId === "string" && segmentId.trim().length > 0);
+		const segmentIds = task.segmentIds.filter(
+			(segmentId) => typeof segmentId === "string" && segmentId.trim().length > 0,
+		);
 		if (segmentIds.length <= 1) return null;
 
 		const bySegmentId = new Map<string, { status: string; repoId: string }>();
@@ -2391,10 +2586,11 @@ export default function (pi: ExtensionAPI) {
 
 		let activeSegmentId = task.activeSegmentId ?? preferredSegmentId ?? null;
 		if (!activeSegmentId || !segmentIds.includes(activeSegmentId)) {
-			activeSegmentId = segmentIds.find((segmentId) => {
-				const status = bySegmentId.get(segmentId)?.status;
-				return !["succeeded", "failed", "stalled", "skipped"].includes(status || "pending");
-			}) || segmentIds[segmentIds.length - 1];
+			activeSegmentId =
+				segmentIds.find((segmentId) => {
+					const status = bySegmentId.get(segmentId)?.status;
+					return !["succeeded", "failed", "stalled", "skipped"].includes(status || "pending");
+				}) || segmentIds[segmentIds.length - 1];
 		}
 
 		const index = Math.max(0, segmentIds.indexOf(activeSegmentId));
@@ -2432,7 +2628,9 @@ export default function (pi: ExtensionAPI) {
 			];
 
 			const segmentRecords = diskState.segments || [];
-			const multiSegmentTasks = (diskState.tasks || []).filter((task) => Array.isArray(task.segmentIds) && task.segmentIds.length > 1);
+			const multiSegmentTasks = (diskState.tasks || []).filter(
+				(task) => Array.isArray(task.segmentIds) && task.segmentIds.length > 1,
+			);
 			if (multiSegmentTasks.length > 0) {
 				const byStatus = {
 					succeeded: segmentRecords.filter((segment) => segment.status === "succeeded").length,
@@ -2448,18 +2646,26 @@ export default function (pi: ExtensionAPI) {
 				if (byStatus.pending > 0) segParts.push(`${byStatus.pending} pending`);
 				if (byStatus.skipped > 0) segParts.push(`${byStatus.skipped} skipped`);
 				if (byStatus.stalled > 0) segParts.push(`${byStatus.stalled} stalled`);
-				lines.push(`   Segments: ${segParts.join(", ")} (${multiSegmentTasks.length} multi-segment task(s))`);
+				lines.push(
+					`   Segments: ${segParts.join(", ")} (${multiSegmentTasks.length} multi-segment task(s))`,
+				);
 			}
 
 			const sortedDiskLanes = [...(diskState.lanes || [])].sort((a, b) => a.laneNumber - b.laneNumber);
 			if (sortedDiskLanes.length > 0) {
 				lines.push("   Lanes:");
 				for (const laneRec of sortedDiskLanes) {
-					const laneTasks = (diskState.tasks || []).filter((task) => task.laneNumber === laneRec.laneNumber);
+					const laneTasks = (diskState.tasks || []).filter(
+						(task) => task.laneNumber === laneRec.laneNumber,
+					);
 					const runningTask = laneTasks.find((task) => task.status === "running");
 					const activeTask = runningTask || laneTasks[laneTasks.length - 1];
 					const taskLabel = activeTask ? `${activeTask.taskId} (${activeTask.status})` : "idle";
-					const segmentLabel = buildTaskSegmentProgressLabel(activeTask, segmentRecords, activeTask?.activeSegmentId ?? null);
+					const segmentLabel = buildTaskSegmentProgressLabel(
+						activeTask,
+						segmentRecords,
+						activeTask?.activeSegmentId ?? null,
+					);
 					const segmentPart = segmentLabel ? ` · ${segmentLabel}` : "";
 					const repoPart = laneRec.repoId ? ` · repo: ${laneRec.repoId}` : "";
 					lines.push(`   - Lane ${laneRec.laneNumber}: ${taskLabel}${segmentPart}${repoPart}`);
@@ -2486,7 +2692,12 @@ export default function (pi: ExtensionAPI) {
 
 		const segmentRecords = orchBatchState.segments || [];
 		const multiSegmentTaskCount = orchBatchState.currentLanes.reduce((count, laneRec) => {
-			return count + laneRec.tasks.filter((task) => Array.isArray(task.task.segmentIds) && task.task.segmentIds.length > 1).length;
+			return (
+				count +
+				laneRec.tasks.filter(
+					(task) => Array.isArray(task.task.segmentIds) && task.task.segmentIds.length > 1,
+				).length
+			);
 		}, 0);
 		if (multiSegmentTaskCount > 0) {
 			const byStatus = {
@@ -2503,14 +2714,18 @@ export default function (pi: ExtensionAPI) {
 			if (byStatus.pending > 0) segParts.push(`${byStatus.pending} pending`);
 			if (byStatus.skipped > 0) segParts.push(`${byStatus.skipped} skipped`);
 			if (byStatus.stalled > 0) segParts.push(`${byStatus.stalled} stalled`);
-			lines.push(`   Segments: ${segParts.join(", ")} (${multiSegmentTaskCount} multi-segment task(s))`);
+			lines.push(
+				`   Segments: ${segParts.join(", ")} (${multiSegmentTaskCount} multi-segment task(s))`,
+			);
 		}
 
 		if (orchBatchState.currentLanes.length > 0) {
 			lines.push("   Lanes:");
 			const sortedLanes = [...orchBatchState.currentLanes].sort((a, b) => a.laneNumber - b.laneNumber);
 			for (const laneRec of sortedLanes) {
-				const monLane = latestMonitorState?.lanes.find((laneState) => laneState.laneNumber === laneRec.laneNumber);
+				const monLane = latestMonitorState?.lanes.find(
+					(laneState) => laneState.laneNumber === laneRec.laneNumber,
+				);
 				const currentTaskId = monLane?.currentTaskId || laneRec.tasks[0]?.taskId;
 				const allocatedTask = currentTaskId
 					? laneRec.tasks.find((task) => task.taskId === currentTaskId)
@@ -2540,7 +2755,12 @@ export default function (pi: ExtensionAPI) {
 	 * Core logic for orch-pause. Returns a status message string.
 	 */
 	function doOrchPause(): string {
-		if (orchBatchState.phase === "idle" || orchBatchState.phase === "completed" || orchBatchState.phase === "failed" || orchBatchState.phase === "stopped") {
+		if (
+			orchBatchState.phase === "idle" ||
+			orchBatchState.phase === "completed" ||
+			orchBatchState.phase === "failed" ||
+			orchBatchState.phase === "stopped"
+		) {
 			return ORCH_MESSAGES.pauseNoBatch();
 		}
 		if (orchBatchState.phase === "paused" || orchBatchState.pauseSignal.paused) {
@@ -2558,7 +2778,10 @@ export default function (pi: ExtensionAPI) {
 	 * The actual batch resume runs asynchronously via startBatchInWorker (TP-071).
 	 * Returns null if execCtx is missing (caller must handle).
 	 */
-	function doOrchResume(force: boolean, ctx: ExtensionContext): { message: string; error?: boolean } {
+	function doOrchResume(
+		force: boolean,
+		ctx: ExtensionContext,
+	): { message: string; error?: boolean } {
 		if (!execCtx) {
 			return {
 				message: getExecCtxInitErrorMessage(),
@@ -2567,7 +2790,12 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Prevent resume if a batch is actively running
-		if (orchBatchState.phase === "launching" || orchBatchState.phase === "executing" || orchBatchState.phase === "merging" || orchBatchState.phase === "planning") {
+		if (
+			orchBatchState.phase === "launching" ||
+			orchBatchState.phase === "executing" ||
+			orchBatchState.phase === "merging" ||
+			orchBatchState.phase === "planning"
+		) {
 			return {
 				message: `⚠️ A batch is currently ${orchBatchState.phase} (${orchBatchState.batchId}). Cannot resume.`,
 				error: true,
@@ -2615,17 +2843,14 @@ export default function (pi: ExtensionAPI) {
 				const sDeps: SummaryDeps = {
 					opId,
 					diagnostics: orchBatchState.diagnostics ?? null,
-					mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
+					mergeResults: (orchBatchState.mergeResults || []).map((mr) => ({
 						waveIndex: mr.waveIndex,
 						status: mr.status,
 						failedLane: mr.failedLane,
 						failureReason: mr.failureReason,
 					})),
 				};
-				if (
-					orchBatchState.phase === "completed" &&
-					(mode === "supervised" || mode === "auto")
-				) {
+				if (orchBatchState.phase === "completed" && (mode === "supervised" || mode === "auto")) {
 					triggerSupervisorIntegration(
 						pi,
 						supervisorState,
@@ -2638,47 +2863,54 @@ export default function (pi: ExtensionAPI) {
 					);
 					return;
 				}
-				if (
-					(mode === "supervised" || mode === "auto") &&
-					orchBatchState.phase !== "completed"
-				) {
+				if ((mode === "supervised" || mode === "auto") && orchBatchState.phase !== "completed") {
 					pi.sendMessage(
 						{
 							customType: "supervisor-integration-skipped",
-							content: [{
-								type: "text",
-								text:
-									`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
-									`Integration skipped — only completed batches are eligible.\n` +
-									`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
-							}],
+							content: [
+								{
+									type: "text",
+									text:
+										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
+										`Integration skipped — only completed batches are eligible.\n` +
+										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
+								},
+							],
 							display: `Integration skipped — batch ${orchBatchState.phase}`,
 						},
 						{ triggerTurn: false },
 					);
 				}
-				presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
-				const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
-					? {
-						routingState: "completed-batch",
-						contextMessage:
-							`Batch **${orchBatchState.batchId}** completed — ` +
-							`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
-							`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
-							`Would you like me to integrate it, or would you prefer to review first?\n\n` +
-							`You can also:\n` +
-							`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
-							`• Create new tasks for the next batch\n` +
-							`• Run a health check`,
-					}
-					: {
-						routingState: "no-tasks",
-						contextMessage:
-							`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
-							`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
-							`${orchBatchState.skippedTasks} skipped.\n\n` +
-							`What would you like to do next?`,
-					};
+				presentBatchSummary(
+					pi,
+					orchBatchState,
+					execCtx!.workspaceRoot,
+					opId,
+					orchBatchState.diagnostics,
+					sDeps.mergeResults,
+				);
+				const postBatchContext: SupervisorRoutingContext =
+					orchBatchState.phase === "completed"
+						? {
+								routingState: "completed-batch",
+								contextMessage:
+									`Batch **${orchBatchState.batchId}** completed — ` +
+									`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
+									`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
+									`Would you like me to integrate it, or would you prefer to review first?\n\n` +
+									`You can also:\n` +
+									`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
+									`• Create new tasks for the next batch\n` +
+									`• Run a health check`,
+							}
+						: {
+								routingState: "no-tasks",
+								contextMessage:
+									`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+									`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
+									`${orchBatchState.skippedTasks} skipped.\n\n` +
+									`What would you like to do next?`,
+							};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
@@ -2688,7 +2920,7 @@ export default function (pi: ExtensionAPI) {
 				if (isAlertSuppressed(alert)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] dropped alert (category=${alert.category}, ` +
-						`lane=${alert.context?.laneNumber ?? "?"}, agent=${alert.context?.agentId ?? "?"})\n`,
+							`lane=${alert.context?.laneNumber ?? "?"}, agent=${alert.context?.agentId ?? "?"})\n`,
 					);
 					return;
 				}
@@ -2699,7 +2931,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(info.batchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
-						`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
+							`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}
@@ -2707,7 +2939,7 @@ export default function (pi: ExtensionAPI) {
 				if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
 				process.stderr.write(
 					`[taskplane:zombie-filter] lane ${info.laneNumber} (${info.agentId}) terminated ` +
-					`(reason: ${info.reason}); ${terminatedLanes.size} lane(s) suppressed\n`,
+						`(reason: ${info.reason}); ${terminatedLanes.size} lane(s) suppressed\n`,
 				);
 			},
 			// TP-187 (#538): Lane-respawned handler.
@@ -2715,7 +2947,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(incomingBatchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
-						`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
+							`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}
@@ -2753,10 +2985,16 @@ export default function (pi: ExtensionAPI) {
 		const abortSignalFile = join(stateRoot, ".pi", "orch-abort-signal");
 		try {
 			mkdirSync(join(stateRoot, ".pi"), { recursive: true });
-			writeFileSync(abortSignalFile, `abort requested at ${new Date().toISOString()} (mode: ${mode})`, "utf-8");
+			writeFileSync(
+				abortSignalFile,
+				`abort requested at ${new Date().toISOString()} (mode: ${mode})`,
+				"utf-8",
+			);
 			messages.push("  ✓ Abort signal file written (.pi/orch-abort-signal)");
 		} catch (err) {
-			messages.push(`  ⚠ Failed to write abort signal file: ${err instanceof Error ? err.message : String(err)}`);
+			messages.push(
+				`  ⚠ Failed to write abort signal file: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 
 		// Step 2: Set pause signal and forward to worker
@@ -2776,7 +3014,8 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		const hasActiveBatch = orchBatchState.phase !== "idle" &&
+		const hasActiveBatch =
+			orchBatchState.phase !== "idle" &&
 			orchBatchState.phase !== "completed" &&
 			orchBatchState.phase !== "failed" &&
 			orchBatchState.phase !== "stopped";
@@ -2790,11 +3029,13 @@ export default function (pi: ExtensionAPI) {
 
 		messages.push(
 			`  Batch state: in-memory=${hasActiveBatch ? orchBatchState.phase : "none"}, ` +
-			`persisted=${persistedState ? persistedState.batchId : "none"}`,
+				`persisted=${persistedState ? persistedState.batchId : "none"}`,
 		);
 
 		if (!hasActiveBatch && !persistedState) {
-			try { unlinkSync(abortSignalFile); } catch {}
+			try {
+				unlinkSync(abortSignalFile);
+			} catch {}
 			return ORCH_MESSAGES.abortNoBatch();
 		}
 
@@ -2820,15 +3061,32 @@ export default function (pi: ExtensionAPI) {
 			updateOrchWidget();
 			messages.push("  ✓ In-memory batch state set to 'stopped'");
 		} catch (err) {
-			messages.push(`  ⚠ Failed to update in-memory state: ${err instanceof Error ? err.message : String(err)}`);
+			messages.push(
+				`  ⚠ Failed to update in-memory state: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 
-		messages.push(`  Found ${abortResult.sessionsFound} session target(s) matching prefix "${prefix}-"`);
+		messages.push(
+			`  Found ${abortResult.sessionsFound} session target(s) matching prefix "${prefix}-"`,
+		);
 		if (mode === "graceful") {
 			const forceKilled = Math.max(0, abortResult.sessionsKilled - abortResult.gracefulExits);
-			messages.push(ORCH_MESSAGES.abortGracefulComplete(batchId, abortResult.gracefulExits, forceKilled, Math.round(abortResult.durationMs / 1000)));
+			messages.push(
+				ORCH_MESSAGES.abortGracefulComplete(
+					batchId,
+					abortResult.gracefulExits,
+					forceKilled,
+					Math.round(abortResult.durationMs / 1000),
+				),
+			);
 		} else {
-			messages.push(ORCH_MESSAGES.abortHardComplete(batchId, abortResult.sessionsKilled, Math.round(abortResult.durationMs / 1000)));
+			messages.push(
+				ORCH_MESSAGES.abortHardComplete(
+					batchId,
+					abortResult.sessionsKilled,
+					Math.round(abortResult.durationMs / 1000),
+				),
+			);
 		}
 
 		if (!abortResult.stateDeleted) {
@@ -2842,11 +3100,13 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Step 7: Clean up abort signal file
-		try { unlinkSync(abortSignalFile); } catch {}
+		try {
+			unlinkSync(abortSignalFile);
+		} catch {}
 
 		messages.push(
 			`🏁 Abort (${mode}) complete for batch ${batchId}. ` +
-			`Worktrees and branches are preserved for inspection.`,
+				`Worktrees and branches are preserved for inspection.`,
 		);
 
 		return messages.join("\n");
@@ -2894,15 +3154,15 @@ export default function (pi: ExtensionAPI) {
 							drainedAgents++;
 							drainedMessages += n;
 						}
-					} catch { /* per-agent drain best-effort */ }
+					} catch {
+						/* per-agent drain best-effort */
+					}
 				}
 				messages.push(
 					`  ✓ Drained on-disk outboxes (${drainedMessages} message(s) across ${drainedAgents} agent(s))`,
 				);
 			} catch (err) {
-				messages.push(
-					`  ⚠ Drain failed: ${err instanceof Error ? err.message : String(err)}`,
-				);
+				messages.push(`  ⚠ Drain failed: ${err instanceof Error ? err.message : String(err)}`);
 			}
 		} else {
 			messages.push("  — No active batch state; outbox drain skipped");
@@ -2967,9 +3227,9 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Find the task
-		const taskRecord = state.tasks.find(t => t.taskId === taskId);
+		const taskRecord = state.tasks.find((t) => t.taskId === taskId);
 		if (!taskRecord) {
-			const knownIds = state.tasks.map(t => t.taskId).join(", ");
+			const knownIds = state.tasks.map((t) => t.taskId).join(", ");
 			return `❌ Task "${taskId}" not found in batch ${state.batchId}.\nKnown tasks: ${knownIds || "(none)"}`;
 		}
 
@@ -3004,7 +3264,10 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
-			const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+			const newBlocked = computeTransitiveDependents(
+				remainingFailures,
+				orchBatchState.dependencyGraph,
+			);
 			state.blockedTaskIds = [...newBlocked].sort();
 			state.blockedTasks = newBlocked.size;
 		} else if (remainingFailures.size === 0) {
@@ -3040,13 +3303,16 @@ export default function (pi: ExtensionAPI) {
 
 		updateOrchWidget();
 
-		const resumeHint = state.phase === "stopped"
-			? "Use orch_resume(force=true) to re-execute the batch."
-			: "Use orch_resume() to re-execute the batch.";
-		return `✅ Task "${taskId}" reset to pending for re-execution.\n` +
+		const resumeHint =
+			state.phase === "stopped"
+				? "Use orch_resume(force=true) to re-execute the batch."
+				: "Use orch_resume() to re-execute the batch.";
+		return (
+			`✅ Task "${taskId}" reset to pending for re-execution.\n` +
 			`   Previous status: ${prevStatus}\n` +
 			`   Batch phase: ${state.phase} | Failed: ${state.failedTasks}/${state.totalTasks}\n` +
-			`   ${resumeHint}`;
+			`   ${resumeHint}`
+		);
 	}
 
 	/**
@@ -3077,14 +3343,18 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Find the task
-		const taskRecord = state.tasks.find(t => t.taskId === taskId);
+		const taskRecord = state.tasks.find((t) => t.taskId === taskId);
 		if (!taskRecord) {
-			const knownIds = state.tasks.map(t => t.taskId).join(", ");
+			const knownIds = state.tasks.map((t) => t.taskId).join(", ");
 			return `❌ Task "${taskId}" not found in batch ${state.batchId}.\nKnown tasks: ${knownIds || "(none)"}`;
 		}
 
 		// Validate: only failed, stalled, or pending tasks can be skipped
-		if (taskRecord.status !== "failed" && taskRecord.status !== "stalled" && taskRecord.status !== "pending") {
+		if (
+			taskRecord.status !== "failed" &&
+			taskRecord.status !== "stalled" &&
+			taskRecord.status !== "pending"
+		) {
 			return `❌ Cannot skip task "${taskId}" — current status is "${taskRecord.status}". Only failed, stalled, or pending tasks can be skipped.`;
 		}
 
@@ -3117,7 +3387,10 @@ export default function (pi: ExtensionAPI) {
 
 		// Use in-memory dependency graph if available (batch IDs must match)
 		if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
-			const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+			const newBlocked = computeTransitiveDependents(
+				remainingFailures,
+				orchBatchState.dependencyGraph,
+			);
 
 			// Find tasks that were blocked but are now unblocked
 			for (const id of prevBlocked) {
@@ -3194,7 +3467,11 @@ export default function (pi: ExtensionAPI) {
 	 * 4. Clears the failed merge entry and sets phase to "paused"
 	 * 5. `orch_resume()` re-runs the merge using real git merge logic
 	 */
-	function doOrchForceMerge(waveIndex: number | undefined, skipFailed: boolean, ctx: ExtensionContext): string {
+	function doOrchForceMerge(
+		waveIndex: number | undefined,
+		skipFailed: boolean,
+		ctx: ExtensionContext,
+	): string {
 		// Reject while engine is actively running
 		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
 		if (activePhases.has(orchBatchState.phase)) {
@@ -3218,8 +3495,10 @@ export default function (pi: ExtensionAPI) {
 		// Force-merge is a recovery action for non-running failed/paused batches.
 		const resumablePhases = new Set(["paused", "stopped", "failed"]);
 		if (!resumablePhases.has(state.phase)) {
-			return `❌ Cannot force merge when batch phase is "${state.phase}". ` +
-				`Force merge is only valid for paused/stopped/failed batches.`;
+			return (
+				`❌ Cannot force merge when batch phase is "${state.phase}". ` +
+				`Force merge is only valid for paused/stopped/failed batches.`
+			);
 		}
 
 		// Determine target wave index (0-based). Default to currentWaveIndex.
@@ -3253,8 +3532,10 @@ export default function (pi: ExtensionAPI) {
 		// Only allow force merge for mixed-outcome failures (partial status).
 		// Other failures (conflicts, build failures, repo divergence) need different resolution.
 		if (mergeEntry.status !== "partial") {
-			return `❌ Wave ${targetWave} merge failed with status "${mergeEntry.status}": ${mergeEntry.failureReason || "unknown reason"}.\n` +
-				`Force merge only applies to mixed-outcome lanes (partial). This failure needs manual resolution.`;
+			return (
+				`❌ Wave ${targetWave} merge failed with status "${mergeEntry.status}": ${mergeEntry.failureReason || "unknown reason"}.\n` +
+				`Force merge only applies to mixed-outcome lanes (partial). This failure needs manual resolution.`
+			);
 		}
 
 		const failureReason = mergeEntry.failureReason || "";
@@ -3264,9 +3545,11 @@ export default function (pi: ExtensionAPI) {
 			failureReasonLower.includes("mixed-outcome") ||
 			failureReasonLower.includes("automatic partial-branch merge is disabled");
 		if (!isMixedOutcomePartial) {
-			return `❌ Wave ${targetWave} has partial merge status, but the failure reason does not match mixed-outcome lanes.\n` +
+			return (
+				`❌ Wave ${targetWave} has partial merge status, but the failure reason does not match mixed-outcome lanes.\n` +
 				`Reason: ${failureReason || "unknown"}\n` +
-				`Force merge is only valid for the mixed-outcome lane guard. Resolve this merge failure manually.`;
+				`Force merge is only valid for the mixed-outcome lane guard. Resolve this merge failure manually.`
+			);
 		}
 
 		// Collect tasks in the target wave
@@ -3275,7 +3558,7 @@ export default function (pi: ExtensionAPI) {
 		const succeededInWave: string[] = [];
 
 		for (const taskId of waveTasks) {
-			const task = state.tasks.find(t => t.taskId === taskId);
+			const task = state.tasks.find((t) => t.taskId === taskId);
 			if (!task) continue;
 			if (task.status === "failed" || task.status === "stalled") {
 				failedInWave.push(taskId);
@@ -3292,7 +3575,7 @@ export default function (pi: ExtensionAPI) {
 		const skippedTasks: string[] = [];
 		if (skipFailed && failedInWave.length > 0) {
 			for (const taskId of failedInWave) {
-				const task = state.tasks.find(t => t.taskId === taskId);
+				const task = state.tasks.find((t) => t.taskId === taskId);
 				if (!task) continue;
 				const prevStatus = task.status;
 				task.status = "skipped";
@@ -3310,13 +3593,16 @@ export default function (pi: ExtensionAPI) {
 			// Recompute blocked tasks if dependency graph is available
 			const remainingFailures = new Set<string>();
 			for (const t of state.tasks) {
-				if ((t.status === "failed" || t.status === "stalled")) {
+				if (t.status === "failed" || t.status === "stalled") {
 					remainingFailures.add(t.taskId);
 				}
 			}
 
 			if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
-				const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+				const newBlocked = computeTransitiveDependents(
+					remainingFailures,
+					orchBatchState.dependencyGraph,
+				);
 				state.blockedTaskIds = [...newBlocked].sort();
 				state.blockedTasks = newBlocked.size;
 			} else if (remainingFailures.size === 0) {
@@ -3325,8 +3611,10 @@ export default function (pi: ExtensionAPI) {
 				state.blockedTasks = 0;
 			}
 		} else if (!skipFailed && failedInWave.length > 0) {
-			return `❌ Wave ${targetWave} has ${failedInWave.length} failed task(s): ${failedInWave.join(", ")}.\n` +
-				`Use skipFailed=true to skip them, or use orch_skip_task to skip them individually first.`;
+			return (
+				`❌ Wave ${targetWave} has ${failedInWave.length} failed task(s): ${failedInWave.join(", ")}.\n` +
+				`Use skipFailed=true to skip them, or use orch_skip_task to skip them individually first.`
+			);
 		}
 
 		// Clear the failed merge result so resume will re-attempt the merge.
@@ -3338,7 +3626,9 @@ export default function (pi: ExtensionAPI) {
 		state.phase = "paused";
 
 		// Clear merge-related errors
-		state.errors = state.errors.filter(e => !e.includes("mixed") && !e.includes("merge") && !e.includes("Merge"));
+		state.errors = state.errors.filter(
+			(e) => !e.includes("mixed") && !e.includes("merge") && !e.includes("Merge"),
+		);
 		state.lastError = null;
 
 		// Update timestamp
@@ -3372,7 +3662,9 @@ export default function (pi: ExtensionAPI) {
 			lines.push(`   Skipped tasks (were failed): ${skippedTasks.join(", ")}`);
 		}
 
-		lines.push(`   Batch phase: paused | Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks ?? 0} / ${state.totalTasks} total`);
+		lines.push(
+			`   Batch phase: paused | Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks ?? 0} / ${state.totalTasks} total`,
+		);
 
 		const resumeHint = "Use orch_resume() to re-run the merge with failed tasks skipped.";
 		lines.push(`   ${resumeHint}`);
@@ -3410,7 +3702,10 @@ export default function (pi: ExtensionAPI) {
 			listOrchBranches: () => {
 				const result = runGit(["branch", "--list", "orch/*"], repoRoot);
 				return result.ok
-					? result.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean)
+					? result.stdout
+							.split("\n")
+							.map((b) => b.replace(/^\*?\s+/, "").trim())
+							.filter(Boolean)
 					: [];
 			},
 			orchBranchExists: (branch: string) => {
@@ -3423,7 +3718,8 @@ export default function (pi: ExtensionAPI) {
 			return { message: resolution.error, error: severity !== "info" };
 		}
 
-		const { orchBranch, baseBranch, batchId, currentBranch, notices } = resolution as IntegrationContext;
+		const { orchBranch, baseBranch, batchId, currentBranch, notices } =
+			resolution as IntegrationContext;
 		const outputLines: string[] = [];
 		let hasWarning = false;
 
@@ -3439,8 +3735,8 @@ export default function (pi: ExtensionAPI) {
 				hasWarning = true;
 				outputLines.push(
 					`⚠️ Branch \`${baseBranch}\` has branch protection rules enabled.\n` +
-					`Direct merges may be blocked by your repository settings.\n\n` +
-					`Recommended: use \`/orch-integrate --pr\` to create a pull request instead.`,
+						`Direct merges may be blocked by your repository settings.\n\n` +
+						`Recommended: use \`/orch-integrate --pr\` to create a pull request instead.`,
 				);
 			}
 		}
@@ -3452,24 +3748,21 @@ export default function (pi: ExtensionAPI) {
 		);
 		const commitsAhead = revListResult.ok ? revListResult.stdout.trim() : "?";
 
-		const diffStatResult = runGit(
-			["diff", "--stat", `${currentBranch}...${orchBranch}`],
-			repoRoot,
-		);
+		const diffStatResult = runGit(["diff", "--stat", `${currentBranch}...${orchBranch}`], repoRoot);
 		const diffSummary = diffStatResult.ok ? diffStatResult.stdout.trim() : "(unable to compute diff)";
 
 		outputLines.push(
 			`🔀 Integration Summary\n` +
-			`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-			`  Orch branch:  ${orchBranch}\n` +
-			`  Target:       ${currentBranch}\n` +
-			`  Commits:      ${commitsAhead} ahead\n` +
-			`  Mode:         ${parsed.mode === "ff" ? "fast-forward" : parsed.mode === "merge" ? "merge commit" : "pull request"}\n` +
-			(batchId ? `  Batch:        ${batchId}\n` : "") +
-			(parsed.force ? `  ⚠ Force:      branch safety check skipped\n` : "") +
-			`\n` +
-			(diffSummary ? `${diffSummary}\n` : "") +
-			`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+				`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+				`  Orch branch:  ${orchBranch}\n` +
+				`  Target:       ${currentBranch}\n` +
+				`  Commits:      ${commitsAhead} ahead\n` +
+				`  Mode:         ${parsed.mode === "ff" ? "fast-forward" : parsed.mode === "merge" ? "merge commit" : "pull request"}\n` +
+				(batchId ? `  Batch:        ${batchId}\n` : "") +
+				(parsed.force ? `  ⚠ Force:      branch safety check skipped\n` : "") +
+				`\n` +
+				(diffSummary ? `${diffSummary}\n` : "") +
+				`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
 		);
 
 		// Execute integration
@@ -3479,7 +3772,10 @@ export default function (pi: ExtensionAPI) {
 
 		if (wsConfig) {
 			for (const [repoId, repoConf] of wsConfig.repos) {
-				const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${resolvedOrchBranch}`], repoConf.path);
+				const branchCheck = runGit(
+					["rev-parse", "--verify", `refs/heads/${resolvedOrchBranch}`],
+					repoConf.path,
+				);
 				if (branchCheck.ok) {
 					reposToIntegrate.push({ id: repoId, root: repoConf.path });
 				}
@@ -3493,7 +3789,10 @@ export default function (pi: ExtensionAPI) {
 			const repoMessages: string[] = [];
 
 			for (const repo of reposToIntegrate) {
-				const preCountResult = runGit(["rev-list", "--count", `HEAD..${resolvedOrchBranch}`], repo.root);
+				const preCountResult = runGit(
+					["rev-list", "--count", `HEAD..${resolvedOrchBranch}`],
+					repo.root,
+				);
 				const repoCommitsBefore = preCountResult.ok ? parseInt(preCountResult.stdout) || 0 : 0;
 
 				const integrationResult = executeIntegration(parsed.mode, resolution as IntegrationContext, {
@@ -3516,11 +3815,16 @@ export default function (pi: ExtensionAPI) {
 							};
 						}
 					},
-					deleteBatchState: () => { /* handled once after all repos */ },
+					deleteBatchState: () => {
+						/* handled once after all repos */
+					},
 				});
 
 				if (!integrationResult.success) {
-					return { ok: false as const, error: `❌ Integration failed in ${repo.id}:\n${integrationResult.error}` };
+					return {
+						ok: false as const,
+						error: `❌ Integration failed in ${repo.id}:\n${integrationResult.error}`,
+					};
 				}
 
 				totalCommits += repoCommitsBefore;
@@ -3554,17 +3858,24 @@ export default function (pi: ExtensionAPI) {
 		const branchCleanupLines: string[] = [];
 		for (const repo of allRepos) {
 			const branchCleanup = deleteStaleBranches(repo.root, opId, batchId);
-			const totalDeleted = branchCleanup.deletedTaskBranches.length + branchCleanup.deletedSavedBranches.length;
+			const totalDeleted =
+				branchCleanup.deletedTaskBranches.length + branchCleanup.deletedSavedBranches.length;
 			if (totalDeleted > 0 || branchCleanup.failedDeletes.length > 0) {
 				const label = repo.id === "(default)" ? "" : ` (${repo.id})`;
 				if (branchCleanup.deletedTaskBranches.length > 0) {
-					branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedTaskBranches.length} task branch(es)${label}`);
+					branchCleanupLines.push(
+						`  🗑️ Deleted ${branchCleanup.deletedTaskBranches.length} task branch(es)${label}`,
+					);
 				}
 				if (branchCleanup.deletedSavedBranches.length > 0) {
-					branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedSavedBranches.length} saved branch(es)${label}`);
+					branchCleanupLines.push(
+						`  🗑️ Deleted ${branchCleanup.deletedSavedBranches.length} saved branch(es)${label}`,
+					);
 				}
 				if (branchCleanup.failedDeletes.length > 0) {
-					branchCleanupLines.push(`  ⚠️ Failed to delete ${branchCleanup.failedDeletes.length} branch(es)${label}: ${branchCleanup.failedDeletes.join(", ")}`);
+					branchCleanupLines.push(
+						`  ⚠️ Failed to delete ${branchCleanup.failedDeletes.length} branch(es)${label}: ${branchCleanup.failedDeletes.join(", ")}`,
+					);
 				}
 			}
 		}
@@ -3576,8 +3887,13 @@ export default function (pi: ExtensionAPI) {
 		const repoFindings: IntegrateCleanupRepoFindings[] = [];
 		for (const repo of allRepos) {
 			const findings = collectRepoCleanupFindings(
-				repo.root, repo.id === "(default)" ? undefined : repo.id,
-				opId, batchId, orchPrefix, resolvedOrchBranch, orchConfig,
+				repo.root,
+				repo.id === "(default)" ? undefined : repo.id,
+				opId,
+				batchId,
+				orchPrefix,
+				resolvedOrchBranch,
+				orchConfig,
 				{ skipOrchBranch },
 			);
 			repoFindings.push(findings);
@@ -3590,10 +3906,18 @@ export default function (pi: ExtensionAPI) {
 
 		// TP-179: Write integratedAt to batch history before deleting state
 		if (batchId) {
-			try { updateBatchHistoryIntegration(stateRoot, batchId, Date.now()); } catch { /* best effort */ }
+			try {
+				updateBatchHistoryIntegration(stateRoot, batchId, Date.now());
+			} catch {
+				/* best effort */
+			}
 		}
 
-		try { deleteBatchState(stateRoot); } catch { /* best effort */ }
+		try {
+			deleteBatchState(stateRoot);
+		} catch {
+			/* best effort */
+		}
 
 		// ── TP-065: Post-integrate artifact cleanup (Layer 1) ────
 		// Delete batch-specific telemetry and merge result files.
@@ -3601,7 +3925,11 @@ export default function (pi: ExtensionAPI) {
 		if (batchId) {
 			try {
 				const artifactCleanup = cleanupPostIntegrate(stateRoot, batchId);
-				const totalCleaned = artifactCleanup.telemetryFilesDeleted + artifactCleanup.mergeFilesDeleted + artifactCleanup.promptFilesDeleted + artifactCleanup.mailboxDirsDeleted;
+				const totalCleaned =
+					artifactCleanup.telemetryFilesDeleted +
+					artifactCleanup.mergeFilesDeleted +
+					artifactCleanup.promptFilesDeleted +
+					artifactCleanup.mailboxDirsDeleted;
 				if (totalCleaned > 0) {
 					const cleanupParts = [
 						`${artifactCleanup.telemetryFilesDeleted} telemetry file(s)`,
@@ -3611,9 +3939,7 @@ export default function (pi: ExtensionAPI) {
 					if (artifactCleanup.mailboxDirsDeleted > 0) {
 						cleanupParts.push(`${artifactCleanup.mailboxDirsDeleted} mailbox dir(s)`);
 					}
-					outputLines.push(
-						`🧹 Cleaned up ${cleanupParts.join(", ")} for batch ${batchId}`,
-					);
+					outputLines.push(`🧹 Cleaned up ${cleanupParts.join(", ")} for batch ${batchId}`);
 				}
 				if (artifactCleanup.warnings.length > 0) {
 					hasWarning = true;
@@ -3635,7 +3961,14 @@ export default function (pi: ExtensionAPI) {
 			const deps = supervisorState.pendingSummaryDeps;
 			supervisorState.pendingSummaryDeps = null;
 			if (supervisorState.batchStateRef && supervisorState.stateRoot) {
-				presentBatchSummary(pi, supervisorState.batchStateRef, supervisorState.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
+				presentBatchSummary(
+					pi,
+					supervisorState.batchStateRef,
+					supervisorState.stateRoot,
+					deps.opId,
+					deps.diagnostics,
+					deps.mergeResults,
+				);
 			}
 			deactivateSupervisor(pi, supervisorState);
 		}
@@ -3656,7 +3989,8 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const result = doOrchPause();
 			// Determine notification level from result content
-			const level = result.includes("No batch") || result.includes("already paused") ? "warning" : "info";
+			const level =
+				result.includes("No batch") || result.includes("already paused") ? "warning" : "info";
 			ctx.ui.notify(result, level);
 		},
 	});
@@ -3689,7 +4023,7 @@ export default function (pi: ExtensionAPI) {
 				// Top-level catch: ensure the user ALWAYS sees something
 				ctx.ui.notify(
 					`❌ Abort failed with error: ${err instanceof Error ? err.message : String(err)}\n` +
-					`   Stack: ${err instanceof Error ? err.stack : "N/A"}`,
+						`   Stack: ${err instanceof Error ? err.stack : "N/A"}`,
 					"error",
 				);
 			}
@@ -3702,15 +4036,15 @@ export default function (pi: ExtensionAPI) {
 			if (!args?.trim()) {
 				ctx.ui.notify(
 					"Usage: /orch-deps <areas|paths|all> [--refresh] [--task <id>]\n\n" +
-					"Shows the dependency graph for tasks in the specified areas.\n\n" +
-					"Options:\n" +
-					"  --refresh       Force re-scan of areas (bypass dependency cache)\n" +
-					"  --task <id>     Show dependencies for a single task only\n\n" +
-					"Examples:\n" +
-					"  /orch-deps all\n" +
-					"  /orch-deps all --task TO-014\n" +
-					"  /orch-deps time-off --refresh\n" +
-					"  /orch-deps all --task COMP-006 --refresh",
+						"Shows the dependency graph for tasks in the specified areas.\n\n" +
+						"Options:\n" +
+						"  --refresh       Force re-scan of areas (bypass dependency cache)\n" +
+						"  --task <id>     Show dependencies for a single task only\n\n" +
+						"Examples:\n" +
+						"  /orch-deps all\n" +
+						"  /orch-deps all --task TO-014\n" +
+						"  /orch-deps time-off --refresh\n" +
+						"  /orch-deps all --task COMP-006 --refresh",
 					"info",
 				);
 				return;
@@ -3737,7 +4071,7 @@ export default function (pi: ExtensionAPI) {
 			if (!cleanArgs) {
 				ctx.ui.notify(
 					"Usage: /orch-deps <areas|paths|all> [--refresh] [--task <id>]\n" +
-					"Error: target argument required (e.g., 'all', area name, or path)",
+						"Error: target argument required (e.g., 'all', area name, or path)",
 					"error",
 				);
 				return;
@@ -3763,11 +4097,7 @@ export default function (pi: ExtensionAPI) {
 			// Show dependency graph (full or filtered)
 			if (discovery.pending.size > 0) {
 				ctx.ui.notify(
-					formatDependencyGraph(
-						discovery.pending,
-						discovery.completed,
-						filterTaskId,
-					),
+					formatDependencyGraph(discovery.pending, discovery.completed, filterTaskId),
 					"info",
 				);
 			}
@@ -3793,8 +4123,8 @@ export default function (pi: ExtensionAPI) {
 			if (supervisorState.active) {
 				ctx.ui.notify(
 					"✅ This session is already the active supervisor.\n\n" +
-					`  Session: ${supervisorState.lockSessionId}\n` +
-					`  Batch: ${supervisorState.batchId || orchBatchState.batchId}`,
+						`  Session: ${supervisorState.lockSessionId}\n` +
+						`  Batch: ${supervisorState.batchId || orchBatchState.batchId}`,
 					"info",
 				);
 				return;
@@ -3805,10 +4135,7 @@ export default function (pi: ExtensionAPI) {
 
 			switch (lockResult.status) {
 				case "no-active-batch":
-					ctx.ui.notify(
-						"No active batch to supervise.\n\nStart a batch with /orch first.",
-						"info",
-					);
+					ctx.ui.notify("No active batch to supervise.\n\nStart a batch with /orch first.", "info");
 					return;
 
 				case "no-lockfile":
@@ -3819,17 +4146,14 @@ export default function (pi: ExtensionAPI) {
 					const summary = buildTakeoverSummary(stateRoot, batchState);
 					const reason =
 						lockResult.status === "stale"
-							? (isProcessAlive(lockResult.lock.pid)
+							? isProcessAlive(lockResult.lock.pid)
 								? `Previous supervisor (PID ${lockResult.lock.pid}) has a stale heartbeat (last: ${lockResult.lock.heartbeat}).`
-								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`)
+								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`
 							: lockResult.status === "corrupt"
 								? "Found a corrupt supervisor lockfile."
 								: "No supervisor lockfile found.";
 
-					ctx.ui.notify(
-						`🔄 **${reason}** Activating supervisor.\n\n` + summary,
-						"info",
-					);
+					ctx.ui.notify(`🔄 **${reason}** Activating supervisor.\n\n` + summary, "info");
 
 					// Populate orchBatchState from persisted state
 					orchBatchState.batchId = batchState.batchId;
@@ -3870,10 +4194,10 @@ export default function (pi: ExtensionAPI) {
 
 					ctx.ui.notify(
 						`⚡ **Forcing supervisor takeover from PID ${lock.pid}.**\n\n` +
-						`  Previous session: ${lock.sessionId}\n` +
-						`  Previous heartbeat: ${lock.heartbeat}\n\n` +
-						`The other session will yield on its next heartbeat check.\n\n` +
-						summary,
+							`  Previous session: ${lock.sessionId}\n` +
+							`  Previous heartbeat: ${lock.heartbeat}\n\n` +
+							`The other session will yield on its next heartbeat check.\n\n` +
+							summary,
 						"warning",
 					);
 
@@ -3919,19 +4243,19 @@ export default function (pi: ExtensionAPI) {
 			if (args?.trim() === "--help" || args?.trim() === "-h") {
 				ctx.ui.notify(
 					"Usage: /orch-integrate [<orch-branch>] [--merge] [--pr] [--force]\n\n" +
-					"Integrate a completed orch batch into your working branch.\n\n" +
-					"Modes:\n" +
-					"  (default)   Fast-forward merge (cleanest history)\n" +
-					"  --merge     Create a real merge commit\n" +
-					"  --pr        Push orch branch and create a pull request\n\n" +
-					"Options:\n" +
-					"  --force     Skip branch safety check\n" +
-					"  <branch>    Orch branch name (auto-detected from batch state if omitted)\n\n" +
-					"Examples:\n" +
-					"  /orch-integrate                          Auto-detect and fast-forward\n" +
-					"  /orch-integrate --merge                  Auto-detect with merge commit\n" +
-					"  /orch-integrate orch/op-abc123 --pr      Specific branch, create PR\n" +
-					"  /orch-integrate --force                  Skip branch safety check",
+						"Integrate a completed orch batch into your working branch.\n\n" +
+						"Modes:\n" +
+						"  (default)   Fast-forward merge (cleanest history)\n" +
+						"  --merge     Create a real merge commit\n" +
+						"  --pr        Push orch branch and create a pull request\n\n" +
+						"Options:\n" +
+						"  --force     Skip branch safety check\n" +
+						"  <branch>    Orch branch name (auto-detected from batch state if omitted)\n\n" +
+						"Examples:\n" +
+						"  /orch-integrate                          Auto-detect and fast-forward\n" +
+						"  /orch-integrate --merge                  Auto-detect with merge commit\n" +
+						"  /orch-integrate orch/op-abc123 --pr      Specific branch, create PR\n" +
+						"  /orch-integrate --force                  Skip branch safety check",
 					"info",
 				);
 				return;
@@ -3965,7 +4289,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error checking status: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error checking status: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -3992,7 +4321,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error pausing batch: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error pausing batch: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4014,9 +4348,11 @@ export default function (pi: ExtensionAPI) {
 			"The resume happens asynchronously — the tool returns immediately with a status message.",
 		],
 		parameters: Type.Object({
-			force: Type.Optional(Type.Boolean({
-				description: "Resume from stopped or failed state (default: false)",
-			})),
+			force: Type.Optional(
+				Type.Boolean({
+					description: "Resume from stopped or failed state (default: false)",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4024,7 +4360,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result.message }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error resuming batch: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error resuming batch: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4047,9 +4388,11 @@ export default function (pi: ExtensionAPI) {
 			"Worktrees and branches are preserved for inspection after abort.",
 		],
 		parameters: Type.Object({
-			hard: Type.Optional(Type.Boolean({
-				description: "Hard abort — immediate kill without grace period (default: false)",
-			})),
+			hard: Type.Optional(
+				Type.Boolean({
+					description: "Hard abort — immediate kill without grace period (default: false)",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4057,7 +4400,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error aborting batch: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error aborting batch: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4100,7 +4448,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error during supervisor takeover: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error during supervisor takeover: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4124,16 +4477,21 @@ export default function (pi: ExtensionAPI) {
 			"If the target branch has protection rules, prefer mode='pr'.",
 		],
 		parameters: Type.Object({
-			mode: Type.Optional(Type.Union(
-				[Type.Literal("fast-forward"), Type.Literal("merge"), Type.Literal("pr")],
-				{ description: 'Integration mode (default: "fast-forward")' },
-			)),
-			force: Type.Optional(Type.Boolean({
-				description: "Skip branch safety check (default: false)",
-			})),
-			branch: Type.Optional(Type.String({
-				description: "Orch branch name (auto-detected from batch state if omitted)",
-			})),
+			mode: Type.Optional(
+				Type.Union([Type.Literal("fast-forward"), Type.Literal("merge"), Type.Literal("pr")], {
+					description: 'Integration mode (default: "fast-forward")',
+				}),
+			),
+			force: Type.Optional(
+				Type.Boolean({
+					description: "Skip branch safety check (default: false)",
+				}),
+			),
+			branch: Type.Optional(
+				Type.String({
+					description: "Orch branch name (auto-detected from batch state if omitted)",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4150,7 +4508,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result.message }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error integrating batch: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error integrating batch: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4161,7 +4524,7 @@ export default function (pi: ExtensionAPI) {
 		name: "orch_start",
 		label: "Start Batch",
 		description:
-			"Start a new orchestration batch. Target is \"all\" to run all pending tasks, " +
+			'Start a new orchestration batch. Target is "all" to run all pending tasks, ' +
 			"a task area name, a directory path, or one or more PROMPT.md paths. " +
 			"The batch runs asynchronously — use orch_status() to monitor progress.",
 		promptSnippet: "orch_start(target) — start a new batch",
@@ -4169,15 +4532,16 @@ export default function (pi: ExtensionAPI) {
 			"Call orch_start to begin executing pending tasks as a batch.",
 			'Use target="all" to run all pending tasks.',
 			"Specify a task area name to run all pending tasks in that area.",
-			"Specify a PROMPT.md path to run a single task: target=\"taskplane-tasks/TP-101/PROMPT.md\"",
-			"Specify multiple space-separated PROMPT.md paths to run specific tasks: target=\"path/TP-001/PROMPT.md path/TP-002/PROMPT.md\"",
+			'Specify a PROMPT.md path to run a single task: target="taskplane-tasks/TP-101/PROMPT.md"',
+			'Specify multiple space-separated PROMPT.md paths to run specific tasks: target="path/TP-001/PROMPT.md path/TP-002/PROMPT.md"',
 			"Cannot start if a batch is already running — check orch_status() first.",
 			"The batch runs asynchronously. The tool returns immediately with an ACK.",
 			"After starting, use orch_status() to track progress.",
 		],
 		parameters: Type.Object({
 			target: Type.String({
-				description: 'Target to run: "all" for all pending tasks, a task area name, a directory path, or one or more PROMPT.md paths (space-separated)',
+				description:
+					'Target to run: "all" for all pending tasks, a task area name, a directory path, or one or more PROMPT.md paths (space-separated)',
 			}),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -4186,7 +4550,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result.message }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error starting batch: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error starting batch: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4219,7 +4588,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error retrying task: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error retrying task: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4252,7 +4626,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error skipping task: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error skipping task: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4268,7 +4647,8 @@ export default function (pi: ExtensionAPI) {
 			"Force merge a wave that was rejected due to mixed-outcome lanes (succeeded and failed tasks " +
 			"on the same lane). Updates the merge result to 'succeeded' so the batch can continue. " +
 			"Optionally skips failed tasks in the wave.",
-		promptSnippet: "orch_force_merge(waveIndex?, skipFailed?) — force merge a wave with mixed results",
+		promptSnippet:
+			"orch_force_merge(waveIndex?, skipFailed?) — force merge a wave with mixed results",
 		promptGuidelines: [
 			"Call orch_force_merge when a wave merge was rejected because lanes had both succeeded and failed tasks.",
 			"The batch must be paused, stopped, or failed with a 'partial' merge result for the target wave.",
@@ -4278,12 +4658,17 @@ export default function (pi: ExtensionAPI) {
 			"waveIndex is 0-based. Omit it to target the current wave.",
 		],
 		parameters: Type.Object({
-			waveIndex: Type.Optional(Type.Number({
-				description: "0-based wave index to force merge. Defaults to the current wave.",
-			})),
-			skipFailed: Type.Optional(Type.Boolean({
-				description: "If true, automatically skip all failed tasks in the wave before merging. Defaults to false.",
-			})),
+			waveIndex: Type.Optional(
+				Type.Number({
+					description: "0-based wave index to force merge. Defaults to the current wave.",
+				}),
+			),
+			skipFailed: Type.Optional(
+				Type.Boolean({
+					description:
+						"If true, automatically skip all failed tasks in the wave before merging. Defaults to false.",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4291,7 +4676,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error force merging: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error force merging: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4306,7 +4696,8 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Send a steering message to a running agent (worker, reviewer, or merger). " +
 			"The message is delivered into the agent's LLM context at the next turn boundary.",
-		promptSnippet: "send_agent_message(to, content, type?) — send steering message to a running agent",
+		promptSnippet:
+			"send_agent_message(to, content, type?) — send steering message to a running agent",
 		promptGuidelines: [
 			"Call send_agent_message to course-correct a running agent (worker, reviewer, or merger).",
 			"The 'to' parameter must be a valid agent session name from the current batch.",
@@ -4321,10 +4712,12 @@ export default function (pi: ExtensionAPI) {
 			content: Type.String({
 				description: "Message content (max 4KB). Concise directive for the agent.",
 			}),
-			type: Type.Optional(Type.Union(
-				[Type.Literal("steer"), Type.Literal("query"), Type.Literal("abort"), Type.Literal("info")],
-				{ description: 'Message type (default: "steer")' },
-			)),
+			type: Type.Optional(
+				Type.Union(
+					[Type.Literal("steer"), Type.Literal("query"), Type.Literal("abort"), Type.Literal("info")],
+					{ description: 'Message type (default: "steer")' },
+				),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4332,7 +4725,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error sending message: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error sending message: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4346,7 +4744,8 @@ export default function (pi: ExtensionAPI) {
 		const registry = readRegistrySnapshot(stateRoot, state.batchId);
 		if (registry) {
 			for (const manifest of Object.values(registry.agents)) {
-				if (manifest.role !== "worker" && manifest.role !== "reviewer" && manifest.role !== "merger") continue;
+				if (manifest.role !== "worker" && manifest.role !== "reviewer" && manifest.role !== "merger")
+					continue;
 				if (isTerminalStatus(manifest.status) || !registryIsProcessAlive(manifest.pid)) continue;
 				ids.add(manifest.agentId);
 			}
@@ -4375,7 +4774,12 @@ export default function (pi: ExtensionAPI) {
 	 *
 	 * @since TP-089
 	 */
-	function doSendAgentMessage(to: string, content: string, messageType: string, ctx: ExtensionContext): string {
+	function doSendAgentMessage(
+		to: string,
+		content: string,
+		messageType: string,
+		ctx: ExtensionContext,
+	): string {
 		const stateRoot = resolveToolStateRoot(ctx);
 
 		// Validate message type (outbound allowlist: steer, query, abort, info)
@@ -4455,11 +4859,13 @@ export default function (pi: ExtensionAPI) {
 				contentPreview: content.slice(0, 200),
 				broadcast: false,
 			});
-			return `✅ Message sent to \`${to}\` (batch ${state.batchId})\n` +
+			return (
+				`✅ Message sent to \`${to}\` (batch ${state.batchId})\n` +
 				`- **ID:** ${msg.id}\n` +
 				`- **Type:** ${messageType}\n` +
 				`- **Size:** ${Buffer.byteLength(content, "utf8")} bytes\n` +
-				`Message will be delivered at the agent's next turn boundary.`;
+				`Message will be delivered at the agent's next turn boundary.`
+			);
 		} catch (err) {
 			return `❌ Failed to write message: ${err instanceof Error ? err.message : String(err)}`;
 		}
@@ -4474,7 +4880,8 @@ export default function (pi: ExtensionAPI) {
 			"Read reply and escalation messages from agents (non-consuming). " +
 			"Returns pending and already-acked outbox messages from a specific agent or all agents. " +
 			"Messages are never removed by reading — this is a durable history view.",
-		promptSnippet: "read_agent_replies(from?) \u2014 read replies/escalations from agents (read-only, non-consuming)",
+		promptSnippet:
+			"read_agent_replies(from?) \u2014 read replies/escalations from agents (read-only, non-consuming)",
 		promptGuidelines: [
 			"Call read_agent_replies to check if any agent has sent a reply or escalation.",
 			"Omit 'from' to read replies from all agents.",
@@ -4482,9 +4889,11 @@ export default function (pi: ExtensionAPI) {
 			"This is non-consuming: replies remain visible after reading (pending + acked history).",
 		],
 		parameters: Type.Object({
-			from: Type.Optional(Type.String({
-				description: "Agent ID to read replies from (omit for all agents)",
-			})),
+			from: Type.Optional(
+				Type.String({
+					description: "Agent ID to read replies from (omit for all agents)",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4492,7 +4901,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error reading replies: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error reading replies: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4515,13 +4929,19 @@ export default function (pi: ExtensionAPI) {
 		// so replies from agents no longer active are still visible.
 		const agentIds = from
 			? [from]
-			: [...new Set([
-				...collectKnownAgentIds(stateRoot, state),
-				...discoverMailboxAgentIds(stateRoot, state.batchId),
-			])];
+			: [
+					...new Set([
+						...collectKnownAgentIds(stateRoot, state),
+						...discoverMailboxAgentIds(stateRoot, state.batchId),
+					]),
+				];
 
 		// TP-091: read full outbox history (pending + processed) for durable visibility
-		const allEntries: Array<{ agentId: string; message: import("./types.ts").MailboxMessage; acked: boolean }> = [];
+		const allEntries: Array<{
+			agentId: string;
+			message: import("./types.ts").MailboxMessage;
+			acked: boolean;
+		}> = [];
 		for (const agentId of agentIds) {
 			const history = readOutboxHistory(stateRoot, state.batchId, agentId);
 			for (const entry of history) {
@@ -4569,10 +4989,11 @@ export default function (pi: ExtensionAPI) {
 			content: Type.String({
 				description: "Message content (max 4KB)",
 			}),
-			type: Type.Optional(Type.Union(
-				[Type.Literal("steer"), Type.Literal("info"), Type.Literal("abort")],
-				{ description: 'Message type (default: "info")' },
-			)),
+			type: Type.Optional(
+				Type.Union([Type.Literal("steer"), Type.Literal("info"), Type.Literal("abort")], {
+					description: 'Message type (default: "info")',
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4580,7 +5001,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error broadcasting: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error broadcasting: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4618,7 +5044,10 @@ export default function (pi: ExtensionAPI) {
 					retryAfterMs: b.check.retryAfterMs,
 				});
 			}
-			const preview = blocked.slice(0, 5).map(b => `${b.agentId} (${Math.ceil((b.check.retryAfterMs ?? 0) / 1000)}s)`).join(", ");
+			const preview = blocked
+				.slice(0, 5)
+				.map((b) => `${b.agentId} (${Math.ceil((b.check.retryAfterMs ?? 0) / 1000)}s)`)
+				.join(", ");
 			return `⏳ Broadcast rate limited for ${blocked.length}/${recipients.length} agent(s): ${preview}${blocked.length > 5 ? " ..." : ""}`;
 		}
 
@@ -4640,12 +5069,14 @@ export default function (pi: ExtensionAPI) {
 				contentPreview: content.slice(0, 200),
 				broadcast: true,
 			});
-			return `✅ Broadcast sent (batch ${state.batchId})\n` +
+			return (
+				`✅ Broadcast sent (batch ${state.batchId})\n` +
 				`- **ID:** ${msg.id}\n` +
 				`- **Type:** ${messageType}\n` +
 				`- **Recipients:** ${recipients.length}\n` +
 				`- **Size:** ${Buffer.byteLength(content, "utf8")} bytes\n` +
-				`Message will be delivered to all agents at their next turn boundary.`;
+				`Message will be delivered to all agents at their next turn boundary.`
+			);
 		} catch (err) {
 			return `❌ Failed to broadcast: ${err instanceof Error ? err.message : String(err)}`;
 		}
@@ -4655,7 +5086,10 @@ export default function (pi: ExtensionAPI) {
 		return execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? context.cwd;
 	}
 
-	function resolveLaneRepoRootForTools(laneRec: PersistedBatchState["lanes"][number], stateRoot: string): string {
+	function resolveLaneRepoRootForTools(
+		laneRec: PersistedBatchState["lanes"][number],
+		stateRoot: string,
+	): string {
 		if (execCtx?.workspaceConfig && laneRec.repoId) {
 			const repo = execCtx.workspaceConfig.repos[laneRec.repoId];
 			if (repo?.path) return repo.path;
@@ -4672,16 +5106,19 @@ export default function (pi: ExtensionAPI) {
 			"Read STATUS.md and telemetry for a running agent's lane. " +
 			"Returns current step, checkbox progress, context %, cost, tool count, and elapsed time. " +
 			"If lane is omitted, returns status for all active lanes.",
-		promptSnippet: "read_agent_status(lane?) — read STATUS.md + context % + cost from a running agent",
+		promptSnippet:
+			"read_agent_status(lane?) — read STATUS.md + context % + cost from a running agent",
 		promptGuidelines: [
 			"Call read_agent_status to check on a specific lane's worker progress.",
 			"Omit lane to get a summary of all active lanes.",
 			"Returns: current step, checked/total items, context %, cost, elapsed.",
 		],
 		parameters: Type.Object({
-			lane: Type.Optional(Type.Number({
-				description: "Lane number to check (omit for all lanes)",
-			})),
+			lane: Type.Optional(
+				Type.Number({
+					description: "Lane number to check (omit for all lanes)",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -4689,7 +5126,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error reading agent status: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error reading agent status: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4707,9 +5149,7 @@ export default function (pi: ExtensionAPI) {
 		const state = loadBatchState(stateRoot);
 		if (!state) return "❌ No batch state found.";
 
-		const targetLanes = lane != null
-			? state.lanes.filter(l => l.laneNumber === lane)
-			: state.lanes;
+		const targetLanes = lane != null ? state.lanes.filter((l) => l.laneNumber === lane) : state.lanes;
 
 		if (targetLanes.length === 0) {
 			return lane != null
@@ -4722,8 +5162,8 @@ export default function (pi: ExtensionAPI) {
 
 		for (const laneRec of targetLanes) {
 			// Find current task for this lane
-			const laneTasks = state.tasks.filter(t => t.laneNumber === laneRec.laneNumber);
-			const runningTask = laneTasks.find(t => t.status === "running");
+			const laneTasks = state.tasks.filter((t) => t.laneNumber === laneRec.laneNumber);
+			const runningTask = laneTasks.find((t) => t.status === "running");
 			const currentTask = runningTask || laneTasks[laneTasks.length - 1];
 
 			lines.push(`### Lane ${laneRec.laneNumber} — ${laneRec.laneSessionId}`);
@@ -4731,11 +5171,17 @@ export default function (pi: ExtensionAPI) {
 
 			if (currentTask) {
 				lines.push(`**Task:** ${currentTask.taskId} (${currentTask.status})`);
-				const segmentLabel = buildTaskSegmentProgressLabel(currentTask, state.segments || [], currentTask.activeSegmentId ?? null);
+				const segmentLabel = buildTaskSegmentProgressLabel(
+					currentTask,
+					state.segments || [],
+					currentTask.activeSegmentId ?? null,
+				);
 				if (segmentLabel) lines.push(`**Segment:** ${segmentLabel}`);
 				if (currentTask.activeSegmentId) lines.push(`**Segment ID:** ${currentTask.activeSegmentId}`);
-				const packetHomeRepo = typeof currentTask.packetRepoId === "string" ? currentTask.packetRepoId : "";
-				const effectiveTaskRepo = currentTask.resolvedRepoId || currentTask.repoId || laneRec.repoId || "";
+				const packetHomeRepo =
+					typeof currentTask.packetRepoId === "string" ? currentTask.packetRepoId : "";
+				const effectiveTaskRepo =
+					currentTask.resolvedRepoId || currentTask.repoId || laneRec.repoId || "";
 				if (packetHomeRepo && packetHomeRepo !== effectiveTaskRepo) {
 					lines.push(`**Packet Home Repo:** ${packetHomeRepo}`);
 				}
@@ -4764,9 +5210,11 @@ export default function (pi: ExtensionAPI) {
 
 							if (stepMatch) lines.push(`**Step:** ${stepMatch[1].trim()}`);
 							if (statusMatch) lines.push(`**Step Status:** ${statusMatch[1].trim()}`);
-							if (total > 0) lines.push(`**Progress:** ${checked}/${total} (${Math.round((checked / total) * 100)}%)`);
+							if (total > 0)
+								lines.push(`**Progress:** ${checked}/${total} (${Math.round((checked / total) * 100)}%)`);
 							if (iterMatch) lines.push(`**Iteration:** ${iterMatch[1]}`);
-							if (reviewMatch && Number.parseInt(reviewMatch[1], 10) > 0) lines.push(`**Reviews:** ${reviewMatch[1]}`);
+							if (reviewMatch && Number.parseInt(reviewMatch[1], 10) > 0)
+								lines.push(`**Reviews:** ${reviewMatch[1]}`);
 						}
 					}
 				} catch {
@@ -4787,7 +5235,8 @@ export default function (pi: ExtensionAPI) {
 					if (ls.workerToolCount) parts.push(`tools: ${ls.workerToolCount}`);
 					if (ls.workerElapsed) parts.push(`elapsed: ${Math.round(ls.workerElapsed / 1000)}s`);
 					if (ls.workerStatus) parts.push(`worker: ${ls.workerStatus}`);
-					if (ls.reviewerStatus && ls.reviewerStatus !== "idle") parts.push(`reviewer: ${ls.reviewerStatus}`);
+					if (ls.reviewerStatus && ls.reviewerStatus !== "idle")
+						parts.push(`reviewer: ${ls.reviewerStatus}`);
 					if (parts.length > 0) lines.push(`**Telemetry:** ${parts.join(" · ")}`);
 				}
 			} catch {
@@ -4822,7 +5271,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error triggering wrap-up: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error triggering wrap-up: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4839,11 +5293,11 @@ export default function (pi: ExtensionAPI) {
 		const state = loadBatchState(stateRoot);
 		if (!state) return "❌ No batch state found.";
 
-		const laneRec = state.lanes.find(l => l.laneNumber === lane);
+		const laneRec = state.lanes.find((l) => l.laneNumber === lane);
 		if (!laneRec) return `❌ Lane ${lane} not found in batch ${state.batchId}.`;
 
 		// Find running task for this lane
-		const runningTask = state.tasks.find(t => t.laneNumber === lane && t.status === "running");
+		const runningTask = state.tasks.find((t) => t.laneNumber === lane && t.status === "running");
 		if (!runningTask) return `❌ No running task on lane ${lane}.`;
 
 		// Resolve task folder in the worktree using canonical path resolver
@@ -4866,9 +5320,11 @@ export default function (pi: ExtensionAPI) {
 			const dir = dirname(wrapUpPath);
 			if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 			writeFileSync(wrapUpPath, `wrap-up signal for ${runningTask.taskId}\n`, "utf-8");
-			return `✅ Wrap-up signal written for **${runningTask.taskId}** on lane ${lane}.\n` +
+			return (
+				`✅ Wrap-up signal written for **${runningTask.taskId}** on lane ${lane}.\n` +
 				`Path: \`${wrapUpPath}\`\n` +
-				`The worker will finish its current step and exit gracefully.`;
+				`The worker will finish its current step and exit gracefully.`
+			);
 		} catch (err) {
 			return `❌ Failed to write wrap-up file: ${err instanceof Error ? err.message : String(err)}`;
 		}
@@ -4877,8 +5333,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "read_lane_logs",
 		label: "Read Lane Logs",
-		description:
-			"Read stderr/crash logs for a specific lane from .pi/telemetry/ directory.",
+		description: "Read stderr/crash logs for a specific lane from .pi/telemetry/ directory.",
 		promptSnippet: "read_lane_logs(lane) — read stderr/crash logs for a lane",
 		promptGuidelines: [
 			"Call read_lane_logs to read crash/error logs from a lane's stderr capture.",
@@ -4895,7 +5350,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error reading lane logs: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error reading lane logs: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -4912,7 +5372,7 @@ export default function (pi: ExtensionAPI) {
 		const state = loadBatchState(stateRoot);
 		if (!state) return "❌ No batch state found.";
 
-		const laneRec = state.lanes.find(l => l.laneNumber === lane);
+		const laneRec = state.lanes.find((l) => l.laneNumber === lane);
 		if (!laneRec) return `❌ Lane ${lane} not found in batch ${state.batchId}.`;
 
 		const telemetryDir = join(stateRoot, ".pi", "telemetry");
@@ -4923,14 +5383,16 @@ export default function (pi: ExtensionAPI) {
 		try {
 			if (existsSync(telemetryDir)) {
 				const allStderr = readdirSync(telemetryDir)
-					.filter(f => f.endsWith("-stderr.log"))
-					.filter(f => f.includes(`-lane-${lane}-worker`));
-				const batchScoped = allStderr.filter(f => f.includes(`-${state.batchId}-`));
+					.filter((f) => f.endsWith("-stderr.log"))
+					.filter((f) => f.includes(`-lane-${lane}-worker`));
+				const batchScoped = allStderr.filter((f) => f.includes(`-${state.batchId}-`));
 				const candidates = (batchScoped.length > 0 ? batchScoped : allStderr)
-					.map(name => {
+					.map((name) => {
 						const absPath = join(telemetryDir, name);
 						let mtime = 0;
-						try { mtime = statSync(absPath).mtimeMs; } catch {}
+						try {
+							mtime = statSync(absPath).mtimeMs;
+						} catch {}
 						return { name, mtime };
 					})
 					.sort((a, b) => b.mtime - a.mtime);
@@ -4955,12 +5417,14 @@ export default function (pi: ExtensionAPI) {
 		try {
 			if (existsSync(telemetryDir)) {
 				const files = readdirSync(telemetryDir)
-					.filter(f => f.endsWith("-worker-exit.json"))
-					.filter(f => f.includes(`-lane-${lane}-`));
-				const batchScoped = files.filter(f => f.includes(`-${state.batchId}-`));
+					.filter((f) => f.endsWith("-worker-exit.json"))
+					.filter((f) => f.includes(`-lane-${lane}-`));
+				const batchScoped = files.filter((f) => f.includes(`-${state.batchId}-`));
 				exitFiles.push(...(batchScoped.length > 0 ? batchScoped : files));
 			}
-		} catch { /* directory not readable */ }
+		} catch {
+			/* directory not readable */
+		}
 
 		const lines: string[] = [];
 		lines.push(`📜 **Lane ${lane} Logs** — batch ${state.batchId}\n`);
@@ -4969,9 +5433,7 @@ export default function (pi: ExtensionAPI) {
 		if (stderrPath && existsSync(stderrPath)) {
 			try {
 				const content = readFileSync(stderrPath, "utf-8");
-				const truncated = content.length > 5000
-					? "...\n" + content.slice(-5000)
-					: content;
+				const truncated = content.length > 5000 ? "...\n" + content.slice(-5000) : content;
 				lines.push("### Stderr Log");
 				lines.push("```");
 				lines.push(truncated.trim());
@@ -4981,16 +5443,20 @@ export default function (pi: ExtensionAPI) {
 				lines.push("Stderr log found but unreadable.");
 			}
 		} else {
-			lines.push(`No stderr log found for lane ${lane} (pattern: \`*-lane-${lane}-worker-stderr.log\`).`);
+			lines.push(
+				`No stderr log found for lane ${lane} (pattern: \`*-lane-${lane}-worker-stderr.log\`).`,
+			);
 		}
 
 		// Read most recent exit diagnostic
 		if (exitFiles.length > 0) {
 			const latestExit = exitFiles
-				.map(name => {
+				.map((name) => {
 					const absPath = join(telemetryDir, name);
 					let mtime = 0;
-					try { mtime = statSync(absPath).mtimeMs; } catch {}
+					try {
+						mtime = statSync(absPath).mtimeMs;
+					} catch {}
 					return { name, mtime };
 				})
 				.sort((a, b) => b.mtime - a.mtime)[0]?.name;
@@ -5003,7 +5469,9 @@ export default function (pi: ExtensionAPI) {
 					if (exitData.errorMessage) lines.push(`**Error:** ${exitData.errorMessage}`);
 					if (exitData.durationSec) lines.push(`**Duration:** ${exitData.durationSec}s`);
 					lines.push("");
-				} catch { /* skip malformed exit file */ }
+				} catch {
+					/* skip malformed exit file */
+				}
 			}
 		}
 
@@ -5015,7 +5483,8 @@ export default function (pi: ExtensionAPI) {
 		label: "List Active Agents",
 		description:
 			"List all active Runtime V2 agents with their role, lane, task, status, and elapsed time.",
-		promptSnippet: "list_active_agents() — show active Runtime V2 agents with role, lane, task, status, elapsed",
+		promptSnippet:
+			"list_active_agents() — show active Runtime V2 agents with role, lane, task, status, elapsed",
 		promptGuidelines: [
 			"Call list_active_agents to see all running agent sessions.",
 			"Shows: session name, role (worker/reviewer/merger/supervisor), lane, task, context %, elapsed.",
@@ -5027,7 +5496,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
-					content: [{ type: "text" as const, text: `Error listing agents: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `Error listing agents: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -5053,10 +5527,12 @@ export default function (pi: ExtensionAPI) {
 		return "❌ No active agents found (Runtime V2 registry is empty).";
 	}
 
-
 	// ── TP-106: Registry-based agent list formatter ────────────────
 
-	function formatRegistryAgents(registry: import("./types.ts").RuntimeRegistry, _batchState: PersistedBatchState | null): string {
+	function formatRegistryAgents(
+		registry: import("./types.ts").RuntimeRegistry,
+		_batchState: PersistedBatchState | null,
+	): string {
 		const agents = Object.values(registry.agents);
 		if (agents.length === 0) return "❌ No agents in registry.";
 
@@ -5099,13 +5575,14 @@ export default function (pi: ExtensionAPI) {
 					// Build everything into temporaries first, then commit atomically
 					// so a partial failure doesn't leave mixed-generation state.
 					try {
-						const freshCtx = buildExecutionContext(reloadCwd, loadOrchestratorConfig, loadTaskRunnerConfig);
+						const freshCtx = buildExecutionContext(
+							reloadCwd,
+							loadOrchestratorConfig,
+							loadTaskRunnerConfig,
+						);
 						let freshSupervisor: SupervisorConfig;
 						try {
-							freshSupervisor = loadSupervisorConfig(
-								freshCtx.repoRoot,
-								freshCtx.pointer?.configRoot,
-							);
+							freshSupervisor = loadSupervisorConfig(freshCtx.repoRoot, freshCtx.pointer?.configRoot);
 						} catch {
 							freshSupervisor = { ...DEFAULT_SUPERVISOR_CONFIG };
 						}
@@ -5117,10 +5594,7 @@ export default function (pi: ExtensionAPI) {
 					} catch {
 						// Non-fatal — config was saved to disk but live reload failed.
 						// Existing in-memory config is preserved unchanged.
-						ctx.ui.notify(
-							"⚠️ Saved to disk but live reload failed. Restart to apply.",
-							"warn",
-						);
+						ctx.ui.notify("⚠️ Saved to disk but live reload failed. Restart to apply.", "warn");
 					}
 				});
 			} catch (err: any) {
@@ -5161,17 +5635,13 @@ export default function (pi: ExtensionAPI) {
 				//     and must surface loudly so the user fixes it.
 				const setupError = err.code === "WORKSPACE_SETUP_REQUIRED";
 				execCtxInitError = setupError
-					? (
-						`❌ Orchestrator startup blocked [${err.code}]\n\n` +
+					? `❌ Orchestrator startup blocked [${err.code}]\n\n` +
 						`${err.message}\n\n` +
 						`Orchestrator commands are disabled until this setup issue is resolved.`
-					)
-					: (
-						`❌ Workspace configuration error [${err.code}]\n\n` +
+					: `❌ Workspace configuration error [${err.code}]\n\n` +
 						`${err.message}\n\n` +
 						`Fix the workspace config at .pi/taskplane-workspace.yaml (or taskplane-config.json workspace section), then restart.\n` +
-						`Orchestrator commands are disabled until this is resolved.`
-					);
+						`Orchestrator commands are disabled until this is resolved.`;
 
 				if (setupError) {
 					// Soft-fail: no notify, quiet status line.
@@ -5201,10 +5671,7 @@ export default function (pi: ExtensionAPI) {
 		// established pattern — all config loading after buildExecutionContext
 		// uses the resolved execution context paths.
 		try {
-			supervisorConfig = loadSupervisorConfig(
-				execCtx.repoRoot,
-				execCtx.pointer?.configRoot,
-			);
+			supervisorConfig = loadSupervisorConfig(execCtx.repoRoot, execCtx.pointer?.configRoot);
 		} catch {
 			// Non-fatal — use defaults if supervisor config fails to load
 			supervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
@@ -5260,17 +5727,17 @@ export default function (pi: ExtensionAPI) {
 					const summary = buildTakeoverSummary(stateRoot, batchState);
 					const reason =
 						lockResult.status === "stale"
-							? (isProcessAlive(lockResult.lock.pid)
+							? isProcessAlive(lockResult.lock.pid)
 								? `Previous supervisor (PID ${lockResult.lock.pid}) has a stale heartbeat (last: ${lockResult.lock.heartbeat}). Process may be hung.`
-								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`)
+								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`
 							: lockResult.status === "corrupt"
 								? "Found a corrupt supervisor lockfile (treating as stale)."
 								: "No supervisor lockfile found for the active batch.";
 
 					ctx.ui.notify(
 						`🔄 **Active batch detected — ${reason}**\n\n` +
-						`Taking over supervisor duties for batch ${batchState.batchId}.\n\n` +
-						summary,
+							`Taking over supervisor duties for batch ${batchState.batchId}.\n\n` +
+							summary,
 						"info",
 					);
 
@@ -5313,13 +5780,13 @@ export default function (pi: ExtensionAPI) {
 					const batchState = lockResult.batchState;
 					ctx.ui.notify(
 						`⚠️ **Another supervisor is already monitoring batch ${batchState.batchId}.**\n\n` +
-						`  PID: ${lock.pid}\n` +
-						`  Session: ${lock.sessionId}\n` +
-						`  Started: ${lock.startedAt}\n` +
-						`  Last heartbeat: ${lock.heartbeat}\n\n` +
-						`To force takeover, run \`/orch-takeover\`.\n` +
-						`The other session will yield on its next heartbeat.\n\n` +
-						`Otherwise, use the other terminal or the dashboard to monitor the batch.`,
+							`  PID: ${lock.pid}\n` +
+							`  Session: ${lock.sessionId}\n` +
+							`  Started: ${lock.startedAt}\n` +
+							`  Last heartbeat: ${lock.heartbeat}\n\n` +
+							`To force takeover, run \`/orch-takeover\`.\n` +
+							`The other session will yield on its next heartbeat.\n\n` +
+							`Otherwise, use the other terminal or the dashboard to monitor the batch.`,
 						"warning",
 					);
 
@@ -5340,17 +5807,17 @@ export default function (pi: ExtensionAPI) {
 		// Notify user of available commands
 		ctx.ui.notify(
 			"Task Orchestrator ready\n\n" +
-			`Mode: ${modeLabel}\n` +
-			`Runtime: V2 default (configured spawn_mode: ${orchConfig.orchestrator.spawn_mode})\n` +
-			`Config: ${orchConfig.orchestrator.max_lanes} lanes, ` +
-			`${orchConfig.dependencies.source} deps\n` +
-			`Areas: ${areaCount} registered\n\n` +
-			"/orch <areas|all>        Start batch execution\n" +
-			"/orch-plan <areas|all>   Preview execution plan\n" +
-			"/orch-deps <areas|all>   Show dependency graph\n" +
-			"/orch-sessions           List orchestrator sessions\n" +
-			"/orch-takeover           Force supervisor takeover\n" +
-			"/orch-integrate          Integrate orch branch into working branch",
+				`Mode: ${modeLabel}\n` +
+				`Runtime: V2 default (configured spawn_mode: ${orchConfig.orchestrator.spawn_mode})\n` +
+				`Config: ${orchConfig.orchestrator.max_lanes} lanes, ` +
+				`${orchConfig.dependencies.source} deps\n` +
+				`Areas: ${areaCount} registered\n\n` +
+				"/orch <areas|all>        Start batch execution\n" +
+				"/orch-plan <areas|all>   Preview execution plan\n" +
+				"/orch-deps <areas|all>   Show dependency graph\n" +
+				"/orch-sessions           List orchestrator sessions\n" +
+				"/orch-takeover           Force supervisor takeover\n" +
+				"/orch-integrate          Integrate orch branch into working branch",
 			"info",
 		);
 
@@ -5420,13 +5887,13 @@ async function checkForUpdate(ctx: ExtensionContext): Promise<void> {
 
 		const response = await fetch("https://registry.npmjs.org/taskplane/latest", {
 			signal: controller.signal,
-			headers: { "Accept": "application/json" },
+			headers: { Accept: "application/json" },
 		});
 		clearTimeout(timeout);
 
 		if (!response.ok) return;
 
-		const data = await response.json() as { version?: string };
+		const data = (await response.json()) as { version?: string };
 		const latestVersion = data.version;
 		if (!latestVersion) return;
 
@@ -5434,9 +5901,9 @@ async function checkForUpdate(ctx: ExtensionContext): Promise<void> {
 		if (latestVersion !== installedVersion && isNewerVersion(latestVersion, installedVersion)) {
 			ctx.ui.notify(
 				`\n` +
-				`  Update Available\n` +
-				`  New version ${latestVersion} is available (installed: ${installedVersion}).\n` +
-				`  Run: pi update\n`,
+					`  Update Available\n` +
+					`  New version ${latestVersion} is available (installed: ${installedVersion}).\n` +
+					`  Run: pi update\n`,
 				"info",
 			);
 		}
@@ -5459,4 +5926,3 @@ function isNewerVersion(a: string, b: string): boolean {
 	}
 	return false;
 }
-

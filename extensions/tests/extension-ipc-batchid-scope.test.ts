@@ -85,7 +85,10 @@ function locateSupervisorClosureRegion(): { start: number; end: number; body: st
 	const firstActivate = source.indexOf(activateMarker, startIdx);
 	assert.ok(firstActivate > startIdx, "Could not locate first 'Activate supervisor agent' anchor");
 	const secondActivate = source.indexOf(activateMarker, firstActivate + activateMarker.length);
-	assert.ok(secondActivate > firstActivate, "Could not locate second 'Activate supervisor agent' anchor");
+	assert.ok(
+		secondActivate > firstActivate,
+		"Could not locate second 'Activate supervisor agent' anchor",
+	);
 	return {
 		start: startIdx,
 		end: secondActivate,
@@ -106,8 +109,8 @@ describe("extension.ts supervisor IPC closure — batchId scope (regression #559
 		assert.ok(
 			codeOnly.includes("orchBatchState.batchId"),
 			"Expected at least one reference to `orchBatchState.batchId` inside the supervisor IPC closure. " +
-			"That's the canonical live-batch identifier in scope. If the only batchId reference is via " +
-			"`supervisorState.batchId`, the gate effectively never fires (sage post-mortem on #559).",
+				"That's the canonical live-batch identifier in scope. If the only batchId reference is via " +
+				"`supervisorState.batchId`, the gate effectively never fires (sage post-mortem on #559).",
 		);
 	});
 
@@ -133,10 +136,10 @@ describe("extension.ts supervisor IPC closure — batchId scope (regression #559
 			occurrences.length,
 			0,
 			`Found ${occurrences.length} occurrence(s) of \`batchState.batchId\` inside the ` +
-			`supervisor IPC closure (lines ${region.start}-${region.end}). \`batchState\` is NOT ` +
-			`bound in this scope — only \`supervisorState\` is. References to \`batchState.batchId\` ` +
-			`crash the orchestrator parent with ReferenceError on the first IPC frame (issue #559). ` +
-			`Use \`supervisorState.batchId\` instead.`,
+				`supervisor IPC closure (lines ${region.start}-${region.end}). \`batchState\` is NOT ` +
+				`bound in this scope — only \`supervisorState\` is. References to \`batchState.batchId\` ` +
+				`crash the orchestrator parent with ReferenceError on the first IPC frame (issue #559). ` +
+				`Use \`supervisorState.batchId\` instead.`,
 		);
 	});
 
@@ -151,8 +154,8 @@ describe("extension.ts supervisor IPC closure — batchId scope (regression #559
 		assert.ok(
 			helperBody.includes("orchBatchState.batchId"),
 			"`ipcBatchIdMatches` must read the current batch ID from `orchBatchState.batchId` " +
-			"(the let-binding the extension manages itself, populated via state-sync IPC). " +
-			"Reading from `supervisorState.batchId` would defeat the gate for non-supervised batches.",
+				"(the let-binding the extension manages itself, populated via state-sync IPC). " +
+				"Reading from `supervisorState.batchId` would defeat the gate for non-supervised batches.",
 		);
 		assert.ok(
 			!helperBody.includes("batchState.batchId"),

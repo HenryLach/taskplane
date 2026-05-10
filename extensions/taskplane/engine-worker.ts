@@ -58,10 +58,7 @@ export type WorkerToMainMessage =
 /**
  * Messages sent FROM the main thread TO the worker.
  */
-export type WorkerInMessage =
-	| { type: "pause" }
-	| { type: "resume" }
-	| { type: "abort" };
+export type WorkerInMessage = { type: "pause" } | { type: "resume" } | { type: "abort" };
 
 /**
  * Serializable form of OrchBatchRuntimeState fields synced to main thread.
@@ -236,12 +233,14 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 		};
 
 		try {
-			(process.send as (
-				message: WorkerToMainMessage,
-				sendHandle?: unknown,
-				options?: unknown,
-				callback?: (error: Error | null) => void,
-			) => boolean)(msg, undefined, undefined, () => done());
+			(
+				process.send as (
+					message: WorkerToMainMessage,
+					sendHandle?: unknown,
+					options?: unknown,
+					callback?: (error: Error | null) => void,
+				) => boolean
+			)(msg, undefined, undefined, () => done());
 			setTimeout(done, 75).unref();
 		} catch {
 			done();
@@ -279,7 +278,9 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 		};
 
 		process.once("uncaughtException", (err: unknown) => reportFatalAndExit("uncaughtException", err));
-		process.once("unhandledRejection", (reason: unknown) => reportFatalAndExit("unhandledRejection", reason));
+		process.once("unhandledRejection", (reason: unknown) =>
+			reportFatalAndExit("unhandledRejection", reason),
+		);
 
 		// Dynamic imports — only loaded in engine context to avoid circular
 		// dependencies when this module is imported from extension.ts
@@ -349,40 +350,41 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 		};
 
 		// ── Execute engine ───────────────────────────────────────────
-		const enginePromise = data.mode === "resume"
-			? resumeOrchBatch(
-				data.orchConfig,
-				data.runnerConfig,
-				data.cwd,
-				batchState,
-				onNotify,
-				onMonitorUpdate,
-				wsConfig,
-				data.workspaceRoot,
-				data.agentRoot,
-				data.force ?? false,
-				onSupervisorAlert,
-				data.supervisorAutonomy ?? "autonomous",
-				onLaneTerminated,
-				onLaneRespawned,
-			)
-			: executeOrchBatch(
-				data.args ?? "",
-				data.orchConfig,
-				data.runnerConfig,
-				data.cwd,
-				batchState,
-				onNotify,
-				onMonitorUpdate,
-				wsConfig,
-				data.workspaceRoot,
-				data.agentRoot,
-				onEngineEvent,
-				onSupervisorAlert,
-				data.supervisorAutonomy ?? "autonomous",
-				onLaneTerminated,
-				onLaneRespawned,
-			);
+		const enginePromise =
+			data.mode === "resume"
+				? resumeOrchBatch(
+						data.orchConfig,
+						data.runnerConfig,
+						data.cwd,
+						batchState,
+						onNotify,
+						onMonitorUpdate,
+						wsConfig,
+						data.workspaceRoot,
+						data.agentRoot,
+						data.force ?? false,
+						onSupervisorAlert,
+						data.supervisorAutonomy ?? "autonomous",
+						onLaneTerminated,
+						onLaneRespawned,
+					)
+				: executeOrchBatch(
+						data.args ?? "",
+						data.orchConfig,
+						data.runnerConfig,
+						data.cwd,
+						batchState,
+						onNotify,
+						onMonitorUpdate,
+						wsConfig,
+						data.workspaceRoot,
+						data.agentRoot,
+						onEngineEvent,
+						onSupervisorAlert,
+						data.supervisorAutonomy ?? "autonomous",
+						onLaneTerminated,
+						onLaneRespawned,
+					);
 
 		enginePromise
 			.then(() => {
@@ -401,7 +403,12 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 					batchState.errors.push(`Unhandled engine error: ${normalized.message}`);
 				}
 				send({ type: "state-sync", state: serializeBatchState(batchState) });
-				send({ type: "error", source: "enginePromise", message: normalized.message, stack: normalized.stack });
+				send({
+					type: "error",
+					source: "enginePromise",
+					message: normalized.message,
+					stack: normalized.stack,
+				});
 				process.disconnect?.();
 			});
 	});

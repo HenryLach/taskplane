@@ -77,7 +77,6 @@ afterEach(() => {
 	rmSync(testRoot, { recursive: true, force: true });
 });
 
-
 // ── 29.x: Basic segment markers → correct StepSegmentMapping ────────
 
 describe("29.x: PROMPT.md with segment markers → correct StepSegmentMapping", () => {
@@ -85,7 +84,9 @@ describe("29.x: PROMPT.md with segment markers → correct StepSegmentMapping", 
 		const dir = makeTestDir("multi-seg");
 		const taskDir = join(dir, "TP-200-multi-seg");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-200 - Multi Segment Task
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-200 - Multi Segment Task
 
 **Size:** M
 
@@ -119,7 +120,8 @@ Repo: shared-libs
 ## Completion Criteria
 
 - [ ] Everything works
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		expect(result.task).not.toBe(null);
@@ -147,7 +149,6 @@ Repo: shared-libs
 	});
 });
 
-
 // ── 30.x: No segment markers (fallback) ─────────────────────────────
 
 describe("30.x: PROMPT.md without segment markers → single segment per step with primary repoId", () => {
@@ -155,7 +156,9 @@ describe("30.x: PROMPT.md without segment markers → single segment per step wi
 		const dir = makeTestDir("no-markers");
 		const taskDir = join(dir, "TP-201-no-markers");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-201 - Simple Task
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-201 - Simple Task
 
 **Size:** M
 
@@ -179,7 +182,8 @@ Repo: api-service
 ## Completion Criteria
 
 - [ ] Done
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		// No explicit segment markers → stepSegmentMap should be undefined
@@ -191,7 +195,9 @@ Repo: api-service
 		const dir = makeTestDir("no-repo-id");
 		const taskDir = join(dir, "TP-202-no-repo");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-202 - No Repo Task
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-202 - No Repo Task
 
 **Size:** M
 
@@ -203,14 +209,14 @@ Repo: api-service
 
 ### Step 0: Preflight
 - [ ] Check stuff
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		// No explicit segment markers → undefined
 		expect(result.task!.stepSegmentMap).toBe(undefined);
 	});
 });
-
 
 // ── 31.x: Mixed steps ───────────────────────────────────────────────
 
@@ -219,7 +225,9 @@ describe("31.x: Mixed steps (some with markers, some without) → correct mappin
 		const dir = makeTestDir("mixed");
 		const taskDir = join(dir, "TP-203-mixed");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-203 - Mixed Task
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-203 - Mixed Task
 
 **Size:** M
 
@@ -246,7 +254,8 @@ Repo: api
 
 ### Step 2: Documentation
 - [ ] Update docs
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		const map = result.task!.stepSegmentMap!;
@@ -269,7 +278,6 @@ Repo: api
 	});
 });
 
-
 // ── 32.x: Duplicate repoId in same step → error ─────────────────────
 
 describe("32.x: Duplicate repoId in same step → discovery error", () => {
@@ -277,7 +285,9 @@ describe("32.x: Duplicate repoId in same step → discovery error", () => {
 		const dir = makeTestDir("dup-repo");
 		const taskDir = join(dir, "TP-204-dup");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-204 - Dup Repo Task
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-204 - Dup Repo Task
 
 **Size:** M
 
@@ -298,7 +308,8 @@ Repo: api
 
 #### Segment: shared-libs
 - [ ] Check shared-libs again
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		// Duplicate within a step is a hard error
 		expect(result.error).not.toBe(null);
@@ -310,7 +321,9 @@ Repo: api
 		const dir = makeTestDir("dup-pre-seg");
 		const taskDir = join(dir, "TP-205-dup-pre");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-205 - Dup Pre-Segment
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-205 - Dup Pre-Segment
 
 **Size:** M
 
@@ -329,7 +342,8 @@ Repo: api
 
 #### Segment: api
 - [ ] Explicit api checkbox
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		// Pre-segment with fallback "api" + explicit segment "api" = duplicate
 		expect(result.error).not.toBe(null);
@@ -341,7 +355,9 @@ Repo: api
 		const areaDir = join(dir, "tasks");
 		const taskDir = join(areaDir, "TP-206-dup-repo-mode");
 		mkdirSync(taskDir, { recursive: true });
-		writePrompt(taskDir, `# Task: TP-206 - Dup Repo Mode
+		writePrompt(
+			taskDir,
+			`# Task: TP-206 - Dup Repo Mode
 
 **Size:** M
 
@@ -356,7 +372,8 @@ Repo: api
 
 #### Segment: default
 - [ ] Explicit default checkbox
-`);
+`,
+		);
 
 		const taskAreas: Record<string, TaskArea> = {
 			tasks: { path: areaDir, prefix: "TP" },
@@ -365,12 +382,11 @@ Repo: api
 		// Run discovery in repo mode (no workspace config)
 		const discovery = runDiscovery("all", taskAreas, dir);
 		// Should have duplicate error after placeholder normalization
-		const dupErrors = discovery.errors.filter(e => e.code === "SEGMENT_STEP_DUPLICATE_REPO");
+		const dupErrors = discovery.errors.filter((e) => e.code === "SEGMENT_STEP_DUPLICATE_REPO");
 		expect(dupErrors.length).toBeGreaterThanOrEqual(1);
 		expect(dupErrors[0].message).toContain("default");
 	});
 });
-
 
 // ── 33.x: Empty segment (no checkboxes) → warning ───────────────────
 
@@ -379,7 +395,9 @@ describe("33.x: Empty segment → discovery warning", () => {
 		const dir = makeTestDir("empty-seg");
 		const taskDir = join(dir, "TP-207-empty");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-207 - Empty Segment
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-207 - Empty Segment
 
 **Size:** M
 
@@ -399,13 +417,14 @@ Repo: api
 
 #### Segment: web-client
 - [ ] Do something
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		expect(result.task).not.toBe(null);
 		// Empty segment should produce a warning
 		expect(result.warnings).not.toBe(undefined);
-		const emptyWarnings = result.warnings!.filter(w => w.code === "SEGMENT_STEP_EMPTY");
+		const emptyWarnings = result.warnings!.filter((w) => w.code === "SEGMENT_STEP_EMPTY");
 		expect(emptyWarnings.length).toBe(1);
 		expect(emptyWarnings[0].message).toContain("shared-libs");
 		// The mapping should still have the empty segment
@@ -416,7 +435,6 @@ Repo: api
 	});
 });
 
-
 // ── 34.x: Unknown repoId in workspace mode → warning ────────────────
 
 describe("34.x: Unknown repoId → discovery warning with suggestion", () => {
@@ -425,7 +443,9 @@ describe("34.x: Unknown repoId → discovery warning with suggestion", () => {
 		const areaDir = join(dir, "tasks");
 		const taskDir = join(areaDir, "TP-208-unknown-repo");
 		mkdirSync(taskDir, { recursive: true });
-		writePrompt(taskDir, `# Task: TP-208 - Unknown Repo Task
+		writePrompt(
+			taskDir,
+			`# Task: TP-208 - Unknown Repo Task
 
 **Size:** M
 
@@ -446,7 +466,8 @@ Repo: api
 
 #### Segment: web-clien
 - [ ] Do web work
-`);
+`,
+		);
 
 		const taskAreas: Record<string, TaskArea> = {
 			tasks: { path: areaDir, prefix: "TP" },
@@ -457,7 +478,7 @@ Repo: api
 		});
 
 		const discovery = runDiscovery("all", taskAreas, dir, { workspaceConfig });
-		const unknownErrors = discovery.errors.filter(e => e.code === "SEGMENT_STEP_REPO_INVALID");
+		const unknownErrors = discovery.errors.filter((e) => e.code === "SEGMENT_STEP_REPO_INVALID");
 		expect(unknownErrors.length).toBeGreaterThanOrEqual(1);
 		expect(unknownErrors[0].message).toContain("web-clien");
 		expect(unknownErrors[0].message).toContain("Known repos:");
@@ -471,7 +492,9 @@ Repo: api
 		const areaDir = join(dir, "tasks");
 		const taskDir = join(areaDir, "TP-209-nonfatal");
 		mkdirSync(taskDir, { recursive: true });
-		writePrompt(taskDir, `# Task: TP-209 - Non-Fatal Warning
+		writePrompt(
+			taskDir,
+			`# Task: TP-209 - Non-Fatal Warning
 
 **Size:** M
 
@@ -492,7 +515,8 @@ Repo: api
 
 #### Segment: unknown-repo
 - [ ] More work
-`);
+`,
+		);
 
 		const taskAreas: Record<string, TaskArea> = {
 			tasks: { path: areaDir, prefix: "TP" },
@@ -505,14 +529,13 @@ Repo: api
 		// Task should still be pending (not failed)
 		expect(discovery.pending.has("TP-209")).toBe(true);
 		// Warning present
-		const warnings = discovery.errors.filter(e => e.code === "SEGMENT_STEP_REPO_INVALID");
+		const warnings = discovery.errors.filter((e) => e.code === "SEGMENT_STEP_REPO_INVALID");
 		expect(warnings.length).toBeGreaterThanOrEqual(1);
 		// SEGMENT_STEP_REPO_INVALID is NOT in FATAL_DISCOVERY_CODES
 		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
 		expect(fatalCodes.has("SEGMENT_STEP_REPO_INVALID")).toBe(false);
 	});
 });
-
 
 // ── 35.x: Repo mode placeholder resolution ──────────────────────────
 
@@ -522,7 +545,9 @@ describe("35.x: Repo mode placeholder resolution", () => {
 		const areaDir = join(dir, "tasks");
 		const taskDir = join(areaDir, "TP-210-repo-mode");
 		mkdirSync(taskDir, { recursive: true });
-		writePrompt(taskDir, `# Task: TP-210 - Repo Mode Task
+		writePrompt(
+			taskDir,
+			`# Task: TP-210 - Repo Mode Task
 
 **Size:** M
 
@@ -537,7 +562,8 @@ describe("35.x: Repo mode placeholder resolution", () => {
 
 ### Step 1: Implement
 - [ ] Do work
-`);
+`,
+		);
 
 		const taskAreas: Record<string, TaskArea> = {
 			tasks: { path: areaDir, prefix: "TP" },
@@ -552,7 +578,6 @@ describe("35.x: Repo mode placeholder resolution", () => {
 	});
 });
 
-
 // ── 36.x: Post-## Steps content isolation ────────────────────────────
 
 describe("36.x: Post-## Steps content not leaked into last step", () => {
@@ -560,7 +585,9 @@ describe("36.x: Post-## Steps content not leaked into last step", () => {
 		const dir = makeTestDir("post-steps");
 		const taskDir = join(dir, "TP-211-post-steps");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-211 - Post Steps Leak Test
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-211 - Post Steps Leak Test
 
 **Size:** M
 
@@ -581,7 +608,8 @@ Repo: api
 
 - [ ] All steps complete
 - [ ] Tests passing
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		// No explicit segment markers → stepSegmentMap undefined
@@ -590,7 +618,6 @@ Repo: api
 	});
 });
 
-
 // ── 37.x: Pre-segment checkboxes ────────────────────────────────────
 
 describe("37.x: Pre-segment checkboxes mapped to fallback repo", () => {
@@ -598,7 +625,9 @@ describe("37.x: Pre-segment checkboxes mapped to fallback repo", () => {
 		const dir = makeTestDir("pre-segment");
 		const taskDir = join(dir, "TP-212-pre-seg");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-212 - Pre-Segment
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-212 - Pre-Segment
 
 **Size:** M
 
@@ -617,7 +646,8 @@ Repo: api
 
 #### Segment: web-client
 - [ ] Web-client specific checkbox
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		const map = result.task!.stepSegmentMap!;
@@ -632,7 +662,6 @@ Repo: api
 	});
 });
 
-
 // ── 38.x: Invalid repo ID format ────────────────────────────────────
 
 describe("38.x: Invalid repo ID format → warning, checkboxes preserved", () => {
@@ -640,7 +669,9 @@ describe("38.x: Invalid repo ID format → warning, checkboxes preserved", () =>
 		const dir = makeTestDir("invalid-repo");
 		const taskDir = join(dir, "TP-213-invalid");
 		mkdirSync(taskDir, { recursive: true });
-		const promptPath = writePrompt(taskDir, `# Task: TP-213 - Invalid Repo
+		const promptPath = writePrompt(
+			taskDir,
+			`# Task: TP-213 - Invalid Repo
 
 **Size:** M
 
@@ -662,13 +693,14 @@ Repo: api
 
 #### Segment: web-client
 - [ ] Valid work
-`);
+`,
+		);
 		const result = parsePromptForOrchestrator(promptPath, taskDir, "test-area");
 		expect(result.error).toBe(null);
 		expect(result.task).not.toBe(null);
 		// Warning produced for invalid format
 		expect(result.warnings).not.toBe(undefined);
-		const invalidWarnings = result.warnings!.filter(w => w.code === "SEGMENT_STEP_REPO_INVALID");
+		const invalidWarnings = result.warnings!.filter((w) => w.code === "SEGMENT_STEP_REPO_INVALID");
 		expect(invalidWarnings.length).toBe(1);
 		expect(invalidWarnings[0].message).toContain("api_service");
 		// Checkboxes NOT dropped

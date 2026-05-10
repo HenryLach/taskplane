@@ -81,7 +81,8 @@ describe("merge result parser compatibility", () => {
 				mergeCommit: "ghi789",
 				verification: {
 					exitCode: 0,
-					command: "node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts",
+					command:
+						"node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts",
 					summary: "all passing",
 				},
 			});
@@ -103,7 +104,9 @@ describe("merge result parser compatibility", () => {
 				status: "SUCCESS",
 				source_branch: "task/lane-4",
 				verification_passed: true,
-				verification_commands: ["cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"],
+				verification_commands: [
+					"cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts",
+				],
 				verification_output: "ok",
 			});
 
@@ -137,13 +140,13 @@ describe("merge request schema guidance", () => {
 				laneNumber: 1,
 				laneId: "lane-1",
 				branch: "task/lane-1",
-				tasks: [
-					{ taskId: "TP-999", task: { taskName: "Example Task", fileScope: [] } },
-				],
+				tasks: [{ taskId: "TP-999", task: { taskName: "Example Task", fileScope: [] } }],
 			} as any,
 			"orch/op",
 			1,
-			["cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"],
+			[
+				"cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts",
+			],
 			"/tmp/result.json",
 		);
 

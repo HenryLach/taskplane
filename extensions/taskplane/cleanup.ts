@@ -64,7 +64,10 @@ export interface PostIntegrateCleanupResult {
  * @param batchId - Batch ID to scope deletion
  * @returns Cleanup result with counts and warnings
  */
-export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIntegrateCleanupResult {
+export function cleanupPostIntegrate(
+	stateRoot: string,
+	batchId: string,
+): PostIntegrateCleanupResult {
 	const result: PostIntegrateCleanupResult = {
 		telemetryFilesDeleted: 0,
 		mergeFilesDeleted: 0,
@@ -116,10 +119,11 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
 		try {
 			const entries = readdirSync(piDir);
 			for (const entry of entries) {
-				if (entry.includes(batchId) && (
-					(entry.startsWith("merge-result-") && entry.endsWith(".json")) ||
-					(entry.startsWith("merge-request-") && entry.endsWith(".txt"))
-				)) {
+				if (
+					entry.includes(batchId) &&
+					((entry.startsWith("merge-result-") && entry.endsWith(".json")) ||
+						(entry.startsWith("merge-request-") && entry.endsWith(".txt")))
+				) {
 					try {
 						unlinkSync(join(piDir, entry));
 						result.mergeFilesDeleted++;
@@ -140,7 +144,9 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
 			rmSync(mailboxBatchDir, { recursive: true, force: true });
 			result.mailboxDirsDeleted = 1;
 		} catch (err: unknown) {
-			result.warnings.push(`Failed to delete mailbox directory ${mailboxBatchDir}: ${(err as Error).message}`);
+			result.warnings.push(
+				`Failed to delete mailbox directory ${mailboxBatchDir}: ${(err as Error).message}`,
+			);
 		}
 	}
 
@@ -151,7 +157,9 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
 			rmSync(snapshotBatchDir, { recursive: true, force: true });
 			result.snapshotDirsDeleted = 1;
 		} catch (err: unknown) {
-			result.warnings.push(`Failed to delete context-snapshots directory ${snapshotBatchDir}: ${(err as Error).message}`);
+			result.warnings.push(
+				`Failed to delete context-snapshots directory ${snapshotBatchDir}: ${(err as Error).message}`,
+			);
 		}
 	}
 
@@ -163,7 +171,12 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
  */
 export function formatPostIntegrateCleanup(result: PostIntegrateCleanupResult): string {
 	const parts: string[] = [];
-	const totalDeleted = result.telemetryFilesDeleted + result.mergeFilesDeleted + result.promptFilesDeleted + result.mailboxDirsDeleted + result.snapshotDirsDeleted;
+	const totalDeleted =
+		result.telemetryFilesDeleted +
+		result.mergeFilesDeleted +
+		result.promptFilesDeleted +
+		result.mailboxDirsDeleted +
+		result.snapshotDirsDeleted;
 
 	if (totalDeleted > 0) {
 		const segments: string[] = [];
@@ -287,26 +300,32 @@ export function sweepStaleArtifacts(
 	};
 
 	// Sweep telemetry files
-	sweepDir(join(stateRoot, ".pi", "telemetry"), (name) =>
-		name.endsWith(".jsonl") ||
-		name.endsWith("-exit.json") ||
-		(name.startsWith("lane-prompt-") && name.endsWith(".txt")),
+	sweepDir(
+		join(stateRoot, ".pi", "telemetry"),
+		(name) =>
+			name.endsWith(".jsonl") ||
+			name.endsWith("-exit.json") ||
+			(name.startsWith("lane-prompt-") && name.endsWith(".txt")),
 	);
 
 	// Sweep merge result/request files
-	sweepDir(join(stateRoot, ".pi"), (name) =>
-		(name.startsWith("merge-result-") && name.endsWith(".json")) ||
-		(name.startsWith("merge-request-") && name.endsWith(".txt")),
+	sweepDir(
+		join(stateRoot, ".pi"),
+		(name) =>
+			(name.startsWith("merge-result-") && name.endsWith(".json")) ||
+			(name.startsWith("merge-request-") && name.endsWith(".txt")),
 	);
 
 	// Sweep stale worker conversation logs (.pi/worker-conversation-*.jsonl)
-	sweepDir(join(stateRoot, ".pi"), (name) =>
-		name.startsWith("worker-conversation-") && name.endsWith(".jsonl"),
+	sweepDir(
+		join(stateRoot, ".pi"),
+		(name) => name.startsWith("worker-conversation-") && name.endsWith(".jsonl"),
 	);
 
 	// Sweep stale lane state files (.pi/lane-state-*.json)
-	sweepDir(join(stateRoot, ".pi"), (name) =>
-		name.startsWith("lane-state-") && name.endsWith(".json"),
+	sweepDir(
+		join(stateRoot, ".pi"),
+		(name) => name.startsWith("lane-state-") && name.endsWith(".json"),
 	);
 
 	// Sweep stale batch directories under a parent (mailbox, context-snapshots, verification)
@@ -328,7 +347,9 @@ export function sweepStaleArtifacts(
 				}
 			}
 		} catch (err: unknown) {
-			result.warnings.push(`Failed to read ${label} directory ${parentDir}: ${(err as Error).message}`);
+			result.warnings.push(
+				`Failed to read ${label} directory ${parentDir}: ${(err as Error).message}`,
+			);
 		}
 	};
 
@@ -351,7 +372,11 @@ export function formatPreflightSweep(result: PreflightSweepResult): string {
 	if (result.skipped) {
 		return `ℹ️ Preflight sweep skipped: ${result.skipReason}`;
 	}
-	if (result.staleFilesDeleted === 0 && result.staleDirsDeleted === 0 && result.warnings.length === 0) {
+	if (
+		result.staleFilesDeleted === 0 &&
+		result.staleDirsDeleted === 0 &&
+		result.warnings.length === 0
+	) {
 		return ""; // Nothing to report
 	}
 	const parts: string[] = [];
@@ -621,27 +646,27 @@ export function cleanupPriorBatchArtifacts(
 	};
 
 	// Clean telemetry files from prior batches
-	cleanDir(join(piDir, "telemetry"), (name) =>
-		name.endsWith(".jsonl") ||
-		name.endsWith("-exit.json") ||
-		(name.startsWith("lane-prompt-") && name.endsWith(".txt")),
+	cleanDir(
+		join(piDir, "telemetry"),
+		(name) =>
+			name.endsWith(".jsonl") ||
+			name.endsWith("-exit.json") ||
+			(name.startsWith("lane-prompt-") && name.endsWith(".txt")),
 	);
 
 	// Clean merge result/request files from prior batches
-	cleanDir(piDir, (name) =>
-		(name.startsWith("merge-result-") && name.endsWith(".json")) ||
-		(name.startsWith("merge-request-") && name.endsWith(".txt")),
+	cleanDir(
+		piDir,
+		(name) =>
+			(name.startsWith("merge-result-") && name.endsWith(".json")) ||
+			(name.startsWith("merge-request-") && name.endsWith(".txt")),
 	);
 
 	// Clean worker conversation logs from prior batches
-	cleanDir(piDir, (name) =>
-		name.startsWith("worker-conversation-") && name.endsWith(".jsonl"),
-	);
+	cleanDir(piDir, (name) => name.startsWith("worker-conversation-") && name.endsWith(".jsonl"));
 
 	// Clean lane state files from prior batches
-	cleanDir(piDir, (name) =>
-		name.startsWith("lane-state-") && name.endsWith(".json"),
-	);
+	cleanDir(piDir, (name) => name.startsWith("lane-state-") && name.endsWith(".json"));
 
 	// Clean batch-scoped directories (mailbox, context-snapshots)
 	const cleanBatchDirs = (parentDir: string): void => {
@@ -678,7 +703,9 @@ export function formatPriorBatchCleanup(result: PriorBatchCleanupResult): string
 	if (result.itemsDeleted === 0 && result.warnings.length === 0) return "";
 	const parts: string[] = [];
 	if (result.itemsDeleted > 0) {
-		parts.push(`🧹 Prior batch cleanup: removed ${result.itemsDeleted} artifact(s) from previous batch(es)`);
+		parts.push(
+			`🧹 Prior batch cleanup: removed ${result.itemsDeleted} artifact(s) from previous batch(es)`,
+		);
 	}
 	for (const warning of result.warnings) {
 		parts.push(`  ⚠️ ${warning}`);
@@ -706,10 +733,7 @@ export interface PreflightCleanupResult {
  * @param deps - Sweep dependencies (active batch check)
  * @returns Combined cleanup result
  */
-export function runPreflightCleanup(
-	stateRoot: string,
-	deps: SweepDeps,
-): PreflightCleanupResult {
+export function runPreflightCleanup(stateRoot: string, deps: SweepDeps): PreflightCleanupResult {
 	const sweep = sweepStaleArtifacts(stateRoot, deps);
 	const rotation = rotateSupervisorLogs(stateRoot);
 	return { sweep, rotation };
@@ -724,10 +748,15 @@ export function formatPreflightCleanup(result: PreflightCleanupResult): string {
 	const parts: string[] = [];
 
 	// Layer 2: age-based sweep
-	if (!result.sweep.skipped && (result.sweep.staleFilesDeleted > 0 || result.sweep.staleDirsDeleted > 0)) {
+	if (
+		!result.sweep.skipped &&
+		(result.sweep.staleFilesDeleted > 0 || result.sweep.staleDirsDeleted > 0)
+	) {
 		const segments: string[] = [];
-		if (result.sweep.staleFilesDeleted > 0) segments.push(`${result.sweep.staleFilesDeleted} stale artifact(s)`);
-		if (result.sweep.staleDirsDeleted > 0) segments.push(`${result.sweep.staleDirsDeleted} stale mailbox dir(s)`);
+		if (result.sweep.staleFilesDeleted > 0)
+			segments.push(`${result.sweep.staleFilesDeleted} stale artifact(s)`);
+		if (result.sweep.staleDirsDeleted > 0)
+			segments.push(`${result.sweep.staleDirsDeleted} stale mailbox dir(s)`);
 		parts.push(`removed ${segments.join(" and ")} (>3 days old)`);
 	}
 

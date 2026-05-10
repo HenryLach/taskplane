@@ -18,12 +18,7 @@
 import { describe, it, beforeEach, afterEach, mock } from "node:test";
 import { expect } from "./expect.ts";
 import assert from "node:assert";
-import {
-	mkdirSync,
-	writeFileSync,
-	readFileSync,
-	rmSync,
-} from "fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -41,10 +36,7 @@ import {
 	DEFAULT_TASK_RUNNER_SECTION,
 	DEFAULT_ORCHESTRATOR_SECTION,
 } from "../taskplane/config-schema.ts";
-import {
-	loadOrchestratorConfig,
-	loadTaskRunnerConfig,
-} from "../taskplane/config.ts";
+import { loadOrchestratorConfig, loadTaskRunnerConfig } from "../taskplane/config.ts";
 import { loadConfig as taskRunnerLoadConfig } from "../taskplane/config-loader.ts";
 
 // ── Fixture Helpers ──────────────────────────────────────────────────
@@ -132,7 +124,9 @@ describe("loadProjectConfig precedence/error matrix", () => {
 		expect(config.taskRunner.worker.tools).toBe(DEFAULT_TASK_RUNNER_SECTION.worker.tools);
 		expect(config.orchestrator.orchestrator.maxLanes).toBe(5);
 		// Other orchestrator defaults preserved
-		expect(config.orchestrator.failure.stallTimeout).toBe(DEFAULT_ORCHESTRATOR_SECTION.failure.stallTimeout);
+		expect(config.orchestrator.failure.stallTimeout).toBe(
+			DEFAULT_ORCHESTRATOR_SECTION.failure.stallTimeout,
+		);
 	});
 
 	it("1.2: malformed JSON throws CONFIG_JSON_MALFORMED", () => {
@@ -224,7 +218,9 @@ describe("loadProjectConfig precedence/error matrix", () => {
 		const config = loadProjectConfig(dir);
 		expect(config.configVersion).toBe(CONFIG_VERSION);
 		expect(config.taskRunner.project.name).toBe(DEFAULT_TASK_RUNNER_SECTION.project.name);
-		expect(config.orchestrator.orchestrator.maxLanes).toBe(DEFAULT_ORCHESTRATOR_SECTION.orchestrator.maxLanes);
+		expect(config.orchestrator.orchestrator.maxLanes).toBe(
+			DEFAULT_ORCHESTRATOR_SECTION.orchestrator.maxLanes,
+		);
 	});
 
 	it("1.8: JSON with null configVersion throws CONFIG_VERSION_MISSING", () => {
@@ -277,15 +273,23 @@ describe("loadProjectConfig precedence/error matrix", () => {
 	it("1.12: sparse project config falls through to global preferences, then defaults", () => {
 		const dir = makeTestDir("sparse-fallthrough");
 		const agentDir = process.env.PI_CODING_AGENT_DIR!;
-		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({
-			taskRunner: {
-				worker: { model: "global-worker" },
-				reviewer: { tools: "read,bash" },
-			},
-			orchestrator: {
-				orchestrator: { maxLanes: 9 },
-			},
-		}, null, 2), "utf-8");
+		writeFileSync(
+			join(agentDir, "taskplane", "preferences.json"),
+			JSON.stringify(
+				{
+					taskRunner: {
+						worker: { model: "global-worker" },
+						reviewer: { tools: "read,bash" },
+					},
+					orchestrator: {
+						orchestrator: { maxLanes: 9 },
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
 
 		writeJsonConfig(dir, {
 			configVersion: 1,
@@ -304,15 +308,23 @@ describe("loadProjectConfig precedence/error matrix", () => {
 	it("1.13: project overrides win over global preferences with deep merge semantics", () => {
 		const dir = makeTestDir("project-wins-over-global");
 		const agentDir = process.env.PI_CODING_AGENT_DIR!;
-		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({
-			taskRunner: {
-				worker: { model: "global-worker", tools: "read,bash" },
-				reviewer: { thinking: "off", tools: "read,bash" },
-			},
-			orchestrator: {
-				orchestrator: { maxLanes: 9 },
-			},
-		}, null, 2), "utf-8");
+		writeFileSync(
+			join(agentDir, "taskplane", "preferences.json"),
+			JSON.stringify(
+				{
+					taskRunner: {
+						worker: { model: "global-worker", tools: "read,bash" },
+						reviewer: { thinking: "off", tools: "read,bash" },
+					},
+					orchestrator: {
+						orchestrator: { maxLanes: 9 },
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
 
 		writeJsonConfig(dir, {
 			configVersion: 1,
@@ -410,19 +422,25 @@ describe("workspace root resolution", () => {
 describe("key preservation and adapter regression", () => {
 	it("3.1: sizeWeights preserves user-defined keys (S, M, L, XL)", () => {
 		const dir = makeTestDir("size-weights");
-		writeOrchestratorYaml(dir, [
-			"assignment:",
-			"  strategy: round-robin",
-			"  size_weights:",
-			"    S: 1",
-			"    M: 2",
-			"    L: 4",
-			"    XL: 8",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"assignment:",
+				"  strategy: round-robin",
+				"  size_weights:",
+				"    S: 1",
+				"    M: 2",
+				"    L: 4",
+				"    XL: 8",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.assignment.sizeWeights).toEqual({
-			S: 1, M: 2, L: 4, XL: 8,
+			S: 1,
+			M: 2,
+			L: 4,
+			XL: 8,
 		});
 		expect(config.orchestrator.assignment.sizeWeights).not.toHaveProperty("s");
 		expect(config.orchestrator.assignment.sizeWeights).not.toHaveProperty("xl");
@@ -430,33 +448,35 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.2: sizeWeights round-trips correctly through toOrchestratorConfig adapter", () => {
 		const dir = makeTestDir("size-weights-adapter");
-		writeOrchestratorYaml(dir, [
-			"assignment:",
-			"  size_weights:",
-			"    S: 1",
-			"    M: 2",
-			"    L: 4",
-			"    XL: 8",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			["assignment:", "  size_weights:", "    S: 1", "    M: 2", "    L: 4", "    XL: 8"].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		const legacy = toOrchestratorConfig(config);
 		expect(legacy.assignment.size_weights).toEqual({
-			S: 1, M: 2, L: 4, XL: 8,
+			S: 1,
+			M: 2,
+			L: 4,
+			XL: 8,
 		});
 	});
 
 	it("3.3: preWarm.commands preserves user-defined command keys", () => {
 		const dir = makeTestDir("prewarm-cmds");
-		writeOrchestratorYaml(dir, [
-			"pre_warm:",
-			"  auto_detect: true",
-			"  commands:",
-			"    install_deps: npm ci",
-			"    build_project: npm run build",
-			"  always:",
-			"    - npm ci",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"pre_warm:",
+				"  auto_detect: true",
+				"  commands:",
+				"    install_deps: npm ci",
+				"    build_project: npm run build",
+				"  always:",
+				"    - npm ci",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.preWarm.commands).toEqual({
@@ -469,11 +489,7 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.4: preWarm.commands round-trips through toOrchestratorConfig adapter", () => {
 		const dir = makeTestDir("prewarm-adapter");
-		writeOrchestratorYaml(dir, [
-			"pre_warm:",
-			"  commands:",
-			"    my_cmd: echo hello",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["pre_warm:", "  commands:", "    my_cmd: echo hello"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		const legacy = toOrchestratorConfig(config);
@@ -482,18 +498,21 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.5: taskAreas preserves user-defined area IDs and inner fields", () => {
 		const dir = makeTestDir("task-areas");
-		writeTaskRunnerYaml(dir, [
-			"task_areas:",
-			"  backend-api:",
-			"    path: taskplane-tasks",
-			"    prefix: TP",
-			"    context: taskplane-tasks/CONTEXT.md",
-			"    repo_id: api-service",
-			"  frontend-web:",
-			"    path: frontend-tasks",
-			"    prefix: FE",
-			"    context: frontend-tasks/CONTEXT.md",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"task_areas:",
+				"  backend-api:",
+				"    path: taskplane-tasks",
+				"    prefix: TP",
+				"    context: taskplane-tasks/CONTEXT.md",
+				"    repo_id: api-service",
+				"  frontend-web:",
+				"    path: frontend-tasks",
+				"    prefix: FE",
+				"    context: frontend-tasks/CONTEXT.md",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(Object.keys(config.taskRunner.taskAreas)).toEqual(["backend-api", "frontend-web"]);
@@ -506,19 +525,22 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.6: taskAreas repoId: whitespace-only is dropped, non-empty is trimmed", () => {
 		const dir = makeTestDir("repo-id-trim");
-		writeTaskRunnerYaml(dir, [
-			"task_areas:",
-			"  area1:",
-			"    path: tasks",
-			"    prefix: A",
-			"    context: tasks/CONTEXT.md",
-			"    repo_id: \"  api  \"",
-			"  area2:",
-			"    path: tasks2",
-			"    prefix: B",
-			"    context: tasks2/CONTEXT.md",
-			"    repo_id: \"   \"",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"task_areas:",
+				"  area1:",
+				"    path: tasks",
+				"    prefix: A",
+				"    context: tasks/CONTEXT.md",
+				'    repo_id: "  api  "',
+				"  area2:",
+				"    path: tasks2",
+				"    prefix: B",
+				"    context: tasks2/CONTEXT.md",
+				'    repo_id: "   "',
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.taskAreas.area1.repoId).toBe("api");
@@ -527,17 +549,20 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.7: toTaskRunnerConfig adapter preserves task area IDs and repoId behavior", () => {
 		const dir = makeTestDir("task-runner-adapter");
-		writeTaskRunnerYaml(dir, [
-			"task_areas:",
-			"  myArea:",
-			"    path: tasks",
-			"    prefix: MY",
-			"    context: tasks/CONTEXT.md",
-			"    repo_id: myrepo",
-			"reference_docs:",
-			"  arch: docs/arch.md",
-			"  design: docs/design.md",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"task_areas:",
+				"  myArea:",
+				"    path: tasks",
+				"    prefix: MY",
+				"    context: tasks/CONTEXT.md",
+				"    repo_id: myrepo",
+				"reference_docs:",
+				"  arch: docs/arch.md",
+				"  design: docs/design.md",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		const legacy = toTaskRunnerConfig(config);
@@ -552,32 +577,47 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.8: standardsOverrides preserves user-defined area keys", () => {
 		const dir = makeTestDir("standards-overrides");
-		writeTaskRunnerYaml(dir, [
-			"standards_overrides:",
-			"  backend-api:",
-			"    docs:",
-			"      - docs/backend-standards.md",
-			"    rules:",
-			"      - Always use async/await",
-			"  frontend-web:",
-			"    docs:",
-			"      - docs/frontend-standards.md",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"standards_overrides:",
+				"  backend-api:",
+				"    docs:",
+				"      - docs/backend-standards.md",
+				"    rules:",
+				"      - Always use async/await",
+				"  frontend-web:",
+				"    docs:",
+				"      - docs/frontend-standards.md",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
-		expect(Object.keys(config.taskRunner.standardsOverrides)).toEqual(["backend-api", "frontend-web"]);
-		expect(config.taskRunner.standardsOverrides["backend-api"].docs).toEqual(["docs/backend-standards.md"]);
-		expect(config.taskRunner.standardsOverrides["backend-api"].rules).toEqual(["Always use async/await"]);
-		expect(config.taskRunner.standardsOverrides["frontend-web"].docs).toEqual(["docs/frontend-standards.md"]);
+		expect(Object.keys(config.taskRunner.standardsOverrides)).toEqual([
+			"backend-api",
+			"frontend-web",
+		]);
+		expect(config.taskRunner.standardsOverrides["backend-api"].docs).toEqual([
+			"docs/backend-standards.md",
+		]);
+		expect(config.taskRunner.standardsOverrides["backend-api"].rules).toEqual([
+			"Always use async/await",
+		]);
+		expect(config.taskRunner.standardsOverrides["frontend-web"].docs).toEqual([
+			"docs/frontend-standards.md",
+		]);
 	});
 
 	it("3.9: referenceDocs preserves user-defined keys", () => {
 		const dir = makeTestDir("ref-docs");
-		writeTaskRunnerYaml(dir, [
-			"reference_docs:",
-			"  architecture: docs/architecture.md",
-			"  api_spec: docs/api-spec.yaml",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"reference_docs:",
+				"  architecture: docs/architecture.md",
+				"  api_spec: docs/api-spec.yaml",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.referenceDocs).toEqual({
@@ -588,11 +628,14 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.10: selfDocTargets preserves user-defined keys", () => {
 		const dir = makeTestDir("self-doc");
-		writeTaskRunnerYaml(dir, [
-			"self_doc_targets:",
-			"  context_file: taskplane-tasks/CONTEXT.md",
-			"  tech_debt: docs/TECH-DEBT.md",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"self_doc_targets:",
+				"  context_file: taskplane-tasks/CONTEXT.md",
+				"  tech_debt: docs/TECH-DEBT.md",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.selfDocTargets).toEqual({
@@ -603,46 +646,49 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.11: toTaskConfig adapter produces correct snake_case shape", () => {
 		const dir = makeTestDir("task-config-adapter");
-		writeTaskRunnerYaml(dir, [
-			"project:",
-			"  name: MyProject",
-			"  description: My project desc",
-			"paths:",
-			"  tasks: my-tasks",
-			"  architecture: docs/arch.md",
-			"testing:",
-			"  commands:",
-			"    test: npm test",
-			"    lint: npm run lint",
-			"standards:",
-			"  docs:",
-			"    - STANDARDS.md",
-			"  rules:",
-			"    - Use TypeScript",
-			"worker:",
-			"  model: openai/gpt-4",
-			"  tools: read,write",
-			"  thinking: on",
-			"  spawn_mode: subprocess",
-			"reviewer:",
-			"  model: openai/gpt-4",
-			"  tools: read",
-			"  thinking: on",
-			"context:",
-			"  worker_context_window: 100000",
-			"  warn_percent: 60",
-			"  kill_percent: 80",
-			"  max_worker_iterations: 10",
-			"  max_review_cycles: 3",
-			"  no_progress_limit: 5",
-			"  max_worker_minutes: 45",
-			"task_areas:",
-			"  main:",
-			"    path: tasks",
-			"    prefix: T",
-			"    context: tasks/CONTEXT.md",
-			"    repo_id: main-repo",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"project:",
+				"  name: MyProject",
+				"  description: My project desc",
+				"paths:",
+				"  tasks: my-tasks",
+				"  architecture: docs/arch.md",
+				"testing:",
+				"  commands:",
+				"    test: npm test",
+				"    lint: npm run lint",
+				"standards:",
+				"  docs:",
+				"    - STANDARDS.md",
+				"  rules:",
+				"    - Use TypeScript",
+				"worker:",
+				"  model: openai/gpt-4",
+				"  tools: read,write",
+				"  thinking: on",
+				"  spawn_mode: subprocess",
+				"reviewer:",
+				"  model: openai/gpt-4",
+				"  tools: read",
+				"  thinking: on",
+				"context:",
+				"  worker_context_window: 100000",
+				"  warn_percent: 60",
+				"  kill_percent: 80",
+				"  max_worker_iterations: 10",
+				"  max_review_cycles: 3",
+				"  no_progress_limit: 5",
+				"  max_worker_minutes: 45",
+				"task_areas:",
+				"  main:",
+				"    path: tasks",
+				"    prefix: T",
+				"    context: tasks/CONTEXT.md",
+				"    repo_id: main-repo",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		const taskConfig = toTaskConfig(config);
@@ -672,40 +718,43 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.12: toOrchestratorConfig adapter produces correct full runtime shape", () => {
 		const dir = makeTestDir("orch-adapter-full");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 5",
-			"  worktree_location: sibling",
-			"  worktree_prefix: my-wt",
-			"  batch_id_format: sequential",
-			"  spawn_mode: subprocess",
-			"  session_prefix: myorch",
-			"  operator_id: testuser",
-			"  integration: auto",
-			"dependencies:",
-			"  source: agent",
-			"  cache: false",
-			"assignment:",
-			"  strategy: round-robin",
-			"  size_weights:",
-			"    S: 2",
-			"    M: 4",
-			"    L: 8",
-			"merge:",
-			"  model: openai/gpt-4",
-			"  tools: read,write",
-			"  verify:",
-			"    - npm test",
-			"  order: sequential",
-			"failure:",
-			"  on_task_failure: stop-all",
-			"  on_merge_failure: abort",
-			"  stall_timeout: 60",
-			"  max_worker_minutes: 45",
-			"  abort_grace_period: 120",
-			"monitoring:",
-			"  poll_interval: 10",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"orchestrator:",
+				"  max_lanes: 5",
+				"  worktree_location: sibling",
+				"  worktree_prefix: my-wt",
+				"  batch_id_format: sequential",
+				"  spawn_mode: subprocess",
+				"  session_prefix: myorch",
+				"  operator_id: testuser",
+				"  integration: auto",
+				"dependencies:",
+				"  source: agent",
+				"  cache: false",
+				"assignment:",
+				"  strategy: round-robin",
+				"  size_weights:",
+				"    S: 2",
+				"    M: 4",
+				"    L: 8",
+				"merge:",
+				"  model: openai/gpt-4",
+				"  tools: read,write",
+				"  verify:",
+				"    - npm test",
+				"  order: sequential",
+				"failure:",
+				"  on_task_failure: stop-all",
+				"  on_merge_failure: abort",
+				"  stall_timeout: 60",
+				"  max_worker_minutes: 45",
+				"  abort_grace_period: 120",
+				"monitoring:",
+				"  poll_interval: 10",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		const legacy = toOrchestratorConfig(config);
@@ -736,10 +785,7 @@ describe("key preservation and adapter regression", () => {
 
 	it("3.13: integration defaults to 'manual' when omitted from YAML", () => {
 		const dir = makeTestDir("integration-default");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 2",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["orchestrator:", "  max_lanes: 2"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		// Unified config should have the default
@@ -774,10 +820,17 @@ describe("key preservation and adapter regression", () => {
 		const dir = makeTestDir("both-prefix-keys");
 		// JSON config with both keys — sessionPrefix should take priority
 		mkdirSync(join(dir, ".pi"), { recursive: true });
-		writeFileSync(join(dir, ".pi", "taskplane-config.json"), JSON.stringify({
-			configVersion: 1,
-			orchestrator: { orchestrator: { sessionPrefix: "new-prefix", tmuxPrefix: "old-prefix" } },
-		}, null, 2));
+		writeFileSync(
+			join(dir, ".pi", "taskplane-config.json"),
+			JSON.stringify(
+				{
+					configVersion: 1,
+					orchestrator: { orchestrator: { sessionPrefix: "new-prefix", tmuxPrefix: "old-prefix" } },
+				},
+				null,
+				2,
+			),
+		);
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("new-prefix");
 		// tmuxPrefix should be removed from disk
@@ -835,14 +888,17 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 
 	it("4.3: loadOrchestratorConfig wrapper returns correct snake_case shape", () => {
 		const dir = makeTestDir("orch-wrapper");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 4",
-			"assignment:",
-			"  size_weights:",
-			"    S: 1",
-			"    M: 3",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"orchestrator:",
+				"  max_lanes: 4",
+				"assignment:",
+				"  size_weights:",
+				"    S: 1",
+				"    M: 3",
+			].join("\n"),
+		);
 
 		const legacy = loadOrchestratorConfig(dir);
 		expect(legacy.orchestrator.max_lanes).toBe(4);
@@ -851,15 +907,18 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 
 	it("4.4: loadTaskRunnerConfig wrapper returns correct snake_case shape", () => {
 		const dir = makeTestDir("runner-wrapper");
-		writeTaskRunnerYaml(dir, [
-			"task_areas:",
-			"  main:",
-			"    path: my-tasks",
-			"    prefix: MT",
-			"    context: my-tasks/CONTEXT.md",
-			"reference_docs:",
-			"  readme: README.md",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"task_areas:",
+				"  main:",
+				"    path: my-tasks",
+				"    prefix: MT",
+				"    context: my-tasks/CONTEXT.md",
+				"reference_docs:",
+				"  readme: README.md",
+			].join("\n"),
+		);
 
 		const legacy = loadTaskRunnerConfig(dir);
 		expect(legacy.task_areas.main.path).toBe("my-tasks");
@@ -915,7 +974,11 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		const prevAgentDir = process.env.PI_CODING_AGENT_DIR;
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		mkdirSync(join(agentDir, "taskplane"), { recursive: true });
-		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({ tmuxPrefix: "legacy-pref" }), "utf-8");
+		writeFileSync(
+			join(agentDir, "taskplane", "preferences.json"),
+			JSON.stringify({ tmuxPrefix: "legacy-pref" }),
+			"utf-8",
+		);
 
 		try {
 			// Should not throw — auto-migration handles legacy field
@@ -950,15 +1013,18 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 
 	it("4.7: YAML array sections are preserved verbatim (neverLoad, protectedDocs)", () => {
 		const dir = makeTestDir("arrays");
-		writeTaskRunnerYaml(dir, [
-			"never_load:",
-			"  - node_modules/",
-			"  - dist/",
-			"  - .git/",
-			"protected_docs:",
-			"  - AGENTS.md",
-			"  - docs/arch.md",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"never_load:",
+				"  - node_modules/",
+				"  - dist/",
+				"  - .git/",
+				"protected_docs:",
+				"  - AGENTS.md",
+				"  - docs/arch.md",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.neverLoad).toEqual(["node_modules/", "dist/", ".git/"]);
@@ -967,13 +1033,16 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 
 	it("4.8: testing.commands preserves user-defined command keys from YAML", () => {
 		const dir = makeTestDir("testing-cmds");
-		writeTaskRunnerYaml(dir, [
-			"testing:",
-			"  commands:",
-			"    unit_test: npm test",
-			"    e2e_test: npm run e2e",
-			"    type_check: npx tsc --noEmit",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"testing:",
+				"  commands:",
+				"    unit_test: npm test",
+				"    e2e_test: npm run e2e",
+				"    type_check: npx tsc --noEmit",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.testing.commands).toEqual({
@@ -989,10 +1058,7 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 describe("quality gate config defaults and adapter mapping (TP-034)", () => {
 	it("4.9: quality gate defaults are correct when not specified in config", () => {
 		const dir = makeTestDir("qg-defaults");
-		writeTaskRunnerYaml(dir, [
-			"project:",
-			"  name: QGTest",
-		].join("\n"));
+		writeTaskRunnerYaml(dir, ["project:", "  name: QGTest"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.qualityGate).toEqual({
@@ -1006,16 +1072,19 @@ describe("quality gate config defaults and adapter mapping (TP-034)", () => {
 
 	it("4.10: quality gate config from YAML maps correctly to TaskConfig snake_case", () => {
 		const dir = makeTestDir("qg-yaml-adapter");
-		writeTaskRunnerYaml(dir, [
-			"project:",
-			"  name: QGYaml",
-			"quality_gate:",
-			"  enabled: true",
-			"  review_model: openai/gpt-5",
-			"  max_review_cycles: 3",
-			"  max_fix_cycles: 2",
-			"  pass_threshold: no_important",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"project:",
+				"  name: QGYaml",
+				"quality_gate:",
+				"  enabled: true",
+				"  review_model: openai/gpt-5",
+				"  max_review_cycles: 3",
+				"  max_fix_cycles: 2",
+				"  pass_threshold: no_important",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		const taskConfig = toTaskConfig(config);
@@ -1058,10 +1127,7 @@ describe("quality gate config defaults and adapter mapping (TP-034)", () => {
 
 	it("4.12: quality gate defaults propagate through toTaskConfig when not configured", () => {
 		const dir = makeTestDir("qg-defaults-adapter");
-		writeTaskRunnerYaml(dir, [
-			"project:",
-			"  name: DefaultQG",
-		].join("\n"));
+		writeTaskRunnerYaml(dir, ["project:", "  name: DefaultQG"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		const taskConfig = toTaskConfig(config);
@@ -1077,10 +1143,7 @@ describe("quality gate config defaults and adapter mapping (TP-034)", () => {
 
 	it("4.13: task-runner loadConfig includes quality_gate defaults", () => {
 		const dir = makeTestDir("qg-task-runner-defaults");
-		writeTaskRunnerYaml(dir, [
-			"project:",
-			"  name: TaskRunnerQG",
-		].join("\n"));
+		writeTaskRunnerYaml(dir, ["project:", "  name: TaskRunnerQG"].join("\n"));
 
 		const result = taskRunnerLoadConfig(dir);
 		expect(result.quality_gate).toEqual({
@@ -1098,10 +1161,7 @@ describe("quality gate config defaults and adapter mapping (TP-034)", () => {
 describe("verification config defaults and adapter mapping (TP-032)", () => {
 	it("4.14: verification defaults are correct when not specified in config", () => {
 		const dir = makeTestDir("verify-defaults");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 2",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["orchestrator:", "  max_lanes: 2"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.verification).toEqual({
@@ -1113,14 +1173,17 @@ describe("verification config defaults and adapter mapping (TP-032)", () => {
 
 	it("4.15: verification config from YAML (snake_case) maps to camelCase", () => {
 		const dir = makeTestDir("verify-yaml");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 2",
-			"verification:",
-			"  enabled: true",
-			"  mode: strict",
-			"  flaky_reruns: 3",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"orchestrator:",
+				"  max_lanes: 2",
+				"verification:",
+				"  enabled: true",
+				"  mode: strict",
+				"  flaky_reruns: 3",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.verification).toEqual({
@@ -1176,10 +1239,7 @@ describe("verification config defaults and adapter mapping (TP-032)", () => {
 
 	it("4.18: verification defaults propagate through toOrchestratorConfig when not configured", () => {
 		const dir = makeTestDir("verify-defaults-adapter");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 2",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["orchestrator:", "  max_lanes: 2"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		const legacy = toOrchestratorConfig(config);
@@ -1193,10 +1253,7 @@ describe("verification config defaults and adapter mapping (TP-032)", () => {
 
 	it("4.19: partial verification YAML config merges with defaults", () => {
 		const dir = makeTestDir("verify-partial");
-		writeOrchestratorYaml(dir, [
-			"verification:",
-			"  enabled: true",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["verification:", "  enabled: true"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		// enabled is overridden, mode and flakyReruns should come from defaults
@@ -1207,11 +1264,7 @@ describe("verification config defaults and adapter mapping (TP-032)", () => {
 
 	it("4.20: verification flaky_reruns=0 round-trips through YAML→adapter", () => {
 		const dir = makeTestDir("verify-zero-reruns");
-		writeOrchestratorYaml(dir, [
-			"verification:",
-			"  enabled: true",
-			"  flaky_reruns: 0",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["verification:", "  enabled: true", "  flaky_reruns: 0"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.verification.flakyReruns).toBe(0);
@@ -1225,14 +1278,17 @@ describe("verification config defaults and adapter mapping (TP-032)", () => {
 		// if present — this test explicitly checks that verification fields
 		// appear alongside other orchestrator adapter output
 		const dir = makeTestDir("verify-full-adapter");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 5",
-			"verification:",
-			"  enabled: true",
-			"  mode: strict",
-			"  flaky_reruns: 2",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"orchestrator:",
+				"  max_lanes: 5",
+				"verification:",
+				"  enabled: true",
+				"  mode: strict",
+				"  flaky_reruns: 2",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		const legacy = toOrchestratorConfig(config);
@@ -1519,7 +1575,10 @@ describe("agent resolution precedence with pointer (TP-016)", () => {
 	}
 
 	/** Create a valid agent file with frontmatter. */
-	function agentContent(label: string, opts?: { standalone?: boolean; tools?: string; model?: string }): string {
+	function agentContent(
+		label: string,
+		opts?: { standalone?: boolean; tools?: string; model?: string },
+	): string {
 		const lines = ["---", `name: test-agent`];
 		if (opts?.tools) lines.push(`tools: ${opts.tools}`);
 		if (opts?.model) lines.push(`model: ${opts.model}`);
@@ -1594,7 +1653,8 @@ describe("pointer warning surfacing (TP-016)", () => {
 		taskRunnerLoadConfig(cwdDir);
 
 		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
-			(call: any) => typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
+			(call: any) =>
+				typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
 		);
 		expect(pointerWarnings.length).toBe(0);
 	});
@@ -1645,7 +1705,8 @@ describe("pointer warning surfacing (TP-016)", () => {
 
 		// Warning should be logged exactly once (dedup via _pointerWarningLogged)
 		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
-			(call: any) => typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
+			(call: any) =>
+				typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
 		);
 		expect(pointerWarnings.length).toBe(1);
 		expect(pointerWarnings[0].arguments[0]).toContain("Pointer file not found");
@@ -1659,7 +1720,8 @@ describe("pointer warning surfacing (TP-016)", () => {
 		taskRunnerLoadConfig(cwdDir);
 
 		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
-			(call: any) => typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
+			(call: any) =>
+				typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
 		);
 		expect(pointerWarnings.length).toBe(0);
 	});
@@ -1670,10 +1732,7 @@ describe("pointer warning surfacing (TP-016)", () => {
 describe("verification config defaults, mapping, and adapter (TP-032)", () => {
 	it("7.1: verification defaults are correct when not specified in config", () => {
 		const dir = makeTestDir("verify-defaults");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 2",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["orchestrator:", "  max_lanes: 2"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.verification).toEqual({
@@ -1685,14 +1744,17 @@ describe("verification config defaults, mapping, and adapter (TP-032)", () => {
 
 	it("7.2: verification YAML snake_case maps to camelCase in unified config", () => {
 		const dir = makeTestDir("verify-yaml-map");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 2",
-			"verification:",
-			"  enabled: true",
-			"  mode: strict",
-			"  flaky_reruns: 3",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"orchestrator:",
+				"  max_lanes: 2",
+				"verification:",
+				"  enabled: true",
+				"  mode: strict",
+				"  flaky_reruns: 3",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.verification.enabled).toBe(true);
@@ -1721,12 +1783,10 @@ describe("verification config defaults, mapping, and adapter (TP-032)", () => {
 
 	it("7.4: toOrchestratorConfig round-trips verification to snake_case", () => {
 		const dir = makeTestDir("verify-adapter");
-		writeOrchestratorYaml(dir, [
-			"verification:",
-			"  enabled: true",
-			"  mode: strict",
-			"  flaky_reruns: 2",
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			["verification:", "  enabled: true", "  mode: strict", "  flaky_reruns: 2"].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		const legacy = toOrchestratorConfig(config);
@@ -1741,10 +1801,7 @@ describe("verification config defaults, mapping, and adapter (TP-032)", () => {
 	it("7.5: toOrchestratorConfig defaults produce correct snake_case verification", () => {
 		const dir = makeTestDir("verify-adapter-defaults");
 		// No verification section at all
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 2",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["orchestrator:", "  max_lanes: 2"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		const legacy = toOrchestratorConfig(config);
@@ -1758,25 +1815,24 @@ describe("verification config defaults, mapping, and adapter (TP-032)", () => {
 
 	it("7.6: partial verification YAML merges with defaults", () => {
 		const dir = makeTestDir("verify-partial");
-		writeOrchestratorYaml(dir, [
-			"verification:",
-			"  enabled: true",
-			// mode and flaky_reruns omitted — should use defaults
-		].join("\n"));
+		writeOrchestratorYaml(
+			dir,
+			[
+				"verification:",
+				"  enabled: true",
+				// mode and flaky_reruns omitted — should use defaults
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.verification.enabled).toBe(true);
 		expect(config.orchestrator.verification.mode).toBe("permissive"); // default
-		expect(config.orchestrator.verification.flakyReruns).toBe(1);     // default
+		expect(config.orchestrator.verification.flakyReruns).toBe(1); // default
 	});
 
 	it("7.7: flakyReruns: 0 disables flaky re-runs and round-trips correctly", () => {
 		const dir = makeTestDir("verify-no-reruns");
-		writeOrchestratorYaml(dir, [
-			"verification:",
-			"  enabled: true",
-			"  flaky_reruns: 0",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["verification:", "  enabled: true", "  flaky_reruns: 0"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.verification.flakyReruns).toBe(0);
@@ -1787,10 +1843,7 @@ describe("verification config defaults, mapping, and adapter (TP-032)", () => {
 
 	it("7.8: loadOrchestratorConfig wrapper includes verification defaults", () => {
 		const dir = makeTestDir("verify-orch-wrapper");
-		writeOrchestratorYaml(dir, [
-			"orchestrator:",
-			"  max_lanes: 3",
-		].join("\n"));
+		writeOrchestratorYaml(dir, ["orchestrator:", "  max_lanes: 3"].join("\n"));
 
 		const legacy = loadOrchestratorConfig(dir);
 		expect(legacy.verification).toEqual({
@@ -1849,17 +1902,21 @@ describe("workspace section threading (TP-079)", () => {
 
 	it("8.3: legacy taskplane-workspace.yaml maps snake_case fields to workspace section", () => {
 		const dir = makeTestDir("workspace-yaml-explicit");
-		writePiFile(dir, "taskplane-workspace.yaml", [
-			"repos:",
-			"  api:",
-			"    path: ../api-repo",
-			"    default_branch: develop",
-			"routing:",
-			"  tasks_root: api-repo/taskplane-tasks",
-			"  default_repo: api",
-			"  task_packet_repo: api",
-			"  strict: true",
-		].join("\n"));
+		writePiFile(
+			dir,
+			"taskplane-workspace.yaml",
+			[
+				"repos:",
+				"  api:",
+				"    path: ../api-repo",
+				"    default_branch: develop",
+				"routing:",
+				"  tasks_root: api-repo/taskplane-tasks",
+				"  default_repo: api",
+				"  task_packet_repo: api",
+				"  strict: true",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.workspace).toBeDefined();
@@ -1872,14 +1929,18 @@ describe("workspace section threading (TP-079)", () => {
 
 	it("8.4: legacy workspace YAML missing task_packet_repo falls back to default_repo", () => {
 		const dir = makeTestDir("workspace-yaml-fallback");
-		writePiFile(dir, "taskplane-workspace.yaml", [
-			"repos:",
-			"  infra:",
-			"    path: ../infra-repo",
-			"routing:",
-			"  tasks_root: infra-repo/taskplane-tasks",
-			"  default_repo: infra",
-		].join("\n"));
+		writePiFile(
+			dir,
+			"taskplane-workspace.yaml",
+			[
+				"repos:",
+				"  infra:",
+				"    path: ../infra-repo",
+				"routing:",
+				"  tasks_root: infra-repo/taskplane-tasks",
+				"  default_repo: infra",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.workspace).toBeDefined();
@@ -1889,15 +1950,19 @@ describe("workspace section threading (TP-079)", () => {
 
 	it("8.5: JSON workspace section takes precedence over legacy workspace YAML", () => {
 		const dir = makeTestDir("workspace-json-precedence");
-		writePiFile(dir, "taskplane-workspace.yaml", [
-			"repos:",
-			"  yamlrepo:",
-			"    path: ../yaml-repo",
-			"routing:",
-			"  tasks_root: yaml-repo/taskplane-tasks",
-			"  default_repo: yamlrepo",
-			"  task_packet_repo: yamlrepo",
-		].join("\n"));
+		writePiFile(
+			dir,
+			"taskplane-workspace.yaml",
+			[
+				"repos:",
+				"  yamlrepo:",
+				"    path: ../yaml-repo",
+				"routing:",
+				"  tasks_root: yaml-repo/taskplane-tasks",
+				"  default_repo: yamlrepo",
+				"  task_packet_repo: yamlrepo",
+			].join("\n"),
+		);
 		writeJsonConfig(dir, {
 			configVersion: CONFIG_VERSION,
 			workspace: {

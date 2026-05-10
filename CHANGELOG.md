@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Code-quality formatter adoption (TP-193):** Third of four sequenced
+  packets implementing the code-quality-gates spec
+  ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)
+  section 6.3). Enabled the Biome formatter and applied it once across
+  the entire codebase in a single mechanical commit. **Formatter rules**
+  pinned in `biome.json` per spec section 6.3.1: `indentStyle: "tab"`,
+  `indentWidth: 1`, `lineWidth: 100`, `lineEnding: "lf"`,
+  `quoteStyle: "double"`, `trailingCommas: "all"`, `semicolons: "always"`,
+  `arrowParentheses: "always"`. **Format pass** touched 161 files
+  (every TS/MJS file in scope) with cosmetic-only changes — line
+  wrapping, trailing-comma insertions, single-param arrow parens, and a
+  small number of quote-style switches where Biome's smart-quote rule
+  picked the alternative quote when the primary was inside the string.
+  No semantic changes. **Test resilience prep** preceded the format
+  pass in a separate commit: introduced `expect().toContainNormalized()`
+  (whitespace + bracket-padding + trailing-comma normalized substring
+  match) and updated 22 distinct source-grep test assertions across
+  ~20 test files to use the helper or pre-normalize source before
+  matching; bumped fixed-size source-slice windows in retry-matrix,
+  spawn-failure-visibility, supervisor-recovery-flows, and tier0-watchdog
+  tests so vertically-rewrapped multi-arg calls don't push expected
+  needles outside the inspected window. **`tmux-reference-audit.mjs`**
+  was extended to skip strict-mode functional-usage detection inside
+  test files, because Biome's quote-style switch unmasked literal
+  assertion strings like `"execSync('tmux list-sessions"` that would
+  otherwise flag the audit. **`.git-blame-ignore-revs`** added at the
+  repo root listing the format-adoption commit SHA so `git blame`
+  doesn't bottom out on the bulk reformat; per-developer one-time
+  setup (`git config blame.ignoreRevsFile .git-blame-ignore-revs`)
+  documented in `docs/maintainers/development-setup.md`. After the
+  pass: `npm run format:check` exits 0; `npm run lint` exits 0
+  (TP-192 cleanup preserved); test suite unchanged at **3624 passing /
+  1 skipped / 0 failed**. The `format:check` gate flip is TP-194's scope.
 - **Code-quality lint cleanup (TP-192):** Second of four sequenced packets
   implementing the code-quality-gates spec
   ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)

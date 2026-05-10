@@ -23,7 +23,10 @@ function readSource(file: string): string {
 }
 
 function readDashboardSource(): string {
-	return readFileSync(join(__dirname, "..", "..", "dashboard", "server.cjs"), "utf-8").replace(/\r\n/g, "\n");
+	return readFileSync(join(__dirname, "..", "..", "dashboard", "server.cjs"), "utf-8").replace(
+		/\r\n/g,
+		"\n",
+	);
 }
 
 /**
@@ -72,7 +75,10 @@ describe("Runtime V2 lane wiring (source extraction)", () => {
 		// After TP-157, resolveTaskplanePackageFile lives in path-resolver.ts, not execution.ts.
 		// Verify execution.ts imports it from path-resolver.ts.
 		const pathResolverSrc = readSource("path-resolver.ts");
-		const funcBody = extractFunctionRegion(pathResolverSrc, "export function resolveTaskplanePackageFile(");
+		const funcBody = extractFunctionRegion(
+			pathResolverSrc,
+			"export function resolveTaskplanePackageFile(",
+		);
 		expect(funcBody).toContain("getNpmGlobalRoot");
 		expect(funcBody).toContain("npmRoot");
 		expect(execSrc).toContain('from "./path-resolver.ts"');
@@ -181,4 +187,3 @@ describe("dashboard parseTelemetryFilename (source extraction)", () => {
 });
 
 // ── 5. Functional tests — generateTelemetryPaths ────────────────────
-
