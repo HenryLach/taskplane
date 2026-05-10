@@ -476,6 +476,96 @@ describe("TP-190 #561: engine.ts isAllLanesSpawnFailedWave (behavioral)", () => 
 		const outcomes = [makeOutcome("TP-1", "failed", "user_killed")];
 		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(false);
 	});
+
+	// ── Sage post-mortem: multi-segment edge case (post-PR-#566) ─────────
+	// `succeededTaskIds` is the *terminal* completion projection — it's
+	// populated only when a task reaches its FINAL segment. A multi-segment
+	// task that succeeds on segment 1 (with a continuation segment scheduled
+	// for a later round) shows up in `laneResults[].tasks[]` with
+	// `status: "succeeded"` but is NOT in `succeededTaskIds`. The previous
+	// logic would have flagged a wave with such a non-terminal segment
+	// success + a separate task spawn-failure as "all-spawn-failed" and
+	// transitioned `phase` to `"failed"` — burying real progress.
+
+	it("3.1h (sage): returns false when laneResults shows a segment success even if succeededTaskIds is empty (multi-segment continuation)", () => {
+		const waveResult = {
+			failedTaskIds: ["TP-2"],
+			succeededTaskIds: [] as string[], // task-level terminal projection — empty for non-terminal segment
+			laneResults: [
+				{ tasks: [{ status: "succeeded" }] }, // TP-1's segment 1 succeeded; continuation in next round
+				{ tasks: [{ status: "failed" }] }, // TP-2 spawn-failed
+			],
+		};
+		const outcomes = [
+			makeOutcome("TP-1", "succeeded"),
+			makeOutcome("TP-2", "failed", "spawn_failure"),
+		];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(false);
+	});
+
+	it("3.1i (sage): returns true when laneResults has zero successes AND every failure is spawn_failure (no false positive on the new check)", () => {
+		const waveResult = {
+			failedTaskIds: ["TP-1", "TP-2"],
+			succeededTaskIds: [] as string[],
+			laneResults: [
+				{ tasks: [{ status: "failed" }] },
+				{ tasks: [{ status: "failed" }] },
+			],
+		};
+		const outcomes = [
+			makeOutcome("TP-1", "failed", "spawn_failure"),
+			makeOutcome("TP-2", "failed", "spawn_failure"),
+		];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(true);
+	});
+
+	it("3.1j (sage): laneResults parameter is OPTIONAL — backward-compat with v0.29.0 callers", () => {
+		// Existing callers (and the test suite above) pass only failedTaskIds +
+		// succeededTaskIds. The new laneResults check must not break that path.
+		const waveResult = { failedTaskIds: ["TP-1"], succeededTaskIds: [] };
+		const outcomes = [makeOutcome("TP-1", "failed", "spawn_failure")];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(true);
+	});
+});
+
+describe("TP-190 #561 sage post-mortem: resolveTaskMonitorState null-snapshot fallback", () => {
+	// Regression guard for the residual hang sage flagged: when the
+	// spawn-failure catch's snapshot write fails (disk full, permission,
+	// transient I/O), `snap` stays null and `staleMs` is 0 (because
+	// `snap?.updatedAt` is undefined). The previous logic had no exit from
+	// the `snap == null && staleMs <= 30_000` branch other than
+	// `sessionAlive = true`, which made the monitor poll forever —
+	// reintroducing the same #561 hang the spawn-failure catch was
+	// supposed to fix.
+	//
+	// The fix adds a tracker-age branch: when `snap == null` AND the
+	// tracker has been observing this task for >= 60s (past startup
+	// grace), fall back to the registry liveness check. This test asserts
+	// the source pattern — a behavioral test would need a full monitor
+	// loop with mocked registry and is covered indirectly by the existing
+	// engine-orchestration test in this file.
+
+	it("4.1 (sage): execution.ts has the null-snapshot tracker-age fallback wired", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { fileURLToPath } = await import("node:url");
+		const { dirname, join } = await import("node:path");
+		const __filename = fileURLToPath(import.meta.url);
+		const __dirname = dirname(__filename);
+		const execPath = join(__dirname, "..", "taskplane", "execution.ts");
+		const src = readFileSync(execPath, "utf-8");
+
+		// The fallback branch must reference both the null-snapshot condition
+		// and the trackerAge >= 60s threshold, AND it must call
+		// `isV2AgentAlive` to decide liveness rather than defaulting to true.
+		expect(src).toMatch(/snap == null && trackerAgeMs >= 60_000/);
+		expect(src).toContain("sage post-mortem");
+		// The branch must be ABOVE the unconditional `sessionAlive = true`
+		// fallback so it short-circuits before defaulting to alive.
+		const fallbackIdx = src.indexOf("snap == null && trackerAgeMs >= 60_000");
+		expect(fallbackIdx).toBeGreaterThan(-1);
+		const defaultAliveIdx = src.indexOf("sessionAlive = true", fallbackIdx);
+		expect(defaultAliveIdx).toBeGreaterThan(fallbackIdx);
+	});
 });
 
 describe("TP-190 #561: engine.ts wire-up for spawn_failure", () => {

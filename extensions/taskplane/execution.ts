@@ -830,18 +830,31 @@ export async function resolveTaskMonitorState(
 			// Assume alive initially, but if stale for >30s consult the registry
 			// to avoid indefinite false "running" if the lane-runner died.
 			const staleMs = snap?.updatedAt ? (now - snap.updatedAt) : 0;
+			const trackerAgeMs = now - tracker.firstObservedAt;
 			if (staleMs > 30_000) {
 				// Snapshot hasn't been updated for 30s+ — check registry as fallback.
 				// But also check if the tracker just started (firstObservedAt within
 				// last 60s) — wave transitions can leave stale snapshots from the
 				// prior wave/task while the new worker is still spawning.
-				const trackerAgeMs = now - tracker.firstObservedAt;
 				if (trackerAgeMs < 60_000) {
 					// New task, stale snapshot — give the worker startup grace period
 					sessionAlive = true;
 				} else {
 					sessionAlive = isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber);
 				}
+			} else if (snap == null && trackerAgeMs >= 60_000) {
+				// TP-190 (#561 sage post-mortem): when NO snapshot exists at all
+				// (not even stale) and the tracker has been observing this task
+				// for >= 60s, fall back to the registry liveness check. Without
+				// this branch, a snapshot-write failure in the spawn-failure catch
+				// (disk full, permission error, transient I/O hiccup) leaves
+				// `snap == null` AND `staleMs == 0`, which previously hit the
+				// unconditional-alive default below — reintroducing the same
+				// monitor hang the spawn-failure catch was supposed to fix.
+				// 60s tracker-age threshold matches the existing startup-grace
+				// boundary so we don't false-fail a slow-starting worker that
+				// hasn't yet written its first snapshot.
+				sessionAlive = isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber);
 			} else {
 				sessionAlive = true;
 			}

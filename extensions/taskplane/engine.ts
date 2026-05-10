@@ -74,7 +74,12 @@ const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite
  *
  * Returns `true` only when:
  *   - At least one task failed (`failedTaskIds.length > 0`)
- *   - No task succeeded (`succeededTaskIds.length === 0`)
+ *   - No task succeeded — checked via BOTH the wave's projected
+ *     `succeededTaskIds` (terminal task-level completion) AND a scan of
+ *     `laneResults[].tasks[]` for any per-task outcome with
+ *     `status === "succeeded"` (catches non-terminal segment successes
+ *     on multi-segment tasks that schedule a continuation round and
+ *     therefore don't appear in `succeededTaskIds`)
  *   - Every failed outcome carries
  *     `exitDiagnostic.classification === "spawn_failure"`
  *
@@ -85,17 +90,54 @@ const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite
  * failure, branch collision) are never transient — they require an
  * external fix before re-running, so `"paused"` would be misleading.
  *
+ * **Sage post-mortem note (multi-segment edge case, post-PR-#566):** the
+ * earlier version of this function checked only `succeededTaskIds.length
+ * !== 0` to gate the all-failed verdict. That field is the *projected*
+ * terminal-completion set: it's populated only when a task reaches its
+ * final segment. A wave that has a multi-segment task succeed on segment
+ * 1 (with a continuation segment in a later round) would have an empty
+ * `succeededTaskIds` even though work demonstrably succeeded. Combined
+ * with a single-segment spawn-failure on a different task, the wave
+ * would falsely trip the all-spawn-failed verdict. The added
+ * `laneResults` scan closes this gap by inspecting raw per-task outcome
+ * status before terminal projection.
+ *
  * Pure function — exported for unit testing alongside the engine's
  * post-wave handling logic.
  *
  * @since TP-190 (#561)
  */
 export function isAllLanesSpawnFailedWave(
-	waveResult: { failedTaskIds: string[]; succeededTaskIds: string[] },
+	waveResult: {
+		failedTaskIds: string[];
+		succeededTaskIds: string[];
+		/**
+		 * Optional per-lane outcomes. When provided, the function additionally
+		 * checks whether ANY task outcome carried `status === "succeeded"`,
+		 * which covers non-terminal segment successes that don't appear in the
+		 * projected `succeededTaskIds`. Optional for backward compatibility
+		 * with the v0.29.0 callers and the existing TP-190 unit tests; the
+		 * production call site (engine.ts post-wave) always passes the full
+		 * `WaveExecutionResult` and gets the stricter check.
+		 */
+		laneResults?: ReadonlyArray<{ tasks: ReadonlyArray<{ status: string }> }>;
+	},
 	allTaskOutcomes: LaneTaskOutcome[],
 ): boolean {
 	if (waveResult.failedTaskIds.length === 0) return false;
 	if (waveResult.succeededTaskIds.length !== 0) return false;
+	// TP-190 (#561) sage post-mortem: scan per-lane outcomes for any
+	// `status === "succeeded"`. This catches non-terminal segment successes
+	// that don't appear in `succeededTaskIds` (the latter is the terminal
+	// projection populated only when a multi-segment task reaches its final
+	// segment).
+	if (waveResult.laneResults) {
+		for (const laneResult of waveResult.laneResults) {
+			for (const taskOutcome of laneResult.tasks) {
+				if (taskOutcome.status === "succeeded") return false;
+			}
+		}
+	}
 	return waveResult.failedTaskIds.every((failedId) => {
 		const outcome = allTaskOutcomes.find((o) => o.taskId === failedId);
 		return outcome?.exitDiagnostic?.classification === "spawn_failure";
