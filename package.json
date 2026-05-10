@@ -27,9 +27,9 @@
   },
   "scripts": {
     "typecheck": "tsc --project extensions/tsconfig.ci.json --noEmit",
-    "lint": "biome lint .",
-    "format": "biome format --write .",
-    "format:check": "biome format ."
+    "lint": "biome lint --no-errors-on-unmatched .",
+    "format": "biome format --write --no-errors-on-unmatched .",
+    "format:check": "biome format --no-errors-on-unmatched ."
   },
   "files": [
     "bin/",
