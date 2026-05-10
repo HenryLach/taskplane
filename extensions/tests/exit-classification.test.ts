@@ -477,15 +477,16 @@ describe("classifyExit — edge cases", () => {
 // ── 4. Constants Verification ────────────────────────────────────────
 
 describe("EXIT_CLASSIFICATIONS constant", () => {
-	it("contains exactly 10 values", () => {
-		expect(EXIT_CLASSIFICATIONS).toHaveLength(10);
+	it("contains exactly 11 values", () => {
+		// TP-190 (#561): added "spawn_failure" for Runtime V2 spawn-stage errors.
+		expect(EXIT_CLASSIFICATIONS).toHaveLength(11);
 	});
 
 	it("includes all expected values", () => {
 		const expected: ExitClassification[] = [
 			"completed", "api_error", "model_access_error", "context_overflow",
 			"wall_clock_timeout", "process_crash", "session_vanished",
-			"stall_timeout", "user_killed", "unknown",
+			"stall_timeout", "user_killed", "spawn_failure", "unknown",
 		];
 		for (const val of expected) {
 			expect(EXIT_CLASSIFICATIONS).toContain(val);

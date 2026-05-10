@@ -85,11 +85,12 @@
 
 > ⚠️ Final code-review checkpoint after this step.
 
-- [ ] NEW `extensions/tests/spawn-failure-visibility.test.ts` created
-- [ ] Test 1: single-task spawn failure → lane/task failed, failedTasks===1, IPC alert fires with category="spawn-failure", phase !== "executing"
-- [ ] Test 2: multi-task all-fail-spawn → batchState.phase === "failed"
-- [ ] Test 3: spawn failure does NOT retry (mock called exactly once per task)
-- [ ] Run new test in isolation, then full fast suite
+- [x] NEW `extensions/tests/spawn-failure-visibility.test.ts` created — 19 tests across 5 describe blocks (executeLaneV2 catch behavior, ExitClassification registration, engine.ts wire-up, resume.ts mirror, execution.ts catch hardening).
+- [x] Test 1 (§1.1, §1.2): single-task spawn failure → outcome.status==="failed", outcome.exitDiagnostic.classification==="spawn_failure", exitReason includes the spawn error message verbatim, AND the synthetic terminal RuntimeLaneSnapshot is written so monitorLanes Priority 3 fires (sessionAlive=false → failed). Behavioral test mocks `lane-runner.ts`'s `executeTaskV2` to reject with a "Cannot find Pi CLI entrypoint" error.
+- [x] Test 2 (§3.4, §3.5): multi-task all-fail-spawn → batchState.phase = "failed". Source-string assertion that the engine.ts post-wave logic guards on (failedTaskIds.length>0 ∧ succeededTaskIds.length===0 ∧ every-failure-classification==="spawn_failure") and sets phase to "failed" (NOT "paused"), persists, emits terminal event, and breaks out of the wave loop. (Source-string rather than full-engine integration because engine.ts's wave loop has too many runtime prerequisites for a focused unit test.)
+- [x] Test 3 (§1.3, §1.4, §3.1): spawn failure does NOT retry — §1.3 asserts `executeTaskV2` mock called exactly once per task in executeLaneV2; §1.4 asserts subsequent tasks in the same lane are `skipped` (not re-spawned); §3.1 asserts the engine.ts `attemptWorkerCrashRetry` early-return guard for `classification==="spawn_failure"` is wired with operator-friendly log line.
+- [x] Plus: §2 (ExitClassification registration), §3.2-3.3 (IPC alert payload populates context.exitCategory + escalate-immediately summary), §4 (resume.ts mirror parity), §5 (execution.ts catch hardening doc-tests).
+- [x] Run new test in isolation: 19/19 pass. Full fast suite: 3606 pass / 1 skipped / 0 fail (+19 from baseline 3587). Updated pre-existing length assertion in `exit-classification.test.ts` (`EXIT_CLASSIFICATIONS` 10 → 11) to account for new `spawn_failure` value.
 
 ---
 
