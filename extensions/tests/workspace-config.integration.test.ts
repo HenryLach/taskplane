@@ -44,6 +44,10 @@ import {
 } from "../taskplane/workspace.ts";
 // buildLaneEnvVars import removed — function removed during TMUX extrication
 import { saveBatchState, loadBatchState, deleteBatchState } from "../taskplane/persistence.ts";
+import {
+	makeOrchestratorConfig,
+	makeTaskRunnerConfig,
+} from "./helpers/mock-orchestrator-config.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
 
@@ -90,34 +94,23 @@ function writeWorkspaceConfig(workspaceRoot: string, content: string): void {
 	writeFileSync(join(configDir, "taskplane-workspace.yaml"), content, "utf-8");
 }
 
-// Mock config loaders for buildExecutionContext
-const mockOrchConfig = {
-	orchestrator: {
-		max_lanes: 2,
-		spawn_mode: "subprocess" as const,
-		session_prefix: "orch",
-		monitor_interval: 5,
-		abort_grace_period: 30,
-		merge_mode: "sequential" as const,
-		lane_session_idle_timeout: 0,
-	},
+// Mock config loaders for buildExecutionContext.
+// TP-195: switched from inline literal mocks (which had drifted away from
+// the canonical `OrchestratorConfig` / `TaskRunnerConfig` shapes — missing
+// `pre_warm`/`merge`/`failure`/`monitoring`/`verification` and using stale
+// field names like `session_prefix`/`monitor_interval`) to the shared
+// `makeOrchestratorConfig()` / `makeTaskRunnerConfig()` factories. Defaults
+// inherit from `DEFAULT_*_CONFIG` so the test mocks stay in sync with the
+// runtime schema automatically.
+const mockOrchConfig = makeOrchestratorConfig({
+	orchestrator: { max_lanes: 2 },
 	assignment: {
-		strategy: "round-robin" as const,
+		strategy: "round-robin",
 		size_weights: { XS: 1, S: 2, M: 3, L: 5, XL: 8 },
 	},
-	dependencies: {
-		source: "prompt" as const,
-		cache: true,
-	},
-};
+});
 
-const mockRunnerConfig = {
-	task_areas: {},
-	execution: {
-		review_level: 0 as const,
-		auto_checkpoint: true,
-	},
-};
+const mockRunnerConfig = makeTaskRunnerConfig();
 
 const mockLoadOrchConfig = (_root: string, _pointerConfigRoot?: string) => mockOrchConfig;
 const mockLoadRunnerConfig = (_root: string, _pointerConfigRoot?: string) => mockRunnerConfig;
@@ -1773,8 +1766,12 @@ describe("orchestrator pointer threading", () => {
 		const cwdLoaded = loadBatchState(cwd);
 		expect(cwdLoaded).toBeNull();
 
-		// When workspaceRoot is undefined (repo mode), both fall back to cwd
-		const repoModeStateRoot = undefined ?? cwd;
+		// When workspaceRoot is undefined (repo mode), both fall back to cwd.
+		// TP-195: use a typed `string | undefined` to demonstrate the
+		// nullish-coalescing fallback without the literal `undefined ?? cwd`
+		// expression that TS rightly flags as "always nullish".
+		const workspaceRoot: string | undefined = undefined;
+		const repoModeStateRoot = workspaceRoot ?? cwd;
 		expect(repoModeStateRoot).toBe(cwd);
 
 		// Save state at cwd in repo mode

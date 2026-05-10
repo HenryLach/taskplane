@@ -40,6 +40,21 @@ interface ExpectMethods {
 	not: Omit<ExpectMethods, "not">;
 }
 
+/**
+ * Vitest-compatible `expect.unreachable(msg)` helper.
+ *
+ * Throws an assertion error with the given message. Used in tests where a
+ * code path should be unreachable (e.g., after a `throw` in the
+ * production code, the test asserts that the catch handler ran rather
+ * than fall-through). Static method on `expect` to match Vitest's API.
+ *
+ * @since TP-195 (#TBD) — was previously called but never defined,
+ * silently typecheck-erroring on every call site (TS2339).
+ */
+export function expectUnreachable(message?: string): never {
+	assert.fail(message ?? "Reached unreachable code path");
+}
+
 export function expect(actual: unknown): ExpectMethods {
 	const methods: ExpectMethods = {
 		toBe(expected: unknown) {
@@ -310,4 +325,16 @@ export function expect(actual: unknown): ExpectMethods {
 	} as Omit<ExpectMethods, "not">;
 
 	return methods;
+}
+
+// TP-195: attach `unreachable` as a static method on `expect` so call sites
+// can write `expect.unreachable(...)` per Vitest's API. The function type
+// is the call signature `(actual: unknown) => ExpectMethods`; we widen it
+// to include the static slot via a typed assignment + a declaration merge.
+(expect as unknown as { unreachable: typeof expectUnreachable }).unreachable = expectUnreachable;
+
+// Type declaration so consumers can call `expect.unreachable(...)` without
+// a TS error. Mirrors Vitest's surface for this single static method.
+export declare namespace expect {
+	export function unreachable(message?: string): never;
 }

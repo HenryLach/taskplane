@@ -34,7 +34,12 @@ import {
 	DEFAULT_TASK_RUNNER_CONFIG,
 } from "../taskplane/types.ts";
 
-import type { EngineEvent, EngineEventCallback, EngineEventType } from "../taskplane/types.ts";
+import type {
+	EngineEvent,
+	EngineEventCallback,
+	EngineEventType,
+	OrchBatchPhase,
+} from "../taskplane/types.ts";
 
 import { startBatchAsync } from "../taskplane/extension.ts";
 import { resumeOrchBatch } from "../taskplane/resume.ts";
@@ -895,7 +900,11 @@ describe("9.x — Behavioral: launch-window command compatibility", () => {
 		batchState.batchId = "launch-status-test";
 		batchState.startedAt = Date.now();
 
-		const shouldFallbackToDisk = batchState.phase === "idle";
+		// TP-195: cast to `OrchBatchPhase` to bypass TypeScript narrowing
+		// from the literal assignment above — the test deliberately verifies
+		// a runtime comparison that TS would otherwise reject as "always
+		// false" under non-strict mode.
+		const shouldFallbackToDisk = (batchState.phase as OrchBatchPhase) === "idle";
 		expect(shouldFallbackToDisk).toBe(false);
 	});
 
@@ -1409,15 +1418,21 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 // ══════════════════════════════════════════════════════════════════════
 
 describe("9.x — Behavioral: launch-window command logic with 'launching' phase", () => {
+	// TP-195: each test below assigns a literal phase value to
+	// `batchState.phase`, which TypeScript then narrows to that single
+	// literal under non-strict mode. The subsequent runtime checks read
+	// `batchState.phase` against other phase literals — valid at runtime
+	// but rejected by tsc as "always false". We cast to `OrchBatchPhase`
+	// (via a tiny local) to bypass narrowing while preserving the
+	// behavior under test.
+	const widePhase = (b: { phase: OrchBatchPhase }): OrchBatchPhase => b.phase;
+
 	it("9.1: 'launching' is recognized as active batch by /orch guard", () => {
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
-		const isBlocked =
-			batchState.phase !== "idle" &&
-			batchState.phase !== "completed" &&
-			batchState.phase !== "failed" &&
-			batchState.phase !== "stopped";
+		const p = widePhase(batchState);
+		const isBlocked = p !== "idle" && p !== "completed" && p !== "failed" && p !== "stopped";
 
 		expect(isBlocked).toBe(true);
 	});
@@ -1427,7 +1442,7 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		batchState.phase = "launching";
 		batchState.batchId = "20260322T120000";
 
-		const useDiskFallback = batchState.phase === "idle";
+		const useDiskFallback = widePhase(batchState) === "idle";
 		expect(useDiskFallback).toBe(false);
 		expect(batchState.batchId).toBe("20260322T120000");
 	});
@@ -1436,11 +1451,8 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
-		const isInactive =
-			batchState.phase === "idle" ||
-			batchState.phase === "completed" ||
-			batchState.phase === "failed" ||
-			batchState.phase === "stopped";
+		const p = widePhase(batchState);
+		const isInactive = p === "idle" || p === "completed" || p === "failed" || p === "stopped";
 
 		expect(isInactive).toBe(false);
 	});
@@ -1449,11 +1461,9 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
+		const p = widePhase(batchState);
 		const hasActiveBatch =
-			batchState.phase !== "idle" &&
-			batchState.phase !== "completed" &&
-			batchState.phase !== "failed" &&
-			batchState.phase !== "stopped";
+			p !== "idle" && p !== "completed" && p !== "failed" && p !== "stopped";
 
 		expect(hasActiveBatch).toBe(true);
 	});
@@ -1462,11 +1472,9 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
+		const p = widePhase(batchState);
 		const isRunning =
-			batchState.phase === "launching" ||
-			batchState.phase === "executing" ||
-			batchState.phase === "merging" ||
-			batchState.phase === "planning";
+			p === "launching" || p === "executing" || p === "merging" || p === "planning";
 
 		expect(isRunning).toBe(true);
 	});
@@ -1481,7 +1489,11 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 	});
 
 	it("9.7: idle/completed/failed/stopped not blocked by /orch-resume guard", () => {
-		const resumablePhases = ["idle", "completed", "failed", "stopped"] as const;
+		// TP-195: widened from `as const` to `OrchBatchPhase[]` so the
+		// `phase === "launching"` checks below typecheck. The runtime
+		// assertions (always-false on the running predicate) are the test's
+		// actual subject.
+		const resumablePhases: OrchBatchPhase[] = ["idle", "completed", "failed", "stopped"];
 		for (const phase of resumablePhases) {
 			const isRunning =
 				phase === "launching" || phase === "executing" || phase === "merging" || phase === "planning";
