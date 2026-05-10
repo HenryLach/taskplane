@@ -73,10 +73,10 @@
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] Wave/phase decision site located in engine.ts (executeWave post-allocation OR monitorLanes)
-- [ ] Transition wired: all lanes failed with `spawn-failure` → `batchState.phase = "failed"`
-- [ ] `orch_status()` text confirms the phase change is operator-visible
-- [ ] Targeted tests pass
+- [x] Wave/phase decision site located: post-`executeWave` in engine.ts, immediately after the per-task `task-failure` IPC alert loop and before the wave-completion `persistRuntimeState`. This is the same level at which existing `stop-all` / `stop-wave` policy transitions live.
+- [x] Transition wired: when `failedTaskIds.length > 0` AND `succeededTaskIds.length === 0` AND every failed outcome has `exitDiagnostic.classification === "spawn_failure"`, set `batchState.phase = "failed"`, persist with reason `"wave-spawn-failure"`, emit `orchBatchFailed` notification, emit terminal event, and `break` out of the wave loop. The check is independent of `policyApplied` because spawn-failures are unrecoverable without operator action.
+- [x] `orch_status()` text confirms the phase change is operator-visible — the existing `orchStatusBatch` formatter renders `phase` directly, so `failed` will surface in place of `executing`. No formatting changes needed.
+- [x] Targeted tests pass: 196/196 across `engine-runtime-v2-routing.test.ts`, `tier0-watchdog.test.ts`, `supervisor-recovery-flows.test.ts`.
 
 ---
 

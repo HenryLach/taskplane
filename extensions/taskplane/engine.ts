@@ -3161,6 +3161,37 @@ export async function executeOrchBatch(
 			}
 		}
 
+		// ── TP-190 (#561): All-lane spawn-failure phase transition ──
+		// When every task in this wave failed AND every failure is a
+		// `spawn_failure` (worker process never started), the operator cannot
+		// recover without changing something external (Pi CLI install, file
+		// permissions, branch state). Transition `phase` to `"failed"` so
+		// `orch_status()` and the dashboard surface an actionable answer
+		// (`failed`) instead of leaving the operator with `executing` while
+		// every lane is dead. We use `"failed"` rather than `"paused"` (per
+		// PROMPT design): `paused` implies an operator-flippable resume,
+		// which is wrong here — spawn failures require an external fix first.
+		const allFailedAreSpawnFailures = waveResult.failedTaskIds.length > 0
+			&& waveResult.succeededTaskIds.length === 0
+			&& waveResult.failedTaskIds.every((failedId) => {
+				const outcome = allTaskOutcomes.find(o => o.taskId === failedId);
+				return outcome?.exitDiagnostic?.classification === "spawn_failure";
+			});
+		if (allFailedAreSpawnFailures) {
+			batchState.phase = "failed";
+			execLog("batch", batchState.batchId,
+				`phase → failed: every lane in wave ${waveIdx + 1} hit spawn_failure (TP-190 #561)`,
+				{ failedTasks: waveResult.failedTaskIds.join(",") },
+			);
+			onNotify(
+				ORCH_MESSAGES.orchBatchFailed(batchState.batchId, `all lanes in wave ${waveIdx + 1} failed to spawn (Runtime V2 spawn-failure — see task-failure alerts above)`),
+				"error",
+			);
+			persistRuntimeState("wave-spawn-failure", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+			emitTerminalEvent(`All-lane spawn failure at wave ${waveIdx + 1}`);
+			break;
+		}
+
 		// ── TS-009: Persist state after wave execution ──
 		persistRuntimeState("wave-execution-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 
