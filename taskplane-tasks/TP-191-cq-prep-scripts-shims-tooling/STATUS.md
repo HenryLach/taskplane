@@ -1,10 +1,10 @@
 # TP-191: Code-quality prep — Status
 
-**Current Step:** Step 4: Implement Part 3 — Biome config modernization
+**Current Step:** Step 5: Implement Parts 4-6 — reviewer discoverability, activation note, CI workflow
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -78,7 +78,7 @@
 ---
 
 ### Step 4: Implement Part 3 — Biome config modernization
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (code review R005 APPROVE)
 
 > ⚠️ Code-review fires after this step.
 
@@ -135,6 +135,7 @@
 | 2 | code | 2 | REVISE | .reviews/R002-code-step2.md |
 | 3 | code | 2 | APPROVE | .reviews/R003-code-step2.md |
 | 4 | code | 3 | APPROVE | .reviews/R004-code-step3.md |
+| 5 | code | 4 | APPROVE | .reviews/R005-code-step4.md |
 
 ---
 
@@ -343,3 +344,4 @@ with:
 | 2026-05-10 14:53 | Review R002 | code Step 2: REVISE |
 | 2026-05-10 14:57 | Review R003 | code Step 2: APPROVE |
 | 2026-05-10 15:03 | Review R004 | code Step 3: APPROVE |
+| 2026-05-10 15:07 | Review R005 | code Step 4: APPROVE |
