@@ -130,6 +130,7 @@ describe("2.x — Batch state serialization (applySerializedState)", () => {
 			startedAt: 1000,
 			endedAt: 2000,
 			errors: ["some error"],
+			currentLanes: [],
 		};
 
 		applySerializedState(target, serialized);
@@ -163,6 +164,7 @@ describe("2.x — Batch state serialization (applySerializedState)", () => {
 			startedAt: 3000,
 			endedAt: null,
 			errors: [],
+			currentLanes: [],
 		};
 
 		applySerializedState(target, serialized);

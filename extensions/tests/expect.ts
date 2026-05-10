@@ -32,7 +32,11 @@ interface ExpectMethods {
 	toBeCloseTo(expected: number, numDigits?: number): void;
 	toMatch(re: RegExp | string): void;
 	toBeInstanceOf(cls: unknown): void;
-	toHaveProperty(key: string): void;
+	/**
+	 * TP-195: accept optional `value` argument for Vitest-style
+	 * `toHaveProperty(key, value)` calls.
+	 */
+	toHaveProperty(key: string, value?: unknown): void;
 	toThrow(expected?: string | RegExp | (new (...args: any[]) => Error)): void;
 	toHaveBeenCalled(): void;
 	toHaveBeenCalledTimes(n: number): void;
@@ -55,7 +59,16 @@ export function expectUnreachable(message?: string): never {
 	assert.fail(message ?? "Reached unreachable code path");
 }
 
-export function expect(actual: unknown): ExpectMethods {
+/**
+ * TP-195: Accept an optional 2nd `message` argument to mirror Vitest's
+ * diagnostic-message API. The message is currently advisory — our
+ * `node:assert`-backed matchers already include the failed-value context
+ * in their own thrown messages — but accepting it lets ~190 existing
+ * `expect(value, "description").toBe(...)` call sites typecheck. The
+ * message argument is stored but not yet woven into the matcher output;
+ * it CAN be wired in later if richer assertion messages are needed.
+ */
+export function expect(actual: unknown, _message?: string): ExpectMethods {
 	const methods: ExpectMethods = {
 		toBe(expected: unknown) {
 			assert.strictEqual(actual, expected);
@@ -152,11 +165,18 @@ export function expect(actual: unknown): ExpectMethods {
 				`Expected instance of ${(cls as any).name}, got ${actual}`,
 			);
 		},
-		toHaveProperty(key: string) {
+		toHaveProperty(key: string, value?: unknown) {
 			assert.ok(
 				actual != null && key in (actual as object),
 				`Expected object to have property "${key}"`,
 			);
+			if (arguments.length > 1) {
+				assert.deepStrictEqual(
+					(actual as Record<string, unknown>)[key],
+					value,
+					`Expected property "${key}" to deepEqual ${JSON.stringify(value)}`,
+				);
+			}
 		},
 		toThrow(expected?: string | RegExp | (new (...args: any[]) => Error)) {
 			if (expected === undefined) {

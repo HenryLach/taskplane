@@ -48,6 +48,7 @@ function makeWorkspaceConfig(
 		routing: {
 			tasksRoot: "/workspace/tasks",
 			defaultRepo: Object.keys(repos)[0] || "default",
+			taskPacketRepo: Object.keys(repos)[0] || "default",
 		},
 		configPath: "/workspace/.pi/taskplane-workspace.yaml",
 	};

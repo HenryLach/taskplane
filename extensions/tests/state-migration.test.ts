@@ -625,7 +625,7 @@ describe("State Schema v3 Migration", () => {
 
 			try {
 				validatePersistedState(futureState);
-				expect.fail("should have thrown");
+				expect.unreachable("should have thrown");
 			} catch (err: any) {
 				expect(err.code).toBe("STATE_SCHEMA_INVALID");
 				expect(err.message).toContain("99");
@@ -640,7 +640,7 @@ describe("State Schema v3 Migration", () => {
 
 			try {
 				validatePersistedState(futureState);
-				expect.fail("should have thrown");
+				expect.unreachable("should have thrown");
 			} catch (err: any) {
 				expect(err.code).toBe("STATE_SCHEMA_INVALID");
 				expect(err.message).toContain("5");
@@ -654,7 +654,7 @@ describe("State Schema v3 Migration", () => {
 
 			try {
 				validatePersistedState(futureState);
-				expect.fail("should have thrown");
+				expect.unreachable("should have thrown");
 			} catch (err: any) {
 				expect(err.message).toMatch(/[Uu]pgrade/);
 				expect(err.message).toContain("delete");

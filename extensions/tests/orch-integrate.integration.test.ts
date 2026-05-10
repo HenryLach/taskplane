@@ -29,7 +29,12 @@ import type {
 	IntegrationExecDeps,
 } from "../taskplane/extension.ts";
 import type { IntegrateCleanupRepoFindings } from "../taskplane/messages.ts";
-import { StateFileError, DEFAULT_ORCHESTRATOR_CONFIG } from "../taskplane/types.ts";
+import {
+	StateFileError,
+	DEFAULT_ORCHESTRATOR_CONFIG,
+	defaultResilienceState,
+	defaultBatchDiagnostics,
+} from "../taskplane/types.ts";
 import type {
 	PersistedBatchState,
 	OrchBatchPhase,
@@ -293,6 +298,9 @@ function makeBatchState(overrides: Partial<PersistedBatchState> = {}): Persisted
 		blockedTaskIds: [],
 		lastError: null,
 		errors: [],
+		resilience: defaultResilienceState(),
+		diagnostics: defaultBatchDiagnostics(),
+		segments: [],
 		...overrides,
 	};
 }

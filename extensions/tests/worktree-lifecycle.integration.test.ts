@@ -68,6 +68,7 @@ import {
 	removeBatchContainerIfEmpty,
 	ensureBatchContainerDir,
 } from "../task-orchestrator.ts";
+import { makeOrchestratorConfig } from "./helpers/mock-orchestrator-config.ts";
 
 const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
@@ -284,7 +285,12 @@ describe("5.1 generateWorktreePath", () => {
 	});
 
 	test("sibling mode places worktree adjacent to repo root with opId", () => {
-		const siblingConfig = { orchestrator: { worktree_location: "sibling" as const } };
+		// TP-195: use the shared factory so this fixture stays in sync with
+		// the canonical OrchestratorConfig (was previously a thin partial
+		// literal that the typecheck rejected).
+		const siblingConfig = makeOrchestratorConfig({
+			orchestrator: { worktree_location: "sibling" },
+		});
 		const repoRoot = "/some/path/repo";
 		const result = generateWorktreePath("pfx", 1, repoRoot, "op", siblingConfig);
 		const expected = resolve(repoRoot, "..", "pfx-op-1");
@@ -1259,29 +1265,15 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 		const prefix = basename(repoDir);
 
 		// Build a config with the test prefix
-		const config = {
+		const config = makeOrchestratorConfig({
 			orchestrator: {
 				max_lanes: 3,
-				worktree_location: "sibling" as const,
+				worktree_location: "sibling",
 				worktree_prefix: prefix,
-				batch_id_format: "timestamp" as const,
-				spawn_mode: "subprocess" as const,
-				session_prefix: "orch",
 				operator_id: "test",
 			},
-			dependencies: { source: "prompt" as const, cache: true },
-			assignment: { strategy: "affinity-first" as const, size_weights: { S: 1, M: 2, L: 4 } },
 			pre_warm: { auto_detect: true, commands: {}, always: [] },
-			merge: { model: "", tools: "", verify: [], order: "fewest-files-first" as const },
-			failure: {
-				on_task_failure: "skip-dependents" as const,
-				on_merge_failure: "pause" as const,
-				stall_timeout: 30,
-				max_worker_minutes: 30,
-				abort_grace_period: 60,
-			},
-			monitoring: { poll_interval: 5 },
-		};
+		});
 
 		const result = createLaneWorktrees(3, "bulk001", config, repoDir, "develop");
 
@@ -1314,29 +1306,15 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 			stdio: "pipe",
 		});
 
-		const config = {
+		const config = makeOrchestratorConfig({
 			orchestrator: {
 				max_lanes: 3,
-				worktree_location: "sibling" as const,
+				worktree_location: "sibling",
 				worktree_prefix: prefix,
-				batch_id_format: "timestamp" as const,
-				spawn_mode: "subprocess" as const,
-				session_prefix: "orch",
 				operator_id: "test",
 			},
-			dependencies: { source: "prompt" as const, cache: true },
-			assignment: { strategy: "affinity-first" as const, size_weights: { S: 1, M: 2, L: 4 } },
 			pre_warm: { auto_detect: true, commands: {}, always: [] },
-			merge: { model: "", tools: "", verify: [], order: "fewest-files-first" as const },
-			failure: {
-				on_task_failure: "skip-dependents" as const,
-				on_merge_failure: "pause" as const,
-				stall_timeout: 30,
-				max_worker_minutes: 30,
-				abort_grace_period: 60,
-			},
-			monitoring: { poll_interval: 5 },
-		};
+		});
 
 		const result = createLaneWorktrees(3, "bulkfail", config, repoDir, "develop");
 

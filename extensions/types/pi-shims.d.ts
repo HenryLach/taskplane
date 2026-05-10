@@ -36,9 +36,11 @@ declare module "@earendil-works/pi-coding-agent" {
 	// support. The 4 settings-tui.ts call sites (`ctx.ui.custom<T>(cb)`)
 	// were rejected as TS2347 "Untyped function calls may not accept type
 	// arguments" because `any` typed methods cannot accept generics.
-	// Index signatures preserve forward-compat for any other ctx access.
+	// `ui` is optional so partial test mocks (e.g., `{ model: null }`)
+	// still satisfy the type. Index signatures preserve forward-compat
+	// for any other ctx access.
 	export interface ExtensionContext {
-		ui: {
+		ui?: {
 			custom<T = unknown>(...args: any[]): Promise<T>;
 			[key: string]: any;
 		};
@@ -96,7 +98,7 @@ declare module "@mariozechner/pi-coding-agent" {
 	// TP-195: parallel `ExtensionContext` interface for the legacy scope
 	// (same rationale as the `@earendil-works/pi-coding-agent` declaration).
 	export interface ExtensionContext {
-		ui: {
+		ui?: {
 			custom<T = unknown>(...args: any[]): Promise<T>;
 			[key: string]: any;
 		};

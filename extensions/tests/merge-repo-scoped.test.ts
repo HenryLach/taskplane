@@ -28,6 +28,7 @@ import type {
 	ParsedTask,
 	RepoMergeOutcome,
 } from "../task-orchestrator.ts";
+import { makeOrchestratorConfig } from "./helpers/mock-orchestrator-config.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -93,18 +94,13 @@ function makeLane(
 }
 
 function makeConfig(mergeFailurePolicy: "pause" | "abort" = "pause"): OrchestratorConfig {
-	return {
-		orchestrator: {
-			max_lanes: 4,
-			worktree_location: "sibling",
-			worktree_prefix: "orch",
-			batch_id_format: "timestamp",
-			spawn_mode: "subprocess",
-			session_prefix: "orch",
-		},
-		dependencies: { source: "prompt", cache: true },
+	// TP-195: use the shared factory so this mock stays in sync with the
+	// canonical schema. Previous inline literal used the stale
+	// `session_prefix` field name (now `sessionPrefix`) and was missing
+	// `verification`, `merge.thinking`, `merge.timeout_minutes`.
+	return makeOrchestratorConfig({
+		orchestrator: { max_lanes: 4, worktree_location: "sibling", worktree_prefix: "orch" },
 		assignment: { strategy: "round-robin", size_weights: {} },
-		pre_warm: { auto_detect: false, commands: {}, always: [] },
 		merge: { model: "", tools: "", verify: [], order: "fewest-files-first" },
 		failure: {
 			on_task_failure: "skip-dependents",
@@ -113,8 +109,7 @@ function makeConfig(mergeFailurePolicy: "pause" | "abort" = "pause"): Orchestrat
 			max_worker_minutes: 30,
 			abort_grace_period: 30,
 		},
-		monitoring: { poll_interval: 5 },
-	};
+	});
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

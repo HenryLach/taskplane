@@ -179,6 +179,7 @@ function makePersistedBatchState(overrides?: Partial<PersistedBatchState>): Pers
 		errors: [],
 		resilience: { retryBudgets: {}, waveRetryBudgets: {} } as any,
 		diagnostics: {} as any,
+		segments: [],
 		...overrides,
 	};
 }

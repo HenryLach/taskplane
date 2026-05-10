@@ -74,6 +74,10 @@ describe("TP-121: dashboard reviewer lane-state synthesis", () => {
 });
 
 function makeConfig(root: string): LaneRunnerConfig {
+	// TP-195: added the four missing required fields (workerSegmentPrompt,
+	// reviewerModel, reviewerThinking, reviewerTools) so the fixture
+	// matches the current `LaneRunnerConfig` shape. Empty strings match
+	// the engine’s “inherit-session-default” semantics for each field.
 	return {
 		batchId: "batch-1",
 		agentIdPrefix: "orch-test",
@@ -86,6 +90,10 @@ function makeConfig(root: string): LaneRunnerConfig {
 		workerTools: "read,write",
 		workerThinking: "",
 		workerSystemPrompt: "",
+		workerSegmentPrompt: "",
+		reviewerModel: "",
+		reviewerThinking: "",
+		reviewerTools: "",
 		projectName: "project",
 		maxIterations: 1,
 		noProgressLimit: 1,

@@ -21,7 +21,12 @@ import { join, dirname } from "path";
 // mock.module replaces the module before any dependents load it.
 // We create the mock fn first, then set up the module mock.
 
-const mockExecFileSync = mock.fn();
+// TP-195: explicit generic on `mock.fn<T>()` so `.mockImplementation()` can
+// accept implementations that return non-`undefined` values. Without it,
+// `mock.fn()` infers its return type as `undefined`, and the
+// mockImplementation overload requires the new impl to also return
+// `undefined` — rejecting our string-returning mocks.
+const mockExecFileSync = mock.fn<(...args: any[]) => any>();
 
 // Get original child_process for spread
 const origChildProcess = await import("node:child_process");

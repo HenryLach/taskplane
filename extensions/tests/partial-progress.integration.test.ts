@@ -41,12 +41,13 @@ import type {
 	ParsedTask,
 	OrchBatchRuntimeState,
 	PersistedBatchState,
-	SavePartialProgressResult,
 } from "../taskplane/types.ts";
 
+// TP-195: `SavePartialProgressResult` lives in worktree.ts, not types.ts.
 import type {
 	PreserveFailedLaneProgressResult,
 	ResolveRepoContext,
+	SavePartialProgressResult,
 } from "../taskplane/worktree.ts";
 
 import { BATCH_STATE_SCHEMA_VERSION } from "../taskplane/types.ts";
@@ -485,13 +486,13 @@ describe("serializeBatchState — partialProgress fields", () => {
 		expect(validated.tasks).toHaveLength(2);
 
 		// Find the failed task and verify fields survived round-trip
-		const failedTask = validated.tasks.find((t: Record<string, unknown>) => t.taskId === "TP-001");
+		const failedTask = validated.tasks.find((t) => t.taskId === "TP-001");
 		expect(failedTask).toBeDefined();
 		expect(failedTask!.partialProgressCommits).toBe(3);
 		expect(failedTask!.partialProgressBranch).toBe("saved/henry-TP-001-20260319T140000");
 
 		// Succeeded task should not have the fields
-		const succeededTask = validated.tasks.find((t: Record<string, unknown>) => t.taskId === "TP-002");
+		const succeededTask = validated.tasks.find((t) => t.taskId === "TP-002");
 		expect(succeededTask).toBeDefined();
 		expect(succeededTask!.partialProgressCommits).toBeUndefined();
 		expect(succeededTask!.partialProgressBranch).toBeUndefined();
@@ -508,7 +509,7 @@ describe("serializeBatchState — partialProgress fields", () => {
 
 		const validated = validatePersistedState(parsed);
 		expect(validated).toBeDefined();
-		const task = validated.tasks.find((t: Record<string, unknown>) => t.taskId === "TP-001");
+		const task = validated.tasks.find((t) => t.taskId === "TP-001");
 		expect(task!.partialProgressCommits).toBeUndefined();
 		expect(task!.partialProgressBranch).toBeUndefined();
 	});
@@ -726,15 +727,15 @@ describe("end-to-end partial progress flow", () => {
 		const validated = validatePersistedState(parsed);
 
 		// Step 5: Verify round-trip integrity
-		const tp001 = validated.tasks.find((t: Record<string, unknown>) => t.taskId === "TP-001");
+		const tp001 = validated.tasks.find((t) => t.taskId === "TP-001");
 		expect(tp001!.partialProgressCommits).toBe(3);
 		expect(tp001!.partialProgressBranch).toBe("saved/henry-TP-001-20260319T140000");
 
-		const tp002 = validated.tasks.find((t: Record<string, unknown>) => t.taskId === "TP-002");
+		const tp002 = validated.tasks.find((t) => t.taskId === "TP-002");
 		expect(tp002!.partialProgressCommits).toBeUndefined();
 		expect(tp002!.partialProgressBranch).toBeUndefined();
 
-		const tp003 = validated.tasks.find((t: Record<string, unknown>) => t.taskId === "TP-003");
+		const tp003 = validated.tasks.find((t) => t.taskId === "TP-003");
 		expect(tp003!.partialProgressCommits).toBe(1);
 		expect(tp003!.partialProgressBranch).toBe("saved/henry-TP-003-20260319T140000");
 	});
@@ -759,7 +760,7 @@ describe("end-to-end partial progress flow", () => {
 		const parsed = JSON.parse(json);
 		const validated = validatePersistedState(parsed);
 
-		const task = validated.tasks.find((t: Record<string, unknown>) => t.taskId === "TP-001");
+		const task = validated.tasks.find((t) => t.taskId === "TP-001");
 		expect(task!.partialProgressBranch).toBe("saved/henry-api-TP-001-20260319T140000");
 		expect(task!.partialProgressCommits).toBe(2);
 	});
