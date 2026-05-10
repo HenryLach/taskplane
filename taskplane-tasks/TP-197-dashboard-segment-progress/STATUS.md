@@ -29,15 +29,94 @@
 ---
 
 ### Step 1: Plan the API + visual design
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Plan-review checkpoint.
 
-- [ ] API design + JSON shape documented
-- [ ] Visual design (pill row + progress-bar behavior) documented
-- [ ] Single-segment fallback confirmed (no regression for non-segmented tasks)
-- [ ] Mobile/narrow-viewport considered
-- [ ] Drafts in Discoveries
+- [x] API design + JSON shape documented — see **Design Plan § 1** below
+- [x] Visual design (pill row + progress-bar behavior) documented — see **Design Plan § 2–3**
+- [x] Single-segment fallback confirmed (no regression for non-segmented tasks) — see **Design Plan § 4**
+- [x] Mobile/narrow-viewport considered — see **Design Plan § 5**
+- [x] Drafts in Discoveries
+
+---
+
+## Design Plan (Step 1, drafted for plan review)
+
+### §1. API design — no server change required
+
+The dashboard API already exposes everything needed for TP-197:
+
+- `batch.segments[]` (server.cjs:1257) — array of `PersistedSegmentRecord`:
+  ```json
+  {
+    "segmentId": "TP-002::shared-libs",
+    "taskId": "TP-002",
+    "repoId": "shared-libs",
+    "status": "succeeded" | "running" | "pending" | "failed" | "stalled" | "skipped",
+    "laneId": "lane-1", "sessionName": "…", "branch": "…",
+    "startedAt": 1778…, "endedAt": 1778…, "retries": 0,
+    "dependsOnSegmentIds": []
+  }
+  ```
+- `batch.tasks[*].segmentIds: string[]` — ordered list of all segments owned by a task.
+- `runtimeLaneSnapshots[laneNumber].segmentId` — the segment currently executing on a given lane (V2 snapshot).
+
+**Implication for Step 2:** “data plumbing” reduces to a verification pass; no `server.cjs` change is required. The existing helpers in `app.js` (`parseSegmentId`, `buildSegmentStatusMap`, `taskSegmentProgress`, `laneActiveSegmentInfo`) already consume this shape and are sufficient inputs to the new renderer.
+
+### §2. Visual design — per-segment status pill row
+
+**Placement.** Augment the existing `.task-segment-progress` slot in each task row (app.js:864, inside the `task-step` cell). Today that slot renders a single “Segment N/T: repo” label for the *current* segment. We replace it with a **pill row of per-segment status badges**, one per `segmentId` in `task.segmentIds`. The lane-header `.lane-segment` pill stays as-is (its job — “this lane is on segment N/T” — is different and complementary).
+
+**Pill format (per segment).** Compact pill: `<icon> <repoId>` where icon comes from segment status:
+
+| Status | Icon | Pill class |
+|--------|------|------------|
+| `succeeded` | ✅ | `seg-pill seg-succeeded` |
+| `running` | ⏳ | `seg-pill seg-running` |
+| `pending` | ⬚ | `seg-pill seg-pending` |
+| `failed` | ❌ | `seg-pill seg-failed` |
+| `stalled` | ⏸ | `seg-pill seg-stalled` |
+| `skipped` | ↷ | `seg-pill seg-skipped` |
+
+The **current segment** (the one the lane is actively executing, identified via `v2snap.segmentId` or `taskSegmentProgress().segmentId`) additionally gets `seg-pill-current` for visual emphasis (brighter ring / heavier weight). Each pill carries `title="<segmentId> · <status>"` for hover-tooltip.
+
+Pill row rendered as `<div class="task-segment-row">···</div>` inside the existing `task-step` cell, sitting **before** the existing `task-step-main` content. `flex-wrap: wrap` so it degrades gracefully on narrow viewports.
+
+**Rendering helper (new):** add `taskSegmentPillRow(task, segmentStatusMap, activeSegmentId)` returning the HTML string. Returns `""` when `segmentIds.length <= 1` so the single-segment path is byte-identical to today.
+
+**Lane-header pill:** unchanged. The existing one-line summary still has value as a fast “lane focus” signal.
+
+### §3. Progress-bar behavior — keep current bar; rely on pill row for context
+
+The progress bar today already reflects **current-segment** progress when the V2 snapshot is fresh (TP-174 made `v2Progress` segment-scoped). The operator-facing gap is *interpretation*: without the pill row, the bar reads as “task progress”.
+
+**Decision: do NOT introduce a two-tone bar.** Considered and rejected because:
+
+1. The pill row already conveys overall task position (“✅·⏳·⬚ means we’re mid-task on segment 2 of 3”). Encoding the same information in the bar duplicates signal without adding new information.
+2. A two-tone bar would require aggregating progress across segments — segments have heterogeneous total-checkbox counts, and `v2Progress` only carries the current lane’s segment counts. Aggregation across past segments would need data we don’t persist per segment today.
+3. Single-segment tasks must render identically. A conditional two-tone code path would either regress single-segment or branch on segment count, both more code than the operator value justifies.
+
+The pill row is sufficient. If a future task wants a two-tone bar, persistence of historical per-segment counts would be the dependency.
+
+### §4. Single-segment fallback — byte-identical render
+
+`taskSegmentProgress()` already returns `null` when `segmentIds.length <= 1`, and we keep the existing guard in the new `taskSegmentPillRow()` helper. Therefore for single-segment tasks the new helper returns `""`, the `detailBits` array remains exactly as today, and the rendered HTML for non-segmented tasks is **unchanged**. We will verify this with a manual diff: render a single-segment task before-and-after the change and confirm identical DOM.
+
+### §5. Mobile / narrow-viewport
+
+- Pill row uses `flex-wrap: wrap` — wraps onto a second line cleanly in narrow viewports.
+- Each pill has a `max-width` with `text-overflow: ellipsis` for very long repoIds.
+- We override the existing `.task-step` cell’s `overflow: hidden` only for the embedded `.task-segment-row` container (the surrounding text continues to ellipsis-clip).
+- Worst case: ~3–5 segments common in polyrepo workspaces — fits one line at typical desktop widths; wraps to two lines at ≤600px viewport. Acceptable.
+
+**Fallback Option B** (only if A clutters in practice): move the pill row to a second grid sub-row beneath the task row, mirroring the `task-title-subtitle` pattern from TP-485 (spans cols 3–6). Decision deferred to implementation when we can eyeball a real multi-segment fixture; either way the change is contained.
+
+### §6. Test-case strategy
+
+- **Synthetic fixture for browser smoke**: drop a small `batch-state.json` into `.pi/runtime/` or load via the dashboard’s test mode containing one multi-segment task (3 segments × shared-libs/web-client/admin) and one single-segment task; visually verify rendering for both.
+- **Unit-test note**: `dashboard/public/app.js` is a browser script (not ESM, no exports), so no node-test coverage is added for the renderer itself. The Step 4 test gate is the existing 3627-test suite remaining green (we change no extension code).
+- **CI verification**: the four gates (typecheck/lint/format:check/test:fast) must remain green. Lint scope explicitly excludes `dashboard/public/**` per the code-quality-gates spec, so adding JS to `app.js` does not introduce new lint surface.
 
 ---
 
