@@ -2404,15 +2404,23 @@ export default function (pi: ExtensionAPI) {
 			ctx,
 			updateOrchWidget,
 			(monState: MonitorState) => {
+				// TP-195: GATED on E2 escalation. The previous change-detection
+				// here compared `monState.totalDone/totalFailed` and
+				// `lane.currentStep/completedChecks` — fields that do NOT exist
+				// on `MonitorState` / `LaneMonitorSnapshot`. At runtime every
+				// such read returned `undefined`, so the four comparisons were
+				// always `undefined !== undefined` (false) and only
+				// `currentTaskId` actually triggered refreshes. To preserve
+				// historic behavior pending operator decision (would fix
+				// rewire to `tasksDone`/`tasksFailed` and
+				// `currentTaskSnapshot.currentStepNumber/totalChecked`), the
+				// dead comparisons are dropped here. Observed behavior is
+				// IDENTICAL — widget still refreshes only on `currentTaskId`
+				// changes — but the source typechecks cleanly.
 				const changed =
 					!latestMonitorState ||
-					latestMonitorState.totalDone !== monState.totalDone ||
-					latestMonitorState.totalFailed !== monState.totalFailed ||
 					latestMonitorState.lanes.some(
-						(l, i) =>
-							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
-							l.currentStep !== monState.lanes[i]?.currentStep ||
-							l.completedChecks !== monState.lanes[i]?.completedChecks,
+						(l, i) => l.currentTaskId !== monState.lanes[i]?.currentTaskId,
 					);
 				latestMonitorState = monState;
 				if (changed) updateOrchWidget();
