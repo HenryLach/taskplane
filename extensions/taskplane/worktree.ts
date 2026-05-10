@@ -1901,7 +1901,11 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 		switch (piResult.errorKind) {
 			case "not-found":
 				message = "Pi not found on PATH";
-				hint = "Install Pi: npm install -g @mariozechner/pi-coding-agent";
+				// Issue #560: Pi was renamed from @mariozechner to @earendil-works
+				// in v0.74.0. Recommend the new scope for new installs; the legacy
+				// scope still resolves at runtime via Pi's bundled aliasing if a
+				// transitional install has it.
+				hint = "Install Pi: npm install -g @earendil-works/pi-coding-agent (legacy: @mariozechner/pi-coding-agent)";
 				break;
 			case "timeout":
 				message = `Pi did not respond within ${PI_PREFLIGHT_TIMEOUT_MS / 1000}s (retried once)`;

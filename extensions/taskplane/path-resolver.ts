@@ -87,14 +87,37 @@ export function getNpmGlobalRoot(): string {
 }
 
 /**
+ * Pi CLI npm package scopes that taskplane resolves at runtime, ordered with
+ * the canonical (current) scope FIRST and legacy scopes after for backward
+ * compatibility. Issue #560: the Pi coding agent was renamed from
+ * `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent` in
+ * Pi v0.74.0. Pi's own extension loader bundles BOTH scope aliases at runtime
+ * for in-process module imports, but spawn-side path resolution (this file)
+ * has to look on disk under whichever scope was actually installed.
+ *
+ * Order matters: the new scope is preferred so a system that has BOTH
+ * installed (e.g., during a transition window) picks up the current Pi.
+ */
+const PI_PACKAGE_SCOPES = ["@earendil-works", "@mariozechner"] as const;
+
+/**
  * Resolve the absolute path to the Pi coding agent CLI entrypoint (`cli.js`).
  *
- * The Pi CLI is installed as `@mariozechner/pi-coding-agent`. On Windows, invoking
- * `pi` directly executes a `.CMD` shim that cannot be spawned with `shell: false`.
- * This function locates the underlying `dist/cli.js` so callers can spawn it with
- * `node` directly, without a shell intermediary.
+ * The Pi CLI is installed under one of two npm scopes:
+ *   - `@earendil-works/pi-coding-agent` (current, as of Pi v0.74.0)
+ *   - `@mariozechner/pi-coding-agent` (legacy)
  *
- * Resolution order:
+ * On Windows, invoking `pi` directly executes a `.CMD` shim that cannot be
+ * spawned with `shell: false`. This function locates the underlying
+ * `dist/cli.js` so callers can spawn it with `node` directly, without a shell
+ * intermediary.
+ *
+ * Resolution order: the cross product of base directories × package scopes,
+ * with each base directory tried for the new scope before any base directory
+ * is tried for the legacy scope. (Equivalently: scope is the inner loop, base
+ * is the outer loop.)
+ *
+ * Base directories (outer loop):
  *   1. `npm root -g` result (dynamic — covers all setups: nvm, Homebrew, volta, etc.)
  *   2. `%APPDATA%\npm\node_modules\...` (Windows, APPDATA env var)
  *   3. `%USERPROFILE%\AppData\Roaming\npm\node_modules\...` (Windows, HOME-relative)
@@ -102,40 +125,53 @@ export function getNpmGlobalRoot(): string {
  *   5. `/usr/local/lib/node_modules/...` (macOS system Node, Linux)
  *   6. `/opt/homebrew/lib/node_modules/...` (macOS Homebrew)
  *
- * @returns Absolute path to `@mariozechner/pi-coding-agent/dist/cli.js`
- * @throws  {Error} If the CLI entrypoint cannot be found in any known location.
- *          The error message includes the `npm root -g` value for diagnosis.
+ * Scopes per base (inner loop):
+ *   a. `@earendil-works/pi-coding-agent/dist/cli.js`
+ *   b. `@mariozechner/pi-coding-agent/dist/cli.js`
+ *
+ * @returns Absolute path to a Pi CLI `dist/cli.js` (under whichever scope was found).
+ * @throws  {Error} If the CLI entrypoint cannot be found under any base × scope
+ *          combination. The error message includes the `npm root -g` value
+ *          AND lists both scopes searched, for operator diagnosis.
  */
 export function resolvePiCliPath(): string {
-	const relPath = join("@mariozechner", "pi-coding-agent", "dist", "cli.js");
-	const candidates: string[] = [];
+	const bases: string[] = [];
 
 	// 1. Dynamic: npm root -g (covers nvm, Homebrew, volta, custom npm prefix, etc.)
 	const npmRoot = getNpmGlobalRoot();
-	if (npmRoot) candidates.push(join(npmRoot, relPath));
+	if (npmRoot) bases.push(npmRoot);
 
 	// 2-3. Static Windows fallbacks
 	const home = process.env.HOME || process.env.USERPROFILE || "";
 	if (process.env.APPDATA) {
-		candidates.push(join(process.env.APPDATA, "npm", "node_modules", relPath));
+		bases.push(join(process.env.APPDATA, "npm", "node_modules"));
 	}
 	if (home) {
-		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", relPath));
+		bases.push(join(home, "AppData", "Roaming", "npm", "node_modules"));
 		// 4. macOS/Linux custom global prefix
-		candidates.push(join(home, ".npm-global", "lib", "node_modules", relPath));
+		bases.push(join(home, ".npm-global", "lib", "node_modules"));
 	}
 	// 5. macOS system Node / Linux
-	candidates.push(join("/usr", "local", "lib", "node_modules", relPath));
+	bases.push(join("/usr", "local", "lib", "node_modules"));
 	// 6. macOS Homebrew
-	candidates.push(join("/opt", "homebrew", "lib", "node_modules", relPath));
+	bases.push(join("/opt", "homebrew", "lib", "node_modules"));
 
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return candidate;
+	// Cross product: scope is the inner loop so a single base directory is
+	// fully exhausted (new scope, then legacy scope) before falling back to
+	// the next base. This matches operator intuition ("check the most likely
+	// install location for either scope first").
+	for (const base of bases) {
+		for (const scope of PI_PACKAGE_SCOPES) {
+			const candidate = join(base, scope, "pi-coding-agent", "dist", "cli.js");
+			if (existsSync(candidate)) return candidate;
+		}
 	}
 
 	throw new Error(
-		"Cannot find Pi CLI entrypoint (@mariozechner/pi-coding-agent/dist/cli.js). " +
-		"Ensure the pi coding agent is installed globally via 'npm install -g @mariozechner/pi-coding-agent'. " +
+		"Cannot find Pi CLI entrypoint (pi-coding-agent/dist/cli.js) under any known npm scope " +
+		`(${PI_PACKAGE_SCOPES.join(" or ")}). ` +
+		"Install via 'npm install -g @earendil-works/pi-coding-agent' " +
+		"(or, for legacy installs, 'npm install -g @mariozechner/pi-coding-agent'). " +
 		`npm root -g returned: ${npmRoot || "(empty — npm may not be on PATH)"}`,
 	);
 }
@@ -189,12 +225,15 @@ export function resolveTaskplanePackageFile(repoRoot: string, relPath: string): 
 	candidates.push(join("/opt", "homebrew", "lib", "node_modules", "taskplane", relPath));
 
 	// 8. Peer of pi's package (look adjacent to pi's CLI entrypoint).
-	// pi is at: <npmRoot>/@mariozechner/pi-coding-agent/dist/cli.js
-	// so piPkgDir = <npmRoot>/@mariozechner/pi-coding-agent  (resolve up 2 levels from cli.js)
-	// then go up TWO more levels to reach <npmRoot>, then into taskplane/
+	// pi is at: <npmRoot>/<scope>/pi-coding-agent/dist/cli.js (where <scope> is
+	//   @earendil-works (current) or @mariozechner (legacy)).
+	// so piPkgDir = <npmRoot>/<scope>/pi-coding-agent (resolve up 2 levels from cli.js).
+	// Then go up TWO more levels to reach <npmRoot>, then into taskplane/.
+	// This works regardless of which scope Pi is installed under because we
+	// only walk up the directory tree — we never name the scope explicitly.
 	try {
 		const piPath = process.argv[1] || "";
-		const piPkgDir = resolve(piPath, "..", ".."); // <npmRoot>/@mariozechner/pi-coding-agent
+		const piPkgDir = resolve(piPath, "..", ".."); // <npmRoot>/<scope>/pi-coding-agent
 		const npmRootFromPi = resolve(piPkgDir, "..", ".."); // <npmRoot>
 		candidates.push(join(npmRootFromPi, "taskplane", relPath));
 	} catch { /* ignore — process.argv[1] may be undefined in test contexts */ }
