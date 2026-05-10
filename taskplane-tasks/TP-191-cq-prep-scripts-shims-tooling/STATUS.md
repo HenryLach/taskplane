@@ -78,17 +78,18 @@
 ---
 
 ### Step 4: Implement Part 3 — Biome config modernization
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] `biome.json` `experimentalScannerIgnores` migrated to `ignore`
-- [ ] `$schema` URL updated to match Biome 2.4.15
-- [ ] `includes` expanded: `bin/**/*.mjs`, `scripts/**/*.mjs`, tests in scope
-- [ ] `dashboard/public/**`, `extensions/types/**`, `.pi/**`, `.worktrees/**` excluded
-- [ ] If test-file lint noise is high, per-rule overrides added under `overrides` (sage's recommendation per spec 7.2)
-- [ ] `npm run lint` produces inventory for TP-192 (count + category breakdown in Discoveries)
-- [ ] `npm run format:check` runs (will fail; formatter disabled until TP-193)
+- [x] `biome.json` `experimentalScannerIgnores` migrated — NOTE: Biome 2.4.15 does **not** support a top-level `ignore` key in `files` (the spec snippet was inaccurate); the canonical Biome 2.2+ migration is **negation patterns within `includes`** (e.g., `"!**/node_modules"`). Implemented that way; behavior matches spec intent.
+- [x] `$schema` URL updated `2.0.6` → `2.4.15`
+- [x] `includes` expanded: added `extensions/**/*.tsx`, `bin/**/*.mjs`, `scripts/**/*.mjs`. Tests are now in scope (matched by `extensions/**/*.ts`).
+- [x] `dashboard/public`, `extensions/types`, `.pi`, `.worktrees` excluded via negation patterns; pattern style matches Biome 2.2+ guidance (no trailing `/**`)
+- [x] No test-file lint overrides added — noise is high (~50% of files have warnings) but TP-192's job is to clean these up, not to mute them. Sage 7.2 recommendation triggers only if a specific rule is unfixable; that decision is TP-192's.
+- [x] `npm run lint` inventory captured (175 files checked, 9 errors / 277 warnings / 660 infos). Full breakdown in Discoveries.
+- [x] `npm run format:check` runs and exits 1 (formatter disabled — reports `0 files processed`; this confirms the script is wired to invoke biome successfully). Will produce per-file diagnostics once TP-193 enables the formatter.
+- [x] Tests still pass: 3624 / 1 / 0
 
 ---
 
@@ -152,6 +153,10 @@
 | The base `extensions/tsconfig.json` has `typeRoots: ["../web/node_modules/@types"]` pointing to a directory that does not exist in this repo — a relic from a different layout | tsconfig.ci.json overrides typeRoots to the now-installed `../node_modules/@types`. Editor-facing tsconfig.json is left untouched per PROMPT do-not. | `extensions/tsconfig.json` |
 | `@types/node` had to be added to root devDependencies (not specified in spec section 6.1.2 but implied by `"types": ["node"]` in spec section 6.1.3) | Pinned to `@types/node@22` (matches Node 22 engines target). Documented as required-companion-of-typescript-pin. | root `package.json` devDependencies |
 | JSDoc comments containing `**/*.ts` glob fragments accidentally close the comment block (the `*/` inside) | Avoided in `pi-shims.d.ts` by rewording surface-seed reference; lesson noted | `extensions/types/pi-shims.d.ts` |
+| Biome 2.4.15 `files` block does NOT accept `ignore` key (spec section 6.1.5 sample is inaccurate). Schema only allows `includes`, `experimentalScannerIgnores`, `ignoreUnknown`, `maxSize`. | Used negation patterns (`!**/node_modules`, `!dashboard/public`, etc.) in `includes` per Biome 2.2+ recommendation (`useBiomeIgnoreFolder` rule encourages this). | `biome.json` (Step 4) |
+| Biome 2.2+ ignore-folder syntax dropped trailing `/**` for folder negations. Initial port included `/**` and triggered 5 self-warnings on biome.json. | Removed trailing `/**` from negation patterns; warnings cleared. | `biome.json` (Step 4) |
+| **Lint inventory (TP-192's queue) — 9 errors, 277 warnings, 660 infos across 175 files**: errors break down as `noImplicitAnyLet`×5, `noControlCharactersInRegex`×1, `noRedeclare`×2, `noUnsafeFinally`×1. Top warning rules: `useTemplate`×169 (info), `useNodejsImportProtocol`×416 (info), `noUnusedImports`×115 (warn), `noUnusedVariables`×67 (warn), `noUnusedFunctionParameters`×40 (warn), `useOptionalChain`×24 (warn), `useLiteralKeys`×23 (info). | TP-192 cleanup queue. Errors are blocking for TP-194 gate flip; warnings/infos are advisory. | `npm run lint` (Step 4) |
+| `npm run format:check` reports `0 files processed` instead of `~every file needs formatting` (spec 6.1.7's expectation) because `formatter.enabled: false` short-circuits Biome's format command. | Confirmed wired (exit 1, runs Biome successfully). True file-level diagnostics will appear once TP-193 enables the formatter. PROMPT Step 4 specifically allows this ("this confirms format:check is wired"). | `biome.json` (Step 4) |
 
 ---
 

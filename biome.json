@@ -1,8 +1,17 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.0.6/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
   "files": {
-    "includes": ["extensions/**/*.ts"],
-    "experimentalScannerIgnores": ["extensions/tests/**", "node_modules/**"]
+    "includes": [
+      "extensions/**/*.ts",
+      "extensions/**/*.tsx",
+      "bin/**/*.mjs",
+      "scripts/**/*.mjs",
+      "!**/node_modules",
+      "!dashboard/public",
+      "!extensions/types",
+      "!.pi",
+      "!.worktrees"
+    ]
   },
   "linter": {
     "enabled": true,
