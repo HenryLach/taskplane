@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-05-09
+
 ### New
 
 - **`supervisor_takeover(reason)` tool (TP-187, #538):** Non-destructive
@@ -224,6 +226,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thrown with the original stderr; non-win32 + MAX_PATH text →
   platform guard in `isWindowsMaxPathError` correctly skips the
   fallback.
+
+### Fixed (post-PR-#556 hotfixes)
+
+- **Orchestrator parent crashes on first IPC frame from engine-worker
+  (#559):** `ReferenceError: batchState is not defined` thrown from
+  `ipcBatchIdMatches` in the supervisor IPC closure crashed the
+  orchestrator parent process the moment any engine-worker emitted its
+  first `lane-terminated` or `lane-respawned` message. Affected every
+  batch — the batch state file was left in `phase=executing` with 0
+  progress, and git worktrees / `task/...` branches were orphaned.
+  Root cause: TP-187's batchId-gating helper (added to fold sage's
+  post-integration finding) referenced `batchState.batchId` 5 times,
+  but `batchState` is NOT bound in the supervisor IPC closure — only
+  `orchBatchState` and `supervisorState` are. The crash slipped through
+  because (1) `node --experimental-strip-types` performs no
+  name-resolution checks, only strips type annotations; (2) TP-187's
+  in-batch tests mock IPC handlers at a different layer
+  (engine-worker → supervisor callbacks via `executeOrchBatch`'s `deps`
+  parameter), bypassing the actual extension closure under fault.
+  Fix: switched 5 sites from `batchState.batchId` to
+  `orchBatchState.batchId` (NOT `supervisorState.batchId` — sage's
+  post-mortem on the first attempted fix flagged that
+  `supervisorState.batchId` is only populated when the supervisor
+  activates, so for batches where the supervisor never activates the
+  gate would never fire and the zombie-alert filter would be defeated).
+  `orchBatchState.batchId` is the canonical live runtime batch ID for
+  the extension closure: declared next to `supervisorState`, populated
+  reliably via state-sync IPC. Regression test in
+  `extensions/tests/extension-ipc-batchid-scope.test.ts` (4 tests)
+  asserts via source-pattern that the supervisor IPC closure region
+  contains zero references to `batchState.batchId` and at least one
+  reference to `orchBatchState.batchId`. Comments are stripped before
+  the check so documentation-of-the-bug doesn't trigger false
+  positives.
+
+- **Pi CLI path resolution broken after `@mariozechner` →
+  `@earendil-works` rename (#560):** Pi v0.74.0 republished under the
+  `@earendil-works` npm scope. Taskplane's Runtime V2 spawn pathway
+  resolves Pi's CLI on disk via `path-resolver.ts:resolvePiCliPath()`,
+  which hardcoded `@mariozechner` as the only scope to search under
+  `npm root -g`. Result: every Runtime V2 spawn (workers, reviewers,
+  mergers) failed immediately with `Cannot find Pi CLI entrypoint` on
+  any system whose only globally-installed Pi was the new scope.
+  Critically, Pi's own extension loader bundles aliases for BOTH
+  scopes at runtime (`<pi>/dist/core/extensions/loader.js` lines
+  41-45), so all of taskplane's `import type { ExtensionAPI } from
+  "@mariozechner/pi-coding-agent"` and `import { Type } from
+  "@mariozechner/pi-ai"` sites continue to resolve correctly via Pi's
+  in-process aliasing — the rename only breaks **disk-side** lookup
+  for child-process spawning. Fix is therefore narrowly scoped to
+  `path-resolver.ts`: refactored `resolvePiCliPath()` to walk the cross
+  product of base directories × scopes, with `@earendil-works` checked
+  first and `@mariozechner` second within each base directory.
+  Operators with EITHER scope installed get a working Pi resolution;
+  operators with BOTH installed (e.g., during a transition window)
+  pick up `@earendil-works`. The error message and the
+  `worktree.ts` install hint now name both scopes for diagnosability.
+  Other ~10 files that reference `@mariozechner` (TypeScript imports,
+  test mocks, peerDependencies, docs) deliberately left as-is because
+  Pi's bundled-alias handling makes them work at runtime regardless of
+  scope, and updating them risks breaking compat for users on Pi
+  versions older than v0.74.0 (which don't have the alias map).
+  Regression test in
+  `extensions/tests/path-resolver-pi-scope.test.ts` (4 tests) sets up
+  temp directories with each scope combination and asserts the
+  resolver behaves correctly via real `child_process` probes.
 
 ## [0.28.8] - 2026-05-07
 
