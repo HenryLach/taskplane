@@ -1,11 +1,11 @@
 # TP-193: Code-quality formatter adoption — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Configure formatter rules
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 0 (None)
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S (mechanically L)
 
 > **Hydration:** This task is a mechanical pass — STATUS.md tracks outcomes
@@ -20,12 +20,12 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree, fresh from TP-191 + TP-192 merges)
-- [ ] TP-191 + TP-192 confirmed merged (`npm run lint` exits 0; `npm run format:check` exits non-zero)
-- [ ] **Operator freeze-window confirmation captured in Discoveries** (CRITICAL gate)
-- [ ] Baseline test count recorded (3624+ passing)
+- [x] On `main` (lane worktree, fresh from TP-191 + TP-192 merges)
+- [x] TP-191 + TP-192 confirmed merged (`npm run lint` exits 0; `npm run format:check` exits 0 trivially because formatter is currently disabled — see Discoveries note)
+- [x] **Operator freeze-window confirmation captured in Discoveries** (pre-recorded in row already present)
+- [x] Baseline test count recorded (3624 passing / 1 skipped / 0 failed; 3625 total)
 
 ---
 
@@ -94,6 +94,7 @@
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
 | **Operator freeze-window pre-confirmation (2026-05-10)** | Step 0 unblocked | Supervisor verified no internal PRs in flight after TP-192 merge. The two open community PRs (#520 Nix CLI resolution by @chenxin-yan, #516 polyrepo by @loopyd DRAFT) are external forks; their rebase pain is the contributors' responsibility on their next update, not ours. Operator explicitly confirmed proceeding with TP-193 immediately after TP-192 merge. Step 0 freeze-window check should treat this row as the captured confirmation. |
+| **Baseline metrics captured at Step 0** | Step 0 verified | `npm run lint` exits 0 (277 warnings + 660 infos, 0 errors — clean post TP-192). `npm run format:check` exits 0 trivially because `formatter.enabled: false` in current `biome.json` (biome reports `Checked 0 files`). The PROMPT's expectation that format:check would exit non-zero pre-Step-1 was inaccurate for biome 2.x — disabled formatter short-circuits to 0 instead of failing. Test baseline: 3625 tests / 3624 pass / 1 skipped / 0 fail. |
 
 ---
 
@@ -102,6 +103,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-10 17:04 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-10 17:04 | Step 0 started | Preflight |
 
 ---
 
