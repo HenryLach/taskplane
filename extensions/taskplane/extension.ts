@@ -1715,17 +1715,29 @@ export default function (pi: ExtensionAPI) {
 	 * the IPC — first batch, no risk of staleness).
 	 */
 	const ipcBatchIdMatches = (incomingBatchId: string | undefined): boolean => {
-		// FIX (#559): use `supervisorState.batchId`, not `batchState.batchId`.
-		// `batchState` is NOT bound in this closure — the only `batchState`
-		// declarations in extension.ts are inside other handler functions.
-		// Referencing it here threw ReferenceError on the first IPC frame and
-		// crashed the orchestrator parent process for ALL batches. The closest
-		// equivalent in scope is `supervisorState.batchId` (declared on line
-		// 1680 alongside `terminatedLanes` and `terminatedAgents`), which is
-		// `""` until the supervisor activates and otherwise tracks the live
-		// batch ID 1:1. Empty-string falsy check below preserves the
-		// pre-planning accept-all semantics described in the JSDoc.
-		const currentBatchId = supervisorState.batchId;
+		// FIX (#559) + sage post-mortem: use `orchBatchState.batchId`, NOT
+		// `batchState.batchId` and NOT `supervisorState.batchId`.
+		//
+		// `batchState` was the original (crashing) reference — NOT bound in
+		// this closure. Other regions of extension.ts legitimately bind a
+		// different `batchState` via destructuring inside their own functions,
+		// but those bindings are not visible here.
+		//
+		// `supervisorState.batchId` (the first attempted fix) is bound but is
+		// only populated when `activateSupervisor()` runs — supervisor activation
+		// is a separate event triggered by alerts/intercepts, not by every batch.
+		// For batches where the supervisor never activates, that field stays
+		// empty for the entire batch and the gate never fires (everything passes
+		// the empty-string accept-all branch), defeating the zombie-alert filter.
+		//
+		// `orchBatchState.batchId` is the canonical live runtime batch ID for
+		// the extension closure: declared on line 1669, populated by the same
+		// state-sync IPC that the supervisor reads from, and reliably present
+		// from the moment the engine-worker emits its first state-sync frame
+		// onward. The only window where it is `""` is the legitimate gap
+		// between batch launch and first state-sync — pre-planning, before any
+		// terminated-lane IPC could fire.
+		const currentBatchId = orchBatchState.batchId;
 		if (!currentBatchId) return true; // no live batch yet — accept
 		if (!incomingBatchId) return true; // legacy IPC without batchId — accept (back-compat)
 		return incomingBatchId === currentBatchId;
@@ -2308,7 +2320,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(info.batchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
-						`(incoming batchId=${info.batchId}, current=${supervisorState.batchId})\n`,
+						`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}
@@ -2324,7 +2336,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(incomingBatchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
-						`(incoming batchId=${incomingBatchId}, current=${supervisorState.batchId})\n`,
+						`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}
@@ -2684,7 +2696,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(info.batchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
-						`(incoming batchId=${info.batchId}, current=${supervisorState.batchId})\n`,
+						`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}
@@ -2700,7 +2712,7 @@ export default function (pi: ExtensionAPI) {
 				if (!ipcBatchIdMatches(incomingBatchId)) {
 					process.stderr.write(
 						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
-						`(incoming batchId=${incomingBatchId}, current=${supervisorState.batchId})\n`,
+						`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
 					);
 					return;
 				}

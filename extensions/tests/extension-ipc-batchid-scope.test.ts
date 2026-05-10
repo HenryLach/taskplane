@@ -5,10 +5,19 @@
  * Root cause: TP-187 (#538) introduced `ipcBatchIdMatches(incomingBatchId)` and
  * a pair of stderr-logging template literals inside the supervisor's IPC
  * handler closure that all referenced `batchState.batchId`. The closure does
- * NOT bind a `batchState` variable — only `supervisorState` is in scope there
- * (declared at the same nesting level as `terminatedLanes` / `terminatedAgents`).
- * The crash fired the moment the engine-worker sent its first `lane-terminated`
- * or `lane-respawned` IPC, taking down EVERY batch.
+ * NOT bind a `batchState` variable — only `orchBatchState` and `supervisorState`
+ * are in scope there (declared at the same nesting level as `terminatedLanes` /
+ * `terminatedAgents`). The crash fired the moment the engine-worker sent its
+ * first `lane-terminated` or `lane-respawned` IPC, taking down EVERY batch.
+ *
+ * Sage post-mortem follow-up: the canonical replacement is
+ * `orchBatchState.batchId`, NOT `supervisorState.batchId`. The latter is only
+ * populated when the supervisor activates (a separate event triggered by
+ * alerts/intercepts), so for batches where the supervisor never activates the
+ * gate would never fire and the zombie-alert filter would be defeated.
+ * `orchBatchState.batchId` is reliably populated via state-sync IPC from the
+ * moment the engine-worker emits its first state-sync frame onward, making
+ * it the correct binding for the live-batch comparison.
  *
  * The crash slipped through because:
  *   - `node --experimental-strip-types` does not perform name-resolution
@@ -88,6 +97,20 @@ describe("extension.ts supervisor IPC closure — batchId scope (regression #559
 	const region = locateSupervisorClosureRegion();
 	const codeOnly = stripComments(region.body);
 
+	it("references `orchBatchState.batchId` for the live-batch check (sage post-mortem)", () => {
+		// `orchBatchState` is the let-binding the extension manages itself
+		// (declared on extension.ts:1669 just above `supervisorState`). It's
+		// populated reliably via state-sync IPC. `supervisorState.batchId`
+		// would also be in scope, but it stays `""` for batches where the
+		// supervisor never activates — using it would defeat the gate.
+		assert.ok(
+			codeOnly.includes("orchBatchState.batchId"),
+			"Expected at least one reference to `orchBatchState.batchId` inside the supervisor IPC closure. " +
+			"That's the canonical live-batch identifier in scope. If the only batchId reference is via " +
+			"`supervisorState.batchId`, the gate effectively never fires (sage post-mortem on #559).",
+		);
+	});
+
 	it("contains the canonical `ipcBatchIdMatches` helper", () => {
 		assert.ok(
 			region.body.includes("const ipcBatchIdMatches"),
@@ -117,16 +140,7 @@ describe("extension.ts supervisor IPC closure — batchId scope (regression #559
 		);
 	});
 
-	it("references `supervisorState.batchId` for current-batch comparisons (the in-scope binding)", () => {
-		assert.ok(
-			codeOnly.includes("supervisorState.batchId"),
-			"Expected at least one reference to `supervisorState.batchId` inside the supervisor IPC closure " +
-			"— that's the correct in-scope binding for the current-batch comparison. If this assertion fails, " +
-			"the bug from #559 may have been reintroduced via the wrong identifier.",
-		);
-	});
-
-	it("`ipcBatchIdMatches` body specifically uses `supervisorState.batchId`", () => {
+	it("`ipcBatchIdMatches` body specifically uses `orchBatchState.batchId`", () => {
 		// Tightest assertion: the helper body itself is using the correct binding.
 		const helperStart = codeOnly.indexOf("const ipcBatchIdMatches");
 		assert.ok(helperStart >= 0, "Could not locate `ipcBatchIdMatches` declaration");
@@ -135,8 +149,10 @@ describe("extension.ts supervisor IPC closure — batchId scope (regression #559
 		assert.ok(helperEnd > helperStart, "Could not locate end of `ipcBatchIdMatches` declaration");
 		const helperBody = codeOnly.slice(helperStart, helperEnd);
 		assert.ok(
-			helperBody.includes("supervisorState.batchId"),
-			"`ipcBatchIdMatches` must read the current batch ID from `supervisorState.batchId`",
+			helperBody.includes("orchBatchState.batchId"),
+			"`ipcBatchIdMatches` must read the current batch ID from `orchBatchState.batchId` " +
+			"(the let-binding the extension manages itself, populated via state-sync IPC). " +
+			"Reading from `supervisorState.batchId` would defeat the gate for non-supervised batches.",
 		);
 		assert.ok(
 			!helperBody.includes("batchState.batchId"),
