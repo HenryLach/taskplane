@@ -1,11 +1,11 @@
 # TP-190: Runtime V2 spawn-failure visibility — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-05-09
+**Current Step:** Step 1: Plan all four parts of the fix
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-05-10
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -21,26 +21,26 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree, fresh from PR #556 merge if applicable)
-- [ ] Baseline test count recorded (target: 3587 passing / 1 skipped / 0 failed post-PR-#556)
-- [ ] `gh issue view 561` read in full
-- [ ] All Tier 3 context files read (execution.ts ~1855-1875 + ~2715-2735, engine.ts call sites, types.ts ExitCategory enum, extension.ts ~3088-3140 alert pattern, supervisor-recovery-flows.test.ts harness)
-- [ ] Decision: where to wrap `executeLaneV2` — engine.ts caller, execution.ts internal, both, or NOT (if existing catch suffices and bug is downstream)
+- [x] On `main` (lane worktree, fresh from PR #556 merge if applicable)
+- [x] Baseline test count recorded (3587 passing / 1 skipped / 0 failed — confirmed post-PR-#556)
+- [x] `gh issue view 561` read in full
+- [x] All Tier 3 context files read (execution.ts ~1855-1925 + ~2715-2735 + ~2573 executeLaneV2 head + ~807 resolveTaskMonitorState, engine.ts ~3050-3140 task-failure alert site + ~2531 executeWave call site, types.ts LaneTaskOutcome ~819 + ExitClassification import, diagnostics.ts ExitClassification ~37-79 + EXIT_CLASSIFICATIONS, extension.ts ~3088 supervisor recovery, supervisor-recovery-flows.test.ts + conversation-event-fidelity.test.ts mock.module pattern, process-registry.ts writeLaneSnapshot/readLaneSnapshot)
+- [x] Decision: NOT a new try/catch — the existing one at execution.ts:2724 already produces a failed outcome. The bug is downstream: `monitorLanes` blocks `executeWave` from returning because no lane snapshot is ever written, so `resolveTaskMonitorState` keeps `sessionAlive=true` indefinitely (snap==null branch defaults to alive without time-based fallback). Fix the catch to (a) write a synthetic terminal lane snapshot via `writeLaneSnapshot()` so the monitor exits, (b) tag the outcome with `exitDiagnostic.classification = "spawn_failure"` so downstream consumers (retry, IPC alert, phase transition) can distinguish.
 
 ---
 
 ### Step 1: Plan all four parts of the fix
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
-- [ ] Part 1 design (state-transition wiring): document the existing flow trace and the chosen wrap location
-- [ ] Part 2 design (no-retry policy): identify the retry classification site and the additive change
-- [ ] Part 3 design (phase transition): define the trigger condition (all lanes spawn-fail → phase=failed) and the wiring point
-- [ ] Part 4 design (regression test): outline the harness — mock target, assertion shape, IPC alert capture
-- [ ] Drafts in Discoveries section below
+- [x] Part 1 design (state-transition wiring): see Discoveries → "Part 1 design"
+- [x] Part 2 design (no-retry policy): see Discoveries → "Part 2 design"
+- [x] Part 3 design (phase transition): see Discoveries → "Part 3 design"
+- [x] Part 4 design (regression test): see Discoveries → "Part 4 design"
+- [x] Drafts in Discoveries section below
 
 ---
 
@@ -125,6 +125,14 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Existing catch at execution.ts:2724 already produces a failed `LaneTaskOutcome` for spawn errors — the issue body's repro stderr line `Runtime V2 execution error: …` comes from this catch. So Part 1 is NOT about adding a new catch; it's about fixing the downstream consumers that don't see the failure. | Confirms PROMPT "Do NOT" guidance. | execution.ts:2722-2734 |
+| Root cause of the silent hang: `monitorLanes()` blocks `executeWave` on `await monitorPromise`. The monitor reads lane snapshot files via `readLaneSnapshot()`. Spawn-stage failures never write a snapshot (spawnAgent throws before registering), and `resolveTaskMonitorState` treats `snap == null` as startup grace (`sessionAlive = true`) forever — there is no time-based fallback when a snapshot is *never* written. Because `executeWave` never returns, the engine's `failedTaskIds` aggregation, `task-failure` IPC alert emission (engine.ts:3088), and phase-transition logic never execute. | Drives Part 1 fix design. | execution.ts:826-849 (snap==null branch); execution.ts:2008 (`await monitorPromise`) |
+| `LaneTaskOutcome` has `exitDiagnostic?: TaskExitDiagnostic` (types.ts:861) carrying a `classification: ExitClassification`. Today the spawn-failure outcome leaves `exitDiagnostic` undefined. Adding a new `"spawn_failure"` value to `ExitClassification` (diagnostics.ts) and populating `exitDiagnostic` in the catch lets the existing retry classifier (`TIER0_RETRYABLE_CLASSIFICATIONS`) and supervisor playbook branch on it deterministically — no new top-level field is needed on `LaneTaskOutcome`. | Drives Part 1 + Part 2 design. | diagnostics.ts:60-79; types.ts:1818 |
+| `writeLaneSnapshot(stateRoot, batchId, laneNumber, snapshot)` is exported from process-registry.ts. The catch in `executeLaneV2` already has all the inputs it needs (stateRoot, batchId, laneNumber, taskId, segmentId, sessionName/agentId) to write a synthetic terminal snapshot with `status: "failed"` so that `resolveTaskMonitorState`'s `snap.taskId === taskId` branch sets `sessionAlive = false` (line 882: `sessionAlive = snap.status === "running";`) and Priority 3 returns status `failed`. Monitor exits, executeWave returns. | Implements Part 1 with minimal API surface. | process-registry.ts:336; execution.ts:881-884 |
+| **Part 1 design** (state-transition + IPC alert): (a) Add `"spawn_failure"` to `ExitClassification` union and `EXIT_CLASSIFICATIONS` array in diagnostics.ts. (b) In `executeLaneV2`'s catch, build a `TaskExitDiagnostic` with `classification: "spawn_failure"`, attach it to the failed outcome's `exitDiagnostic`, and set `exitReason: "spawn failure: <message>"` (matches PROMPT wording). (c) After pushing the failed outcome, write a synthetic terminal lane snapshot using `writeLaneSnapshot()` so the monitor exits cleanly. (d) Extend `SupervisorAlertContext` (types.ts) with an optional `exitCategory?: ExitClassification` field. (e) In engine.ts:3088 task-failure alert emission, populate `context.exitCategory` from `outcome.exitDiagnostic?.classification` so the supervisor playbook can branch on it (esp. for the spawn-failure category). | Plan. | execution.ts:2722-2734; engine.ts:3088-3115; diagnostics.ts:60-79; types.ts:2120-2150 |
+| **Part 2 design** (no-retry for spawn failures): `TIER0_RETRYABLE_CLASSIFICATIONS` (types.ts:1818) is the gate — a classification must be explicitly listed there to be retried. `"spawn_failure"` is NOT added to the set. Add an inline comment under the set documenting that `spawn_failure` is intentionally excluded because spawn-stage failures (Pi CLI not findable, worktree provisioning, branch collision) are never transient — retrying without operator action just burns budget. The engine's retry sites (engine.ts:1286, 1543, 1797) already gate on `TIER0_RETRYABLE_CLASSIFICATIONS.has(classification)`, so no logic changes needed in engine.ts for retry behavior. | Plan. | types.ts:1818 |
+| **Part 3 design** (phase transition): Today, default policy `skip-dependents` lets a wave complete with `failedTaskIds.length > 0` while leaving `batchState.phase` at `"executing"`. After `executeWave` returns in engine.ts (around line 2531), and after the existing `task-failure` alert emission loop, add a check: if `succeededTaskIds.length === 0` AND `failedTaskIds.length > 0` AND **every** failed outcome has `exitDiagnostic?.classification === "spawn_failure"`, transition `batchState.phase` from `"executing"` → `"failed"`. Persist the state. This is independent of `policyApplied` — spawn-failures are unrecoverable without operator action, so the operator must see `phase=failed` in `orch_status()`. (Choosing `"failed"` over `"paused"` per PROMPT guidance: "NOT paused — the operator can't unstick this without changing something.") | Plan. | engine.ts:2531-2600 (post-executeWave); engine.ts:3088 (after alert loop) |
+| **Part 4 design** (regression test): New `extensions/tests/spawn-failure-visibility.test.ts`. Use `mock.module("../taskplane/path-resolver.ts", { namedExports: { resolvePiCliPath: () => { throw new Error("Cannot find Pi CLI entrypoint (pi-coding-agent/dist/cli.js) under any known npm scope"); } } })` to make every spawn fail deterministically. Then call `executeLaneV2()` directly with a fabricated `AllocatedLane` (single task, single lane) and a temp `stateRoot`. Assertions: (1) the returned `LaneExecutionResult` has `overallStatus === "failed"` and the task outcome has `status === "failed"`, `exitDiagnostic?.classification === "spawn_failure"`, and `exitReason` includes the spawn error message. (2) The synthetic lane snapshot file exists at `<stateRoot>/.pi/runtime/<batchId>/lanes/lane-1.json` with `status: "failed"`. (3) Capture `onSupervisorAlert` callback firings via a mock; assert the engine.ts alert emission fires with `category: "task-failure"` and `context.exitCategory === "spawn_failure"` — this requires a higher-level test that invokes engine.ts's wave loop, OR a unit test that directly calls the alert-emission helper. (4) For the no-retry test, count how many times the mocked `resolvePiCliPath` is invoked — should be exactly once per task per lane (no retry). (5) For the multi-lane phase-transition test, run `executeWave` (or directly invoke the engine.ts post-wave logic) with all lanes failing-spawn and assert `batchState.phase === "failed"`. The test harness reuses the `mkTmpRoot` + `mock.module` patterns from `supervisor-recovery-flows.test.ts` and `conversation-event-fidelity.test.ts`. | Plan. | new file extensions/tests/spawn-failure-visibility.test.ts |
 
 ---
 
@@ -133,6 +141,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-09 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-10 03:31 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-10 03:31 | Step 0 started | Preflight |
+| 2026-05-10 | Step 0 complete | Baseline 3587/1/0 recorded; root-cause traced (monitor blocks on missing snapshot); decision: fix downstream of existing catch (no new try/catch) |
+| 2026-05-10 | Step 1 hydrated | Plan drafted in Discoveries — see Part 1/2/3/4 entries |
 
 ---
 
