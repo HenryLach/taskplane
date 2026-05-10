@@ -52,6 +52,22 @@ your verdict. If you don't write the file, your review is lost.
 
 ## Quality-check verification (code reviews only)
 
+> **Activation status (post-TP-191):** The typecheck/lint/format:check
+> scripts referenced in this section are now defined in the project's
+> `package.json`. The Quality-check verification logic IS active for
+> *discoverability* (run the commands, surface the output as Issues
+> Found), but until the gating PR (TP-194) lands, **typecheck, lint,
+> and format:check failures are surfaced as Issues Found but do NOT
+> downgrade the verdict to REVISE** — because pre-existing errors in
+> `main` are not the worker's fault, and the gating sequence (TP-192
+> lint cleanup, TP-193 format adoption, TP-194 gate flip) is what
+> brings `main` to a clean baseline. After TP-194, the downgrade rule
+> in this section's *Verdict downgrade rule* fires normally on all
+> three quality checks.
+>
+> *This note is removed in TP-194 once the baseline is clean and the
+> downgrade rule is fully active.*
+
 **This section applies to code reviews only.** For plan reviews, skip this
 section entirely — there is no code to type-check or lint yet.
 

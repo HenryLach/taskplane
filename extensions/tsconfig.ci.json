@@ -1,0 +1,26 @@
+{
+  "// NOTE": "Headless CI typecheck config. Separate from tsconfig.json (editor-facing) and tsconfig.test.json (test-runtime path mappings). Adds path mappings to types/pi-shims.d.ts so tsc --noEmit can resolve @earendil-works/* and @mariozechner/* imports without the actual pi packages being installed locally. See docs/specifications/taskplane/code-quality-gates.md section 6.1.3.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": ["../node_modules/@types"],
+    "baseUrl": ".",
+    "paths": {
+      "@earendil-works/pi-coding-agent": ["types/pi-shims.d.ts"],
+      "@earendil-works/pi-ai": ["types/pi-shims.d.ts"],
+      "@earendil-works/pi-tui": ["types/pi-shims.d.ts"],
+      "@mariozechner/pi-coding-agent": ["types/pi-shims.d.ts"],
+      "@mariozechner/pi-ai": ["types/pi-shims.d.ts"],
+      "@mariozechner/pi-tui": ["types/pi-shims.d.ts"]
+    }
+  },
+  "include": [
+    "task-orchestrator.ts",
+    "reviewer-extension.ts",
+    "taskplane/**/*.ts",
+    "tests/**/*.ts",
+    "types/**/*.d.ts"
+  ],
+  "exclude": []
+}
