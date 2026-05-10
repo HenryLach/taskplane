@@ -56,9 +56,9 @@
 - [x] Targeted (62/62 in segment-scoped-lane-runner.test.ts) + full fast suite (3643 pass / 0 fail) pass
 
 **R002 revision items:**
-- [ ] Gate the segment-scoped *prompt-injection* block (lane-runner.ts ≈ line 517 originally, now line 556 after Step 2 changes) on `isSegmentScoped` instead of the raw `stepSegmentMap && currentRepoId && repoStepNumbers && remainingSteps.length > 0` composite condition.
-- [ ] Replace the test `7.3` source-string assertion that currently enshrines the raw composite-condition pattern — retarget it at the mode-derived gating.
-- [ ] Re-run targeted suite + full fast suite + all four gates after the fixes.
+- [x] Gate the segment-scoped *prompt-injection* block on `isSegmentScoped` instead of the raw composite condition; added defensive WARN-log guard for the (should-never-trip) case where `currentStepMapping`/`mySegment` is missing.
+- [x] Replace test `7.3` source-string assertion with mode-derived gating assertions (gate is `if (isSegmentScoped) {` and raw composite must NOT appear). Also updated `4.1` to assert the inner defensive guard instead of the now-removed `if (currentStepMapping && mySegment)`.
+- [x] Re-run targeted (62/62) + full fast suite (3643 pass / 0 fail) + all four gates (all green).
 
 **Files touched:** `extensions/taskplane/types.ts`, `extensions/taskplane/lane-runner.ts`, `extensions/tests/segment-scoped-lane-runner.test.ts`. New tests: 16 (sections 9.x — 11 unit tests for `computeSegmentScopeMode` + 5 source-analysis contracts for the unification).
 

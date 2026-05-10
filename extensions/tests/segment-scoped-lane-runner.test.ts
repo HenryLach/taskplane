@@ -270,9 +270,13 @@ describe("4.x: Segment-scoped prompt construction contracts (source analysis)", 
 		laneRunnerSrc = readFileSync(join(testDir, "..", "taskplane", "lane-runner.ts"), "utf-8");
 	});
 
-	it("4.1: segment-scoped prompt block is gated on mySegment existence", () => {
-		// The segment-scoped prompt should only appear when mySegment is found
-		expect(laneRunnerSrc).toContain("if (currentStepMapping && mySegment)");
+	it("4.1: segment-scoped prompt block has a defensive mySegment guard (TP-196)", () => {
+		// TP-196 / #502: the outer gate is now `if (isSegmentScoped)` (mode-driven),
+		// and inside that block a defensive guard skips the segment-scoped body when
+		// `currentStepMapping` / `mySegment` is unexpectedly missing (logs a WARN).
+		// This preserves the original mySegment safety property without re-encoding
+		// the raw composite condition outside.
+		expect(laneRunnerSrc).toContain("if (!currentStepMapping || !mySegment) {");
 	});
 
 	it("4.2: prompt includes 'NOT yours' guardrail for other segments", () => {
@@ -395,8 +399,18 @@ describe("7.x: Legacy fallback — no behavior change for tasks without markers"
 		expect(laneRunnerSrc).toContain("stepSegmentMap && currentRepoId");
 	});
 
-	it("7.3: segment prompt block skipped when repoStepNumbers is null", () => {
+	it("7.3: segment prompt block is gated on the authoritative mode flag (TP-196)", () => {
+		// TP-196 / #502: the segment-scoped prompt-injection branch must derive
+		// its gate from the authoritative `isSegmentScoped` (which itself is
+		// derived from `segmentScopeMode`) rather than re-evaluating the raw
+		// composite condition. Asserting the mode-driven gate prevents drift.
 		expect(laneRunnerSrc).toContain(
+			"// TP-174/TP-196: Segment-scoped prompt — show only this segment's checkboxes.",
+		);
+		// The actual gate is `if (isSegmentScoped) {`, not the old composite.
+		expect(laneRunnerSrc).toContain("\n\t\tif (isSegmentScoped) {");
+		// And the raw composite condition no longer appears as a prompt-block gate.
+		expect(laneRunnerSrc).not.toContain(
 			"if (stepSegmentMap && currentRepoId && repoStepNumbers && remainingSteps.length > 0)",
 		);
 	});

@@ -552,16 +552,27 @@ export async function executeTaskV2(
 		// Segment scope mode is determined by which system prompt was loaded.
 		// No SegmentScopeMode line needed — the prompt IS the mode.
 
-		// TP-174: Segment-scoped prompt — show only this segment's checkboxes
-		if (stepSegmentMap && currentRepoId && repoStepNumbers && remainingSteps.length > 0) {
+		// TP-174/TP-196: Segment-scoped prompt — show only this segment's checkboxes.
+		// Gated on the authoritative `isSegmentScoped` (derived from `segmentScopeMode`)
+		// rather than the raw composite condition, so the prompt branch can't drift
+		// from the mode decision (TP-196 / #502).
+		if (isSegmentScoped) {
 			const currentStepNum = remainingSteps[0].number;
-			const currentStepMapping = stepSegmentMap.find((s) => s.stepNumber === currentStepNum);
+			// Defensive guards: when `isSegmentScoped === true`, `computeSegmentScopeMode`
+			// has already verified `stepSegmentMap`, `currentRepoId`, and that the
+			// current step's mapping contains an entry for the active repo. We re-fetch
+			// the structures here for clarity. If any are missing we log and skip the
+			// segment block (defense-in-depth — should never trip in practice).
+			const currentStepMapping = stepSegmentMap?.find((s) => s.stepNumber === currentStepNum);
 			const mySegment = currentStepMapping?.segments.find((seg) => seg.repoId === currentRepoId);
 
-			// Only inject segment-scoped prompt when the current step has an explicit
-			// segment for this repoId. If mySegment is missing (legacy task without
-			// markers, or step has no work for this repo), skip and preserve legacy behavior.
-			if (currentStepMapping && mySegment) {
+			if (!currentStepMapping || !mySegment) {
+				logExecution(
+					statusPath,
+					"WARN",
+					`segmentScopeMode === SEGMENT_SCOPED but current step mapping missing — skipping segment prompt block (currentRepoId=${currentRepoId}, stepNum=${currentStepNum})`,
+				);
+			} else {
 				const otherSegments = currentStepMapping.segments.filter((seg) => seg.repoId !== currentRepoId);
 
 				// Count total segments for this repo across all steps
