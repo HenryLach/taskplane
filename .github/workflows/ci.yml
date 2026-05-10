@@ -23,14 +23,19 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: extensions/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            extensions/package-lock.json
+
+      - name: Install root dev dependencies
+        run: npm ci
 
       - name: Install extension dependencies
         run: npm ci --prefix extensions
 
       - name: Lint (Biome)
-        continue-on-error: true
-        run: npx @biomejs/biome@2 lint --max-diagnostics=50 --reporter=github .
+        continue-on-error: true   # NOTE: kept until TP-194 (gate flip)
+        run: npm run lint
 
       - name: Run tests
         run: |

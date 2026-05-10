@@ -4,7 +4,9 @@
     "baseUrl": ".",
     "paths": {
       "@mariozechner/pi-coding-agent": ["tests/mocks/pi-coding-agent.ts"],
-      "@mariozechner/pi-tui": ["tests/mocks/pi-tui.ts"]
+      "@mariozechner/pi-tui": ["tests/mocks/pi-tui.ts"],
+      "@earendil-works/pi-coding-agent": ["tests/mocks/pi-coding-agent.ts"],
+      "@earendil-works/pi-tui": ["tests/mocks/pi-tui.ts"]
     }
   },
   "include": ["task-orchestrator.ts", "tests/**/*.ts"]
