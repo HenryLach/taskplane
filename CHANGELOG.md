@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Code-quality lint cleanup (TP-192):** Second of four sequenced packets
+  implementing the code-quality-gates spec
+  ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)
+  section 6.2). Fixed all 9 pre-existing Biome lint errors in `main` so
+  TP-194 can promote `npm run lint` from advisory to a CI gate without
+  breaking the build. Errors fixed by category: **`noImplicitAnyLet` × 5**
+  — added explicit type annotations to regex-exec loop variables
+  (`let m: RegExpExecArray | null;`) in `lane-runner.ts` and
+  `task-executor-core.ts` (3 sites), and to a `readdirSync` result
+  (`let entries: Dirent[];`) in `merge.ts` (added matching `type Dirent`
+  to the existing `node:fs` import). **`noControlCharactersInRegex` × 1**
+  — in `verification.ts`, converted `ANSI_REGEX` from a regex literal
+  containing `\u001b\u009b` escapes to `new RegExp("...", "g")` with an
+  escaped string body; runtime behavior is identical (the rule only
+  inspects regex literals, not constructor strings). The stale
+  `// eslint-disable-next-line no-control-regex` comment was dropped
+  (this repo has no ESLint). **`noRedeclare` × 2** — in `waves.ts`,
+  removed `AllocateLanesResult` from the type-import on line 10 (it was
+  not actually exported from `./types.ts`; the local
+  `export interface AllocateLanesResult` at line 1072 is the canonical
+  declaration); in `tests/orch-state-persistence.test.ts`, renamed the
+  duplicate `resolveRepoRoot` test helper in section 8.1 to
+  `resolveRepoRootMixedRepo` and updated its 14 in-section callers
+  (bodies are functionally identical, so behavior is preserved; the
+  section-7 helper at line 4226 keeps its original name). **`noUnsafeFinally`
+  × 1** — in `extension.ts` `withPreservedBatchHistory`, inverted
+  `if (!snapshot) return;` (early-return inside a `finally` block) to
+  `if (snapshot) { ... }` (conditional execution); same observable
+  behavior, no `return` in `finally`. **No suppressions added** — every
+  error received a real fix. Affected files: 7 source files
+  (`extension.ts`, `lane-runner.ts`, `merge.ts`, `task-executor-core.ts`,
+  `verification.ts`, `waves.ts`) plus 1 test file
+  (`orch-state-persistence.test.ts`). After cleanup: `npm run lint`
+  exits 0 (was: 9 errors); typecheck dropped from 267 to **264 errors**
+  (incidental, from explicit regex-exec type annotations — new TP-194
+  baseline); test suite unchanged at **3624 passing / 1 skipped /
+  0 failed**.
 - **Code-quality prep — scripts, tool pinning, pi-shims (TP-191):** First of
   four sequenced packets implementing the code-quality-gates spec
   ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)).
