@@ -165,6 +165,11 @@
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-05-10 16:19 | Task started | Runtime V2 lane-runner execution |
 | 2026-05-10 16:19 | Step 0 started | Preflight |
+| 2026-05-10 | Step 0 complete | Inventory confirmed: 9 errors. Tests: 3624/1/0 baseline. |
+| 2026-05-10 | Step 1 plan-review | R001 plan: APPROVE — implementation cleared to proceed |
+| 2026-05-10 | Step 2 implementation | All 9 errors fixed. Commit 28fbb159. |
+| 2026-05-10 | Step 3 verification | lint=0, tests=3624/1/0, typecheck=264 (↓ from 267), CLI smoke clean |
+| 2026-05-10 | Step 4 docs & delivery | CHANGELOG entry added; commit 390a4376. Task complete. |
 
 ---
 
