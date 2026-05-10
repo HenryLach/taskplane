@@ -47,6 +47,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Code-quality gates active (TP-194)**
+
+  The final task packet implementing the code-quality-gates spec
+  ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md),
+  section 6.4). Flips three static-analysis checks from advisory to
+  required CI gates: `Typecheck` (new — `tsc --noEmit` against
+  `extensions/tsconfig.ci.json`), `Lint (Biome)` (was already wired
+  but ran with `continue-on-error: true` until now), and
+  `Format check (Biome)` (new — `biome format --no-errors-on-unmatched .`).
+  `.github/workflows/ci.yml` runs the three steps in order before the
+  existing `Run tests` step inside the single `ci` job, so any failure
+  short-circuits the rest of the pipeline. The existing required `ci`
+  branch-protection context already covers the new gates because a
+  step failure fails the whole job.
+
+  Reviewer-agent activation: the TP-188 quality-check verification
+  section in `templates/agents/task-reviewer.md` is now fully active.
+  The temporary activation note added in TP-191 (which previously
+  surfaced quality-check failures as Issues Found without downgrading
+  the verdict) is removed; failing typecheck/lint/format:check now
+  unconditionally downgrades APPROVE → REVISE during code review.
+  Documentation updates: `AGENTS.md` adds the three commands to the
+  validation checklist; `docs/maintainers/release-process.md` adds
+  them to the pre-release checks and pre-release checklist;
+  `docs/maintainers/development-setup.md` gets a new
+  "Code-quality gates (required for every PR)" section. The
+  long-missing `lint:fix` npm script (referenced by these docs) is
+  added to `package.json`.
+
+  **Operator handoff (verification-only):** no branch-protection
+  changes are required. After this PR merges, verify via
+  `gh api repos/HenryLach/taskplane/branches/main/protection`
+  that `required_status_checks.contexts` still contains `ci` (it
+  does today). If at some future point per-gate visibility in
+  branch protection is desirable, the follow-up is to split the
+  gates into separate jobs in `ci.yml` — out of scope for TP-194
+  per the spec's Tier-1.5 follow-up list.
+
 - **Code-quality typecheck cleanup (TP-195):** Fourth of four sequenced
   packets implementing the code-quality-gates spec
   ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)).

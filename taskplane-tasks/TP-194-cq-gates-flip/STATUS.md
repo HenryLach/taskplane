@@ -1,7 +1,7 @@
 # TP-194: Code-quality gates flip — Status
 
-**Current Step:** Step 6: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 7: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-05-10
 **Review Level:** 2
 **Review Counter:** 6
@@ -101,7 +101,7 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
@@ -116,11 +116,11 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] CHANGELOG entry under [Unreleased] → Internal added
-- [ ] Discoveries logged below (manual reviewer smoke result, any deviations)
-- [ ] All commits include `TP-194` prefix
+- [x] CHANGELOG entry under [Unreleased] → Internal added ("Code-quality gates active (TP-194)" — covers all four spec sub-themes: required CI gates, reviewer-agent activation, doc updates, operator handoff)
+- [x] Discoveries logged below (D1–D8 covering plan drafts, R001 fix, PR body stub, reviewer smoke verification)
+- [x] All commits include `TP-194` prefix (verified via `git log --grep TP-194`)
 
 ---
 
