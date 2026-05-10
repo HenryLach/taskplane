@@ -94,14 +94,14 @@
 ---
 
 ### Step 5: Implement Parts 4-6 — reviewer discoverability, activation note, CI workflow
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] `.pi/taskplane-config.json` `taskRunner.testing.commands` adds typecheck, lint, format:check
+- [x] `.pi/taskplane-config.json` `taskRunner.testing.commands` adds `typecheck`, `lint`, `format:check`. Updated in BOTH the lane-worktree-local copy (created `.pi/taskplane-config.json` here) AND the main-repo copy at `C:/dev/taskplane/.pi/taskplane-config.json` (since `.pi/` is gitignored and the lane copy doesn't merge).
 - [x] `templates/agents/task-reviewer.md` carries temporary activation note (per spec 6.1.6, broadened to cover all three quality checks; pulled forward into Step 2 revision to address R002 REVISE)
-- [ ] `.github/workflows/ci.yml` lint step uses `npm run lint` (still `continue-on-error: true`)
-- [ ] CI workflow YAML validates
+- [x] `.github/workflows/ci.yml` lint step now invokes `npm run lint` (kept `continue-on-error: true` until TP-194). Added `Install root dev dependencies` step (`npm ci`) before the lint step so the pinned Biome resolves; updated `cache-dependency-path` to include both lockfiles.
+- [x] CI workflow YAML validates (parsed via `yaml.parse`; 8 steps in order: Checkout → Setup Node.js → Install root dev dependencies → Install extension dependencies → Lint (Biome) → Run tests → CLI smoke checks → Verify docs relative links)
 
 ---
 
