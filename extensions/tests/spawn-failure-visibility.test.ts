@@ -79,6 +79,35 @@ mock.module("../taskplane/lane-runner.ts", {
 const { executeLaneV2 } = await import("../taskplane/execution.ts");
 const { EXIT_CLASSIFICATIONS } = await import("../taskplane/diagnostics.ts");
 const { TIER0_RETRYABLE_CLASSIFICATIONS } = await import("../taskplane/types.ts");
+const { isAllLanesSpawnFailedWave, buildSpawnFailureAlertExtras } = await import("../taskplane/engine.ts");
+
+type MockLaneTaskOutcome = {
+	taskId: string;
+	status: string;
+	startTime: number | null;
+	endTime: number | null;
+	exitReason: string;
+	sessionName: string;
+	doneFileFound: boolean;
+	exitDiagnostic?: { classification: string };
+};
+
+function makeOutcome(
+	taskId: string,
+	status: "failed" | "succeeded",
+	classification?: string,
+): MockLaneTaskOutcome {
+	return {
+		taskId,
+		status,
+		startTime: 0,
+		endTime: 0,
+		exitReason: status === "failed" ? `failed: ${classification ?? "unknown"}` : "",
+		sessionName: `session-${taskId}`,
+		doneFileFound: status === "succeeded",
+		...(classification ? { exitDiagnostic: { classification } } : {}),
+	};
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -361,7 +390,93 @@ describe("TP-190 #561: spawn_failure registered as a non-retryable ExitClassific
 	});
 });
 
-// ── 3. engine.ts: no-retry guard, IPC alert, phase transition ───────
+// ── 3. engine.ts behavioral helpers (runtime-tested) ──────────────
+
+describe("TP-190 #561: engine.ts buildSpawnFailureAlertExtras (behavioral)", () => {
+	it("3.0a: returns exitCategory='spawn_failure' + escalate-immediately summary line for spawn-failure outcomes", () => {
+		const outcome = makeOutcome("TP-X", "failed", "spawn_failure");
+		const extras = buildSpawnFailureAlertExtras(outcome as any);
+		expect(extras.exitCategory).toBe("spawn_failure");
+		expect(extras.summaryLine).toContain("Spawn failure");
+		expect(extras.summaryLine).toContain("escalate immediately");
+		expect(extras.summaryLine).toContain("do not retry");
+		expect(extras.summaryLine.endsWith("\n")).toBe(true);
+	});
+
+	it("3.0b: passes through non-spawn classifications (e.g. process_crash) with empty summary line", () => {
+		const outcome = makeOutcome("TP-Y", "failed", "process_crash");
+		const extras = buildSpawnFailureAlertExtras(outcome as any);
+		expect(extras.exitCategory).toBe("process_crash");
+		expect(extras.summaryLine).toBe("");
+	});
+
+	it("3.0c: handles outcomes with no exitDiagnostic (legacy / pending) gracefully", () => {
+		const outcome = makeOutcome("TP-Z", "failed");
+		const extras = buildSpawnFailureAlertExtras(outcome as any);
+		expect(extras.exitCategory).toBeUndefined();
+		expect(extras.summaryLine).toBe("");
+	});
+
+	it("3.0d: handles undefined outcome (defensive)", () => {
+		const extras = buildSpawnFailureAlertExtras(undefined);
+		expect(extras.exitCategory).toBeUndefined();
+		expect(extras.summaryLine).toBe("");
+	});
+});
+
+describe("TP-190 #561: engine.ts isAllLanesSpawnFailedWave (behavioral)", () => {
+	it("3.1a: returns true when every failed task is classified spawn_failure (single task)", () => {
+		const waveResult = { failedTaskIds: ["TP-1"], succeededTaskIds: [] };
+		const outcomes = [makeOutcome("TP-1", "failed", "spawn_failure")];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(true);
+	});
+
+	it("3.1b: returns true when every failed task in a multi-lane wave is spawn_failure", () => {
+		const waveResult = { failedTaskIds: ["TP-1", "TP-2", "TP-3"], succeededTaskIds: [] };
+		const outcomes = [
+			makeOutcome("TP-1", "failed", "spawn_failure"),
+			makeOutcome("TP-2", "failed", "spawn_failure"),
+			makeOutcome("TP-3", "failed", "spawn_failure"),
+		];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(true);
+	});
+
+	it("3.1c: returns false when at least one failed task is NOT spawn_failure (mixed-cause wave)", () => {
+		const waveResult = { failedTaskIds: ["TP-1", "TP-2"], succeededTaskIds: [] };
+		const outcomes = [
+			makeOutcome("TP-1", "failed", "spawn_failure"),
+			makeOutcome("TP-2", "failed", "process_crash"),
+		];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(false);
+	});
+
+	it("3.1d: returns false when at least one task succeeded (partial success)", () => {
+		const waveResult = { failedTaskIds: ["TP-1"], succeededTaskIds: ["TP-2"] };
+		const outcomes = [
+			makeOutcome("TP-1", "failed", "spawn_failure"),
+			makeOutcome("TP-2", "succeeded"),
+		];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(false);
+	});
+
+	it("3.1e: returns false when there are no failures (clean wave)", () => {
+		const waveResult = { failedTaskIds: [] as string[], succeededTaskIds: ["TP-1"] };
+		const outcomes = [makeOutcome("TP-1", "succeeded")];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(false);
+	});
+
+	it("3.1f: returns false when a failed task has no exitDiagnostic (cannot prove spawn_failure)", () => {
+		const waveResult = { failedTaskIds: ["TP-1"], succeededTaskIds: [] };
+		const outcomes = [makeOutcome("TP-1", "failed")]; // no classification
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(false);
+	});
+
+	it("3.1g: returns false when a failed task has classification != spawn_failure (e.g. user_killed)", () => {
+		const waveResult = { failedTaskIds: ["TP-1"], succeededTaskIds: [] };
+		const outcomes = [makeOutcome("TP-1", "failed", "user_killed")];
+		expect(isAllLanesSpawnFailedWave(waveResult, outcomes as any)).toBe(false);
+	});
+});
 
 describe("TP-190 #561: engine.ts wire-up for spawn_failure", () => {
 	it("3.1: attemptWorkerCrashRetry has an explicit early-return for classification==='spawn_failure'", () => {
@@ -380,21 +495,20 @@ describe("TP-190 #561: engine.ts wire-up for spawn_failure", () => {
 		expect(alertBlock).toContain("exitCategory");
 	});
 
-	it("3.3: task-failure summary mentions spawn-failure escalate-immediately when applicable", () => {
-		// The branch on exitCategory === 'spawn_failure' must produce a
-		// distinguishable summary line for the supervisor.
-		expect(engineSrc).toContain('exitCategory === "spawn_failure"');
+	it("3.3: task-failure summary uses the shared buildSpawnFailureAlertExtras helper for spawn-failure-specific extras", () => {
+		expect(engineSrc).toContain("buildSpawnFailureAlertExtras(outcome)");
+		// The helper itself contains the escalate-immediately wording — verified in tests 3.0a-3.0d.
 		expect(engineSrc).toContain("escalate immediately");
 	});
 
-	it("3.4: post-wave phase transition flips batchState.phase to 'failed' on all-spawn-failed waves", () => {
-		// Trigger condition: failed > 0 AND succeeded == 0 AND every failure is spawn_failure.
+	it("3.4: post-wave phase transition uses isAllLanesSpawnFailedWave helper and flips batchState.phase to 'failed'", () => {
+		// The trigger logic is unit-tested in 3.1a-3.1g; here we just verify the
+		// helper is called from the engine's post-wave site and drives the
+		// expected side effects (phase transition + persist + terminal + break).
 		const phaseIdx = engineSrc.indexOf("allFailedAreSpawnFailures");
 		expect(phaseIdx).toBeGreaterThan(-1);
 		const phaseBlock = engineSrc.slice(phaseIdx, phaseIdx + 2000);
-		expect(phaseBlock).toContain("waveResult.failedTaskIds.length > 0");
-		expect(phaseBlock).toContain("waveResult.succeededTaskIds.length === 0");
-		expect(phaseBlock).toContain('classification === "spawn_failure"');
+		expect(phaseBlock).toContain("isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes)");
 		expect(phaseBlock).toContain('batchState.phase = "failed"');
 		// Persist + terminal event + break out of wave loop.
 		expect(phaseBlock).toContain("persistRuntimeState(\"wave-spawn-failure\"");
@@ -424,9 +538,8 @@ describe("TP-190 #561: resume.ts task-failure alert mirrors engine.ts exitCatego
 		expect(alertBlock).toContain("exitCategory");
 	});
 
-	it("4.2: resume.ts mirrors the spawn-failure escalate-immediately summary line", () => {
-		expect(resumeSrc).toContain('exitCategory === "spawn_failure"');
-		expect(resumeSrc).toContain("escalate immediately");
+	it("4.2: resume.ts uses the shared buildSpawnFailureAlertExtras helper (parity with engine.ts)", () => {
+		expect(resumeSrc).toContain("buildSpawnFailureAlertExtras");
 	});
 });
 
@@ -454,5 +567,116 @@ describe("TP-190 #561: execution.ts catch hardening", () => {
 		// (and operators reading STATUS.md) can spot spawn failures by
 		// exitReason alone.
 		expect(executionSrc).toContain("exitReason: `spawn failure: ${errMsg}`");
+	});
+});
+
+// ── 6. Integrated post-wave behavior simulation ──────────────────
+//
+// This section threads the helpers together to simulate exactly what the
+// engine does after `executeWave` returns when all lanes spawn-failed. The
+// scenario captures the original #561 bug surface ("failedTasks stays at 0,
+// no IPC alert, phase stuck at executing") and verifies the fix produces
+// the expected operator-visible signals.
+
+describe("TP-190 #561: integrated post-wave behavior on all-spawn-failed wave", () => {
+	let repoRoot: string;
+	const batchId = "tp190-integrated-batch";
+
+	beforeEach(() => {
+		executeTaskV2CallCount = 0;
+		mockExecuteTaskV2.mock.resetCalls();
+		repoRoot = makeTempRoot("tp190-integrated");
+		mkdirSync(join(repoRoot, ".pi", "runtime", batchId, "lanes"), { recursive: true });
+	});
+
+	afterEach(() => {
+		try { rmSync(repoRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	});
+
+	it("6.1: runs three lanes → all spawn-fail → helpers correctly fire phase=failed AND emit task-failure with exitCategory=spawn_failure", async () => {
+		// (a) Drive three executeLaneV2 invocations end-to-end with the mocked
+		// executeTaskV2 throw — simulating one task per lane in a 3-lane wave.
+		const config = buildFakeOrchestratorConfig();
+		const pauseSignal = { paused: false };
+		const laneResults = [];
+		for (let n = 1; n <= 3; n++) {
+			const lane = buildFakeAllocatedLane({ repoRoot, laneNumber: n, taskId: `TP-INT-${n}` });
+			const result = await executeLaneV2(
+				lane as any,
+				config as any,
+				repoRoot,
+				pauseSignal,
+				undefined,
+				false,
+				{ ORCH_BATCH_ID: batchId, TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous" },
+			);
+			laneResults.push(result);
+		}
+
+		// (b) Aggregate into a fake WaveExecutionResult — exactly what
+		// `executeWave` produces from the per-lane results in real runs.
+		const allTaskOutcomes = laneResults.flatMap((lr) => lr.tasks);
+		const failedTaskIds = allTaskOutcomes
+			.filter((t) => t.status === "failed")
+			.map((t) => t.taskId)
+			.sort();
+		const succeededTaskIds: string[] = [];
+		const waveResult = { failedTaskIds, succeededTaskIds };
+
+		// Verify the bug surface from #561 is fixed: failedTasks > 0 (used to be 0).
+		expect(failedTaskIds).toEqual(["TP-INT-1", "TP-INT-2", "TP-INT-3"]);
+		expect(allTaskOutcomes.every((t) => t.exitDiagnostic?.classification === "spawn_failure")).toBe(true);
+
+		// (c) Run the helpers exactly as engine.ts does. The phase trigger
+		// detects all-spawn-failed; the alert builder produces a payload
+		// carrying exitCategory='spawn_failure' for each failed task.
+		expect(isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes as any)).toBe(true);
+
+		// Capture what would-be-emitted IPC alerts look like for each failed
+		// task: the engine reads outcome.exitDiagnostic.classification via
+		// buildSpawnFailureAlertExtras and inserts it into the alert context.
+		const emittedAlertContexts = allTaskOutcomes
+			.filter((t) => t.status === "failed")
+			.map((outcome) => {
+				const extras = buildSpawnFailureAlertExtras(outcome as any);
+				return {
+					taskId: outcome.taskId,
+					exitCategory: extras.exitCategory,
+					summaryLine: extras.summaryLine,
+				};
+			});
+
+		expect(emittedAlertContexts).toHaveLength(3);
+		for (const ctx of emittedAlertContexts) {
+			expect(ctx.exitCategory).toBe("spawn_failure");
+			expect(ctx.summaryLine).toContain("escalate immediately");
+		}
+
+		// (d) Synthetic terminal lane snapshots are written for each lane,
+		// confirming the monitor would now exit cleanly instead of looping.
+		for (let n = 1; n <= 3; n++) {
+			const snapshotPath = join(repoRoot, ".pi", "runtime", batchId, "lanes", `lane-${n}.json`);
+			expect(existsSync(snapshotPath)).toBe(true);
+			const snap = JSON.parse(readFileSync(snapshotPath, "utf-8"));
+			expect(snap.status).toBe("failed");
+		}
+	});
+
+	it("6.2: a mixed wave (one spawn-fail + one success) does NOT trigger phase=failed", async () => {
+		// Verify the helper correctly distinguishes mixed waves from all-spawn-failed.
+		// This is the regression guard against a too-aggressive phase transition.
+		const waveResult = {
+			failedTaskIds: ["TP-A"],
+			succeededTaskIds: ["TP-B"],
+		};
+		const allTaskOutcomes = [
+			makeOutcome("TP-A", "failed", "spawn_failure"),
+			makeOutcome("TP-B", "succeeded"),
+		];
+		expect(isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes as any)).toBe(false);
+		// The success contributes a non-spawn-failure outcome, so the
+		// engine's failure-policy path (skip-dependents/stop-wave/stop-all)
+		// continues to govern this case as before. Phase stays in whatever
+		// the policy decides — NOT forced to "failed" by TP-190.
 	});
 });

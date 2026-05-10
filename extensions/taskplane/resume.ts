@@ -7,7 +7,7 @@ import { join } from "path";
 
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
-import { executeOrchBatch, resolveDisplayWaveNumber } from "./engine.ts";
+import { executeOrchBatch, resolveDisplayWaveNumber, buildSpawnFailureAlertExtras } from "./engine.ts";
 import { buildReviewerEnv, buildWorkerEnv, buildWorkerExcludeEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths } from "./execution.ts";
 import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
 import { selectRuntimeBackend } from "./engine.ts";
@@ -2162,11 +2162,9 @@ export async function resumeOrchBatch(
 				: "";
 			// TP-190 (#561): Mirror engine.ts emission — propagate the structured
 			// exit category so /orch-resume task-failure alerts route through the
-			// same supervisor playbook branches as /orch.
-			const exitCategory = outcome?.exitDiagnostic?.classification;
-			const spawnFailureLine = exitCategory === "spawn_failure"
-				? `  Spawn failure: worker process never started — escalate immediately (do not retry)\n`
-				: "";
+			// same supervisor playbook branches as /orch. Shared helper enforces
+			// payload parity between the two emission sites.
+			const { exitCategory, summaryLine: spawnFailureLine } = buildSpawnFailureAlertExtras(outcome);
 			emitAlert({
 				category: "task-failure",
 				summary:
