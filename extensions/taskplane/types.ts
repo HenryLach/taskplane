@@ -2149,8 +2149,9 @@ export interface SupervisorAlertContext {
 	 * - `"spawn_failure"` (TP-190, #561): worker process never spawned
 	 *   (Pi CLI not findable, worktree provisioning error, etc.). Never
 	 *   transient — the playbook MUST escalate immediately rather than
-	 *   retry. The phase will already have transitioned to `"failed"`
-	 *   before this alert is emitted.
+	 *   retry. When the post-wave phase-transition logic detects an
+	 *   all-spawn-failed wave it also flips `batchState.phase` to
+	 *   `"failed"`; that transition is independent of this alert.
 	 *
 	 * @since TP-190 (#561)
 	 */
