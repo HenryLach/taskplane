@@ -17,7 +17,11 @@ import { expect } from "./expect.ts";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { buildBatchProgressSnapshot, buildSupervisorSegmentFrontierSnapshot, freshOrchBatchState } from "../taskplane/types.ts";
+import {
+	buildBatchProgressSnapshot,
+	buildSupervisorSegmentFrontierSnapshot,
+	freshOrchBatchState,
+} from "../taskplane/types.ts";
 import type {
 	SupervisorAlert,
 	SupervisorAlertCategory,
@@ -57,8 +61,18 @@ describe("1.x — SupervisorAlert type structure", () => {
 					activeSegmentId: "TP-001::api",
 					segments: [
 						{ segmentId: "TP-001::api", repoId: "api", status: "running", dependsOnSegmentIds: [] },
-						{ segmentId: "TP-001::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-001::api"] },
-						{ segmentId: "TP-001::docs", repoId: "docs", status: "pending", dependsOnSegmentIds: ["TP-001::web"] },
+						{
+							segmentId: "TP-001::web",
+							repoId: "web",
+							status: "pending",
+							dependsOnSegmentIds: ["TP-001::api"],
+						},
+						{
+							segmentId: "TP-001::docs",
+							repoId: "docs",
+							status: "pending",
+							dependsOnSegmentIds: ["TP-001::web"],
+						},
 					],
 				},
 				partialProgress: false,
@@ -138,7 +152,12 @@ describe("1.x — SupervisorAlert type structure", () => {
 	});
 
 	it("1.4 — all alert categories are valid", () => {
-		const categories: SupervisorAlertCategory[] = ["task-failure", "merge-failure", "batch-complete", "agent-message"];
+		const categories: SupervisorAlertCategory[] = [
+			"task-failure",
+			"merge-failure",
+			"batch-complete",
+			"agent-message",
+		];
 		for (const cat of categories) {
 			const alert: SupervisorAlert = {
 				category: cat,

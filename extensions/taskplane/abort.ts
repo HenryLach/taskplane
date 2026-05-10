@@ -8,7 +8,18 @@ import { join } from "path";
 import { execLog, killV2LaneAgents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { killMergeAgentV2, killAllMergeAgentsV2 } from "./merge.ts";
 import { deleteBatchState, persistRuntimeState } from "./persistence.ts";
-import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord } from "./types.ts";
+import type {
+	AbortActionStep,
+	AbortErrorCode,
+	AbortLaneResult,
+	AbortMode,
+	AbortResult,
+	AbortTargetSession,
+	AllocatedLane,
+	OrchBatchRuntimeState,
+	PersistedBatchState,
+	PersistedLaneRecord,
+} from "./types.ts";
 
 // ── Abort Pure Functions ─────────────────────────────────────────────
 
@@ -37,7 +48,7 @@ export function selectAbortTargetSessions(
 	// Filter to only lane and merge sessions for the exact orchestrator prefix.
 	// Handles both repo-mode (`<prefix>-lane-<N>`) and workspace-mode
 	// (`<prefix>-<repoId>-lane-<N>`) session name formats.
-	const targetNames = allSessionNames.filter(name => {
+	const targetNames = allSessionNames.filter((name) => {
 		const prefixWithDash = `${prefix}-`;
 		if (!name.startsWith(prefixWithDash)) return false;
 		const suffix = name.slice(prefixWithDash.length);
@@ -78,7 +89,10 @@ export function selectAbortTargetSessions(
 	}
 
 	// Build lookup from runtime lanes
-	const runtimeLookup = new Map<string, { laneId: string; taskId: string | null; worktreePath: string; taskFolder: string | null }>();
+	const runtimeLookup = new Map<
+		string,
+		{ laneId: string; taskId: string | null; worktreePath: string; taskFolder: string | null }
+	>();
 	for (const lane of runtimeLanes) {
 		const currentTask = lane.tasks.length > 0 ? lane.tasks[0] : null;
 		runtimeLookup.set(lane.laneSessionId, {
@@ -90,7 +104,7 @@ export function selectAbortTargetSessions(
 		});
 	}
 
-	return targetNames.map(sessionName => {
+	return targetNames.map((sessionName) => {
 		const runtime = runtimeLookup.get(sessionName);
 		const persisted = persistedLookup.get(sessionName);
 
@@ -184,7 +198,6 @@ export function discoverAbortSessionNames(
 	return [...names];
 }
 
-
 // ── Abort Orchestration Functions ────────────────────────────────────
 
 /**
@@ -207,10 +220,18 @@ export function writeWrapUpFiles(
 		if (!target.taskFolderInWorktree) {
 			// Skip child sessions (workers, reviewers) — only main lane sessions have task folders
 			// Also skip merge sessions (no task folder)
-			if (target.sessionName.endsWith("-worker") || target.sessionName.endsWith("-reviewer") || target.sessionName.includes("merge")) {
+			if (
+				target.sessionName.endsWith("-worker") ||
+				target.sessionName.endsWith("-reviewer") ||
+				target.sessionName.includes("merge")
+			) {
 				results.push({ sessionName: target.sessionName, written: false, error: null });
 			} else {
-				results.push({ sessionName: target.sessionName, written: false, error: "No task folder resolved" });
+				results.push({
+					sessionName: target.sessionName,
+					written: false,
+					error: "No task folder resolved",
+				});
 			}
 			continue;
 		}
@@ -220,7 +241,11 @@ export function writeWrapUpFiles(
 
 			// Ensure directory exists
 			if (!existsSync(target.taskFolderInWorktree)) {
-				results.push({ sessionName: target.sessionName, written: false, error: `Task folder does not exist: ${target.taskFolderInWorktree}` });
+				results.push({
+					sessionName: target.sessionName,
+					written: false,
+					error: `Task folder does not exist: ${target.taskFolderInWorktree}`,
+				});
 				continue;
 			}
 
@@ -262,7 +287,7 @@ export async function waitForSessionExit(
 	const deadline = Date.now() + gracePeriodMs;
 	while (Date.now() < deadline) {
 		const sleepMs = Math.max(1, Math.min(pollIntervalMs, deadline - Date.now()));
-		await new Promise(r => setTimeout(r, sleepMs));
+		await new Promise((r) => setTimeout(r, sleepMs));
 	}
 
 	return { exited: [], remaining: [...sessionNames] };
@@ -357,7 +382,11 @@ export async function executeAbort(
 			repoRoot,
 		);
 	} catch (err) {
-		execLog("abort", batchState.batchId, `Failed to persist state during abort: ${err instanceof Error ? err.message : String(err)}`);
+		execLog(
+			"abort",
+			batchState.batchId,
+			`Failed to persist state during abort: ${err instanceof Error ? err.message : String(err)}`,
+		);
 	}
 
 	// TP-108: Kill all V2 merge agents (process-owned, not TMUX)
@@ -370,7 +399,11 @@ export async function executeAbort(
 	// Step 3: Discover target sessions from Runtime V2 state sources.
 	const allSessionNames = discoverAbortSessionNames(prefix, persistedState, batchState.currentLanes);
 	if (allSessionNames.length === 0) {
-		execLog("abort", batchState.batchId, `No abort targets discovered for prefix "${prefix}" from runtime/persisted state.`);
+		execLog(
+			"abort",
+			batchState.batchId,
+			`No abort targets discovered for prefix "${prefix}" from runtime/persisted state.`,
+		);
 	}
 
 	// Step 4: Select and enrich target sessions
@@ -400,7 +433,7 @@ export async function executeAbort(
 		}
 
 		// Step 5b: Wait for sessions to exit
-		const allTargetNames = targets.map(t => t.sessionName);
+		const allTargetNames = targets.map((t) => t.sessionName);
 		const waitResult = await waitForSessionExit(allTargetNames, gracePeriodMs, pollIntervalMs);
 		gracefulExits = waitResult.exited.length;
 
@@ -414,7 +447,7 @@ export async function executeAbort(
 			for (const kr of killResults) {
 				killResultBySession.set(kr.sessionName, { killed: kr.killed, error: kr.error });
 			}
-			const killFailures = killResults.filter(kr => !kr.killed);
+			const killFailures = killResults.filter((kr) => !kr.killed);
 			if (killFailures.length > 0) {
 				errors.push({
 					code: "ABORT_KILL_FAILED",
@@ -426,7 +459,7 @@ export async function executeAbort(
 		// Build lane results
 		const exitedSet = new Set(waitResult.exited);
 		for (const target of targets) {
-			const wrapUp = wrapUpResults.find(wr => wr.sessionName === target.sessionName);
+			const wrapUp = wrapUpResults.find((wr) => wr.sessionName === target.sessionName);
 			const wasGraceful = exitedSet.has(target.sessionName);
 			const killResult = killResultBySession.get(target.sessionName);
 			const sessionKilled = wasGraceful || killResult?.killed === true;
@@ -443,7 +476,7 @@ export async function executeAbort(
 		}
 	} else {
 		// Hard mode: kill all immediately
-		const allTargetNames = targets.map(t => t.sessionName);
+		const allTargetNames = targets.map((t) => t.sessionName);
 		const killResults = killOrchSessions(allTargetNames, {
 			stateRoot: repoRoot,
 			batchId: batchState.batchId,
@@ -452,7 +485,7 @@ export async function executeAbort(
 		for (const kr of killResults) {
 			killResultBySession.set(kr.sessionName, { killed: kr.killed, error: kr.error });
 		}
-		const killFailures = killResults.filter(kr => !kr.killed);
+		const killFailures = killResults.filter((kr) => !kr.killed);
 		if (killFailures.length > 0) {
 			errors.push({
 				code: "ABORT_KILL_FAILED",
@@ -490,7 +523,7 @@ export async function executeAbort(
 	return {
 		mode,
 		sessionsFound: targets.length,
-		sessionsKilled: laneResults.filter(lr => lr.sessionKilled).length,
+		sessionsKilled: laneResults.filter((lr) => lr.sessionKilled).length,
 		gracefulExits,
 		laneResults,
 		wrapUpFailures,
@@ -499,4 +532,3 @@ export async function executeAbort(
 		durationMs: Date.now() - startTime,
 	};
 }
-

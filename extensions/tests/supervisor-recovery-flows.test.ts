@@ -41,8 +41,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const laneRunnerSrc = readFileSync(join(__dirname, "..", "taskplane", "lane-runner.ts"), "utf-8");
 const extensionSrc = readFileSync(join(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
-const taskWorkerSrc = readFileSync(join(__dirname, "..", "..", "templates", "agents", "task-worker.md"), "utf-8");
-const supervisorTemplateSrc = readFileSync(join(__dirname, "..", "..", "templates", "agents", "supervisor.md"), "utf-8");
+const taskWorkerSrc = readFileSync(
+	join(__dirname, "..", "..", "templates", "agents", "task-worker.md"),
+	"utf-8",
+);
+const supervisorTemplateSrc = readFileSync(
+	join(__dirname, "..", "..", "templates", "agents", "supervisor.md"),
+	"utf-8",
+);
 const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 
 function mkTmpRoot(): string {
@@ -62,7 +68,11 @@ describe("TP-187 #538: drainAgentOutbox helper", () => {
 		stateRoot = mkTmpRoot();
 	});
 	afterEach(() => {
-		try { rmSync(stateRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+		try {
+			rmSync(stateRoot, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
 	});
 
 	it("returns 0 when the outbox directory does not exist", () => {
@@ -85,7 +95,11 @@ describe("TP-187 #538: drainAgentOutbox helper", () => {
 			replyTo: null,
 		};
 		writeFileSync(join(outbox, "m1.msg.json"), JSON.stringify(msg), "utf-8");
-		writeFileSync(join(outbox, "m2.msg.json"), JSON.stringify({ ...msg, id: "m2", type: "reply" }), "utf-8");
+		writeFileSync(
+			join(outbox, "m2.msg.json"),
+			JSON.stringify({ ...msg, id: "m2", type: "reply" }),
+			"utf-8",
+		);
 
 		const drained = drainAgentOutbox(stateRoot, batchId, agentId);
 		expect(drained).toBe(2);
@@ -191,9 +205,9 @@ describe("TP-187 #538: supervisor_takeover tool", () => {
 		const fnIdx = extensionSrc.indexOf("function doSupervisorTakeover(");
 		expect(fnIdx).not.toBe(-1);
 		const fnBody = extensionSrc.slice(fnIdx, fnIdx + 4000);
-		expect(fnBody).toContain('orchBatchState.pauseSignal.paused = true');
-		expect(fnBody).toContain('drainAgentOutbox(stateRoot, orchBatchState.batchId, agentId)');
-		expect(fnBody).toContain('terminatedLanes.set(lane.laneNumber');
+		expect(fnBody).toContain("orchBatchState.pauseSignal.paused = true");
+		expect(fnBody).toContain("drainAgentOutbox(stateRoot, orchBatchState.batchId, agentId)");
+		expect(fnBody).toContain("terminatedLanes.set(lane.laneNumber");
 		// Critical: distinct from orch_abort — must NOT call deleteBatchState/executeAbort.
 		expect(fnBody.includes("deleteBatchState")).toBe(false);
 		expect(fnBody.includes("executeAbort")).toBe(false);
@@ -261,8 +275,16 @@ describe("TP-187 #539: batch-meta runtime artifact roundtrip", () => {
 	let stateRoot: string;
 	const batchId = "b-test-539-meta";
 
-	beforeEach(() => { stateRoot = mkTmpRoot(); });
-	afterEach(() => { try { rmSync(stateRoot, { recursive: true, force: true }); } catch { /* ignore */ } });
+	beforeEach(() => {
+		stateRoot = mkTmpRoot();
+	});
+	afterEach(() => {
+		try {
+			rmSync(stateRoot, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
+	});
 
 	it("save then load yields the same artifact", () => {
 		const wavePlan = [["TP-001", "TP-002"], ["TP-003"]];
@@ -300,16 +322,20 @@ describe("TP-187 #539: batch-meta runtime artifact roundtrip", () => {
 	it("returns null when the batchId in the file does not match", () => {
 		const path = join(runtimeRoot(stateRoot, batchId), "batch-meta.json");
 		mkdirSync(dirname(path), { recursive: true });
-		writeFileSync(path, JSON.stringify({
-			schemaVersion: 1,
-			batchId: "wrong-id",
-			wavePlan: [],
-			baseBranch: "main",
-			orchBranch: "",
-			mode: "repo",
-			startedAt: 1,
-			totalWaves: 0,
-		}), "utf-8");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				schemaVersion: 1,
+				batchId: "wrong-id",
+				wavePlan: [],
+				baseBranch: "main",
+				orchBranch: "",
+				mode: "repo",
+				startedAt: 1,
+				totalWaves: 0,
+			}),
+			"utf-8",
+		);
 		expect(loadBatchMetaRuntimeArtifact(stateRoot, batchId)).toBeNull();
 	});
 });
@@ -317,8 +343,16 @@ describe("TP-187 #539: batch-meta runtime artifact roundtrip", () => {
 describe("TP-187 #539: reconstructBatchStateFromRuntime", () => {
 	let stateRoot: string;
 
-	beforeEach(() => { stateRoot = mkTmpRoot(); });
-	afterEach(() => { try { rmSync(stateRoot, { recursive: true, force: true }); } catch { /* ignore */ } });
+	beforeEach(() => {
+		stateRoot = mkTmpRoot();
+	});
+	afterEach(() => {
+		try {
+			rmSync(stateRoot, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
+	});
 
 	function setupBatch(opts: {
 		batchId: string;
@@ -327,7 +361,7 @@ describe("TP-187 #539: reconstructBatchStateFromRuntime", () => {
 		mode?: "repo" | "workspace";
 	}): void {
 		const { batchId, tasks } = opts;
-		const wavePlan = opts.wavePlan ?? [tasks.map(t => t.taskId)];
+		const wavePlan = opts.wavePlan ?? [tasks.map((t) => t.taskId)];
 
 		// Write batch-meta artifact.
 		saveBatchMetaRuntimeArtifact(stateRoot, {
@@ -466,7 +500,7 @@ describe("TP-187 #539: reconstructBatchStateFromRuntime", () => {
 			tasks: [{ taskId: "T-old", laneNumber: 1, cwd: wt1 }],
 		});
 		// Sleep briefly to ensure mtime differs between the two batch dirs.
-		await new Promise(resolve => setTimeout(resolve, 30));
+		await new Promise((resolve) => setTimeout(resolve, 30));
 		setupBatch({
 			batchId: "b-new",
 			tasks: [{ taskId: "T-new", laneNumber: 1, cwd: wt2 }],
@@ -563,18 +597,37 @@ describe("TP-187: end-to-end drain coverage via discoverMailboxAgentIds", () => 
 	let stateRoot: string;
 	const batchId = "b-e2e";
 
-	beforeEach(() => { stateRoot = mkTmpRoot(); });
-	afterEach(() => { try { rmSync(stateRoot, { recursive: true, force: true }); } catch { /* ignore */ } });
+	beforeEach(() => {
+		stateRoot = mkTmpRoot();
+	});
+	afterEach(() => {
+		try {
+			rmSync(stateRoot, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
+	});
 
 	it("discovers all per-agent outboxes and drains them in one pass", () => {
-		const agents = [
-			"orch-test-lane-1-worker",
-			"orch-test-lane-2-worker",
-		];
+		const agents = ["orch-test-lane-1-worker", "orch-test-lane-2-worker"];
 		for (const a of agents) {
 			const ob = sessionOutboxDir(stateRoot, batchId, a);
 			mkdirSync(ob, { recursive: true });
-			writeFileSync(join(ob, "m1.msg.json"), JSON.stringify({ id: "m1", batchId, from: a, to: "supervisor", timestamp: Date.now(), type: "reply", content: "x", expectsReply: false, replyTo: null }), "utf-8");
+			writeFileSync(
+				join(ob, "m1.msg.json"),
+				JSON.stringify({
+					id: "m1",
+					batchId,
+					from: a,
+					to: "supervisor",
+					timestamp: Date.now(),
+					type: "reply",
+					content: "x",
+					expectsReply: false,
+					replyTo: null,
+				}),
+				"utf-8",
+			);
 		}
 		const discovered = discoverMailboxAgentIds(stateRoot, batchId).sort();
 		expect(discovered).toEqual(agents.slice().sort());
@@ -602,7 +655,11 @@ describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (beh
 	 * termination adds entries to terminatedLanes, lane-respawn removes
 	 * them. The behavior under test is independent of the IPC transport.
 	 */
-	type Alert = { category: string; summary: string; context: { laneNumber?: number; agentId?: string } };
+	type Alert = {
+		category: string;
+		summary: string;
+		context: { laneNumber?: number; agentId?: string };
+	};
 
 	function makeFilter() {
 		const terminatedLanes = new Map<number, number>();
@@ -611,12 +668,19 @@ describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (beh
 		const dropped: Alert[] = [];
 		const onAlert = (alert: Alert) => {
 			const suppressed =
-				(typeof alert.context?.laneNumber === "number" && terminatedLanes.has(alert.context.laneNumber)) ||
-				(typeof alert.context?.agentId === "string" && !!alert.context.agentId && terminatedAgents.has(alert.context.agentId));
+				(typeof alert.context?.laneNumber === "number" &&
+					terminatedLanes.has(alert.context.laneNumber)) ||
+				(typeof alert.context?.agentId === "string" &&
+					!!alert.context.agentId &&
+					terminatedAgents.has(alert.context.agentId));
 			if (suppressed) dropped.push(alert);
 			else delivered.push(alert);
 		};
-		const onLaneTerminated = (info: { laneNumber: number; agentId: string; terminatedAt: number }) => {
+		const onLaneTerminated = (info: {
+			laneNumber: number;
+			agentId: string;
+			terminatedAt: number;
+		}) => {
 			terminatedLanes.set(info.laneNumber, info.terminatedAt);
 			if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
 		};
@@ -624,14 +688,30 @@ describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (beh
 			terminatedLanes.delete(laneNumber);
 			if (agentId) terminatedAgents.delete(agentId);
 		};
-		return { onAlert, onLaneTerminated, onLaneRespawned, delivered, dropped, terminatedLanes, terminatedAgents };
+		return {
+			onAlert,
+			onLaneTerminated,
+			onLaneRespawned,
+			delivered,
+			dropped,
+			terminatedLanes,
+			terminatedAgents,
+		};
 	}
 
 	it("alerts before termination are delivered; alerts after termination are dropped", () => {
 		const f = makeFilter();
-		f.onAlert({ category: "worker-exit-intercept", summary: "first", context: { laneNumber: 1, agentId: "a-1" } });
+		f.onAlert({
+			category: "worker-exit-intercept",
+			summary: "first",
+			context: { laneNumber: 1, agentId: "a-1" },
+		});
 		f.onLaneTerminated({ laneNumber: 1, agentId: "a-1", terminatedAt: 1000 });
-		f.onAlert({ category: "worker-exit-intercept", summary: "zombie", context: { laneNumber: 1, agentId: "a-1" } });
+		f.onAlert({
+			category: "worker-exit-intercept",
+			summary: "zombie",
+			context: { laneNumber: 1, agentId: "a-1" },
+		});
 		expect(f.delivered.length).toBe(1);
 		expect(f.delivered[0].summary).toBe("first");
 		expect(f.dropped.length).toBe(1);
@@ -642,12 +722,20 @@ describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (beh
 		const f = makeFilter();
 		// Wave 1: lane 1 terminates with agent a-1
 		f.onLaneTerminated({ laneNumber: 1, agentId: "a-1", terminatedAt: 1000 });
-		f.onAlert({ category: "task-failure", summary: "wave1-zombie", context: { laneNumber: 1, agentId: "a-1" } });
+		f.onAlert({
+			category: "task-failure",
+			summary: "wave1-zombie",
+			context: { laneNumber: 1, agentId: "a-1" },
+		});
 		expect(f.dropped.length).toBe(1);
 
 		// Wave 2: lane 1 re-allocated for a fresh task with agent a-2
 		f.onLaneRespawned(1, "a-2", "b-test");
-		f.onAlert({ category: "worker-exit-intercept", summary: "wave2-fresh", context: { laneNumber: 1, agentId: "a-2" } });
+		f.onAlert({
+			category: "worker-exit-intercept",
+			summary: "wave2-fresh",
+			context: { laneNumber: 1, agentId: "a-2" },
+		});
 		expect(f.delivered.length).toBe(1);
 		expect(f.delivered[0].summary).toBe("wave2-fresh");
 	});
@@ -655,7 +743,11 @@ describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (beh
 	it("alerts targeting a different lane are not affected by suppression", () => {
 		const f = makeFilter();
 		f.onLaneTerminated({ laneNumber: 1, agentId: "a-1", terminatedAt: 1000 });
-		f.onAlert({ category: "task-failure", summary: "lane-2-alert", context: { laneNumber: 2, agentId: "a-2" } });
+		f.onAlert({
+			category: "task-failure",
+			summary: "lane-2-alert",
+			context: { laneNumber: 2, agentId: "a-2" },
+		});
 		expect(f.delivered.length).toBe(1);
 		expect(f.dropped.length).toBe(0);
 	});
@@ -669,7 +761,10 @@ describe("TP-187 #538: lane-terminated/lane-respawned suppression lifecycle (beh
 });
 
 describe("TP-187 #538: lane-respawned IPC wiring is end-to-end", () => {
-	const engineWorkerSrc = readFileSync(join(__dirname, "..", "taskplane", "engine-worker.ts"), "utf-8");
+	const engineWorkerSrc = readFileSync(
+		join(__dirname, "..", "taskplane", "engine-worker.ts"),
+		"utf-8",
+	);
 	const executionSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
 
 	it("WorkerToMainMessage type declares lane-respawned", () => {
@@ -690,7 +785,14 @@ describe("TP-187 #538: lane-respawned IPC wiring is end-to-end", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
 		// TP-193: Window bumped from 7500 to 12000 to absorb formatter re-wrapping
 		// (multi-arg calls split across lines lengthens the function body).
-		const body = executionSrc.slice(start, start + 12000);
+		const rawBody = executionSrc.slice(start, start + 12000);
+		// Whitespace-normalize so multi-arg `onLaneRespawned(\n\tlane.laneNumber,...)`
+		// matches the literal needle `onLaneRespawned(lane.laneNumber`.
+		const body = rawBody
+			.replace(/\s+/g, " ")
+			.replace(/([(\[{])\s+/g, "$1")
+			.replace(/\s+([)\]},])/g, "$1")
+			.replace(/,([)\]}])/g, "$1");
 		const respawnIdx = body.indexOf("onLaneRespawned(lane.laneNumber");
 		const forIdx = body.indexOf("for (const task of lane.tasks)");
 		expect(respawnIdx).not.toBe(-1);
@@ -710,8 +812,16 @@ describe("TP-187 #539: end-to-end abort-then-reconstruct flow", () => {
 	let stateRoot: string;
 	const batchId = "b-abort-recon";
 
-	beforeEach(() => { stateRoot = mkTmpRoot(); });
-	afterEach(() => { try { rmSync(stateRoot, { recursive: true, force: true }); } catch { /* ignore */ } });
+	beforeEach(() => {
+		stateRoot = mkTmpRoot();
+	});
+	afterEach(() => {
+		try {
+			rmSync(stateRoot, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
+	});
 
 	it("after batch-state.json is deleted, reconstruction still succeeds from runtime artifacts", () => {
 		const wt = join(stateRoot, "wt", "lane-1");

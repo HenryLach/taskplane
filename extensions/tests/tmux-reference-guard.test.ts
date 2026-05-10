@@ -74,7 +74,7 @@ describe("TMUX reference guard", () => {
 			"types/contracts",
 		]);
 
-		const files = parsed.byFile.map(entry => entry.file);
+		const files = parsed.byFile.map((entry) => entry.file);
 		const sortedFiles = [...files].sort((a, b) => a.localeCompare(b));
 		expect(files).toEqual(sortedFiles);
 		for (const file of files) {

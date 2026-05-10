@@ -10,7 +10,20 @@ import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
-import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo } from "./types.ts";
+import type {
+	AllocatedLane,
+	BulkWorktreeError,
+	CreateLaneWorktreesResult,
+	CreateWorktreeOptions,
+	LaneTaskOutcome,
+	OrchestratorConfig,
+	PreflightCheck,
+	PreflightResult,
+	RemoveAllWorktreesResult,
+	RemoveWorktreeOutcome,
+	RemoveWorktreeResult,
+	WorktreeInfo,
+} from "./types.ts";
 
 // ── Worktree Helpers ─────────────────────────────────────────────────
 
@@ -42,10 +55,7 @@ export function generateBranchName(laneNumber: number, batchId: string, opId: st
  * @param repoRoot - Absolute path to the main repository root
  * @param config   - Orchestrator config (reads `worktree_location`)
  */
-export function resolveWorktreeBasePath(
-	repoRoot: string,
-	config: OrchestratorConfig,
-): string {
+export function resolveWorktreeBasePath(repoRoot: string, config: OrchestratorConfig): string {
 	const location = config.orchestrator.worktree_location;
 	if (location === "sibling") {
 		return resolve(repoRoot, "..");
@@ -301,11 +311,8 @@ export function normalizePath(p: string): string {
 export function isRegisteredWorktree(targetPath: string, cwd: string): boolean {
 	const entries = parseWorktreeList(cwd);
 	const normalized = normalizePath(targetPath);
-	return entries.some(
-		(e) => normalizePath(e.path) === normalized,
-	);
+	return entries.some((e) => normalizePath(e.path) === normalized);
 }
-
 
 // ── Worktree CRUD Operations ─────────────────────────────────────────
 
@@ -337,15 +344,12 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, opId, config, batchId);
 
 	// ── Pre-check 1: Validate base branch exists ─────────────────
-	const baseBranchCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${baseBranch}`],
-		repoRoot,
-	);
+	const baseBranchCheck = runGit(["rev-parse", "--verify", `refs/heads/${baseBranch}`], repoRoot);
 	if (!baseBranchCheck.ok) {
 		throw new WorktreeError(
 			"WORKTREE_INVALID_BASE",
 			`Base branch "${baseBranch}" does not exist locally. ` +
-			`Verify the branch exists: git branch --list ${baseBranch}`,
+				`Verify the branch exists: git branch --list ${baseBranch}`,
 		);
 	}
 	const baseBranchHead = baseBranchCheck.stdout.trim();
@@ -355,7 +359,7 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 		throw new WorktreeError(
 			"WORKTREE_PATH_IS_WORKTREE",
 			`Path "${worktreePath}" is already registered as a git worktree. ` +
-			`Remove it first: git worktree remove "${worktreePath}"`,
+				`Remove it first: git worktree remove "${worktreePath}"`,
 		);
 	}
 
@@ -367,7 +371,7 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 				throw new WorktreeError(
 					"WORKTREE_PATH_NOT_EMPTY",
 					`Path "${worktreePath}" exists and is not empty. ` +
-					`It is not a registered git worktree. Remove or rename it before creating a worktree here.`,
+						`It is not a registered git worktree. Remove or rename it before creating a worktree here.`,
 				);
 			}
 		} catch (err) {
@@ -381,16 +385,13 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 	}
 
 	// ── Pre-check 4: Check if branch already exists ──────────────
-	const branchCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${branch}`],
-		repoRoot,
-	);
+	const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot);
 	if (branchCheck.ok) {
 		throw new WorktreeError(
 			"WORKTREE_BRANCH_EXISTS",
 			`Branch "${branch}" already exists. ` +
-			`This may indicate a stale worktree from a previous batch. ` +
-			`Delete it: git branch -D ${branch}`,
+				`This may indicate a stale worktree from a previous batch. ` +
+				`Delete it: git branch -D ${branch}`,
 		);
 	}
 
@@ -401,29 +402,23 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 	ensureBatchContainerDir(containerDir);
 
 	// ── Create worktree ──────────────────────────────────────────
-	const createResult = runGit(
-		["worktree", "add", "-b", branch, worktreePath, baseBranch],
-		repoRoot,
-	);
+	const createResult = runGit(["worktree", "add", "-b", branch, worktreePath, baseBranch], repoRoot);
 	if (!createResult.ok) {
 		throw new WorktreeError(
 			"WORKTREE_GIT_ERROR",
 			`Failed to create worktree at "${worktreePath}" on branch "${branch}" ` +
-			`from "${baseBranch}": ${createResult.stderr}`,
+				`from "${baseBranch}": ${createResult.stderr}`,
 		);
 	}
 
 	// ── Post-creation verification (R002 requirements) ───────────
 	// Verify 1: Correct branch is checked out
-	const headBranchResult = runGit(
-		["rev-parse", "--abbrev-ref", "HEAD"],
-		worktreePath,
-	);
+	const headBranchResult = runGit(["rev-parse", "--abbrev-ref", "HEAD"], worktreePath);
 	if (!headBranchResult.ok || headBranchResult.stdout !== branch) {
 		throw new WorktreeError(
 			"WORKTREE_VERIFY_FAILED",
 			`Verification failed: expected branch "${branch}" checked out ` +
-			`in worktree, but got "${headBranchResult.stdout || "(unknown)"}".`,
+				`in worktree, but got "${headBranchResult.stdout || "(unknown)"}".`,
 		);
 	}
 
@@ -433,7 +428,7 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 		throw new WorktreeError(
 			"WORKTREE_VERIFY_FAILED",
 			`Verification failed: worktree HEAD (${headCommitResult.stdout?.slice(0, 8) || "?"}) ` +
-			`does not match baseBranch "${baseBranch}" HEAD (${baseBranchHead.slice(0, 8)}).`,
+				`does not match baseBranch "${baseBranch}" HEAD (${baseBranchHead.slice(0, 8)}).`,
 		);
 	}
 
@@ -484,7 +479,7 @@ export function resetWorktree(
 		throw new WorktreeError(
 			"WORKTREE_NOT_FOUND",
 			`Worktree path "${worktreePath}" does not exist on disk. ` +
-			`It may have been removed externally.`,
+				`It may have been removed externally.`,
 		);
 	}
 
@@ -493,20 +488,17 @@ export function resetWorktree(
 		throw new WorktreeError(
 			"WORKTREE_NOT_REGISTERED",
 			`Path "${worktreePath}" exists but is not a registered git worktree. ` +
-			`It may have been removed from git tracking. Check: git worktree list`,
+				`It may have been removed from git tracking. Check: git worktree list`,
 		);
 	}
 
 	// ── Pre-check 3: Target branch resolves ──────────────────────
-	const targetCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${targetBranch}`],
-		repoRoot,
-	);
+	const targetCheck = runGit(["rev-parse", "--verify", `refs/heads/${targetBranch}`], repoRoot);
 	if (!targetCheck.ok) {
 		throw new WorktreeError(
 			"WORKTREE_INVALID_BASE",
 			`Target branch "${targetBranch}" does not exist locally. ` +
-			`Verify the branch exists: git branch --list ${targetBranch}`,
+				`Verify the branch exists: git branch --list ${targetBranch}`,
 		);
 	}
 	const targetCommit = targetCheck.stdout.trim();
@@ -523,35 +515,29 @@ export function resetWorktree(
 		throw new WorktreeError(
 			"WORKTREE_DIRTY",
 			`Worktree at "${worktreePath}" has uncommitted changes. ` +
-			`Workers must commit or discard all changes before a reset can proceed. ` +
-			`Dirty files:\n${statusCheck.stdout}`,
+				`Workers must commit or discard all changes before a reset can proceed. ` +
+				`Dirty files:\n${statusCheck.stdout}`,
 		);
 	}
 
 	// ── Reset: git checkout -B <laneBranch> <targetBranch> ───────
-	const resetResult = runGit(
-		["checkout", "-B", branch, targetBranch],
-		worktreePath,
-	);
+	const resetResult = runGit(["checkout", "-B", branch, targetBranch], worktreePath);
 	if (!resetResult.ok) {
 		throw new WorktreeError(
 			"WORKTREE_RESET_FAILED",
 			`Failed to reset worktree at "${worktreePath}" ` +
-			`(branch "${branch}" → "${targetBranch}"): ${resetResult.stderr}`,
+				`(branch "${branch}" → "${targetBranch}"): ${resetResult.stderr}`,
 		);
 	}
 
 	// ── Post-reset verification ──────────────────────────────────
 	// Verify 1: Current branch equals expected lane branch
-	const headBranchResult = runGit(
-		["rev-parse", "--abbrev-ref", "HEAD"],
-		worktreePath,
-	);
+	const headBranchResult = runGit(["rev-parse", "--abbrev-ref", "HEAD"], worktreePath);
 	if (!headBranchResult.ok || headBranchResult.stdout !== branch) {
 		throw new WorktreeError(
 			"WORKTREE_VERIFY_FAILED",
 			`Post-reset verification failed: expected branch "${branch}" ` +
-			`checked out, but got "${headBranchResult.stdout || "(unknown)"}".`,
+				`checked out, but got "${headBranchResult.stdout || "(unknown)"}".`,
 		);
 	}
 
@@ -561,8 +547,8 @@ export function resetWorktree(
 		throw new WorktreeError(
 			"WORKTREE_VERIFY_FAILED",
 			`Post-reset verification failed: worktree HEAD ` +
-			`(${headCommitResult.stdout?.slice(0, 8) || "?"}) does not match ` +
-			`target "${targetBranch}" commit (${targetCommit.slice(0, 8)}).`,
+				`(${headCommitResult.stdout?.slice(0, 8) || "?"}) does not match ` +
+				`target "${targetBranch}" commit (${targetCommit.slice(0, 8)}).`,
 		);
 	}
 
@@ -669,16 +655,20 @@ export function isWindowsMaxPathError(stderr: string): boolean {
  * @returns { ok, stdout, stderr }
  * @since TP-188 (#543)
  */
-export function runWindowsCmdRd(
-	absolutePath: string,
-): { ok: boolean; stdout: string; stderr: string } {
+export function runWindowsCmdRd(absolutePath: string): {
+	ok: boolean;
+	stdout: string;
+	stderr: string;
+} {
 	const winPath = absolutePath.replace(/\//g, "\\");
 	try {
 		const stdout = execFileSync("cmd", ["/c", "rd", "/s", "/q", winPath], {
 			encoding: "utf-8",
 			timeout: 60_000,
 			stdio: ["pipe", "pipe", "pipe"],
-		}).toString().trim();
+		})
+			.toString()
+			.trim();
 		return { ok: true, stdout, stderr: "" };
 	} catch (err: unknown) {
 		const e = err as { stdout?: string; stderr?: string; message?: string };
@@ -772,10 +762,7 @@ export function removeWorktree(
 	let lastError = "";
 
 	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-		const removeResult = runGit(
-			["worktree", "remove", "--force", worktreePath],
-			repoRoot,
-		);
+		const removeResult = runGit(["worktree", "remove", "--force", worktreePath], repoRoot);
 
 		if (removeResult.ok) {
 			// Successful removal — proceed to branch cleanup
@@ -793,12 +780,10 @@ export function removeWorktree(
 		// the error as terminal/retriable so other error classes still
 		// surface unchanged.
 		if (isWindowsMaxPathError(lastError)) {
-			execLog(
-				"cleanup",
-				"worktree",
-				`Windows MAX_PATH detected — falling back to cmd "rd /s /q"`,
-				{ path: worktreePath, attempt },
-			);
+			execLog("cleanup", "worktree", `Windows MAX_PATH detected — falling back to cmd "rd /s /q"`, {
+				path: worktreePath,
+				attempt,
+			});
 			const fallback = runWindowsCmdRd(worktreePath);
 			if (fallback.ok) {
 				execLog(
@@ -817,12 +802,10 @@ export function removeWorktree(
 			// attempts, then fall through to the existing terminal/retry
 			// classification (which will throw because "Filename too long"
 			// is non-retriable per isRetriableRemoveError).
-			execLog(
-				"cleanup",
-				"worktree",
-				`cmd "rd /s /q" fallback failed`,
-				{ path: worktreePath, error: fallback.stderr.slice(0, 200) },
-			);
+			execLog("cleanup", "worktree", `cmd "rd /s /q" fallback failed`, {
+				path: worktreePath,
+				error: fallback.stderr.slice(0, 200),
+			});
 			lastError =
 				`git worktree remove failed: ${lastError}; ` +
 				`cmd rd /s /q fallback failed: ${fallback.stderr}`;
@@ -833,7 +816,7 @@ export function removeWorktree(
 			throw new WorktreeError(
 				"WORKTREE_REMOVE_FAILED",
 				`Failed to remove worktree at "${worktreePath}" ` +
-				`(terminal error, not retried): ${lastError}`,
+					`(terminal error, not retried): ${lastError}`,
 			);
 		}
 
@@ -842,9 +825,9 @@ export function removeWorktree(
 			throw new WorktreeError(
 				"WORKTREE_REMOVE_RETRY_EXHAUSTED",
 				`Failed to remove worktree at "${worktreePath}" after ` +
-				`${MAX_ATTEMPTS} attempts. Last error: ${lastError}. ` +
-				`This is likely a Windows file locking issue. ` +
-				`Close any programs accessing "${worktreePath}" and try again.`,
+					`${MAX_ATTEMPTS} attempts. Last error: ${lastError}. ` +
+					`This is likely a Windows file locking issue. ` +
+					`Close any programs accessing "${worktreePath}" and try again.`,
 			);
 		}
 
@@ -858,7 +841,7 @@ export function removeWorktree(
 		throw new WorktreeError(
 			"WORKTREE_VERIFY_FAILED",
 			`Post-removal verification failed: path "${worktreePath}" ` +
-			`still exists on disk after successful git worktree remove.`,
+				`still exists on disk after successful git worktree remove.`,
 		);
 	}
 
@@ -869,7 +852,7 @@ export function removeWorktree(
 			throw new WorktreeError(
 				"WORKTREE_VERIFY_FAILED",
 				`Post-removal verification failed: path "${worktreePath}" ` +
-				`is still registered as a git worktree after removal and prune.`,
+					`is still registered as a git worktree after removal and prune.`,
 			);
 		}
 	}
@@ -959,7 +942,7 @@ export function ensureBranchDeleted(
 		throw new WorktreeError(
 			"WORKTREE_BRANCH_DELETE_FAILED",
 			`Worktree "${worktreePath}" was removed, but failed to delete lane branch ` +
-			`"${branch}". Delete it manually: git branch -D ${branch}`,
+				`"${branch}". Delete it manually: git branch -D ${branch}`,
 		);
 	}
 	return { deleted: true, preserved: false };
@@ -979,10 +962,7 @@ export function ensureBranchDeleted(
  */
 export function deleteBranchBestEffort(branch: string, repoRoot: string): boolean {
 	// Check if branch exists first
-	const branchCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${branch}`],
-		repoRoot,
-	);
+	const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot);
 
 	if (!branchCheck.ok) {
 		// Branch doesn't exist — idempotent success
@@ -997,10 +977,7 @@ export function deleteBranchBestEffort(branch: string, repoRoot: string): boolea
 	}
 
 	// If delete failed but branch is now gone (race condition), treat as success
-	const recheckResult = runGit(
-		["rev-parse", "--verify", `refs/heads/${branch}`],
-		repoRoot,
-	);
+	const recheckResult = runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot);
 	if (!recheckResult.ok) {
 		return true;
 	}
@@ -1008,7 +985,6 @@ export function deleteBranchBestEffort(branch: string, repoRoot: string): boolea
 	// Branch still exists and delete failed — return false
 	return false;
 }
-
 
 // ── Branch Protection Helpers ────────────────────────────────────────
 
@@ -1054,35 +1030,46 @@ export function hasUnmergedCommits(
 	repoRoot: string,
 ): UnmergedCommitsResult {
 	// Verify branch exists
-	const branchCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${branch}`],
-		repoRoot,
-	);
+	const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot);
 	if (!branchCheck.ok) {
-		return { ok: false, count: 0, code: "BRANCH_NOT_FOUND", error: `Branch "${branch}" does not exist` };
+		return {
+			ok: false,
+			count: 0,
+			code: "BRANCH_NOT_FOUND",
+			error: `Branch "${branch}" does not exist`,
+		};
 	}
 
 	// Verify target branch exists
-	const targetCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${targetBranch}`],
-		repoRoot,
-	);
+	const targetCheck = runGit(["rev-parse", "--verify", `refs/heads/${targetBranch}`], repoRoot);
 	if (!targetCheck.ok) {
-		return { ok: false, count: 0, code: "TARGET_BRANCH_MISSING", error: `Target branch "${targetBranch}" does not exist` };
+		return {
+			ok: false,
+			count: 0,
+			code: "TARGET_BRANCH_MISSING",
+			error: `Target branch "${targetBranch}" does not exist`,
+		};
 	}
 
 	// Count commits on branch not reachable from target
-	const countResult = runGit(
-		["rev-list", "--count", `${targetBranch}..${branch}`],
-		repoRoot,
-	);
+	const countResult = runGit(["rev-list", "--count", `${targetBranch}..${branch}`], repoRoot);
 	if (!countResult.ok) {
-		return { ok: false, count: 0, code: "UNMERGED_COUNT_FAILED", error: `Failed to count unmerged commits: ${countResult.stderr}` };
+		return {
+			ok: false,
+			count: 0,
+			code: "UNMERGED_COUNT_FAILED",
+			error: `Failed to count unmerged commits: ${countResult.stderr}`,
+		};
 	}
 
 	const count = parseInt(countResult.stdout.trim(), 10);
 	if (isNaN(count)) {
-		return { ok: false, count: 0, code: "UNMERGED_COUNT_PARSE_FAILED", error: `Failed to parse commit count: "${countResult.stdout}"` };
+		return {
+			ok: false,
+			count: 0,
+			code: "UNMERGED_COUNT_PARSE_FAILED",
+			error: `Failed to parse commit count: "${countResult.stdout}"`,
+		};
 	}
 
 	return { ok: true, count };
@@ -1197,10 +1184,7 @@ export function preserveBranch(
 	repoRoot: string,
 ): PreserveBranchResult {
 	// Check if branch exists
-	const branchCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${branch}`],
-		repoRoot,
-	);
+	const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot);
 	if (!branchCheck.ok) {
 		return { ok: true, action: "no-branch" };
 	}
@@ -1212,7 +1196,9 @@ export function preserveBranch(
 		// Target branch missing or git error — skip preservation gracefully
 		// Map unmerged error codes to preserve error codes
 		const preserveCode: PreserveBranchErrorCode =
-			unmergedResult.code === "TARGET_BRANCH_MISSING" ? "TARGET_BRANCH_MISSING" : "UNMERGED_COUNT_FAILED";
+			unmergedResult.code === "TARGET_BRANCH_MISSING"
+				? "TARGET_BRANCH_MISSING"
+				: "UNMERGED_COUNT_FAILED";
 		return {
 			ok: false,
 			action: "error",
@@ -1229,10 +1215,7 @@ export function preserveBranch(
 	const savedName = computeSavedBranchName(branch);
 
 	// Check for collision
-	const existingCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${savedName}`],
-		repoRoot,
-	);
+	const existingCheck = runGit(["rev-parse", "--verify", `refs/heads/${savedName}`], repoRoot);
 	const existingSHA = existingCheck.ok ? existingCheck.stdout.trim() : "";
 
 	const resolution = resolveSavedBranchCollision(savedName, existingSHA, branchSHA);
@@ -1249,10 +1232,7 @@ export function preserveBranch(
 		case "create":
 		case "create-suffixed": {
 			// Create saved branch at same SHA
-			const createResult = runGit(
-				["branch", resolution.savedName, branchSHA],
-				repoRoot,
-			);
+			const createResult = runGit(["branch", resolution.savedName, branchSHA], repoRoot);
 			if (!createResult.ok) {
 				return {
 					ok: false,
@@ -1271,10 +1251,14 @@ export function preserveBranch(
 		}
 
 		default:
-			return { ok: false, action: "error", code: "UNKNOWN_RESOLUTION", error: `Unknown resolution action` };
+			return {
+				ok: false,
+				action: "error",
+				code: "UNKNOWN_RESOLUTION",
+				error: `Unknown resolution action`,
+			};
 	}
 }
-
 
 // ── Bulk Worktree Operations ─────────────────────────────────────────
 
@@ -1306,7 +1290,12 @@ export function preserveBranch(
  *                   only returns worktrees inside the `{opId}-{batchId}/` container
  * @returns        - WorktreeInfo[] sorted by laneNumber (ascending)
  */
-export function listWorktrees(prefix: string, repoRoot: string, opId: string, batchId?: string): WorktreeInfo[] {
+export function listWorktrees(
+	prefix: string,
+	repoRoot: string,
+	opId: string,
+	batchId?: string,
+): WorktreeInfo[] {
 	const entries = parseWorktreeList(repoRoot);
 	const results: WorktreeInfo[] = [];
 
@@ -1317,9 +1306,7 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string, ba
 
 	// Legacy pattern: {prefix}-{N} (only matched when opId is the default fallback)
 	// This allows cleanup of worktrees from prior batches without operator IDs.
-	const legacyPattern = opId === "op"
-		? new RegExp(`^${escapeRegex(prefix)}-(\\d+)$`)
-		: null;
+	const legacyPattern = opId === "op" ? new RegExp(`^${escapeRegex(prefix)}-(\\d+)$`) : null;
 
 	// ── New batch-scoped nested pattern ──────────────────────────
 	// Basename: lane-{N}
@@ -1617,7 +1604,12 @@ export function removeAllWorktrees(
 	const outcomes: RemoveWorktreeOutcome[] = [];
 	const removed: WorktreeInfo[] = [];
 	const failed: RemoveWorktreeOutcome[] = [];
-	const preserved: Array<{ branch: string; savedBranch: string; laneNumber: number; unmergedCount?: number }> = [];
+	const preserved: Array<{
+		branch: string;
+		savedBranch: string;
+		laneNumber: number;
+		unmergedCount?: number;
+	}> = [];
 
 	for (const wt of worktrees) {
 		try {
@@ -1692,7 +1684,9 @@ export function removeAllWorktrees(
 					rmdirSync(basePath);
 				}
 			}
-		} catch { /* safe default — leave it alone */ }
+		} catch {
+			/* safe default — leave it alone */
+		}
 	}
 
 	return {
@@ -1756,12 +1750,21 @@ export function execCheck(command: string, cwd?: string, timeoutMs = 10_000): Ex
 		// platform). We attribute SIGTERM to the timeout because `execCheck` is
 		// the one setting the timeout option — there's no other realistic source
 		// of SIGTERM for a short-lived diagnostic command we just spawned.
-		const e = err as { code?: string | number; status?: number | null; signal?: NodeJS.Signals | null; errno?: number; message?: string; path?: string; stderr?: string | Buffer };
-		const stderrText = typeof e?.stderr === "string"
-			? e.stderr
-			: e?.stderr instanceof Buffer
-				? e.stderr.toString("utf-8")
-				: "";
+		const e = err as {
+			code?: string | number;
+			status?: number | null;
+			signal?: NodeJS.Signals | null;
+			errno?: number;
+			message?: string;
+			path?: string;
+			stderr?: string | Buffer;
+		};
+		const stderrText =
+			typeof e?.stderr === "string"
+				? e.stderr
+				: e?.stderr instanceof Buffer
+					? e.stderr.toString("utf-8")
+					: "";
 		const commandName = command.split(/\s+/)[0];
 		if (e?.code === "ENOENT") {
 			return { ok: false, stdout: "", errorKind: "not-found", errorDetail: e.path ?? commandName };
@@ -1770,11 +1773,19 @@ export function execCheck(command: string, cwd?: string, timeoutMs = 10_000): Ex
 			return { ok: false, stdout: "", errorKind: "not-found", errorDetail: commandName };
 		}
 		// Windows cmd.exe pattern: exit 1 + "is not recognized" in stderr.
-		if (e?.signal !== "SIGTERM" && /is not recognized as an internal or external command|command not found/i.test(stderrText)) {
+		if (
+			e?.signal !== "SIGTERM" &&
+			/is not recognized as an internal or external command|command not found/i.test(stderrText)
+		) {
 			return { ok: false, stdout: "", errorKind: "not-found", errorDetail: commandName };
 		}
 		if (e?.signal === "SIGTERM") {
-			return { ok: false, stdout: "", errorKind: "timeout", errorDetail: `exceeded ${timeoutMs}ms timeout` };
+			return {
+				ok: false,
+				stdout: "",
+				errorKind: "timeout",
+				errorDetail: `exceeded ${timeoutMs}ms timeout`,
+			};
 		}
 		if (typeof e?.status === "number") {
 			return { ok: false, stdout: "", errorKind: "exit-code", errorDetail: `exit ${e.status}` };
@@ -1782,7 +1793,12 @@ export function execCheck(command: string, cwd?: string, timeoutMs = 10_000): Ex
 		if (e?.signal) {
 			return { ok: false, stdout: "", errorKind: "signal", errorDetail: String(e.signal) };
 		}
-		return { ok: false, stdout: "", errorKind: "unknown", errorDetail: e?.message ?? "unknown error" };
+		return {
+			ok: false,
+			stdout: "",
+			errorKind: "unknown",
+			errorDetail: e?.message ?? "unknown error",
+		};
 	}
 }
 
@@ -1853,9 +1869,7 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 	checks.push({
 		name: "git-worktree",
 		status: worktreeResult.ok ? "pass" : "fail",
-		message: worktreeResult.ok
-			? "Worktree support available"
-			: "Git worktree not available",
+		message: worktreeResult.ok ? "Worktree support available" : "Git worktree not available",
 		hint: worktreeResult.ok
 			? undefined
 			: repoRoot
@@ -1905,11 +1919,13 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 				// in v0.74.0. Recommend the new scope for new installs; the legacy
 				// scope still resolves at runtime via Pi's bundled aliasing if a
 				// transitional install has it.
-				hint = "Install Pi: npm install -g @earendil-works/pi-coding-agent (legacy: @mariozechner/pi-coding-agent)";
+				hint =
+					"Install Pi: npm install -g @earendil-works/pi-coding-agent (legacy: @mariozechner/pi-coding-agent)";
 				break;
 			case "timeout":
 				message = `Pi did not respond within ${PI_PREFLIGHT_TIMEOUT_MS / 1000}s (retried once)`;
-				hint = "Pi appears installed but is responding slowly. Common causes: antivirus scanning the Node binary on first launch, slow disk, a zombie pi process holding a lock, or a stale mise shim. Try running `pi --version` directly to see how long it takes.";
+				hint =
+					"Pi appears installed but is responding slowly. Common causes: antivirus scanning the Node binary on first launch, slow disk, a zombie pi process holding a lock, or a stale mise shim. Try running `pi --version` directly to see how long it takes.";
 				break;
 			case "exit-code":
 				message = `Pi exited with error (${piResult.errorDetail ?? "non-zero status"})`;
@@ -1917,7 +1933,8 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 				break;
 			case "signal":
 				message = `Pi was killed by signal (${piResult.errorDetail ?? "unknown"})`;
-				hint = "The pi process was killed externally. Check for OOM, antivirus quarantine, or interrupted shell.";
+				hint =
+					"The pi process was killed externally. Check for OOM, antivirus quarantine, or interrupted shell.";
 				break;
 			default:
 				message = `Pi check failed (${piResult.errorDetail ?? "unknown error"})`;
@@ -1939,10 +1956,7 @@ export function formatPreflightResults(result: PreflightResult): string {
 	const lines: string[] = ["Preflight Check:"];
 
 	for (const check of result.checks) {
-		const icon =
-			check.status === "pass" ? "✅" :
-			check.status === "warn" ? "⚠️ " :
-			"❌";
+		const icon = check.status === "pass" ? "✅" : check.status === "warn" ? "⚠️ " : "❌";
 		const nameCol = check.name.padEnd(18);
 		lines.push(`  ${icon} ${nameCol} ${check.message}`);
 		if (check.hint && check.status !== "pass") {
@@ -1967,7 +1981,6 @@ export function formatPreflightResults(result: PreflightResult): string {
 
 	return lines.join("\n");
 }
-
 
 // ── Worktree Reset with Safety ───────────────────────────────────────
 
@@ -2014,9 +2027,14 @@ export function safeResetWorktree(
 			// of failing on the exit code.
 			const cleanResult = runGit(["clean", "-fd"], worktree.path);
 			if (!cleanResult.ok) {
-				execLog("reset", `lane-${worktree.laneNumber}`, "git clean -fd returned non-zero (may be partial)", {
-					stderr: cleanResult.stderr.slice(0, 200),
-				});
+				execLog(
+					"reset",
+					`lane-${worktree.laneNumber}`,
+					"git clean -fd returned non-zero (may be partial)",
+					{
+						stderr: cleanResult.stderr.slice(0, 200),
+					},
+				);
 			}
 
 			// Check if the worktree is clean enough to proceed.
@@ -2025,8 +2043,8 @@ export function safeResetWorktree(
 			const statusCheck = runGit(["status", "--porcelain"], worktree.path);
 			if (statusCheck.ok && statusCheck.stdout.length > 0) {
 				// Still dirty after cleaning — check if only untracked files remain
-				const lines = statusCheck.stdout.split("\n").filter(l => l.trim());
-				const onlyUntracked = lines.every(l => l.startsWith("??"));
+				const lines = statusCheck.stdout.split("\n").filter((l) => l.trim());
+				const onlyUntracked = lines.every((l) => l.startsWith("??"));
 				if (!onlyUntracked) {
 					return {
 						success: false,
@@ -2034,9 +2052,14 @@ export function safeResetWorktree(
 					};
 				}
 				// Only untracked files remain (e.g., undeletable "nul") — safe to proceed
-				execLog("reset", `lane-${worktree.laneNumber}`, "untracked files remain after clean (non-blocking)", {
-					files: lines.map(l => l.slice(3)).join(", "),
-				});
+				execLog(
+					"reset",
+					`lane-${worktree.laneNumber}`,
+					"untracked files remain after clean (non-blocking)",
+					{
+						files: lines.map((l) => l.slice(3)).join(", "),
+					},
+				);
 			}
 
 			// Retry reset after cleaning
@@ -2057,7 +2080,6 @@ export function safeResetWorktree(
 		};
 	}
 }
-
 
 // ── Force Cleanup ────────────────────────────────────────────────────
 
@@ -2093,11 +2115,15 @@ export function forceCleanupWorktree(
 			// special handling. Try rmSync first, then fall back to OS-specific
 			// removal for stubborn files.
 			rmSync(worktreePath, { recursive: true, force: true });
-			execLog("cleanup", `lane-${laneNumber}`, `force-removed worktree directory`, { path: worktreePath });
+			execLog("cleanup", `lane-${laneNumber}`, `force-removed worktree directory`, {
+				path: worktreePath,
+			});
 		} catch (rmErr: unknown) {
 			// If Node's rmSync fails (e.g., Windows reserved names), try platform-specific
 			const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
-			execLog("cleanup", `lane-${laneNumber}`, `rmSync failed, trying OS-level removal`, { error: rmMsg });
+			execLog("cleanup", `lane-${laneNumber}`, `rmSync failed, trying OS-level removal`, {
+				error: rmMsg,
+			});
 
 			try {
 				if (process.platform === "win32") {
@@ -2109,10 +2135,15 @@ export function forceCleanupWorktree(
 				execLog("cleanup", `lane-${laneNumber}`, `OS-level removal succeeded`, { path: worktreePath });
 			} catch (osErr: unknown) {
 				const osMsg = osErr instanceof Error ? osErr.message : String(osErr);
-				execLog("cleanup", `lane-${laneNumber}`, `OS-level removal also failed — manual cleanup needed`, {
-					path: worktreePath,
-					error: osMsg,
-				});
+				execLog(
+					"cleanup",
+					`lane-${laneNumber}`,
+					`OS-level removal also failed — manual cleanup needed`,
+					{
+						path: worktreePath,
+						error: osMsg,
+					},
+				);
 			}
 		}
 	}
@@ -2145,11 +2176,12 @@ export function forceCleanupWorktree(
 	if (containerName.includes("-")) {
 		const containerRemoved = removeBatchContainerIfEmpty(containerDir);
 		if (containerRemoved) {
-			execLog("cleanup", `lane-${laneNumber}`, `removed empty batch container`, { path: containerDir });
+			execLog("cleanup", `lane-${laneNumber}`, `removed empty batch container`, {
+				path: containerDir,
+			});
 		}
 	}
 }
-
 
 // ── Partial Progress Preservation ────────────────────────────────────
 
@@ -2225,10 +2257,7 @@ export function savePartialProgress(
 	repoId?: string,
 ): SavePartialProgressResult {
 	// Check if lane branch exists
-	const branchCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${laneBranch}`],
-		repoRoot,
-	);
+	const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${laneBranch}`], repoRoot);
 	if (!branchCheck.ok) {
 		return { saved: false, commitCount: 0, taskId, error: `Lane branch "${laneBranch}" not found` };
 	}
@@ -2254,10 +2283,7 @@ export function savePartialProgress(
 	const savedName = computePartialProgressBranchName(opId, taskId, batchId, repoId);
 
 	// Check for collision (idempotent re-runs, retries)
-	const existingCheck = runGit(
-		["rev-parse", "--verify", `refs/heads/${savedName}`],
-		repoRoot,
-	);
+	const existingCheck = runGit(["rev-parse", "--verify", `refs/heads/${savedName}`], repoRoot);
 	const existingSHA = existingCheck.ok ? existingCheck.stdout.trim() : "";
 
 	const resolution = resolveSavedBranchCollision(savedName, existingSHA, branchSHA);
@@ -2274,10 +2300,7 @@ export function savePartialProgress(
 
 		case "create":
 		case "create-suffixed": {
-			const createResult = runGit(
-				["branch", resolution.savedName, branchSHA],
-				repoRoot,
-			);
+			const createResult = runGit(["branch", resolution.savedName, branchSHA], repoRoot);
 			if (!createResult.ok) {
 				return {
 					saved: false,
@@ -2386,9 +2409,7 @@ export function preserveFailedLaneProgress(
 	}
 
 	// Find failed/stalled tasks
-	const failedTasks = taskOutcomes.filter(
-		(to) => to.status === "failed" || to.status === "stalled",
-	);
+	const failedTasks = taskOutcomes.filter((to) => to.status === "failed" || to.status === "stalled");
 
 	// Track which lane branches we've already processed (a lane may have
 	// multiple tasks; only save once per branch since all commits are shared)
@@ -2432,7 +2453,9 @@ export function preserveFailedLaneProgress(
 			// Track the saved branch name for caller visibility
 			preservedBranches.add(result.savedBranch!);
 
-			execLog("partial-progress", failedTask.taskId,
+			execLog(
+				"partial-progress",
+				failedTask.taskId,
 				`Task ${failedTask.taskId} failed but has ${result.commitCount} commit(s) of partial progress on branch ${result.savedBranch}`,
 				{
 					laneBranch: laneInfo.branch,
@@ -2447,9 +2470,11 @@ export function preserveFailedLaneProgress(
 			// irreversibly lose the partial work.
 			unsafeBranches.add(laneInfo.branch);
 
-			execLog("partial-progress", failedTask.taskId,
+			execLog(
+				"partial-progress",
+				failedTask.taskId,
 				`WARNING: Failed to preserve partial progress for task ${failedTask.taskId} ` +
-				`(${result.commitCount} commit(s) at risk on branch "${laneInfo.branch}")`,
+					`(${result.commitCount} commit(s) at risk on branch "${laneInfo.branch}")`,
 				{
 					laneBranch: laneInfo.branch,
 					commitCount: result.commitCount,
@@ -2462,7 +2487,6 @@ export function preserveFailedLaneProgress(
 
 	return { results, preservedBranches, unsafeBranches };
 }
-
 
 /**
  * TP-147: Preserve partial progress for all skipped tasks before cleanup/reset.
@@ -2505,9 +2529,7 @@ export function preserveSkippedLaneProgress(
 	}
 
 	// Find skipped tasks
-	const skippedTasks = taskOutcomes.filter(
-		(to) => to.status === "skipped",
-	);
+	const skippedTasks = taskOutcomes.filter((to) => to.status === "skipped");
 
 	// Track which lane branches we've already processed (a lane may have
 	// multiple tasks; only save once per branch since all commits are shared)
@@ -2549,7 +2571,9 @@ export function preserveSkippedLaneProgress(
 		if (result.saved) {
 			preservedBranches.add(result.savedBranch!);
 
-			execLog("partial-progress", skippedTask.taskId,
+			execLog(
+				"partial-progress",
+				skippedTask.taskId,
 				`Task ${skippedTask.taskId} was skipped but has ${result.commitCount} commit(s) of partial progress preserved on branch ${result.savedBranch}`,
 				{
 					laneBranch: laneInfo.branch,
@@ -2561,9 +2585,11 @@ export function preserveSkippedLaneProgress(
 		} else if (result.commitCount > 0 || result.error) {
 			unsafeBranches.add(laneInfo.branch);
 
-			execLog("partial-progress", skippedTask.taskId,
+			execLog(
+				"partial-progress",
+				skippedTask.taskId,
 				`WARNING: Failed to preserve partial progress for skipped task ${skippedTask.taskId} ` +
-				`(${result.commitCount} commit(s) at risk on branch "${laneInfo.branch}")`,
+					`(${result.commitCount} commit(s) at risk on branch "${laneInfo.branch}")`,
 				{
 					laneBranch: laneInfo.branch,
 					commitCount: result.commitCount,
@@ -2576,7 +2602,6 @@ export function preserveSkippedLaneProgress(
 
 	return { results, preservedBranches, unsafeBranches };
 }
-
 
 // ── Stale Branch Cleanup (TP-051) ────────────────────────────────────
 
@@ -2630,7 +2655,7 @@ export function deleteStaleBranches(
 	if (taskBranchResult.ok && taskBranchResult.stdout.trim()) {
 		const branches = taskBranchResult.stdout
 			.split("\n")
-			.map(b => b.replace(/^\*?\s+/, "").trim())
+			.map((b) => b.replace(/^\*?\s+/, "").trim())
 			.filter(Boolean);
 
 		for (const branch of branches) {
@@ -2648,7 +2673,7 @@ export function deleteStaleBranches(
 	if (savedTaskResult.ok && savedTaskResult.stdout.trim()) {
 		const branches = savedTaskResult.stdout
 			.split("\n")
-			.map(b => b.replace(/^\*?\s+/, "").trim())
+			.map((b) => b.replace(/^\*?\s+/, "").trim())
 			.filter(Boolean);
 
 		for (const branch of branches) {
@@ -2669,7 +2694,7 @@ export function deleteStaleBranches(
 	if (savedProgressResult.ok && savedProgressResult.stdout.trim()) {
 		const branches = savedProgressResult.stdout
 			.split("\n")
-			.map(b => b.replace(/^\*?\s+/, "").trim())
+			.map((b) => b.replace(/^\*?\s+/, "").trim())
 			.filter(Boolean);
 
 		const batchSuffix = `-${batchId}`;
@@ -2698,6 +2723,3 @@ export function deleteStaleBranches(
 
 	return { deletedTaskBranches, deletedSavedBranches, failedDeletes };
 }
-
-
-

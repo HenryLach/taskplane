@@ -180,7 +180,7 @@ export const MIGRATION_REGISTRY: Migration[] = [
 			if (!existsSync(templatePath)) {
 				throw new Error(
 					`Migration template not found: ${templatePath}. ` +
-					`This may indicate a packaging issue with the taskplane package.`,
+						`This may indicate a packaging issue with the taskplane package.`,
 				);
 			}
 

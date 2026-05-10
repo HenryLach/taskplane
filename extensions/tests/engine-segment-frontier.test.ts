@@ -13,7 +13,13 @@ import {
 	upsertPendingExpandedSegmentRecords,
 } from "../taskplane/engine.ts";
 import { buildExecutionUnit, ensureTaskFilesCommitted } from "../taskplane/execution.ts";
-import type { AllocatedLane, AllocatedTask, ParsedTask, SegmentExpansionRequest, TaskSegmentPlan } from "../taskplane/types.ts";
+import type {
+	AllocatedLane,
+	AllocatedTask,
+	ParsedTask,
+	SegmentExpansionRequest,
+	TaskSegmentPlan,
+} from "../taskplane/types.ts";
 
 function makeTask(taskId: string, repoId?: string): ParsedTask {
 	return {
@@ -31,7 +37,9 @@ function makeTask(taskId: string, repoId?: string): ParsedTask {
 	};
 }
 
-function makeExpansionRequest(overrides: Partial<SegmentExpansionRequest> = {}): SegmentExpansionRequest {
+function makeExpansionRequest(
+	overrides: Partial<SegmentExpansionRequest> = {},
+): SegmentExpansionRequest {
 	return {
 		requestId: "exp-001",
 		taskId: "TP-100",
@@ -47,9 +55,7 @@ function makeExpansionRequest(overrides: Partial<SegmentExpansionRequest> = {}):
 
 describe("TP-133 segment frontier helpers", () => {
 	it("repo-singleton tasks keep one execution round", () => {
-		const pending = new Map<string, ParsedTask>([
-			["TP-001", makeTask("TP-001", "api")],
-		]);
+		const pending = new Map<string, ParsedTask>([["TP-001", makeTask("TP-001", "api")]]);
 
 		const frontier = buildSegmentFrontierWaves([["TP-001"]], pending);
 		expect(frontier.waves).toEqual([["TP-001"]]);
@@ -62,9 +68,7 @@ describe("TP-133 segment frontier helpers", () => {
 	});
 
 	it("repo mode does not synthesize resolvedRepoId during frontier expansion", () => {
-		const pending = new Map<string, ParsedTask>([
-			["TP-002", makeTask("TP-002")],
-		]);
+		const pending = new Map<string, ParsedTask>([["TP-002", makeTask("TP-002")]]);
 
 		buildSegmentFrontierWaves([["TP-002"]], pending);
 		expect(pending.get("TP-002")!.resolvedRepoId).toBeUndefined();
@@ -77,9 +81,7 @@ describe("TP-133 segment frontier helpers", () => {
 	});
 
 	it("multi-segment task is decomposed into sequential rounds", () => {
-		const pending = new Map<string, ParsedTask>([
-			["TP-010", makeTask("TP-010", "api")],
-		]);
+		const pending = new Map<string, ParsedTask>([["TP-010", makeTask("TP-010", "api")]]);
 
 		const plan: TaskSegmentPlan = {
 			taskId: "TP-010",
@@ -90,16 +92,22 @@ describe("TP-133 segment frontier helpers", () => {
 				{ segmentId: "TP-010::docs", taskId: "TP-010", repoId: "docs", order: 2 },
 			],
 			edges: [
-				{ fromSegmentId: "TP-010::api", toSegmentId: "TP-010::web", provenance: "explicit", reason: "explicit" },
-				{ fromSegmentId: "TP-010::web", toSegmentId: "TP-010::docs", provenance: "explicit", reason: "explicit" },
+				{
+					fromSegmentId: "TP-010::api",
+					toSegmentId: "TP-010::web",
+					provenance: "explicit",
+					reason: "explicit",
+				},
+				{
+					fromSegmentId: "TP-010::web",
+					toSegmentId: "TP-010::docs",
+					provenance: "explicit",
+					reason: "explicit",
+				},
 			],
 		};
 
-		const frontier = buildSegmentFrontierWaves(
-			[["TP-010"]],
-			pending,
-			new Map([["TP-010", plan]]),
-		);
+		const frontier = buildSegmentFrontierWaves([["TP-010"]], pending, new Map([["TP-010", plan]]));
 
 		expect(frontier.waves).toEqual([["TP-010"], ["TP-010"], ["TP-010"]]);
 		// TP-166: Task-level wave count should be 1 (one original wave), not 3
@@ -123,8 +131,18 @@ describe("TP-133 segment frontier helpers", () => {
 				{ segmentId: "TP-020::docs", taskId: "TP-020", repoId: "docs", order: 2 },
 			],
 			edges: [
-				{ fromSegmentId: "TP-020::api", toSegmentId: "TP-020::docs", provenance: "explicit", reason: "explicit" },
-				{ fromSegmentId: "TP-020::web", toSegmentId: "TP-020::docs", provenance: "explicit", reason: "explicit" },
+				{
+					fromSegmentId: "TP-020::api",
+					toSegmentId: "TP-020::docs",
+					provenance: "explicit",
+					reason: "explicit",
+				},
+				{
+					fromSegmentId: "TP-020::web",
+					toSegmentId: "TP-020::docs",
+					provenance: "explicit",
+					reason: "explicit",
+				},
 			],
 		};
 
@@ -177,7 +195,7 @@ describe("segment expansion boundary validation smoke", () => {
 			"agent-1",
 			{ filePath: "/tmp/segment-expansion-exp-001.json", request },
 			{ terminalStatus: "pending" } as any,
-			{ repos: new Map([ ["api", {}] ]) } as any,
+			{ repos: new Map([["api", {}]]) } as any,
 			new Set<string>(),
 		);
 		expect(result.ok).toBe(false);
@@ -196,7 +214,7 @@ describe("segment expansion boundary validation smoke", () => {
 			"agent-1",
 			{ filePath: "/tmp/segment-expansion-exp-001.json", request },
 			{ terminalStatus: "pending" } as any,
-			{ repos: new Map([ ["api", {}] ]) } as any,
+			{ repos: new Map([["api", {}]]) } as any,
 			knownRequestIds,
 		);
 		expect(first).toEqual({ ok: true });
@@ -209,7 +227,7 @@ describe("segment expansion boundary validation smoke", () => {
 			"agent-1",
 			{ filePath: "/tmp/segment-expansion-exp-001-dupe.json", request },
 			{ terminalStatus: "pending" } as any,
-			{ repos: new Map([ ["api", {}] ]) } as any,
+			{ repos: new Map([["api", {}]]) } as any,
 			knownRequestIds,
 		);
 		expect(duplicate.ok).toBe(false);
@@ -293,7 +311,9 @@ describe("segment expansion graph mutation", () => {
 
 		const mutation = applySegmentExpansionMutation(segmentState, request, "TP-007::api-service");
 		expect(mutation.insertedSegmentIds).toEqual(["TP-007::web-client"]);
-		expect(segmentState.dependsOnBySegmentId.get("TP-007::web-client")).toEqual(["TP-007::api-service"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-007::web-client")).toEqual([
+			"TP-007::api-service",
+		]);
 		expect(segmentState.dependsOnBySegmentId.get("TP-007::docs")).toEqual(["TP-007::web-client"]);
 		expect(segmentState.orderedSegments.map((segment: any) => segment.segmentId)).toEqual([
 			"TP-007::api-service",
@@ -346,7 +366,9 @@ describe("segment expansion graph mutation", () => {
 		);
 		expect(changed).toBe(true);
 
-		const webRecord = batchState.segments.find((record: any) => record.segmentId === "TP-007::web-client");
+		const webRecord = batchState.segments.find(
+			(record: any) => record.segmentId === "TP-007::web-client",
+		);
 		expect(webRecord).toBeTruthy();
 		expect(webRecord.taskId).toBe("TP-007");
 		expect(webRecord.repoId).toBe("web-client");
@@ -389,7 +411,10 @@ describe("segment expansion graph mutation", () => {
 
 		const result = applySegmentExpansionMutation(segmentState, request, "TP-301::docs");
 		expect(result.insertedSegmentIds).toEqual(["TP-301::ops", "TP-301::infra"]);
-		expect(segmentState.dependsOnBySegmentId.get("TP-301::ops")?.sort()).toEqual(["TP-301::docs", "TP-301::web"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-301::ops")?.sort()).toEqual([
+			"TP-301::docs",
+			"TP-301::web",
+		]);
 		expect(segmentState.dependsOnBySegmentId.get("TP-301::infra")).toEqual(["TP-301::ops"]);
 		expect(segmentState.orderedSegments.map((segment: any) => segment.segmentId).slice(-2)).toEqual([
 			"TP-301::ops",
@@ -461,7 +486,9 @@ describe("segment expansion graph mutation", () => {
 			"TP-008::api-service",
 			"TP-008::shared-libs::2",
 		]);
-		expect(segmentState.dependsOnBySegmentId.get("TP-008::shared-libs::2")).toEqual(["TP-008::api-service"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-008::shared-libs::2")).toEqual([
+			"TP-008::api-service",
+		]);
 	});
 
 	it("TP-008 repeat-repo insertion rewires downstream dependents through shared-libs::2", () => {
@@ -495,8 +522,12 @@ describe("segment expansion graph mutation", () => {
 
 		const mutation = applySegmentExpansionMutation(segmentState, request, "TP-008::api-service");
 		expect(mutation.insertedSegmentIds).toEqual(["TP-008::shared-libs::2"]);
-		expect(segmentState.dependsOnBySegmentId.get("TP-008::shared-libs::2")).toEqual(["TP-008::api-service"]);
-		expect(segmentState.dependsOnBySegmentId.get("TP-008::web-client")).toEqual(["TP-008::shared-libs::2"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-008::shared-libs::2")).toEqual([
+			"TP-008::api-service",
+		]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-008::web-client")).toEqual([
+			"TP-008::shared-libs::2",
+		]);
 	});
 
 	it("TP-008 repeat-repo persistence uses orch-branch provisioning metadata for shared-libs::2", () => {
@@ -539,7 +570,9 @@ describe("segment expansion graph mutation", () => {
 		);
 		expect(changed).toBe(true);
 
-		const secondPassRecord = batchState.segments.find((record: any) => record.segmentId === "TP-008::shared-libs::2");
+		const secondPassRecord = batchState.segments.find(
+			(record: any) => record.segmentId === "TP-008::shared-libs::2",
+		);
 		expect(secondPassRecord).toBeTruthy();
 		expect(secondPassRecord.repoId).toBe("shared-libs");
 		expect(secondPassRecord.branch).toBe("orch/tp-008");
@@ -550,17 +583,10 @@ describe("segment expansion graph mutation", () => {
 	});
 
 	it("continuation round insertion keeps expanded tasks executable before the next planned task wave", () => {
-		const runtimeRounds = [
-			["TP-400"],
-			["TP-500"],
-		];
+		const runtimeRounds = [["TP-400"], ["TP-500"]];
 		const inserted = scheduleContinuationSegmentRound(runtimeRounds, 0, ["TP-400"]);
 		expect(inserted).toEqual(["TP-400"]);
-		expect(runtimeRounds).toEqual([
-			["TP-400"],
-			["TP-400"],
-			["TP-500"],
-		]);
+		expect(runtimeRounds).toEqual([["TP-400"], ["TP-400"], ["TP-500"]]);
 	});
 
 	it("resyncs persisted pending dependencies across sequential approved requests on one boundary", () => {
@@ -628,7 +654,16 @@ describe("segment expansion graph mutation", () => {
 
 	it("approval path persists mutation state before renaming request file to .processed", () => {
 		const src = readFileSync(new URL("../taskplane/engine.ts", import.meta.url), "utf-8");
-		expect(src).toMatch(/persistRuntimeState\("segment-expansion-approved"[\s\S]*markSegmentExpansionRequestFile\(pendingRequest\.filePath, "processed"\)/);
+		// TP-193: Whitespace-normalize so the formatter's vertical re-wrapping
+		// of multi-arg calls (and trailing commas) doesn't break the regex.
+		const normSrc = src
+			.replace(/\s+/g, " ")
+			.replace(/([(\[{])\s+/g, "$1")
+			.replace(/\s+([)\]},])/g, "$1")
+			.replace(/,([)\]}])/g, "$1");
+		expect(normSrc).toMatch(
+			/persistRuntimeState\("segment-expansion-approved"[\s\S]*?markSegmentExpansionRequestFile\(pendingRequest\.filePath, "processed"\)/,
+		);
 	});
 
 	it("pending segment persistence carries expansion provenance and orch-branch provisioning metadata", () => {
@@ -772,10 +807,7 @@ describe("TP-169 buildExecutionUnit taskFolder guard", () => {
 describe("TP-169 workspace orch branch: ensureTaskFilesCommitted is exported", () => {
 	it("ensureTaskFilesCommitted accepts orchBranch parameter", () => {
 		// Structural test: ensureTaskFilesCommitted signature includes orchBranch
-		const execSrc = readFileSync(
-			new URL("../taskplane/execution.ts", import.meta.url),
-			"utf-8",
-		);
+		const execSrc = readFileSync(new URL("../taskplane/execution.ts", import.meta.url), "utf-8");
 		const fnIdx = execSrc.indexOf("function ensureTaskFilesCommitted");
 		const sig = execSrc.slice(fnIdx, fnIdx + 300);
 		expect(sig).toContain("orchBranch");

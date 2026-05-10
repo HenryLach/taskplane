@@ -123,7 +123,10 @@ afterEach(() => {
 	}
 });
 
-function withTaskFolder(stepNum: number, stepStatus: "✅ Complete" | "🟨 In Progress"): {
+function withTaskFolder(
+	stepNum: number,
+	stepStatus: "✅ Complete" | "🟨 In Progress",
+): {
 	taskFolder: string;
 	statusPath: string;
 	promptPath: string;
@@ -205,11 +208,7 @@ describe("TP-189-A2 — review_step death-spiral guard runtime behavior", () => 
 			const statusAfter = readFileSync(statusPath, "utf-8");
 			const rcMatch = statusAfter.match(/\*\*Review Counter:\*\*\s*(\d+)/);
 			assert.ok(rcMatch, "STATUS.md should still have a Review Counter field");
-			assert.strictEqual(
-				rcMatch![1],
-				"0",
-				"REFUSED path must not increment the Review Counter",
-			);
+			assert.strictEqual(rcMatch![1], "0", "REFUSED path must not increment the Review Counter");
 		} finally {
 			cleanupEnv();
 		}

@@ -197,7 +197,7 @@ describe("matchesAnyGitignorePattern: integration", () => {
 
 	it("5.7 — ALL_GITIGNORE_PATTERNS includes both runtime and npm entries", () => {
 		expect(ALL_GITIGNORE_PATTERNS.length).toBe(
-			TASKPLANE_GITIGNORE_ENTRIES.length + TASKPLANE_GITIGNORE_NPM_ENTRIES.length
+			TASKPLANE_GITIGNORE_ENTRIES.length + TASKPLANE_GITIGNORE_NPM_ENTRIES.length,
 		);
 		expect(ALL_GITIGNORE_PATTERNS).toContain(".pi/npm/");
 		expect(ALL_GITIGNORE_PATTERNS).toContain(".worktrees/");

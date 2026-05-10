@@ -19,7 +19,16 @@
  * @since TP-104
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, appendFileSync, renameSync } from "fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+	readdirSync,
+	rmSync,
+	appendFileSync,
+	renameSync,
+} from "fs";
 import { join, dirname } from "path";
 
 import {
@@ -66,7 +75,11 @@ export function writeManifest(stateRoot: string, manifest: RuntimeAgentManifest)
  *
  * @since TP-104
  */
-export function readManifest(stateRoot: string, batchId: string, agentId: RuntimeAgentId): RuntimeAgentManifest | null {
+export function readManifest(
+	stateRoot: string,
+	batchId: string,
+	agentId: RuntimeAgentId,
+): RuntimeAgentManifest | null {
 	const path = runtimeManifestPath(stateRoot, batchId, agentId);
 	if (!existsSync(path)) return null;
 	try {
@@ -237,7 +250,7 @@ export function isTerminalStatus(status: RuntimeAgentStatus): boolean {
  * @since TP-104
  */
 export function getLiveAgents(registry: RuntimeRegistry): RuntimeAgentManifest[] {
-	return Object.values(registry.agents).filter(m => !isTerminalStatus(m.status));
+	return Object.values(registry.agents).filter((m) => !isTerminalStatus(m.status));
 }
 
 /**
@@ -245,8 +258,11 @@ export function getLiveAgents(registry: RuntimeRegistry): RuntimeAgentManifest[]
  *
  * @since TP-104
  */
-export function getAgentsByRole(registry: RuntimeRegistry, role: RuntimeAgentRole): RuntimeAgentManifest[] {
-	return Object.values(registry.agents).filter(m => m.role === role);
+export function getAgentsByRole(
+	registry: RuntimeRegistry,
+	role: RuntimeAgentRole,
+): RuntimeAgentManifest[] {
+	return Object.values(registry.agents).filter((m) => m.role === role);
 }
 
 // ── Orphan Detection ─────────────────────────────────────────────────
@@ -276,7 +292,11 @@ export function detectOrphans(registry: RuntimeRegistry): RuntimeAgentId[] {
  *
  * @since TP-104
  */
-export function markOrphansCrashed(stateRoot: string, batchId: string, orphanIds: RuntimeAgentId[]): void {
+export function markOrphansCrashed(
+	stateRoot: string,
+	batchId: string,
+	orphanIds: RuntimeAgentId[],
+): void {
 	for (const agentId of orphanIds) {
 		updateManifestStatus(stateRoot, batchId, agentId, "crashed");
 	}
@@ -291,7 +311,10 @@ export function markOrphansCrashed(stateRoot: string, batchId: string, orphanIds
  *
  * @since TP-104
  */
-export function cleanupBatchRuntime(stateRoot: string, batchId: string): { removed: boolean; error?: string } {
+export function cleanupBatchRuntime(
+	stateRoot: string,
+	batchId: string,
+): { removed: boolean; error?: string } {
 	const root = runtimeRoot(stateRoot, batchId);
 	if (!existsSync(root)) return { removed: false };
 	try {

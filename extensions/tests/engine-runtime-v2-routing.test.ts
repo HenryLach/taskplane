@@ -18,19 +18,11 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 const executionSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
-const {
-	selectRuntimeBackend,
-} = await import("../taskplane/engine.ts");
-const {
-	mapLaneTaskStatusToTerminalSnapshotStatus,
-	mapLaneSnapshotStatusToWorkerStatus,
-} = await import("../taskplane/lane-runner.ts");
-const {
-	resolveTaskMonitorState,
-} = await import("../taskplane/execution.ts");
-const {
-	writeLaneSnapshot,
-} = await import("../taskplane/process-registry.ts");
+const { selectRuntimeBackend } = await import("../taskplane/engine.ts");
+const { mapLaneTaskStatusToTerminalSnapshotStatus, mapLaneSnapshotStatusToWorkerStatus } =
+	await import("../taskplane/lane-runner.ts");
+const { resolveTaskMonitorState } = await import("../taskplane/execution.ts");
+const { writeLaneSnapshot } = await import("../taskplane/process-registry.ts");
 
 // ── 1. Backend selection logic in engine ─────────────────────────────
 
@@ -77,7 +69,7 @@ describe("2.x: executeWave backend parameter", () => {
 
 	it("2.3: executeWave routes lanes directly to executeLaneV2", () => {
 		expect(executionSrc).toContainNormalized("const lanePromises = lanes.map((lane) =>");
-		expect(executionSrc).toContain("executeLaneV2(lane, config");
+		expect(executionSrc).toContainNormalized("executeLaneV2(lane, config");
 	});
 
 	it("2.4: executeWave forces Runtime V2 even when backend is omitted", () => {
@@ -216,12 +208,24 @@ describe("7.x: Behavioral backend and snapshot mapping", () => {
 		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("v2");
 		expect(selectRuntimeBackend("all", [["TP-001"], ["TP-002"]], null).backend).toBe("v2");
 		// Workspace mode also V2 (TP-109: packet-home authority threaded)
-		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
+		const ws = {
+			mode: "workspace",
+			repos: new Map(),
+			routing: {},
+			configPath: "x",
+			workspaceRoot: "x",
+		} as any;
 		expect(selectRuntimeBackend("all", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
 	it("7.2: selectRuntimeBackend returns v2 in workspace mode (TP-109)", () => {
-		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
+		const ws = {
+			mode: "workspace",
+			repos: new Map(),
+			routing: {},
+			configPath: "x",
+			workspaceRoot: "x",
+		} as any;
 		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
@@ -421,7 +425,7 @@ describe("11.x: Merge V2 liveness + abort correctness", () => {
 
 	it("11.7: abort discovery uses Runtime V2 state sources (no tmux list-sessions)", () => {
 		expect(abortSrc).toContain("discoverAbortSessionNames(");
-		expect(abortSrc).not.toContain('execSync(\'tmux list-sessions');
+		expect(abortSrc).not.toContain("execSync('tmux list-sessions");
 	});
 
 	it("11.8: /orch-abort helper delegates to executeAbort without tmux kill-session", () => {
@@ -442,7 +446,7 @@ describe("12.x: Resume TDZ safety", () => {
 		const declIdx = resumeSrc.indexOf("const resumeBackend: RuntimeBackend");
 		expect(declIdx).toBeGreaterThan(-1);
 		// Check ALL uses — not just mergeWaveByRepo but also section 3 liveness
-		const allUses = [...resumeSrc.matchAll(/resumeBackend/g)].map(m => m.index!);
+		const allUses = [...resumeSrc.matchAll(/resumeBackend/g)].map((m) => m.index!);
 		for (const useIdx of allUses) {
 			if (useIdx === declIdx) continue; // skip the declaration itself
 			expect(declIdx).toBeLessThan(useIdx);
@@ -590,7 +594,7 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		const block = execSrc.slice(fnIdx, nextSectionIdx > fnIdx ? nextSectionIdx : fnIdx + 1200);
 		expect(block).toContain("process.kill");
 		expect(block).toContain("SIGTERM");
-		expect(block).not.toContain("spawn(\"tmux\"");
+		expect(block).not.toContain('spawn("tmux"');
 	});
 
 	it("14.7: executeWave passes batchId and resolved state root to monitorLanes", () => {
@@ -604,11 +608,15 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 	});
 
 	it("14.8: final cleanup kills lingering Runtime V2 agents without TMUX fallbacks", () => {
-		const cleanupIdx = engineSrc.indexOf("Kill lingering Runtime V2 agents BEFORE removing worktrees.");
+		const cleanupIdx = engineSrc.indexOf(
+			"Kill lingering Runtime V2 agents BEFORE removing worktrees.",
+		);
 		expect(cleanupIdx).toBeGreaterThan(-1);
 		const cleanupBlock = engineSrc.slice(cleanupIdx, cleanupIdx + 1600);
 		expect(cleanupBlock).toContain("readRegistrySnapshot(stateRoot, batchState.batchId)");
-		expect(cleanupBlock).toContain("lingeringLaneSessions.add(manifest.agentId.replace(/-(worker|reviewer)$/");
+		expect(cleanupBlock).toContain(
+			"lingeringLaneSessions.add(manifest.agentId.replace(/-(worker|reviewer)$/",
+		);
 		expect(cleanupBlock).toContain("killV2LaneAgents(sessionName");
 		expect(cleanupBlock).toContain("killAllMergeAgentsV2()");
 		expect(cleanupBlock).not.toContain("tmuxHasSession");

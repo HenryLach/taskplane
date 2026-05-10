@@ -61,25 +61,29 @@ function makeValidV4(): Record<string, unknown> {
 		currentWaveIndex: 0,
 		totalWaves: 1,
 		wavePlan: [["TP-001"]],
-		lanes: [{
-			laneNumber: 1,
-			laneId: "lane-1",
-			laneSessionId: "orch-lane-1",
-			worktreePath: "/tmp/wt-1",
-			branch: "task/lane-1-20260319T010000",
-			taskIds: ["TP-001"],
-		}],
-		tasks: [{
-			taskId: "TP-001",
-			laneNumber: 1,
-			sessionName: "orch-lane-1",
-			status: "running",
-			taskFolder: "/tmp/tasks/TP-001",
-			startedAt: 1741478400000,
-			endedAt: null,
-			doneFileFound: false,
-			exitReason: "",
-		}],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "orch-lane-1",
+				worktreePath: "/tmp/wt-1",
+				branch: "task/lane-1-20260319T010000",
+				taskIds: ["TP-001"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "TP-001",
+				laneNumber: 1,
+				sessionName: "orch-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tasks/TP-001",
+				startedAt: 1741478400000,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		],
 		mergeResults: [],
 		totalTasks: 1,
 		succeededTasks: 0,
@@ -132,7 +136,6 @@ function makeValidV1(): Record<string, unknown> {
 // ═════════════════════════════════════════════════════════════════════
 
 describe("State Schema v3 Migration", () => {
-
 	describe("v1 → v3 migration", () => {
 		it("migrates v1 fixture to v3 with correct defaults", () => {
 			const v1Data = loadFixtureJSON("batch-state-v1-valid.json");
@@ -257,24 +260,26 @@ describe("State Schema v3 Migration", () => {
 				resumeForced: true,
 				retryCountByScope: { "TP-001:w0:l1": 2 },
 				lastFailureClass: "context-overflow",
-				repairHistory: [{
-					id: "r-20260319-001",
-					strategy: "stale-worktree-cleanup",
-					status: "succeeded",
-					startedAt: 1000,
-					endedAt: 2000,
-				}],
+				repairHistory: [
+					{
+						id: "r-20260319-001",
+						strategy: "stale-worktree-cleanup",
+						status: "succeeded",
+						startedAt: 1000,
+						endedAt: 2000,
+					},
+				],
 			};
 			v3.diagnostics = {
 				taskExits: {
 					"TP-001": {
 						classification: "context-overflow",
-						cost: 1.50,
+						cost: 1.5,
 						durationSec: 120,
 						retries: 1,
 					},
 				},
-				batchCost: 1.50,
+				batchCost: 1.5,
 			};
 
 			const result = validatePersistedState(v3);
@@ -285,8 +290,8 @@ describe("State Schema v3 Migration", () => {
 			expect(result.resilience.repairHistory).toHaveLength(1);
 			expect(result.resilience.repairHistory[0].strategy).toBe("stale-worktree-cleanup");
 			expect(result.diagnostics.taskExits["TP-001"].classification).toBe("context-overflow");
-			expect(result.diagnostics.taskExits["TP-001"].cost).toBe(1.50);
-			expect(result.diagnostics.batchCost).toBe(1.50);
+			expect(result.diagnostics.taskExits["TP-001"].cost).toBe(1.5);
+			expect(result.diagnostics.batchCost).toBe(1.5);
 		});
 
 		it("reads v3 state with exitDiagnostic on task records", () => {
@@ -388,40 +393,46 @@ describe("State Schema v3 Migration", () => {
 
 		it("rejects repairHistory entry with invalid status", () => {
 			const v3 = makeValidV3();
-			(v3.resilience as any).repairHistory = [{
-				id: "r-001",
-				strategy: "test",
-				status: "exploded", // invalid
-				startedAt: 1000,
-				endedAt: 2000,
-			}];
+			(v3.resilience as any).repairHistory = [
+				{
+					id: "r-001",
+					strategy: "test",
+					status: "exploded", // invalid
+					startedAt: 1000,
+					endedAt: 2000,
+				},
+			];
 
 			expect(() => validatePersistedState(v3)).toThrow(/repairHistory/);
 		});
 
 		it("rejects repairHistory entry with non-number startedAt", () => {
 			const v3 = makeValidV3();
-			(v3.resilience as any).repairHistory = [{
-				id: "r-001",
-				strategy: "test",
-				status: "succeeded",
-				startedAt: "now",
-				endedAt: 2000,
-			}];
+			(v3.resilience as any).repairHistory = [
+				{
+					id: "r-001",
+					strategy: "test",
+					status: "succeeded",
+					startedAt: "now",
+					endedAt: 2000,
+				},
+			];
 
 			expect(() => validatePersistedState(v3)).toThrow(/repairHistory/);
 		});
 
 		it("rejects repairHistory entry with non-string repoId", () => {
 			const v3 = makeValidV3();
-			(v3.resilience as any).repairHistory = [{
-				id: "r-001",
-				strategy: "test",
-				status: "succeeded",
-				startedAt: 1000,
-				endedAt: 2000,
-				repoId: 42,
-			}];
+			(v3.resilience as any).repairHistory = [
+				{
+					id: "r-001",
+					strategy: "test",
+					status: "succeeded",
+					startedAt: 1000,
+					endedAt: 2000,
+					repoId: 42,
+				},
+			];
 
 			expect(() => validatePersistedState(v3)).toThrow(/repairHistory/);
 		});
@@ -783,14 +794,16 @@ describe("State Schema v3 Migration", () => {
 	describe("edge cases", () => {
 		it("accepts repairHistory entry with optional repoId", () => {
 			const v3 = makeValidV3();
-			(v3.resilience as any).repairHistory = [{
-				id: "r-001",
-				strategy: "stale-worktree-cleanup",
-				status: "succeeded",
-				startedAt: 1000,
-				endedAt: 2000,
-				repoId: "api",
-			}];
+			(v3.resilience as any).repairHistory = [
+				{
+					id: "r-001",
+					strategy: "stale-worktree-cleanup",
+					status: "succeeded",
+					startedAt: 1000,
+					endedAt: 2000,
+					repoId: "api",
+				},
+			];
 
 			const result = validatePersistedState(v3);
 			expect(result.resilience.repairHistory[0].repoId).toBe("api");
@@ -819,13 +832,15 @@ describe("State Schema v3 Migration", () => {
 		it("accepts valid repairHistory statuses: succeeded, failed, skipped", () => {
 			for (const status of ["succeeded", "failed", "skipped"]) {
 				const v3 = makeValidV3();
-				(v3.resilience as any).repairHistory = [{
-					id: `r-${status}`,
-					strategy: "test",
-					status,
-					startedAt: 1000,
-					endedAt: 2000,
-				}];
+				(v3.resilience as any).repairHistory = [
+					{
+						id: `r-${status}`,
+						strategy: "test",
+						status,
+						startedAt: 1000,
+						endedAt: 2000,
+					},
+				];
 
 				const result = validatePersistedState(v3);
 				expect(result.resilience.repairHistory[0].status).toBe(status);
@@ -906,12 +921,15 @@ describe("State Schema v3 Migration", () => {
 				laneSessionId: lr.laneSessionId,
 				worktreePath: lr.worktreePath,
 				branch: lr.branch,
-				tasks: lr.taskIds.map((taskId, i) => ({
-					taskId,
-					order: i,
-					task: { ...dummyParsedTask, taskId },
-					estimatedMinutes: 10,
-				} as AllocatedTask)),
+				tasks: lr.taskIds.map(
+					(taskId, i) =>
+						({
+							taskId,
+							order: i,
+							task: { ...dummyParsedTask, taskId },
+							estimatedMinutes: 10,
+						}) as AllocatedTask,
+				),
 				strategy: "round-robin" as const,
 				estimatedLoad: 1,
 				estimatedMinutes: 10,
@@ -926,8 +944,12 @@ describe("State Schema v3 Migration", () => {
 				sessionName: tr.sessionName,
 				doneFileFound: tr.doneFileFound,
 				...(tr.exitDiagnostic ? { exitDiagnostic: tr.exitDiagnostic } : {}),
-				...(tr.partialProgressCommits !== undefined ? { partialProgressCommits: tr.partialProgressCommits } : {}),
-				...(tr.partialProgressBranch !== undefined ? { partialProgressBranch: tr.partialProgressBranch } : {}),
+				...(tr.partialProgressCommits !== undefined
+					? { partialProgressCommits: tr.partialProgressCommits }
+					: {}),
+				...(tr.partialProgressBranch !== undefined
+					? { partialProgressBranch: tr.partialProgressBranch }
+					: {}),
 			}));
 
 			const runtimeState: OrchBatchRuntimeState = {
@@ -935,7 +957,7 @@ describe("State Schema v3 Migration", () => {
 				batchId: persisted.batchId,
 				baseBranch: persisted.baseBranch,
 				orchBranch: persisted.orchBranch ?? "",
-				mode: persisted.mode as any ?? "repo",
+				mode: (persisted.mode as any) ?? "repo",
 				pauseSignal: { paused: false },
 				waveResults: [],
 				currentWaveIndex: persisted.currentWaveIndex,
@@ -1047,19 +1069,21 @@ describe("State Schema v3 Migration", () => {
 				resumeForced: true,
 				retryCountByScope: { "TP-001:w0:l1": 3 },
 				lastFailureClass: "tool-error",
-				repairHistory: [{
-					id: "r-001",
-					strategy: "stale-worktree-cleanup",
-					status: "succeeded",
-					startedAt: 1000,
-					endedAt: 2000,
-				}],
+				repairHistory: [
+					{
+						id: "r-001",
+						strategy: "stale-worktree-cleanup",
+						status: "succeeded",
+						startedAt: 1000,
+						endedAt: 2000,
+					},
+				],
 			};
 			v3.diagnostics = {
 				taskExits: {
-					"TP-001": { classification: "tool-error", cost: 2.50, durationSec: 180, retries: 3 },
+					"TP-001": { classification: "tool-error", cost: 2.5, durationSec: 180, retries: 3 },
 				},
-				batchCost: 2.50,
+				batchCost: 2.5,
 			};
 
 			const validated = validatePersistedState(v3);
@@ -1075,12 +1099,12 @@ describe("State Schema v3 Migration", () => {
 
 			// Diagnostics survives
 			expect(reParsed.diagnostics.taskExits["TP-001"].classification).toBe("tool-error");
-			expect(reParsed.diagnostics.batchCost).toBe(2.50);
+			expect(reParsed.diagnostics.batchCost).toBe(2.5);
 
 			// Re-validate
 			const reValidated = validatePersistedState(reParsed);
 			expect(reValidated.resilience.resumeForced).toBe(true);
-			expect(reValidated.diagnostics.batchCost).toBe(2.50);
+			expect(reValidated.diagnostics.batchCost).toBe(2.5);
 		});
 	});
 

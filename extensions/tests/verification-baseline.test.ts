@@ -33,33 +33,22 @@ import {
 	type VerificationBaseline,
 } from "../taskplane/verification.ts";
 
-import {
-	DEFAULT_ORCHESTRATOR_SECTION,
-} from "../taskplane/config-schema.ts";
+import { DEFAULT_ORCHESTRATOR_SECTION } from "../taskplane/config-schema.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function readMergeTs(): string {
-	return readFileSync(
-		join(__dirname, "..", "taskplane", "merge.ts"),
-		"utf-8",
-	);
+	return readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 }
 
 function readEngineTs(): string {
-	return readFileSync(
-		join(__dirname, "..", "taskplane", "engine.ts"),
-		"utf-8",
-	);
+	return readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 }
 
 function readResumeTs(): string {
-	return readFileSync(
-		join(__dirname, "..", "taskplane", "resume.ts"),
-		"utf-8",
-	);
+	return readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 }
 
 /** Build a test fingerprint */
@@ -110,7 +99,7 @@ describe("merge.ts verification gating patterns (source verification)", () => {
 	it("1.5: baseline capture failure → strict mode returns merge failure", () => {
 		const source = readMergeTs();
 		// Strict mode on capture exception should return failure
-		expect(source).toContain('baseline capture failed — strict mode: failing merge');
+		expect(source).toContain("baseline capture failed — strict mode: failing merge");
 		expect(source).toContain("Verification baseline capture failed (strict mode)");
 	});
 
@@ -228,9 +217,7 @@ describe("diffFingerprints with verification mode patterns", () => {
 	});
 
 	it("5.2: genuinely new failure is detected", () => {
-		const baseline = [
-			fp("test", "src/a.test.ts", "old test", "assertion_error", "old failure"),
-		];
+		const baseline = [fp("test", "src/a.test.ts", "old test", "assertion_error", "old failure")];
 		const postMerge = [
 			fp("test", "src/a.test.ts", "old test", "assertion_error", "old failure"),
 			fp("test", "src/b.test.ts", "new test", "assertion_error", "new failure"),
@@ -244,9 +231,7 @@ describe("diffFingerprints with verification mode patterns", () => {
 	});
 
 	it("5.3: fixed failures detected when baseline failure disappears", () => {
-		const baseline = [
-			fp("test", "src/a.test.ts", "was broken", "assertion_error", "old failure"),
-		];
+		const baseline = [fp("test", "src/a.test.ts", "was broken", "assertion_error", "old failure")];
 		const postMerge: TestFingerprint[] = [];
 
 		const diff = diffFingerprints(baseline, postMerge);
@@ -277,9 +262,7 @@ describe("diffFingerprints with verification mode patterns", () => {
 	});
 
 	it("5.6: duplicates in postMerge are deduplicated before comparison", () => {
-		const baseline = [
-			fp("test", "src/a.test.ts", "test", "assertion_error", "fail"),
-		];
+		const baseline = [fp("test", "src/a.test.ts", "test", "assertion_error", "fail")];
 		const postMerge = [
 			fp("test", "src/a.test.ts", "test", "assertion_error", "fail"),
 			fp("test", "src/a.test.ts", "test", "assertion_error", "fail"), // duplicate
@@ -291,12 +274,8 @@ describe("diffFingerprints with verification mode patterns", () => {
 	});
 
 	it("5.7: different commandIds make otherwise identical fingerprints distinct", () => {
-		const baseline = [
-			fp("test-unit", "src/a.test.ts", "test", "assertion_error", "fail"),
-		];
-		const postMerge = [
-			fp("test-e2e", "src/a.test.ts", "test", "assertion_error", "fail"),
-		];
+		const baseline = [fp("test-unit", "src/a.test.ts", "test", "assertion_error", "fail")];
+		const postMerge = [fp("test-e2e", "src/a.test.ts", "test", "assertion_error", "fail")];
 
 		const diff = diffFingerprints(baseline, postMerge);
 		expect(diff.newFailures).toHaveLength(1);
@@ -323,14 +302,18 @@ describe("parseTestOutput for flaky rerun scenarios", () => {
 
 	it("6.2: non-zero exit with failures produces fingerprints for diff", () => {
 		const vitestOutput = JSON.stringify({
-			testResults: [{
-				name: "src/math.test.ts",
-				assertionResults: [{
-					fullName: "math > should add",
-					status: "failed",
-					failureMessages: ["AssertionError: expected 2 to be 3"],
-				}],
-			}],
+			testResults: [
+				{
+					name: "src/math.test.ts",
+					assertionResults: [
+						{
+							fullName: "math > should add",
+							status: "failed",
+							failureMessages: ["AssertionError: expected 2 to be 3"],
+						},
+					],
+				},
+			],
 		});
 
 		const result: CommandResult = {

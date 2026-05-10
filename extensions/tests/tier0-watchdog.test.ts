@@ -22,10 +22,7 @@ import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 
-import {
-	emitTier0Event,
-	buildTier0EventBase,
-} from "../taskplane/persistence.ts";
+import { emitTier0Event, buildTier0EventBase } from "../taskplane/persistence.ts";
 
 import type { Tier0Event, Tier0EventType } from "../taskplane/persistence.ts";
 
@@ -61,8 +58,8 @@ function readEvents(stateRoot: string): Tier0Event[] {
 	const content = readFileSync(eventsPath, "utf-8");
 	return content
 		.split("\n")
-		.filter(line => line.trim().length > 0)
-		.map(line => JSON.parse(line) as Tier0Event);
+		.filter((line) => line.trim().length > 0)
+		.map((line) => JSON.parse(line) as Tier0Event);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -215,9 +212,7 @@ describe("2.x — Retry exhaustion pauses batch with escalation event", () => {
 		// Find the merge timeout handling section and verify escalation.
 		// TP-193: Use [\s\S] (or normalize) so the formatter-induced newlines
 		// between `emitTier0Escalation(` and `merge_timeout` don't break the match.
-		const mergeSection = engineSource.substring(
-			engineSource.indexOf("applyMergeRetryLoop"),
-		);
+		const mergeSection = engineSource.substring(engineSource.indexOf("applyMergeRetryLoop"));
 		const mergeEscalation = mergeSection.match(/emitTier0Escalation[\s\S]*?merge_timeout/g);
 		expect(mergeEscalation).not.toBeNull();
 	});
@@ -317,14 +312,19 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		const failedResult = buildFailedMergeResult(0, "Unable to create lock file");
 		const succeededResult = buildSucceededMergeResult(0);
 
-		const outcome = await applyMergeRetryLoop(failedResult, 0, {}, {
-			performMerge: () => succeededResult,
-			persist: () => {},
-			log: () => {},
-			notify: () => {},
-			updateMergeResult: () => {},
-			sleep: () => {},
-		});
+		const outcome = await applyMergeRetryLoop(
+			failedResult,
+			0,
+			{},
+			{
+				performMerge: () => succeededResult,
+				persist: () => {},
+				log: () => {},
+				notify: () => {},
+				updateMergeResult: () => {},
+				sleep: () => {},
+			},
+		);
 
 		expect(outcome.kind).toBe("retry_succeeded");
 		if (outcome.kind === "retry_succeeded") {
@@ -339,17 +339,14 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		const retryCountByScope: Record<string, number> = {};
 
 		// First call — will succeed on retry, consuming attempt 1
-		const firstOutcome = await applyMergeRetryLoop(
-			failedResult, 0, retryCountByScope,
-			{
-				performMerge: () => buildFailedMergeResult(0, "Unable to create lock file"),
-				persist: () => {},
-				log: () => {},
-				notify: () => {},
-				updateMergeResult: () => {},
-				sleep: () => {},
-			},
-		);
+		const firstOutcome = await applyMergeRetryLoop(failedResult, 0, retryCountByScope, {
+			performMerge: () => buildFailedMergeResult(0, "Unable to create lock file"),
+			persist: () => {},
+			log: () => {},
+			notify: () => {},
+			updateMergeResult: () => {},
+			sleep: () => {},
+		});
 
 		// After first attempt fails again and second attempt also fails,
 		// the loop should exhaust both attempts
@@ -381,14 +378,22 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		};
 
 		let performMergeCalled = false;
-		const outcome = await applyMergeRetryLoop(failedResult, 0, {}, {
-			performMerge: () => { performMergeCalled = true; return failedResult; },
-			persist: () => {},
-			log: () => {},
-			notify: () => {},
-			updateMergeResult: () => {},
-			sleep: () => {},
-		});
+		const outcome = await applyMergeRetryLoop(
+			failedResult,
+			0,
+			{},
+			{
+				performMerge: () => {
+					performMergeCalled = true;
+					return failedResult;
+				},
+				persist: () => {},
+				log: () => {},
+				notify: () => {},
+				updateMergeResult: () => {},
+				sleep: () => {},
+			},
+		);
 
 		expect(outcome.kind).toBe("no_retry");
 		expect(performMergeCalled).toBe(false); // No retry attempt made

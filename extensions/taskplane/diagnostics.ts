@@ -249,20 +249,20 @@ export const CONTEXT_OVERFLOW_THRESHOLD_PCT = 90;
  * @since TP-055
  */
 export const MODEL_ACCESS_ERROR_PATTERNS: readonly RegExp[] = [
-	/\b(?:401|403)\b/,                          // HTTP auth/forbidden status codes
-	/\b429\b/,                                   // HTTP rate limit
-	/model[_ ]not[_ ]found/i,                    // Model not found
-	/model[_ ](?:is[_ ])?unavailable/i,          // Model unavailable
-	/model[_ ](?:has[_ ]been[_ ])?deprecated/i,  // Model deprecated
+	/\b(?:401|403)\b/, // HTTP auth/forbidden status codes
+	/\b429\b/, // HTTP rate limit
+	/model[_ ]not[_ ]found/i, // Model not found
+	/model[_ ](?:is[_ ])?unavailable/i, // Model unavailable
+	/model[_ ](?:has[_ ]been[_ ])?deprecated/i, // Model deprecated
 	/api[_ ]key[_ ](?:expired|invalid|revoked)/i, // API key issues
-	/invalid[_ ]api[_ ]key/i,                     // Invalid API key (alternate phrasing)
+	/invalid[_ ]api[_ ]key/i, // Invalid API key (alternate phrasing)
 	/authentication[_ ](?:failed|error|required)/i, // Auth failures
-	/authorization[_ ](?:failed|error|denied)/i,    // Authz failures
-	/access[_ ]denied/i,                          // Generic access denied
-	/permission[_ ]denied/i,                      // Permission denied
-	/quota[_ ]exceeded/i,                         // Quota exceeded
-	/rate[_ ]limit/i,                             // Rate limit (phrase)
-	/insufficient[_ ]quota/i,                     // Insufficient quota
+	/authorization[_ ](?:failed|error|denied)/i, // Authz failures
+	/access[_ ]denied/i, // Generic access denied
+	/permission[_ ]denied/i, // Permission denied
+	/quota[_ ]exceeded/i, // Quota exceeded
+	/rate[_ ]limit/i, // Rate limit (phrase)
+	/insufficient[_ ]quota/i, // Insufficient quota
 ];
 
 /**
@@ -277,7 +277,7 @@ export const MODEL_ACCESS_ERROR_PATTERNS: readonly RegExp[] = [
  */
 export function isModelAccessError(errorMessage: string): boolean {
 	if (!errorMessage) return false;
-	return MODEL_ACCESS_ERROR_PATTERNS.some(pattern => pattern.test(errorMessage));
+	return MODEL_ACCESS_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage));
 }
 
 /**

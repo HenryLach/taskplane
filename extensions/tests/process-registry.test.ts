@@ -55,7 +55,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+	try {
+		rmSync(tmpDir, { recursive: true, force: true });
+	} catch {
+		/* ignore */
+	}
 });
 
 // ── 1. Manifest CRUD ────────────────────────────────────────────────
@@ -129,14 +133,36 @@ describe("2.x: Registry snapshots", () => {
 	const batchId = "20260330T120000";
 
 	it("2.1: buildRegistrySnapshot discovers all manifests", () => {
-		writeManifest(tmpDir, createManifest({
-			batchId, agentId: "agent-1", role: "worker", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: 1234, parentPid: 1000, cwd: tmpDir, packet: null,
-		}));
-		writeManifest(tmpDir, createManifest({
-			batchId, agentId: "agent-2", role: "reviewer", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: 1235, parentPid: 1000, cwd: tmpDir, packet: null,
-		}));
+		writeManifest(
+			tmpDir,
+			createManifest({
+				batchId,
+				agentId: "agent-1",
+				role: "worker",
+				laneNumber: 1,
+				taskId: "TP-1",
+				repoId: "default",
+				pid: 1234,
+				parentPid: 1000,
+				cwd: tmpDir,
+				packet: null,
+			}),
+		);
+		writeManifest(
+			tmpDir,
+			createManifest({
+				batchId,
+				agentId: "agent-2",
+				role: "reviewer",
+				laneNumber: 1,
+				taskId: "TP-1",
+				repoId: "default",
+				pid: 1235,
+				parentPid: 1000,
+				cwd: tmpDir,
+				packet: null,
+			}),
+		);
 		const reg = buildRegistrySnapshot(tmpDir, batchId);
 		expect(Object.keys(reg.agents).length).toBe(2);
 		expect(reg.agents["agent-1"]).not.toBe(undefined);
@@ -198,15 +224,31 @@ describe("4.x: Agent queries", () => {
 
 	function seedAgents() {
 		const m1 = createManifest({
-			batchId, agentId: "worker-1", role: "worker", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: process.pid, parentPid: 1000, cwd: tmpDir, packet: null,
+			batchId,
+			agentId: "worker-1",
+			role: "worker",
+			laneNumber: 1,
+			taskId: "TP-1",
+			repoId: "default",
+			pid: process.pid,
+			parentPid: 1000,
+			cwd: tmpDir,
+			packet: null,
 		});
 		m1.status = "running";
 		writeManifest(tmpDir, m1);
 
 		const m2 = createManifest({
-			batchId, agentId: "reviewer-1", role: "reviewer", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: process.pid, parentPid: 1000, cwd: tmpDir, packet: null,
+			batchId,
+			agentId: "reviewer-1",
+			role: "reviewer",
+			laneNumber: 1,
+			taskId: "TP-1",
+			repoId: "default",
+			pid: process.pid,
+			parentPid: 1000,
+			cwd: tmpDir,
+			packet: null,
 		});
 		m2.status = "exited";
 		writeManifest(tmpDir, m2);
@@ -236,8 +278,16 @@ describe("5.x: Orphan detection", () => {
 
 	it("5.1: detects dead agents as orphans", () => {
 		const m = createManifest({
-			batchId, agentId: "dead-worker", role: "worker", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: 999999999, parentPid: 1000, cwd: tmpDir, packet: null,
+			batchId,
+			agentId: "dead-worker",
+			role: "worker",
+			laneNumber: 1,
+			taskId: "TP-1",
+			repoId: "default",
+			pid: 999999999,
+			parentPid: 1000,
+			cwd: tmpDir,
+			packet: null,
 		});
 		m.status = "running";
 		writeManifest(tmpDir, m);
@@ -248,8 +298,16 @@ describe("5.x: Orphan detection", () => {
 
 	it("5.2: does not flag live agents as orphans", () => {
 		const m = createManifest({
-			batchId, agentId: "live-worker", role: "worker", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: process.pid, parentPid: 1000, cwd: tmpDir, packet: null,
+			batchId,
+			agentId: "live-worker",
+			role: "worker",
+			laneNumber: 1,
+			taskId: "TP-1",
+			repoId: "default",
+			pid: process.pid,
+			parentPid: 1000,
+			cwd: tmpDir,
+			packet: null,
 		});
 		m.status = "running";
 		writeManifest(tmpDir, m);
@@ -259,8 +317,16 @@ describe("5.x: Orphan detection", () => {
 
 	it("5.3: does not flag terminal agents as orphans", () => {
 		const m = createManifest({
-			batchId, agentId: "done-worker", role: "worker", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: 999999999, parentPid: 1000, cwd: tmpDir, packet: null,
+			batchId,
+			agentId: "done-worker",
+			role: "worker",
+			laneNumber: 1,
+			taskId: "TP-1",
+			repoId: "default",
+			pid: 999999999,
+			parentPid: 1000,
+			cwd: tmpDir,
+			packet: null,
 		});
 		m.status = "exited";
 		writeManifest(tmpDir, m);
@@ -270,8 +336,16 @@ describe("5.x: Orphan detection", () => {
 
 	it("5.4: markOrphansCrashed updates manifests", () => {
 		const m = createManifest({
-			batchId, agentId: "orphan-1", role: "worker", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: 999999999, parentPid: 1000, cwd: tmpDir, packet: null,
+			batchId,
+			agentId: "orphan-1",
+			role: "worker",
+			laneNumber: 1,
+			taskId: "TP-1",
+			repoId: "default",
+			pid: 999999999,
+			parentPid: 1000,
+			cwd: tmpDir,
+			packet: null,
 		});
 		m.status = "running";
 		writeManifest(tmpDir, m);
@@ -287,10 +361,21 @@ describe("6.x: Cleanup", () => {
 	const batchId = "20260330T120000";
 
 	it("6.1: cleanupBatchRuntime removes runtime directory", () => {
-		writeManifest(tmpDir, createManifest({
-			batchId, agentId: "cleanup-agent", role: "worker", laneNumber: 1,
-			taskId: "TP-1", repoId: "default", pid: 1234, parentPid: 1000, cwd: tmpDir, packet: null,
-		}));
+		writeManifest(
+			tmpDir,
+			createManifest({
+				batchId,
+				agentId: "cleanup-agent",
+				role: "worker",
+				laneNumber: 1,
+				taskId: "TP-1",
+				repoId: "default",
+				pid: 1234,
+				parentPid: 1000,
+				cwd: tmpDir,
+				packet: null,
+			}),
+		);
 		const result = cleanupBatchRuntime(tmpDir, batchId);
 		expect(result.removed).toBe(true);
 		const path = runtimeManifestPath(tmpDir, batchId, "cleanup-agent");
@@ -417,8 +502,10 @@ describe("9.x: Agent-host option and event attribution contract", () => {
 	it("9.8: get_session_stats is requested immediately then on bounded cadence", () => {
 		expect(hostSrc).toContain("const STATS_REFRESH_EVERY_ASSISTANT_MESSAGES = 5");
 		expect(hostSrc).toContain("assistantMessageEnds += 1");
-		expect(hostSrc).toContainNormalized("assistantMessageEnds === 1 || assistantMessageEnds % STATS_REFRESH_EVERY_ASSISTANT_MESSAGES === 0");
-		expect(hostSrc).toContain("{ type: \"get_session_stats\" }");
+		expect(hostSrc).toContainNormalized(
+			"assistantMessageEnds === 1 || assistantMessageEnds % STATS_REFRESH_EVERY_ASSISTANT_MESSAGES === 0",
+		);
+		expect(hostSrc).toContain('{ type: "get_session_stats" }');
 	});
 
 	it("9.9: --model and --thinking flags are omitted for empty inherit values", () => {

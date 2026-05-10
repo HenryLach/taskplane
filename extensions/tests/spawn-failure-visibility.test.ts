@@ -79,7 +79,9 @@ mock.module("../taskplane/lane-runner.ts", {
 const { executeLaneV2 } = await import("../taskplane/execution.ts");
 const { EXIT_CLASSIFICATIONS } = await import("../taskplane/diagnostics.ts");
 const { TIER0_RETRYABLE_CLASSIFICATIONS } = await import("../taskplane/types.ts");
-const { isAllLanesSpawnFailedWave, buildSpawnFailureAlertExtras } = await import("../taskplane/engine.ts");
+const { isAllLanesSpawnFailedWave, buildSpawnFailureAlertExtras } = await import(
+	"../taskplane/engine.ts"
+);
 
 type MockLaneTaskOutcome = {
 	taskId: string;
@@ -116,11 +118,7 @@ function makeTempRoot(prefix: string): string {
 }
 
 /** Build a minimal AllocatedLane backed by real temp directories. */
-function buildFakeAllocatedLane(opts: {
-	repoRoot: string;
-	laneNumber: number;
-	taskId: string;
-}) {
+function buildFakeAllocatedLane(opts: { repoRoot: string; laneNumber: number; taskId: string }) {
 	const taskFolder = join(opts.repoRoot, "tasks", opts.taskId);
 	mkdirSync(taskFolder, { recursive: true });
 	writeFileSync(
@@ -224,7 +222,11 @@ describe("TP-190 #561: executeLaneV2 catch behavior on spawn failure", () => {
 	});
 
 	afterEach(() => {
-		try { rmSync(repoRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+		try {
+			rmSync(repoRoot, { recursive: true, force: true });
+		} catch {
+			/* best effort */
+		}
 	});
 
 	it("1.1: produces a failed LaneTaskOutcome tagged with classification='spawn_failure'", async () => {
@@ -259,15 +261,10 @@ describe("TP-190 #561: executeLaneV2 catch behavior on spawn failure", () => {
 		const config = buildFakeOrchestratorConfig();
 		const pauseSignal = { paused: false };
 
-		await executeLaneV2(
-			lane as any,
-			config as any,
-			repoRoot,
-			pauseSignal,
-			undefined,
-			false,
-			{ ORCH_BATCH_ID: batchId, TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous" },
-		);
+		await executeLaneV2(lane as any, config as any, repoRoot, pauseSignal, undefined, false, {
+			ORCH_BATCH_ID: batchId,
+			TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous",
+		});
 
 		const snapshotPath = join(repoRoot, ".pi", "runtime", batchId, "lanes", "lane-1.json");
 		expect(existsSync(snapshotPath)).toBe(true);
@@ -286,15 +283,10 @@ describe("TP-190 #561: executeLaneV2 catch behavior on spawn failure", () => {
 		const config = buildFakeOrchestratorConfig();
 		const pauseSignal = { paused: false };
 
-		await executeLaneV2(
-			lane as any,
-			config as any,
-			repoRoot,
-			pauseSignal,
-			undefined,
-			false,
-			{ ORCH_BATCH_ID: batchId, TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous" },
-		);
+		await executeLaneV2(lane as any, config as any, repoRoot, pauseSignal, undefined, false, {
+			ORCH_BATCH_ID: batchId,
+			TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous",
+		});
 
 		// executeLaneV2 must call executeTaskV2 exactly once for this task —
 		// no internal retry loop on spawn errors. Engine-level retry is also
@@ -385,7 +377,7 @@ describe("TP-190 #561: spawn_failure registered as a non-retryable ExitClassific
 	});
 
 	it("2.4: diagnostics.ts ExitClassification doc table mentions spawn_failure with TP-190 rationale", () => {
-		expect(diagnosticsSrc).toContain('| `spawn_failure`');
+		expect(diagnosticsSrc).toContain("| `spawn_failure`");
 		expect(diagnosticsSrc).toContain("TP-190");
 	});
 });
@@ -507,10 +499,7 @@ describe("TP-190 #561: engine.ts isAllLanesSpawnFailedWave (behavioral)", () => 
 		const waveResult = {
 			failedTaskIds: ["TP-1", "TP-2"],
 			succeededTaskIds: [] as string[],
-			laneResults: [
-				{ tasks: [{ status: "failed" }] },
-				{ tasks: [{ status: "failed" }] },
-			],
+			laneResults: [{ tasks: [{ status: "failed" }] }, { tasks: [{ status: "failed" }] }],
 		};
 		const outcomes = [
 			makeOutcome("TP-1", "failed", "spawn_failure"),
@@ -602,7 +591,7 @@ describe("TP-190 #561: engine.ts wire-up for spawn_failure", () => {
 		expect(phaseBlock).toContainNormalized("isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes)");
 		expect(phaseBlock).toContain('batchState.phase = "failed"');
 		// Persist + terminal event + break out of wave loop.
-		expect(phaseBlock).toContainNormalized("persistRuntimeState(\"wave-spawn-failure\"");
+		expect(phaseBlock).toContainNormalized('persistRuntimeState("wave-spawn-failure"');
 		expect(phaseBlock).toContain("emitTerminalEvent(");
 		expect(phaseBlock).toContain("break;");
 	});
@@ -708,7 +697,11 @@ describe("TP-190 #561: integrated post-wave behavior on all-spawn-failed wave", 
 	});
 
 	afterEach(() => {
-		try { rmSync(repoRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+		try {
+			rmSync(repoRoot, { recursive: true, force: true });
+		} catch {
+			/* best effort */
+		}
 	});
 
 	it("6.1: three-lane wave — all spawn-fail → batchState.phase=failed, failedTasks counter, IPC alerts with exitCategory='spawn_failure'", async () => {
@@ -741,7 +734,9 @@ describe("TP-190 #561: integrated post-wave behavior on all-spawn-failed wave", 
 		const succeededTaskIds: string[] = [];
 		const waveResult = { failedTaskIds, succeededTaskIds, blockedTaskIds: [] as string[] };
 
-		expect(allTaskOutcomes.every((t) => t.exitDiagnostic?.classification === "spawn_failure")).toBe(true);
+		expect(allTaskOutcomes.every((t) => t.exitDiagnostic?.classification === "spawn_failure")).toBe(
+			true,
+		);
 
 		// (c) Reproduce the engine's post-wave bookkeeping against a real
 		// OrchBatchRuntimeState shape. This mirrors engine.ts:3105-3175.
@@ -790,10 +785,7 @@ describe("TP-190 #561: integrated post-wave behavior on all-spawn-failed wave", 
 		}
 
 		// engine.ts post-TP-190 — phase-transition decision via the helper.
-		const allFailedAreSpawnFailures = isAllLanesSpawnFailedWave(
-			waveResult,
-			allTaskOutcomes as any,
-		);
+		const allFailedAreSpawnFailures = isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes as any);
 		if (allFailedAreSpawnFailures) {
 			batchState.phase = "failed";
 		}

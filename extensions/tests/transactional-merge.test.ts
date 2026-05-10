@@ -222,7 +222,10 @@ describe("2.x — Rollback: verification_new_failure triggers rollback", () => {
 		// Successful rollback should NOT set blockAdvancement
 		// Only failed rollback should set it
 		const rolledBackSection = mergeSource.indexOf('txnStatus = "rolled_back"');
-		const successRollbackSection = mergeSource.substring(rolledBackSection - 200, rolledBackSection + 200);
+		const successRollbackSection = mergeSource.substring(
+			rolledBackSection - 200,
+			rolledBackSection + 200,
+		);
 		// blockAdvancement should NOT appear in the successful rollback path
 		expect(successRollbackSection).not.toContain("blockAdvancement = true");
 	});
@@ -371,7 +374,8 @@ describe("4.x — Transaction record persistence", () => {
 
 		// Count calls to persistTransactionRecord
 		const successCallCount = (mergeSource.match(/persistTransactionRecord\(txnRecord/g) || []).length;
-		const errorCallCount = (mergeSource.match(/persistTransactionRecord\(errorTxnRecord/g) || []).length;
+		const errorCallCount = (mergeSource.match(/persistTransactionRecord\(errorTxnRecord/g) || [])
+			.length;
 
 		// Should be called at least once for success and once for error
 		expect(successCallCount).toBeGreaterThanOrEqual(1);

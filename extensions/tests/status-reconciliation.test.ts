@@ -26,7 +26,6 @@ import {
 
 // ── Fixture Helpers ──────────────────────────────────────────────────
 
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let testRoot: string;
 let counter = 0;
@@ -65,7 +64,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	try { rmSync(testRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+	try {
+		rmSync(testRoot, { recursive: true, force: true });
+	} catch {
+		/* ignore */
+	}
 });
 
 // ══════════════════════════════════════════════════════════════════════
@@ -75,11 +78,10 @@ afterEach(() => {
 describe("1.x: Reconciliation happy path", () => {
 	it("1.1: checked→unchecked for not_done", () => {
 		const dir = makeTestDir("uncheck");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Implement feature A",
-			"- [x] Write tests",
-		].join("\n"));
+		const statusPath = writeStatus(
+			dir,
+			["# Status", "- [x] Implement feature A", "- [x] Write tests"].join("\n"),
+		);
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Implement feature A", "not_done", "No code changes found"),
@@ -97,11 +99,10 @@ describe("1.x: Reconciliation happy path", () => {
 
 	it("1.2: unchecked→checked for done", () => {
 		const dir = makeTestDir("check");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [ ] Implement feature B",
-			"- [ ] Run tests",
-		].join("\n"));
+		const statusPath = writeStatus(
+			dir,
+			["# Status", "- [ ] Implement feature B", "- [ ] Run tests"].join("\n"),
+		);
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Implement feature B", "done", "Implementation verified in source"),
@@ -118,10 +119,7 @@ describe("1.x: Reconciliation happy path", () => {
 
 	it("1.3: partial adds annotation to checked checkbox", () => {
 		const dir = makeTestDir("partial-checked");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Implement feature C",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [x] Implement feature C"].join("\n"));
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Implement feature C", "partial", "Only half the requirements met"),
@@ -136,10 +134,7 @@ describe("1.x: Reconciliation happy path", () => {
 
 	it("1.4: partial adds annotation to already-unchecked checkbox", () => {
 		const dir = makeTestDir("partial-unchecked");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [ ] Implement feature D",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [ ] Implement feature D"].join("\n"));
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Implement feature D", "partial", "Partially done"),
@@ -153,10 +148,7 @@ describe("1.x: Reconciliation happy path", () => {
 
 	it("1.5: already correct checked→done is idempotent", () => {
 		const dir = makeTestDir("idempotent-done");
-		const original = [
-			"# Status",
-			"- [x] Implement feature E",
-		].join("\n");
+		const original = ["# Status", "- [x] Implement feature E"].join("\n");
 		const statusPath = writeStatus(dir, original);
 
 		const result = applyStatusReconciliation(statusPath, [
@@ -173,10 +165,7 @@ describe("1.x: Reconciliation happy path", () => {
 
 	it("1.6: already correct unchecked→not_done is idempotent", () => {
 		const dir = makeTestDir("idempotent-notdone");
-		const original = [
-			"# Status",
-			"- [ ] Implement feature F",
-		].join("\n");
+		const original = ["# Status", "- [ ] Implement feature F"].join("\n");
 		const statusPath = writeStatus(dir, original);
 
 		const result = applyStatusReconciliation(statusPath, [
@@ -192,12 +181,12 @@ describe("1.x: Reconciliation happy path", () => {
 
 	it("1.7: multiple reconciliations in one pass", () => {
 		const dir = makeTestDir("multi");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Step 1 complete",
-			"- [ ] Step 2 pending",
-			"- [x] Step 3 complete",
-		].join("\n"));
+		const statusPath = writeStatus(
+			dir,
+			["# Status", "- [x] Step 1 complete", "- [ ] Step 2 pending", "- [x] Step 3 complete"].join(
+				"\n",
+			),
+		);
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Step 1 complete", "not_done", "Reverted"),
@@ -221,10 +210,7 @@ describe("1.x: Reconciliation happy path", () => {
 describe("2.x: Reconciliation edge cases", () => {
 	it("2.1: duplicate match — first match wins, second is unmatched", () => {
 		const dir = makeTestDir("duplicate");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Implement feature",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [x] Implement feature"].join("\n"));
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Implement feature", "not_done", "First entry"),
@@ -242,10 +228,7 @@ describe("2.x: Reconciliation edge cases", () => {
 
 	it("2.2: unmatched entry when no checkbox text matches", () => {
 		const dir = makeTestDir("unmatched");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Build the parser",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [x] Build the parser"].join("\n"));
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Deploy to production", "not_done", "Not deployed"),
@@ -302,10 +285,7 @@ describe("2.x: Reconciliation edge cases", () => {
 
 	it("2.6: partial annotation on already-unchecked item — adds annotation", () => {
 		const dir = makeTestDir("partial-already-unchecked");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [ ] Implement feature G",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [ ] Implement feature G"].join("\n"));
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Implement feature G", "partial", "Work in progress"),
@@ -335,9 +315,7 @@ describe("2.x: Reconciliation edge cases", () => {
 		const dir = makeTestDir("empty-checkbox");
 		const statusPath = writeStatus(dir, "# Status\n- [x] Real item");
 
-		const result = applyStatusReconciliation(statusPath, [
-			makeRecon("", "not_done", "Empty text"),
-		]);
+		const result = applyStatusReconciliation(statusPath, [makeRecon("", "not_done", "Empty text")]);
 
 		expect(result.unmatched).toBe(1);
 		expect(result.actions[0].reason).toContain("Empty checkbox text");
@@ -345,10 +323,7 @@ describe("2.x: Reconciliation edge cases", () => {
 
 	it("2.9: fuzzy matching handles markdown formatting differences", () => {
 		const dir = makeTestDir("fuzzy");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] **Implement** `feature` I",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [x] **Implement** `feature` I"].join("\n"));
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("Implement feature I", "not_done", "Not actually done"),
@@ -364,10 +339,7 @@ describe("2.x: Reconciliation edge cases", () => {
 
 	it("2.10: case-insensitive matching", () => {
 		const dir = makeTestDir("case");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Implement Feature J",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [x] Implement Feature J"].join("\n"));
 
 		const result = applyStatusReconciliation(statusPath, [
 			makeRecon("implement feature j", "not_done", "Case mismatch"),
@@ -378,11 +350,7 @@ describe("2.x: Reconciliation edge cases", () => {
 
 	it("2.11: idempotent no-rewrite when all entries already correct", () => {
 		const dir = makeTestDir("all-correct");
-		const original = [
-			"# Status",
-			"- [x] Step 1 done",
-			"- [ ] Step 2 pending",
-		].join("\n");
+		const original = ["# Status", "- [x] Step 1 done", "- [ ] Step 2 pending"].join("\n");
 		const statusPath = writeStatus(dir, original);
 
 		const result = applyStatusReconciliation(statusPath, [
@@ -439,10 +407,7 @@ describe("3.x: Reconciliation guard — gate enabled check", () => {
 
 	it("3.3: reconciliation only applies with non-empty entries (positive guard)", () => {
 		const dir = makeTestDir("guard-positive");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Feature implemented",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [x] Feature implemented"].join("\n"));
 
 		// Simulates the case where quality gate IS enabled and verdict has entries
 		const result = applyStatusReconciliation(statusPath, [
@@ -455,10 +420,7 @@ describe("3.x: Reconciliation guard — gate enabled check", () => {
 
 	it("3.4: reconciliation is idempotent across multiple calls (same input)", () => {
 		const dir = makeTestDir("guard-idempotent");
-		const statusPath = writeStatus(dir, [
-			"# Status",
-			"- [x] Build feature",
-		].join("\n"));
+		const statusPath = writeStatus(dir, ["# Status", "- [x] Build feature"].join("\n"));
 
 		const entries = [makeRecon("Build feature", "not_done", "Not built")];
 
@@ -489,9 +451,7 @@ describe("4.x: Artifact staging allowlist", () => {
 		const EXPECTED_FILE_ARTIFACTS = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"];
 
 		// Verify by reading the merge.ts source to confirm constants
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"), "utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 
 		// Extract the ALLOWED_ARTIFACT_NAMES array from source
 		const filesMatch = mergeSource.match(/ALLOWED_ARTIFACT_NAMES\s*=\s*\[([^\]]+)\]/);
@@ -525,7 +485,7 @@ describe("4.x: Artifact staging allowlist", () => {
 			"taskplane-tasks/TP-035-test/REVIEW_VERDICT.json",
 		];
 		const ALLOWED_NAMES = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"];
-		const actual = ALLOWED_NAMES.map(name => `${relFolder}/${name}`);
+		const actual = ALLOWED_NAMES.map((name) => `${relFolder}/${name}`);
 		expect(actual).toEqual(expected);
 	});
 
@@ -553,8 +513,8 @@ describe("4.x: Artifact staging allowlist", () => {
 			}
 		}
 
-		expect(staged).toBe(2);   // .DONE and STATUS.md exist
-		expect(skipped).toBe(1);  // REVIEW_VERDICT.json doesn't exist
+		expect(staged).toBe(2); // .DONE and STATUS.md exist
+		expect(skipped).toBe(1); // REVIEW_VERDICT.json doesn't exist
 	});
 });
 

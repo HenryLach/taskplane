@@ -22,10 +22,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 
-import {
-	resolveCanonicalTaskPaths,
-	resolveTaskDonePath,
-} from "../task-orchestrator.ts";
+import { resolveCanonicalTaskPaths, resolveTaskDonePath } from "../task-orchestrator.ts";
 
 const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
@@ -133,24 +130,42 @@ function runMonorepoTests(): void {
 	{
 		console.log("  ▸ 1.1 no files exist — returns worktree-translated primary paths");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(expectedFolder),
-			"1.1 taskFolderResolved is in worktree");
-		assertEqual(norm(result.donePath), norm(join(expectedFolder, ".DONE")),
-			"1.1 donePath is in worktree");
-		assertEqual(norm(result.statusPath), norm(join(expectedFolder, "STATUS.md")),
-			"1.1 statusPath is in worktree");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(expectedFolder),
+			"1.1 taskFolderResolved is in worktree",
+		);
+		assertEqual(
+			norm(result.donePath),
+			norm(join(expectedFolder, ".DONE")),
+			"1.1 donePath is in worktree",
+		);
+		assertEqual(
+			norm(result.statusPath),
+			norm(join(expectedFolder, "STATUS.md")),
+			"1.1 statusPath is in worktree",
+		);
 	}
 
 	{
 		console.log("  ▸ 1.2 STATUS.md exists in worktree — returns primary paths");
 		writeFileSync(join(expectedFolder, "STATUS.md"), "# Status\n");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(expectedFolder),
-			"1.2 taskFolderResolved is in worktree");
-		assertEqual(norm(result.donePath), norm(join(expectedFolder, ".DONE")),
-			"1.2 donePath points to worktree .DONE");
-		assertEqual(norm(result.statusPath), norm(join(expectedFolder, "STATUS.md")),
-			"1.2 statusPath points to worktree STATUS.md");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(expectedFolder),
+			"1.2 taskFolderResolved is in worktree",
+		);
+		assertEqual(
+			norm(result.donePath),
+			norm(join(expectedFolder, ".DONE")),
+			"1.2 donePath points to worktree .DONE",
+		);
+		assertEqual(
+			norm(result.statusPath),
+			norm(join(expectedFolder, "STATUS.md")),
+			"1.2 statusPath points to worktree STATUS.md",
+		);
 		rmSync(join(expectedFolder, "STATUS.md"));
 	}
 
@@ -158,10 +173,12 @@ function runMonorepoTests(): void {
 		console.log("  ▸ 1.3 .DONE exists in worktree — returns primary paths");
 		writeFileSync(join(expectedFolder, ".DONE"), "done\n");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(expectedFolder),
-			"1.3 taskFolderResolved is in worktree");
-		assert(norm(result.donePath).endsWith(".DONE"),
-			"1.3 donePath ends with .DONE");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(expectedFolder),
+			"1.3 taskFolderResolved is in worktree",
+		);
+		assert(norm(result.donePath).endsWith(".DONE"), "1.3 donePath ends with .DONE");
 		rmSync(join(expectedFolder, ".DONE"));
 	}
 
@@ -173,8 +190,11 @@ function runMonorepoTests(): void {
 		mkdirSync(deepWorktreeFolder, { recursive: true });
 
 		const result = resolveCanonicalTaskPaths(deepTaskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(deepWorktreeFolder),
-			"1.4 deeply nested task folder resolves correctly in worktree");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(deepWorktreeFolder),
+			"1.4 deeply nested task folder resolves correctly in worktree",
+		);
 	}
 }
 
@@ -204,34 +224,50 @@ function runExternalTests(): void {
 	{
 		console.log("  ▸ 2.1 no files exist — returns absolute task folder path (not worktree)");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(taskFolder),
-			"2.1 taskFolderResolved is absolute (external)");
-		assertEqual(norm(result.donePath), norm(join(taskFolder, ".DONE")),
-			"2.1 donePath is absolute (external)");
-		assertEqual(norm(result.statusPath), norm(join(taskFolder, "STATUS.md")),
-			"2.1 statusPath is absolute (external)");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(taskFolder),
+			"2.1 taskFolderResolved is absolute (external)",
+		);
+		assertEqual(
+			norm(result.donePath),
+			norm(join(taskFolder, ".DONE")),
+			"2.1 donePath is absolute (external)",
+		);
+		assertEqual(
+			norm(result.statusPath),
+			norm(join(taskFolder, "STATUS.md")),
+			"2.1 statusPath is absolute (external)",
+		);
 	}
 
 	{
 		console.log("  ▸ 2.2 taskFolderResolved must NOT be under worktree");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assert(!norm(result.taskFolderResolved).startsWith(norm(worktreePath) + "/"),
-			"2.2 external task folder is NOT translated to worktree path");
+		assert(
+			!norm(result.taskFolderResolved).startsWith(norm(worktreePath) + "/"),
+			"2.2 external task folder is NOT translated to worktree path",
+		);
 	}
 
 	{
 		console.log("  ▸ 2.3 taskFolderResolved must NOT be under repoRoot");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assert(!norm(result.taskFolderResolved).startsWith(norm(repoRoot) + "/"),
-			"2.3 external task folder is NOT under repoRoot");
+		assert(
+			!norm(result.taskFolderResolved).startsWith(norm(repoRoot) + "/"),
+			"2.3 external task folder is NOT under repoRoot",
+		);
 	}
 
 	{
 		console.log("  ▸ 2.4 STATUS.md exists in external task folder — returns primary paths");
 		writeFileSync(join(taskFolder, "STATUS.md"), "# Status\n");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(taskFolder),
-			"2.4 taskFolderResolved is absolute (external, with STATUS.md)");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(taskFolder),
+			"2.4 taskFolderResolved is absolute (external, with STATUS.md)",
+		);
 		rmSync(join(taskFolder, "STATUS.md"));
 	}
 
@@ -239,10 +275,16 @@ function runExternalTests(): void {
 		console.log("  ▸ 2.5 .DONE exists in external task folder — returns primary paths");
 		writeFileSync(join(taskFolder, ".DONE"), "done\n");
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(taskFolder),
-			"2.5 taskFolderResolved is absolute (external, with .DONE)");
-		assertEqual(norm(result.donePath), norm(join(taskFolder, ".DONE")),
-			"2.5 donePath points to external .DONE");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(taskFolder),
+			"2.5 taskFolderResolved is absolute (external, with .DONE)",
+		);
+		assertEqual(
+			norm(result.donePath),
+			norm(join(taskFolder, ".DONE")),
+			"2.5 donePath points to external .DONE",
+		);
 		rmSync(join(taskFolder, ".DONE"));
 	}
 
@@ -252,8 +294,11 @@ function runExternalTests(): void {
 		mkdirSync(altWorktree, { recursive: true });
 		const result1 = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
 		const result2 = resolveCanonicalTaskPaths(taskFolder, altWorktree, repoRoot);
-		assertEqual(norm(result1.taskFolderResolved), norm(result2.taskFolderResolved),
-			"2.6 external resolution is worktree-independent");
+		assertEqual(
+			norm(result1.taskFolderResolved),
+			norm(result2.taskFolderResolved),
+			"2.6 external resolution is worktree-independent",
+		);
 	}
 }
 
@@ -281,12 +326,21 @@ function runArchiveFallbackTests(): void {
 		writeFileSync(join(archiveInWorktree, ".DONE"), "done\n");
 
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(archiveInWorktree),
-			"3.1 monorepo archive: taskFolderResolved points to archive");
-		assertEqual(norm(result.donePath), norm(join(archiveInWorktree, ".DONE")),
-			"3.1 monorepo archive: donePath points to archive .DONE");
-		assertEqual(norm(result.statusPath), norm(join(archiveInWorktree, "STATUS.md")),
-			"3.1 monorepo archive: statusPath points to archive STATUS.md");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(archiveInWorktree),
+			"3.1 monorepo archive: taskFolderResolved points to archive",
+		);
+		assertEqual(
+			norm(result.donePath),
+			norm(join(archiveInWorktree, ".DONE")),
+			"3.1 monorepo archive: donePath points to archive .DONE",
+		);
+		assertEqual(
+			norm(result.statusPath),
+			norm(join(archiveInWorktree, "STATUS.md")),
+			"3.1 monorepo archive: statusPath points to archive STATUS.md",
+		);
 	}
 
 	// 3.2 External archive fallback
@@ -306,10 +360,16 @@ function runArchiveFallbackTests(): void {
 		writeFileSync(join(archiveExternal, "STATUS.md"), "# Archived\n");
 
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(archiveExternal),
-			"3.2 external archive: taskFolderResolved points to archive");
-		assertEqual(norm(result.statusPath), norm(join(archiveExternal, "STATUS.md")),
-			"3.2 external archive: statusPath points to archive STATUS.md");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(archiveExternal),
+			"3.2 external archive: taskFolderResolved points to archive",
+		);
+		assertEqual(
+			norm(result.statusPath),
+			norm(join(archiveExternal, "STATUS.md")),
+			"3.2 external archive: statusPath points to archive STATUS.md",
+		);
 	}
 
 	// 3.3 No archive exists — returns primary paths
@@ -324,10 +384,15 @@ function runArchiveFallbackTests(): void {
 		mkdirSync(taskFolder, { recursive: true });
 
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assert(!norm(result.taskFolderResolved).includes("archive"),
-			"3.3 taskFolderResolved does not include 'archive' when no archive exists");
-		assertEqual(norm(result.taskFolderResolved), norm(taskFolder),
-			"3.3 taskFolderResolved is the original external path");
+		assert(
+			!norm(result.taskFolderResolved).includes("archive"),
+			"3.3 taskFolderResolved does not include 'archive' when no archive exists",
+		);
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(taskFolder),
+			"3.3 taskFolderResolved is the original external path",
+		);
 	}
 
 	// 3.4 Primary exists AND archive exists — primary takes precedence
@@ -349,8 +414,11 @@ function runArchiveFallbackTests(): void {
 		writeFileSync(join(archiveFolder, ".DONE"), "done\n");
 
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(taskFolder),
-			"3.4 primary takes precedence over archive");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(taskFolder),
+			"3.4 primary takes precedence over archive",
+		);
 	}
 }
 
@@ -376,8 +444,11 @@ function runDelegationTests(): void {
 
 		const canonical = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
 		const donePath = resolveTaskDonePath(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(donePath), norm(canonical.donePath),
-			"4.1 resolveTaskDonePath == resolveCanonicalTaskPaths.donePath (monorepo)");
+		assertEqual(
+			norm(donePath),
+			norm(canonical.donePath),
+			"4.1 resolveTaskDonePath == resolveCanonicalTaskPaths.donePath (monorepo)",
+		);
 	}
 
 	{
@@ -387,8 +458,11 @@ function runDelegationTests(): void {
 
 		const canonical = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
 		const donePath = resolveTaskDonePath(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(donePath), norm(canonical.donePath),
-			"4.2 resolveTaskDonePath == resolveCanonicalTaskPaths.donePath (external)");
+		assertEqual(
+			norm(donePath),
+			norm(canonical.donePath),
+			"4.2 resolveTaskDonePath == resolveCanonicalTaskPaths.donePath (external)",
+		);
 	}
 }
 
@@ -410,8 +484,11 @@ function runEdgeCaseTests(): void {
 
 		const result = resolveCanonicalTaskPaths(repoRoot, worktreePath, repoRoot);
 		// repoRoot does NOT start with repoRoot + "/" so it's case 2 (external)
-		assertEqual(norm(result.taskFolderResolved), norm(repoRoot),
-			"5.1 task folder == repo root: treated as external (exact match, no trailing slash)");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(repoRoot),
+			"5.1 task folder == repo root: treated as external (exact match, no trailing slash)",
+		);
 	}
 
 	{
@@ -424,10 +501,15 @@ function runEdgeCaseTests(): void {
 		mkdirSync(taskFolder, { recursive: true });
 
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(taskFolder),
-			"5.2 sibling of repo root is external");
-		assert(!norm(result.taskFolderResolved).startsWith(norm(worktreePath) + "/"),
-			"5.2 sibling task folder not mapped to worktree");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(taskFolder),
+			"5.2 sibling of repo root is external",
+		);
+		assert(
+			!norm(result.taskFolderResolved).startsWith(norm(worktreePath) + "/"),
+			"5.2 sibling task folder not mapped to worktree",
+		);
 	}
 
 	{
@@ -442,8 +524,11 @@ function runEdgeCaseTests(): void {
 		mkdirSync(taskFolder, { recursive: true });
 
 		const result = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
-		assertEqual(norm(result.taskFolderResolved), norm(taskFolder),
-			"5.3 prefix overlap: not confused by repoRoot being prefix of different path");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(taskFolder),
+			"5.3 prefix overlap: not confused by repoRoot being prefix of different path",
+		);
 	}
 
 	{
@@ -463,8 +548,11 @@ function runEdgeCaseTests(): void {
 		const backslashWt = worktreePath.replace(/\//g, "\\");
 
 		const result = resolveCanonicalTaskPaths(backslashTask, backslashWt, backslashRepo);
-		assertEqual(norm(result.taskFolderResolved), norm(wtMirror),
-			"5.4 backslash paths: monorepo resolution works with backslash input");
+		assertEqual(
+			norm(result.taskFolderResolved),
+			norm(wtMirror),
+			"5.4 backslash paths: monorepo resolution works with backslash input",
+		);
 	}
 
 	{
@@ -480,12 +568,20 @@ function runEdgeCaseTests(): void {
 
 		const r1 = resolveCanonicalTaskPaths(taskFolder, wt1, repoRoot);
 		const r2 = resolveCanonicalTaskPaths(taskFolder, wt2, repoRoot);
-		assert(norm(r1.taskFolderResolved) !== norm(r2.taskFolderResolved),
-			"5.5 different worktrees produce different resolved paths (monorepo)");
-		assertEqual(norm(r1.taskFolderResolved), norm(join(wt1, "tasks", "TP-LANE")),
-			"5.5 lane 1 maps to wt1");
-		assertEqual(norm(r2.taskFolderResolved), norm(join(wt2, "tasks", "TP-LANE")),
-			"5.5 lane 2 maps to wt2");
+		assert(
+			norm(r1.taskFolderResolved) !== norm(r2.taskFolderResolved),
+			"5.5 different worktrees produce different resolved paths (monorepo)",
+		);
+		assertEqual(
+			norm(r1.taskFolderResolved),
+			norm(join(wt1, "tasks", "TP-LANE")),
+			"5.5 lane 1 maps to wt1",
+		);
+		assertEqual(
+			norm(r2.taskFolderResolved),
+			norm(join(wt2, "tasks", "TP-LANE")),
+			"5.5 lane 2 maps to wt2",
+		);
 	}
 
 	{
@@ -502,10 +598,16 @@ function runEdgeCaseTests(): void {
 
 		const r1 = resolveCanonicalTaskPaths(taskFolder, wt1, repoRoot);
 		const r2 = resolveCanonicalTaskPaths(taskFolder, wt2, repoRoot);
-		assertEqual(norm(r1.taskFolderResolved), norm(r2.taskFolderResolved),
-			"5.6 external: same canonical path regardless of worktree");
-		assertEqual(norm(r1.donePath), norm(r2.donePath),
-			"5.6 external: same donePath regardless of worktree");
+		assertEqual(
+			norm(r1.taskFolderResolved),
+			norm(r2.taskFolderResolved),
+			"5.6 external: same canonical path regardless of worktree",
+		);
+		assertEqual(
+			norm(r1.donePath),
+			norm(r2.donePath),
+			"5.6 external: same donePath regardless of worktree",
+		);
 	}
 }
 

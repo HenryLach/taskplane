@@ -168,10 +168,7 @@ describe("redactEvent — sidecar event redaction", () => {
 		const event = {
 			type: "tool_execution_start",
 			args: {
-				list: [
-					{ DB_SECRET: "dbpass" },
-					"normal string",
-				],
+				list: [{ DB_SECRET: "dbpass" }, "normal string"],
 			},
 		};
 		const result = redactEvent(event);
@@ -311,9 +308,7 @@ describe("redactSummary — exit summary redaction", () => {
 		const { redactSummary } = wrapperModule;
 		const summary = {
 			error: "Bearer sk-abcdef1234567890abcd failed",
-			retries: [
-				{ attempt: 1, error: "Bearer sk-abcdef1234567890abcd", delayMs: 0, succeeded: false },
-			],
+			retries: [{ attempt: 1, error: "Bearer sk-abcdef1234567890abcd", delayMs: 0, succeeded: false }],
 		};
 		const original = JSON.parse(JSON.stringify(summary));
 		redactSummary(summary);
@@ -445,10 +440,14 @@ describe("parseArgs — CLI argument parsing", () => {
 	it("parses all required arguments", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
 		]);
 		expect(result.sidecarPath).toBe("/tmp/sidecar.jsonl");
 		expect(result.exitSummaryPath).toBe("/tmp/summary.json");
@@ -458,14 +457,22 @@ describe("parseArgs — CLI argument parsing", () => {
 	it("parses optional arguments", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
-			"--model", "anthropic/claude-sonnet-4-20250514",
-			"--system-prompt-file", "/tmp/sys.md",
-			"--tools", "bash,read,write",
-			"--extensions", "ext1.ts,ext2.ts",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
+			"--model",
+			"anthropic/claude-sonnet-4-20250514",
+			"--system-prompt-file",
+			"/tmp/sys.md",
+			"--tools",
+			"bash,read,write",
+			"--extensions",
+			"ext1.ts,ext2.ts",
 		]);
 		expect(result.model).toBe("anthropic/claude-sonnet-4-20250514");
 		expect(result.systemPromptFile).toBe("/tmp/sys.md");
@@ -476,11 +483,17 @@ describe("parseArgs — CLI argument parsing", () => {
 	it("handles -- passthrough args", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
-			"--", "--verbose", "--debug",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
+			"--",
+			"--verbose",
+			"--debug",
 		]);
 		expect(result.passthrough).toEqual(["--verbose", "--debug"]);
 	});
@@ -500,10 +513,14 @@ describe("parseArgs — CLI argument parsing", () => {
 	it("collects unknown args as passthrough", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
 			"--unknown-flag",
 		]);
 		expect(result.passthrough).toContain("--unknown-flag");
@@ -623,13 +640,7 @@ describe("redactValue — value redaction details", () => {
 
 	it("handles arrays of mixed types", () => {
 		const { redactValue } = wrapperModule;
-		const arr = [
-			"normal",
-			{ APP_SECRET: "s3cr3t" },
-			42,
-			null,
-			["nested", { AUTH_KEY: "key123" }],
-		];
+		const arr = ["normal", { APP_SECRET: "s3cr3t" }, 42, null, ["nested", { AUTH_KEY: "key123" }]];
 		const result = redactValue(arr);
 		expect(result[0]).toBe("normal");
 		expect(result[1].APP_SECRET).toBe("[REDACTED]");
@@ -718,7 +729,11 @@ describe("applyEvent — session state accumulation", () => {
 		const { createSessionState, applyEvent } = wrapperModule;
 		const state = createSessionState();
 
-		applyEvent(state, { type: "tool_execution_start", toolName: "bash", args: { command: "echo hello" } });
+		applyEvent(state, {
+			type: "tool_execution_start",
+			toolName: "bash",
+			args: { command: "echo hello" },
+		});
 		expect(state.currentTool).toBe("bash: echo hello");
 		expect(state.lastToolCall).toBe("bash: echo hello");
 
@@ -759,7 +774,12 @@ describe("applyEvent — session state accumulation", () => {
 		const { createSessionState, applyEvent } = wrapperModule;
 		const state = createSessionState();
 
-		applyEvent(state, { type: "auto_retry_start", attempt: 1, errorMessage: "rate_limit", delayMs: 1000 });
+		applyEvent(state, {
+			type: "auto_retry_start",
+			attempt: 1,
+			errorMessage: "rate_limit",
+			delayMs: 1000,
+		});
 		expect(state.retries).toHaveLength(1);
 		expect(state.retries[0]).toEqual({
 			attempt: 1,
@@ -853,7 +873,11 @@ describe("buildExitSummary — exit summary construction", () => {
 			type: "message_end",
 			message: { usage: { input: 500, output: 200, cacheRead: 50, cacheWrite: 10, cost: 0.05 } },
 		});
-		applyEvent(state, { type: "tool_execution_start", toolName: "bash", args: { command: "echo test" } });
+		applyEvent(state, {
+			type: "tool_execution_start",
+			toolName: "bash",
+			args: { command: "echo test" },
+		});
 		applyEvent(state, { type: "auto_compaction_start" });
 
 		const summary = buildExitSummary(state, 0, null, null, startTime);
@@ -989,10 +1013,20 @@ describe("buildExitSummary — exit summary construction", () => {
 			type: "message_end",
 			message: { usage: { input: 100, output: 50, cost: 0.01 } },
 		});
-		applyEvent(state, { type: "tool_execution_start", toolName: "bash", args: { command: "make build" } });
+		applyEvent(state, {
+			type: "tool_execution_start",
+			toolName: "bash",
+			args: { command: "make build" },
+		});
 		// No agent_end, no tool_execution_end — process crashed
 
-		const summary = buildExitSummary(state, 137, "SIGKILL", "pi process exited with code 137 (signal: SIGKILL)", startTime);
+		const summary = buildExitSummary(
+			state,
+			137,
+			"SIGKILL",
+			"pi process exited with code 137 (signal: SIGKILL)",
+			startTime,
+		);
 
 		expect(summary.exitCode).toBe(137);
 		expect(summary.exitSignal).toBe("SIGKILL");
@@ -1113,7 +1147,9 @@ describe("integration — mock pi process end-to-end", () => {
 		// Create a mock pi script that reads the prompt command from stdin
 		// and emits a scripted sequence of RPC events, then exits cleanly.
 		const mockPiScript = join(tmpDir, "mock-pi.mjs");
-		writeFileSync(mockPiScript, `
+		writeFileSync(
+			mockPiScript,
+			`
 import process from 'process';
 
 // Read all stdin, then emit events once we see a prompt command.
@@ -1156,7 +1192,8 @@ process.stdin.on('data', (chunk) => {
 process.stdin.on('end', () => {
 	process.exit(0);
 });
-`);
+`,
+		);
 
 		// Run rpc-wrapper.mjs, using node to execute the mock pi script
 		// We override the pi command by passing -- to use our mock instead
@@ -1169,7 +1206,10 @@ process.stdin.on('end', () => {
 		const isWindows = process.platform === "win32";
 		if (isWindows) {
 			// Create pi.cmd that ignores all pi args and runs our mock script
-			writeFileSync(join(shimDir, "pi.cmd"), `@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`);
+			writeFileSync(
+				join(shimDir, "pi.cmd"),
+				`@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`,
+			);
 		} else {
 			writeFileSync(join(shimDir, "pi"), `#!/bin/sh\nexec node "${mockPiScript}" "$@"\n`);
 			const { chmodSync } = await import("fs");
@@ -1185,15 +1225,22 @@ process.stdin.on('end', () => {
 		};
 
 		try {
-			const { stdout, stderr } = await execFileAsync("node", [
-				wrapperAbsPath,
-				"--sidecar-path", sidecarPath,
-				"--exit-summary-path", summaryPath,
-				"--prompt-file", promptFile,
-			], {
-				env,
-				timeout: 30000,
-			});
+			const { stdout, stderr } = await execFileAsync(
+				"node",
+				[
+					wrapperAbsPath,
+					"--sidecar-path",
+					sidecarPath,
+					"--exit-summary-path",
+					summaryPath,
+					"--prompt-file",
+					promptFile,
+				],
+				{
+					env,
+					timeout: 30000,
+				},
+			);
 
 			// Verify sidecar file exists and contains expected events
 			expect(existsSync(sidecarPath)).toBe(true);
@@ -1244,7 +1291,9 @@ process.stdin.on('end', () => {
 			expect(summary.error).toBe(null);
 		} finally {
 			// Cleanup
-			try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+			try {
+				rmSync(tmpDir, { recursive: true, force: true });
+			} catch {}
 		}
 	}, 30000);
 
@@ -1265,7 +1314,9 @@ process.stdin.on('end', () => {
 
 		// Mock pi that emits one event, then crashes
 		const mockPiScript = join(tmpDir, "mock-pi-crash.mjs");
-		writeFileSync(mockPiScript, `
+		writeFileSync(
+			mockPiScript,
+			`
 import process from 'process';
 
 let responded = false;
@@ -1286,14 +1337,18 @@ process.stdin.on('data', (chunk) => {
 	// Crash without agent_end
 	setTimeout(() => process.exit(1), 100);
 });
-`);
+`,
+		);
 
 		const shimDir = join(tmpDir, "bin");
 		mkdirSync(shimDir, { recursive: true });
 
 		const isWindows = process.platform === "win32";
 		if (isWindows) {
-			writeFileSync(join(shimDir, "pi.cmd"), `@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`);
+			writeFileSync(
+				join(shimDir, "pi.cmd"),
+				`@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`,
+			);
 		} else {
 			writeFileSync(join(shimDir, "pi"), `#!/bin/sh\nexec node "${mockPiScript}" "$@"\n`);
 			const { chmodSync } = await import("fs");
@@ -1309,12 +1364,19 @@ process.stdin.on('data', (chunk) => {
 
 		try {
 			// The wrapper should exit with the pi process exit code (1)
-			await execFileAsync("node", [
-				wrapperAbsPath,
-				"--sidecar-path", sidecarPath,
-				"--exit-summary-path", summaryPath,
-				"--prompt-file", promptFile,
-			], { env, timeout: 30000 });
+			await execFileAsync(
+				"node",
+				[
+					wrapperAbsPath,
+					"--sidecar-path",
+					sidecarPath,
+					"--exit-summary-path",
+					summaryPath,
+					"--prompt-file",
+					promptFile,
+				],
+				{ env, timeout: 30000 },
+			);
 			// If it doesn't throw, that's also fine — check summary
 		} catch (err: any) {
 			// Expected: non-zero exit
@@ -1338,7 +1400,9 @@ process.stdin.on('data', (chunk) => {
 		expect(sidecarLines.length).toBeGreaterThanOrEqual(3);
 
 		// Cleanup
-		try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+		try {
+			rmSync(tmpDir, { recursive: true, force: true });
+		} catch {}
 	}, 30000);
 
 	it("spawn failure produces valid summary via extracted buildExitSummary", () => {
@@ -1370,11 +1434,16 @@ describe("parseArgs — mailbox-dir", () => {
 	it("parses --mailbox-dir correctly", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
-			"--mailbox-dir", "/tmp/.pi/mailbox/batch-1/session-1",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
+			"--mailbox-dir",
+			"/tmp/.pi/mailbox/batch-1/session-1",
 		]);
 		expect(result.mailboxDir).toBe("/tmp/.pi/mailbox/batch-1/session-1");
 	});
@@ -1382,10 +1451,14 @@ describe("parseArgs — mailbox-dir", () => {
 	it("mailboxDir defaults to null when not provided", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
 		]);
 		expect(result.mailboxDir).toBe(null);
 	});
@@ -1418,23 +1491,57 @@ describe("isValidMailboxMessageShape — rpc-wrapper validation", () => {
 	it("rejects missing required fields", () => {
 		const { isValidMailboxMessageShape } = wrapperModule;
 		// Missing id
-		expect(isValidMailboxMessageShape({ batchId: "b", from: "f", to: "t", timestamp: 1, type: "steer", content: "c" })).toBe(false);
+		expect(
+			isValidMailboxMessageShape({
+				batchId: "b",
+				from: "f",
+				to: "t",
+				timestamp: 1,
+				type: "steer",
+				content: "c",
+			}),
+		).toBe(false);
 		// Missing content
-		expect(isValidMailboxMessageShape({ id: "i", batchId: "b", from: "f", to: "t", timestamp: 1, type: "steer" })).toBe(false);
+		expect(
+			isValidMailboxMessageShape({
+				id: "i",
+				batchId: "b",
+				from: "f",
+				to: "t",
+				timestamp: 1,
+				type: "steer",
+			}),
+		).toBe(false);
 	});
 
 	it("rejects invalid message type", () => {
 		const { isValidMailboxMessageShape } = wrapperModule;
-		expect(isValidMailboxMessageShape({
-			id: "1000-aaa00", batchId: "b", from: "f", to: "t", timestamp: 1, type: "bogus", content: "c",
-		})).toBe(false);
+		expect(
+			isValidMailboxMessageShape({
+				id: "1000-aaa00",
+				batchId: "b",
+				from: "f",
+				to: "t",
+				timestamp: 1,
+				type: "bogus",
+				content: "c",
+			}),
+		).toBe(false);
 	});
 
 	it("rejects non-finite timestamp", () => {
 		const { isValidMailboxMessageShape } = wrapperModule;
-		expect(isValidMailboxMessageShape({
-			id: "1000-aaa00", batchId: "b", from: "f", to: "t", timestamp: Infinity, type: "steer", content: "c",
-		})).toBe(false);
+		expect(
+			isValidMailboxMessageShape({
+				id: "1000-aaa00",
+				batchId: "b",
+				from: "f",
+				to: "t",
+				timestamp: Infinity,
+				type: "steer",
+				content: "c",
+			}),
+		).toBe(false);
 	});
 });
 
@@ -1483,7 +1590,9 @@ describe("checkMailboxAndSteer — mailbox delivery", () => {
 		const written: string[] = [];
 		const mockProc = {
 			stdin: {
-				write: (data: string) => { written.push(data); },
+				write: (data: string) => {
+					written.push(data);
+				},
 			},
 		};
 
@@ -1501,7 +1610,9 @@ describe("checkMailboxAndSteer — mailbox delivery", () => {
 		expect(fs.existsSync(join(inboxDir, "1000-aaa00.msg.json"))).toBe(false);
 
 		// Cleanup
-		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+		try {
+			fs.rmSync(tmpDir, { recursive: true, force: true });
+		} catch {}
 	});
 
 	it("silent no-op when mailboxDir inbox doesn't exist", async () => {
@@ -1514,7 +1625,9 @@ describe("checkMailboxAndSteer — mailbox delivery", () => {
 		const written: string[] = [];
 		const mockProc = {
 			stdin: {
-				write: (data: string) => { written.push(data); },
+				write: (data: string) => {
+					written.push(data);
+				},
 			},
 		};
 
@@ -1562,7 +1675,9 @@ describe("mailbox-dir runtime behavior", () => {
 		);
 
 		const mockPiScript = join(tmpDir, "mock-pi-mailbox.mjs");
-		writeFileSync(mockPiScript, `
+		writeFileSync(
+			mockPiScript,
+			`
 import process from 'process';
 import { writeFileSync } from 'fs';
 
@@ -1596,13 +1711,17 @@ process.stdin.on('end', () => {
 	}
 	process.exit(0);
 });
-`);
+`,
+		);
 
 		const shimDir = join(tmpDir, "bin");
 		mkdirSync(shimDir, { recursive: true });
 		const isWindows = process.platform === "win32";
 		if (isWindows) {
-			writeFileSync(join(shimDir, "pi.cmd"), `@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`);
+			writeFileSync(
+				join(shimDir, "pi.cmd"),
+				`@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`,
+			);
 		} else {
 			writeFileSync(join(shimDir, "pi"), `#!/bin/sh\nexec node "${mockPiScript}" "$@"\n`);
 			const { chmodSync } = await import("fs");
@@ -1617,19 +1736,31 @@ process.stdin.on('end', () => {
 		};
 
 		try {
-			await execFileAsync("node", [
-				wrapperPath,
-				"--sidecar-path", sidecarPath,
-				"--exit-summary-path", summaryPath,
-				"--prompt-file", promptFile,
-				"--mailbox-dir", mailboxDir,
-			], { env, timeout: 30000 });
+			await execFileAsync(
+				"node",
+				[
+					wrapperPath,
+					"--sidecar-path",
+					sidecarPath,
+					"--exit-summary-path",
+					summaryPath,
+					"--prompt-file",
+					promptFile,
+					"--mailbox-dir",
+					mailboxDir,
+				],
+				{ env, timeout: 30000 },
+			);
 
 			const cmds = JSON.parse(readFileSync(cmdLogPath, "utf-8"));
 			expect(cmds.some((c: any) => c.type === "set_steering_mode" && c.mode === "all")).toBe(true);
-			expect(cmds.some((c: any) => c.type === "steer" && c.message === "Mailbox delivery test")).toBe(true);
+			expect(cmds.some((c: any) => c.type === "steer" && c.message === "Mailbox delivery test")).toBe(
+				true,
+			);
 		} finally {
-			try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+			try {
+				rmSync(tmpDir, { recursive: true, force: true });
+			} catch {}
 		}
 	}, 30000);
 
@@ -1650,7 +1781,9 @@ process.stdin.on('end', () => {
 		writeFileSync(promptFile, "runtime no mailbox test");
 
 		const mockPiScript = join(tmpDir, "mock-pi-no-mailbox.mjs");
-		writeFileSync(mockPiScript, `
+		writeFileSync(
+			mockPiScript,
+			`
 import process from 'process';
 import { writeFileSync } from 'fs';
 
@@ -1684,13 +1817,17 @@ process.stdin.on('end', () => {
 	}
 	process.exit(0);
 });
-`);
+`,
+		);
 
 		const shimDir = join(tmpDir, "bin");
 		mkdirSync(shimDir, { recursive: true });
 		const isWindows = process.platform === "win32";
 		if (isWindows) {
-			writeFileSync(join(shimDir, "pi.cmd"), `@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`);
+			writeFileSync(
+				join(shimDir, "pi.cmd"),
+				`@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`,
+			);
 		} else {
 			writeFileSync(join(shimDir, "pi"), `#!/bin/sh\nexec node "${mockPiScript}" "$@"\n`);
 			const { chmodSync } = await import("fs");
@@ -1705,18 +1842,27 @@ process.stdin.on('end', () => {
 		};
 
 		try {
-			await execFileAsync("node", [
-				wrapperPath,
-				"--sidecar-path", sidecarPath,
-				"--exit-summary-path", summaryPath,
-				"--prompt-file", promptFile,
-			], { env, timeout: 30000 });
+			await execFileAsync(
+				"node",
+				[
+					wrapperPath,
+					"--sidecar-path",
+					sidecarPath,
+					"--exit-summary-path",
+					summaryPath,
+					"--prompt-file",
+					promptFile,
+				],
+				{ env, timeout: 30000 },
+			);
 
 			const cmds = JSON.parse(readFileSync(cmdLogPath, "utf-8"));
 			expect(cmds.some((c: any) => c.type === "set_steering_mode")).toBe(false);
 			expect(cmds.some((c: any) => c.type === "steer")).toBe(false);
 		} finally {
-			try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+			try {
+				rmSync(tmpDir, { recursive: true, force: true });
+			} catch {}
 		}
 	}, 30000);
 });
@@ -1727,11 +1873,16 @@ describe("parseArgs — steering-pending-path (TP-090)", () => {
 	it("parses --steering-pending-path correctly", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
-			"--steering-pending-path", "/tmp/task/.steering-pending",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
+			"--steering-pending-path",
+			"/tmp/task/.steering-pending",
 		]);
 		expect(result.steeringPendingPath).toBe("/tmp/task/.steering-pending");
 	});
@@ -1739,10 +1890,14 @@ describe("parseArgs — steering-pending-path (TP-090)", () => {
 	it("steeringPendingPath defaults to null when not provided", () => {
 		const { parseArgs } = wrapperModule;
 		const result = parseArgs([
-			"node", "rpc-wrapper.mjs",
-			"--sidecar-path", "/tmp/sidecar.jsonl",
-			"--exit-summary-path", "/tmp/summary.json",
-			"--prompt-file", "/tmp/prompt.md",
+			"node",
+			"rpc-wrapper.mjs",
+			"--sidecar-path",
+			"/tmp/sidecar.jsonl",
+			"--exit-summary-path",
+			"/tmp/summary.json",
+			"--prompt-file",
+			"/tmp/prompt.md",
 		]);
 		expect(result.steeringPendingPath).toBe(null);
 	});
@@ -1779,7 +1934,9 @@ describe("checkMailboxAndSteer — .steering-pending JSONL (TP-090)", () => {
 		const written: string[] = [];
 		const mockProc = {
 			stdin: {
-				write: (data: string) => { written.push(data); },
+				write: (data: string) => {
+					written.push(data);
+				},
 				destroyed: false,
 			},
 		};
@@ -1796,7 +1953,9 @@ describe("checkMailboxAndSteer — .steering-pending JSONL (TP-090)", () => {
 		expect(entry.content).toBe("Focus on the API.");
 		expect(entry.id).toBe("1000-aaa00");
 
-		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+		try {
+			fs.rmSync(tmpDir, { recursive: true, force: true });
+		} catch {}
 	});
 
 	it("does NOT write .steering-pending when steeringPendingPath is null", async () => {
@@ -1825,7 +1984,9 @@ describe("checkMailboxAndSteer — .steering-pending JSONL (TP-090)", () => {
 		const written: string[] = [];
 		const mockProc = {
 			stdin: {
-				write: (data: string) => { written.push(data); },
+				write: (data: string) => {
+					written.push(data);
+				},
 				destroyed: false,
 			},
 		};
@@ -1840,7 +2001,9 @@ describe("checkMailboxAndSteer — .steering-pending JSONL (TP-090)", () => {
 		const hasPending = files.some((f: string) => f.includes(".steering-pending"));
 		expect(hasPending).toBe(false);
 
-		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+		try {
+			fs.rmSync(tmpDir, { recursive: true, force: true });
+		} catch {}
 	});
 
 	it("appends multiple JSONL entries for multiple messages", async () => {
@@ -1881,7 +2044,9 @@ describe("checkMailboxAndSteer — .steering-pending JSONL (TP-090)", () => {
 		const written: string[] = [];
 		const mockProc = {
 			stdin: {
-				write: (data: string) => { written.push(data); },
+				write: (data: string) => {
+					written.push(data);
+				},
 				destroyed: false,
 			},
 		};
@@ -1897,6 +2062,8 @@ describe("checkMailboxAndSteer — .steering-pending JSONL (TP-090)", () => {
 		expect(e1.content).toBe("First message.");
 		expect(e2.content).toBe("Second message.");
 
-		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+		try {
+			fs.rmSync(tmpDir, { recursive: true, force: true });
+		} catch {}
 	});
 });

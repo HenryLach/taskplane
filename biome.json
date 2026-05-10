@@ -1,59 +1,59 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
-  "files": {
-    "includes": [
-      "extensions/**/*.ts",
-      "extensions/**/*.tsx",
-      "bin/**/*.mjs",
-      "scripts/**/*.mjs",
-      "!**/node_modules",
-      "!dashboard/public",
-      "!extensions/types",
-      "!.pi",
-      "!.worktrees"
-    ]
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true,
-      "suspicious": {
-        "noExplicitAny": "off",
-        "noAssignInExpressions": "off"
-      },
-      "complexity": {
-        "noForEach": "off",
-        "noExcessiveCognitiveComplexity": "off"
-      },
-      "style": {
-        "noNonNullAssertion": "off",
-        "useConst": "off",
-        "noParameterAssign": "off",
-        "useDefaultParameterLast": "off",
-        "noUnusedTemplateLiteral": "off"
-      },
-      "correctness": {
-        "noUnusedVariables": "warn",
-        "noUnusedImports": "warn"
-      },
-      "performance": {
-        "noDelete": "off"
-      }
-    }
-  },
-  "formatter": {
-    "enabled": true,
-    "indentStyle": "tab",
-    "indentWidth": 1,
-    "lineWidth": 100,
-    "lineEnding": "lf"
-  },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "double",
-      "trailingCommas": "all",
-      "semicolons": "always",
-      "arrowParentheses": "always"
-    }
-  }
+	"$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+	"files": {
+		"includes": [
+			"extensions/**/*.ts",
+			"extensions/**/*.tsx",
+			"bin/**/*.mjs",
+			"scripts/**/*.mjs",
+			"!**/node_modules",
+			"!dashboard/public",
+			"!extensions/types",
+			"!.pi",
+			"!.worktrees"
+		]
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"suspicious": {
+				"noExplicitAny": "off",
+				"noAssignInExpressions": "off"
+			},
+			"complexity": {
+				"noForEach": "off",
+				"noExcessiveCognitiveComplexity": "off"
+			},
+			"style": {
+				"noNonNullAssertion": "off",
+				"useConst": "off",
+				"noParameterAssign": "off",
+				"useDefaultParameterLast": "off",
+				"noUnusedTemplateLiteral": "off"
+			},
+			"correctness": {
+				"noUnusedVariables": "warn",
+				"noUnusedImports": "warn"
+			},
+			"performance": {
+				"noDelete": "off"
+			}
+		}
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 1,
+		"lineWidth": 100,
+		"lineEnding": "lf"
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"trailingCommas": "all",
+			"semicolons": "always",
+			"arrowParentheses": "always"
+		}
+	}
 }

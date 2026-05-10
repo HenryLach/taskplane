@@ -38,15 +38,19 @@ describe("segment ID contract", () => {
 describe("task segment plan determinism", () => {
 	it("orders task map keys, segments, and edges deterministically", () => {
 		const pending = new Map<string, ParsedTask>([
-			["TP-200", makeTask("TP-200", { resolvedRepoId: "api", fileScope: ["docs/README.md", "api/src/main.ts"] })],
-			["TP-100", makeTask("TP-100", {
-				explicitSegmentDag: {
-					repoIds: ["web", "api"],
-					edges: [
-						{ fromRepoId: "web", toRepoId: "api" },
-					],
-				},
-			})],
+			[
+				"TP-200",
+				makeTask("TP-200", { resolvedRepoId: "api", fileScope: ["docs/README.md", "api/src/main.ts"] }),
+			],
+			[
+				"TP-100",
+				makeTask("TP-100", {
+					explicitSegmentDag: {
+						repoIds: ["web", "api"],
+						edges: [{ fromRepoId: "web", toRepoId: "api" }],
+					},
+				}),
+			],
 		]);
 
 		const plans = buildTaskSegmentPlans(pending);
@@ -54,10 +58,7 @@ describe("task segment plan determinism", () => {
 
 		const explicit = plans.get("TP-100")!;
 		expect(explicit.mode).toBe("explicit-dag");
-		expect(explicit.segments.map((s) => s.segmentId)).toEqual([
-			"TP-100::web",
-			"TP-100::api",
-		]);
+		expect(explicit.segments.map((s) => s.segmentId)).toEqual(["TP-100::web", "TP-100::api"]);
 		expect(explicit.edges.map((e) => `${e.fromSegmentId}->${e.toSegmentId}`)).toEqual([
 			"TP-100::web->TP-100::api",
 		]);
@@ -102,18 +103,18 @@ describe("computeWaveAssignments segment plan wiring", () => {
 
 	it("accepts workspaceRepoIds to infer cross-repo file scope hints", () => {
 		const pending = new Map<string, ParsedTask>([
-			["TP-450", makeTask("TP-450", {
-				resolvedRepoId: "api",
-				fileScope: ["api/src/service.ts", "web/src/client.ts"],
-			})],
+			[
+				"TP-450",
+				makeTask("TP-450", {
+					resolvedRepoId: "api",
+					fileScope: ["api/src/service.ts", "web/src/client.ts"],
+				}),
+			],
 		]);
 
-		const result = computeWaveAssignments(
-			pending,
-			new Set<string>(),
-			DEFAULT_ORCHESTRATOR_CONFIG,
-			{ workspaceRepoIds: ["api", "web"] },
-		);
+		const result = computeWaveAssignments(pending, new Set<string>(), DEFAULT_ORCHESTRATOR_CONFIG, {
+			workspaceRepoIds: ["api", "web"],
+		});
 		expect(result.errors).toEqual([]);
 		expect(result.segmentPlans).toBeDefined();
 		expect(result.segmentPlans!.get("TP-450")!.segments.map((s) => s.repoId)).toEqual(["api", "web"]);

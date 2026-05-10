@@ -31,10 +31,7 @@ import {
 	applyMergeRetryLoop,
 } from "../taskplane/messages.ts";
 import type { MergeRetryCallbacks } from "../taskplane/types.ts";
-import {
-	MERGE_RETRY_POLICY_MATRIX,
-	MERGE_FAILURE_CLASSIFICATIONS,
-} from "../taskplane/types.ts";
+import { MERGE_RETRY_POLICY_MATRIX, MERGE_FAILURE_CLASSIFICATIONS } from "../taskplane/types.ts";
 import type {
 	MergeWaveResult,
 	MergeLaneResult,
@@ -77,9 +74,7 @@ function makeWaveResult(overrides: Partial<MergeWaveResult> = {}): MergeWaveResu
 }
 
 /** Build mock callbacks for applyMergeRetryLoop testing. */
-function makeMockCallbacks(options: {
-	performMergeResults?: MergeWaveResult[];
-} = {}): {
+function makeMockCallbacks(options: { performMergeResults?: MergeWaveResult[] } = {}): {
 	callbacks: MergeRetryCallbacks;
 	logs: string[];
 	notifications: Array<{ message: string; level: string }>;
@@ -107,7 +102,19 @@ function makeMockCallbacks(options: {
 		sleep: (ms) => sleepCalls.push(ms),
 	};
 
-	return { callbacks, logs, notifications, persistTriggers, sleepCalls, mergeCallCount: 0, ...{ get mergeCallCount() { return tracker.mergeCallCount; } } as any };
+	return {
+		callbacks,
+		logs,
+		notifications,
+		persistTriggers,
+		sleepCalls,
+		mergeCallCount: 0,
+		...({
+			get mergeCallCount() {
+				return tracker.mergeCallCount;
+			},
+		} as any),
+	};
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -117,9 +124,7 @@ function makeMockCallbacks(options: {
 describe("1.x — classifyMergeFailure", () => {
 	it("1.1: verification_new_failure lane error → verification_new_failure", () => {
 		const result = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 3 new failure(s)" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 3 new failure(s)" })],
 		});
 
 		expect(classifyMergeFailure(result)).toBe("verification_new_failure");
@@ -179,9 +184,7 @@ describe("1.x — classifyMergeFailure", () => {
 	it("1.7: verification_new_failure takes priority over pattern-matched reason", () => {
 		const result = makeWaveResult({
 			failureReason: "lock file issue",
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 1 new failure(s)" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 1 new failure(s)" })],
 		});
 
 		// Lane-level errors are checked first
@@ -356,7 +359,11 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		const failResult = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
@@ -374,7 +381,11 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		const failResult2 = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [failResult2, successResult] });
@@ -413,7 +424,11 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		const failResult = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
@@ -454,7 +469,11 @@ describe("5.x — Cooldown delay enforcement", () => {
 		const failResult = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
@@ -467,11 +486,13 @@ describe("5.x — Cooldown delay enforcement", () => {
 
 	it("5.6: applyMergeRetryLoop does NOT call sleep for verification_new_failure (cooldown=0)", async () => {
 		const failResult = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 1 new failure(s)" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 1 new failure(s)" })],
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
@@ -514,11 +535,13 @@ describe("6.x — Retry counter persistence", () => {
 
 	it("6.3: retry loop increments counter in retryCountByScope", async () => {
 		const failResult = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 1 new failure" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 1 new failure" })],
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
@@ -530,11 +553,13 @@ describe("6.x — Retry counter persistence", () => {
 
 	it("6.4: retry loop persists state after increment (merge-retry-increment trigger)", async () => {
 		const failResult = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 1 new failure" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 1 new failure" })],
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
@@ -581,14 +606,10 @@ describe("6.x — Retry counter persistence", () => {
 describe("7.x — Exhaustion forces paused", () => {
 	it("7.1: exhaustion outcome from applyMergeRetryLoop includes classification diagnostics", async () => {
 		const failResult1 = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 2 new failure(s)" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 2 new failure(s)" })],
 		});
 		const failResult2 = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 2 new failure(s)" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 2 new failure(s)" })],
 		});
 
 		const counters: Record<string, number> = {};
@@ -849,9 +870,7 @@ describe("9.x — Workspace-scoped counters (repoId in scope key)", () => {
 describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 	it("10.1: safe-stop during retry returns safe_stop outcome", async () => {
 		const failResult = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 1 failure" })],
 		});
 		const rollbackFailResult = makeWaveResult({
 			status: "failed",
@@ -872,9 +891,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 
 	it("10.2: safe-stop with persistence errors includes warning in message", async () => {
 		const failResult = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 1 failure" })],
 		});
 		const rollbackFailResult = makeWaveResult({
 			status: "failed",
@@ -924,7 +941,11 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		const failResult2 = makeWaveResult({
 			failureReason: "lock file error",
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [failResult2, successResult] });
@@ -932,20 +953,22 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		// Should have received retry notifications (🔄 for each attempt, ✅ for success)
-		const retryNotifs = mock.notifications.filter(n => n.message.includes("🔄"));
+		const retryNotifs = mock.notifications.filter((n) => n.message.includes("🔄"));
 		expect(retryNotifs.length).toBeGreaterThanOrEqual(2);
 
-		const successNotifs = mock.notifications.filter(n => n.message.includes("✅"));
+		const successNotifs = mock.notifications.filter((n) => n.message.includes("✅"));
 		expect(successNotifs.length).toBe(1);
 	});
 
 	it("10.5: retry loop persists state at correct points (increment, start, complete)", async () => {
 		const failResult = makeWaveResult({
-			laneResults: [
-				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
-			],
+			laneResults: [makeLaneResult({ error: "verification_new_failure: 1 failure" })],
 		});
-		const successResult = makeWaveResult({ status: "succeeded", failedLane: null, failureReason: null });
+		const successResult = makeWaveResult({
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		});
 
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });

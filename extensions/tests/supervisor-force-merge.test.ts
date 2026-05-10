@@ -26,7 +26,12 @@ import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 import { randomBytes } from "crypto";
 import { BATCH_STATE_SCHEMA_VERSION, freshOrchBatchState } from "../taskplane/types.ts";
-import type { PersistedBatchState, PersistedTaskRecord, PersistedMergeResult, LaneTaskStatus } from "../taskplane/types.ts";
+import type {
+	PersistedBatchState,
+	PersistedTaskRecord,
+	PersistedMergeResult,
+	LaneTaskStatus,
+} from "../taskplane/types.ts";
 import { saveBatchState, loadBatchState } from "../taskplane/persistence.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +62,10 @@ function buildTaskRecord(
 		status,
 		taskFolder: `/tmp/tasks/${taskId}`,
 		startedAt: status !== "pending" ? Date.now() - 30000 : null,
-		endedAt: status === "succeeded" || status === "failed" || status === "stalled" ? Date.now() - 10000 : null,
+		endedAt:
+			status === "succeeded" || status === "failed" || status === "stalled"
+				? Date.now() - 10000
+				: null,
 		doneFileFound: status === "succeeded",
 		exitReason,
 	};
@@ -78,25 +86,30 @@ function buildTestPersistedState(overrides?: Partial<PersistedBatchState>): Pers
 		currentWaveIndex: 0,
 		totalWaves: 1,
 		wavePlan: [["TP-001", "TP-002", "TP-003"]],
-		lanes: [{
-			laneNumber: 1,
-			laneId: "lane-1",
-			worktreePath: "/tmp/wt-1",
-			branch: "task/lane-1",
-			laneSessionId: "orch-lane-1",
-			taskIds: ["TP-001", "TP-002", "TP-003"],
-		}],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				worktreePath: "/tmp/wt-1",
+				branch: "task/lane-1",
+				laneSessionId: "orch-lane-1",
+				taskIds: ["TP-001", "TP-002", "TP-003"],
+			},
+		],
 		tasks: [
 			buildTaskRecord("TP-001", "succeeded"),
 			buildTaskRecord("TP-002", "failed", "Session died without .DONE"),
 			buildTaskRecord("TP-003", "succeeded"),
 		],
-		mergeResults: [{
-			waveIndex: 0,
-			status: "partial",
-			failedLane: 1,
-			failureReason: "Lane(s) lane-1 contain both succeeded and failed tasks. Automatic partial-branch merge is disabled to avoid dropping succeeded commits.",
-		}],
+		mergeResults: [
+			{
+				waveIndex: 0,
+				status: "partial",
+				failedLane: 1,
+				failureReason:
+					"Lane(s) lane-1 contain both succeeded and failed tasks. Automatic partial-branch merge is disabled to avoid dropping succeeded commits.",
+			},
+		],
 		totalTasks: 3,
 		succeededTasks: 2,
 		failedTasks: 1,
@@ -182,21 +195,23 @@ describe("2.x — orch_force_merge validation logic (persisted state)", () => {
 	it("2.1 — force merge rejects when no merge result exists for wave", () => {
 		const state = buildTestPersistedState({ mergeResults: [] });
 		const targetWave = state.currentWaveIndex;
-		const mergeEntry = state.mergeResults.find(mr => mr.waveIndex === targetWave);
+		const mergeEntry = state.mergeResults.find((mr) => mr.waveIndex === targetWave);
 		// No merge result → should reject
 		expect(mergeEntry).toBeUndefined();
 	});
 
 	it("2.2 — force merge is no-op when merge already succeeded", () => {
 		const state = buildTestPersistedState({
-			mergeResults: [{
-				waveIndex: 0,
-				status: "succeeded",
-				failedLane: null,
-				failureReason: null,
-			}],
+			mergeResults: [
+				{
+					waveIndex: 0,
+					status: "succeeded",
+					failedLane: null,
+					failureReason: null,
+				},
+			],
 		});
-		const mergeEntry = state.mergeResults.find(mr => mr.waveIndex === 0);
+		const mergeEntry = state.mergeResults.find((mr) => mr.waveIndex === 0);
 		expect(mergeEntry!.status).toBe("succeeded");
 		// Should return "already succeeded" message
 	});
@@ -224,8 +239,8 @@ describe("2.x — orch_force_merge validation logic (persisted state)", () => {
 			failedTasks: 3,
 		});
 		const waveTasks = state.wavePlan[0];
-		const succeededInWave = waveTasks.filter(tid => {
-			const t = state.tasks.find(t => t.taskId === tid);
+		const succeededInWave = waveTasks.filter((tid) => {
+			const t = state.tasks.find((t) => t.taskId === tid);
 			return t?.status === "succeeded";
 		});
 		expect(succeededInWave.length).toBe(0);
@@ -234,8 +249,8 @@ describe("2.x — orch_force_merge validation logic (persisted state)", () => {
 	it("2.6 — force merge requires skipFailed when failed tasks exist and skipFailed is false", () => {
 		const state = buildTestPersistedState();
 		const waveTasks = state.wavePlan[0];
-		const failedInWave = waveTasks.filter(tid => {
-			const t = state.tasks.find(t => t.taskId === tid);
+		const failedInWave = waveTasks.filter((tid) => {
+			const t = state.tasks.find((t) => t.taskId === tid);
 			return t?.status === "failed" || t?.status === "stalled";
 		});
 		// There are failed tasks → without skipFailed, should reject
@@ -254,7 +269,7 @@ describe("3.x — orch_force_merge recovery prep logic (persisted state)", () =>
 
 		// Simulate doOrchForceMerge with skipFailed=true
 		for (const taskId of waveTasks) {
-			const task = state.tasks.find(t => t.taskId === taskId);
+			const task = state.tasks.find((t) => t.taskId === taskId);
 			if (!task) continue;
 			if (task.status === "failed" || task.status === "stalled") {
 				task.status = "skipped";
@@ -266,7 +281,7 @@ describe("3.x — orch_force_merge recovery prep logic (persisted state)", () =>
 		}
 
 		// Verify
-		const tp002 = state.tasks.find(t => t.taskId === "TP-002")!;
+		const tp002 = state.tasks.find((t) => t.taskId === "TP-002")!;
 		expect(tp002.status).toBe("skipped");
 		expect(tp002.exitReason).toBe("Skipped by orch_force_merge");
 		expect(state.failedTasks).toBe(0);
@@ -317,17 +332,19 @@ describe("3.x — orch_force_merge recovery prep logic (persisted state)", () =>
 			succeededTasks: 2,
 			failedTasks: 2,
 			skippedTasks: 0,
-			mergeResults: [{
-				waveIndex: 0,
-				status: "partial",
-				failedLane: 1,
-				failureReason: "Lane(s) lane-1 contain both succeeded and failed tasks.",
-			}],
+			mergeResults: [
+				{
+					waveIndex: 0,
+					status: "partial",
+					failedLane: 1,
+					failureReason: "Lane(s) lane-1 contain both succeeded and failed tasks.",
+				},
+			],
 		});
 
 		// Simulate skipFailed for all failed tasks in the wave
 		for (const taskId of state.wavePlan[0]) {
-			const task = state.tasks.find(t => t.taskId === taskId);
+			const task = state.tasks.find((t) => t.taskId === taskId);
 			if (!task) continue;
 			if (task.status === "failed" || task.status === "stalled") {
 				task.status = "skipped";
@@ -353,7 +370,9 @@ describe("3.x — orch_force_merge recovery prep logic (persisted state)", () =>
 		});
 
 		// Simulate doOrchForceMerge error clearing
-		state.errors = state.errors.filter(e => !e.includes("mixed") && !e.includes("merge") && !e.includes("Merge"));
+		state.errors = state.errors.filter(
+			(e) => !e.includes("mixed") && !e.includes("merge") && !e.includes("Merge"),
+		);
 		state.lastError = null;
 
 		expect(state.errors).toEqual(["some other error"]);
@@ -395,12 +414,12 @@ describe("3.x — orch_force_merge recovery prep logic (persisted state)", () =>
 
 		// Force merge wave 1
 		const targetWave = 1;
-		const mergeEntry = state.mergeResults.find(mr => mr.waveIndex === targetWave);
+		const mergeEntry = state.mergeResults.find((mr) => mr.waveIndex === targetWave);
 		expect(mergeEntry).not.toBeUndefined();
 		expect(mergeEntry!.status).toBe("partial");
 
 		// Verify wave 0 is untouched
-		const wave0 = state.mergeResults.find(mr => mr.waveIndex === 0);
+		const wave0 = state.mergeResults.find((mr) => mr.waveIndex === 0);
 		expect(wave0!.status).toBe("succeeded");
 	});
 });
@@ -423,7 +442,7 @@ describe("4.x — orch_force_merge persisted state round-trip", () => {
 			expect(loaded.mergeResults[0].status).toBe("partial");
 
 			// Skip failed task
-			const task = loaded.tasks.find(t => t.taskId === "TP-002")!;
+			const task = loaded.tasks.find((t) => t.taskId === "TP-002")!;
 			task.status = "skipped";
 			task.exitReason = "Skipped by orch_force_merge";
 			task.endedAt = Date.now();
@@ -439,7 +458,7 @@ describe("4.x — orch_force_merge persisted state round-trip", () => {
 
 			// Verify round-trip
 			const reloaded = loadBatchState(tempDir)!;
-			const skippedTask = reloaded.tasks.find(t => t.taskId === "TP-002")!;
+			const skippedTask = reloaded.tasks.find((t) => t.taskId === "TP-002")!;
 			expect(skippedTask.status).toBe("skipped");
 			expect(skippedTask.exitReason).toBe("Skipped by orch_force_merge");
 			expect(reloaded.failedTasks).toBe(0);
@@ -697,11 +716,11 @@ describe("7.x — Follow-up regression guards", () => {
 	});
 
 	it("7.3 — resume excludes persisted skipped tasks from wave execution", () => {
-		expect(resumeSource).toContain("persistedStatusByTaskId.get(taskId) !== \"skipped\"");
+		expect(resumeSource).toContain('persistedStatusByTaskId.get(taskId) !== "skipped"');
 	});
 
 	it("7.4 — resume synthetic merge retry preserves skipped task status", () => {
 		expect(resumeSource).toContain("Task skipped (merge retry)");
-		expect(resumeSource).toContain("status === \"skipped\"");
+		expect(resumeSource).toContain('status === "skipped"');
 	});
 });

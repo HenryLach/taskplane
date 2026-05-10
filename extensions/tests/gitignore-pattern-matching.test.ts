@@ -48,16 +48,14 @@ const TASKPLANE_GITIGNORE_ENTRIES = [
 	".worktrees/",
 ];
 
-const TASKPLANE_GITIGNORE_NPM_ENTRIES = [
-	".pi/npm/",
-];
+const TASKPLANE_GITIGNORE_NPM_ENTRIES = [".pi/npm/"];
 
 const ALL_GITIGNORE_PATTERNS = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
 
 // ─── Helper: match a file against all patterns ───────────────────────────
 
 function matchesAnyPattern(file: string, patterns: string[]): boolean {
-	return patterns.map(p => patternToRegex(p)).some(regex => regex.test(file));
+	return patterns.map((p) => patternToRegex(p)).some((regex) => regex.test(file));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
@@ -194,8 +192,12 @@ describe("full pattern set against realistic tracked files", () => {
 	});
 
 	it("4.3 — directory patterns match deeply nested files", () => {
-		expect(matchesAnyPattern(".worktrees/wt1/deeply/nested/file.txt", ALL_GITIGNORE_PATTERNS)).toBe(true);
+		expect(matchesAnyPattern(".worktrees/wt1/deeply/nested/file.txt", ALL_GITIGNORE_PATTERNS)).toBe(
+			true,
+		);
 		expect(matchesAnyPattern(".pi/orch-logs/a/b/c/deep.log", ALL_GITIGNORE_PATTERNS)).toBe(true);
-		expect(matchesAnyPattern(".pi/npm/node_modules/@scope/pkg/lib/index.js", ALL_GITIGNORE_PATTERNS)).toBe(true);
+		expect(
+			matchesAnyPattern(".pi/npm/node_modules/@scope/pkg/lib/index.js", ALL_GITIGNORE_PATTERNS),
+		).toBe(true);
 	});
 });

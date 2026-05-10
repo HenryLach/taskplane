@@ -89,22 +89,26 @@ describe("10.x — detectOrchState: state detection with strict precedence", () 
 	// ── Basic state detection ────────────────────────────────────────
 
 	it("10.1: no config, no batch, no branches, no tasks → no-config", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => false,
-			loadBatchState: () => null,
-			listOrchBranches: () => [],
-			countPendingTasks: () => 0,
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => false,
+				loadBatchState: () => null,
+				listOrchBranches: () => [],
+				countPendingTasks: () => 0,
+			}),
+		);
 		expect(result.state).toBe("no-config");
 		expect(result.contextMessage).toContain("Welcome to Taskplane");
 		expect(result.contextMessage).toContain("configuration");
 	});
 
 	it("10.2: active batch (executing) → active-batch", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => makeBatchState({ phase: "executing" }),
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => makeBatchState({ phase: "executing" }),
+			}),
+		);
 		expect(result.state).toBe("active-batch");
 		expect(result.batchId).toBe("20260322T120000");
 		expect(result.batchPhase).toBe("executing");
@@ -113,34 +117,41 @@ describe("10.x — detectOrchState: state detection with strict precedence", () 
 	});
 
 	it("10.3: active batch (merging) → active-batch", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => makeBatchState({ phase: "merging" }),
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => makeBatchState({ phase: "merging" }),
+			}),
+		);
 		expect(result.state).toBe("active-batch");
 		expect(result.batchPhase).toBe("merging");
 	});
 
 	it("10.4: active batch (launching) → active-batch", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => makeBatchState({ phase: "launching" }),
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => makeBatchState({ phase: "launching" }),
+			}),
+		);
 		expect(result.state).toBe("active-batch");
 		expect(result.batchPhase).toBe("launching");
 	});
 
 	it("10.5: completed batch + orch branch exists → completed-batch", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => makeBatchState({
-				phase: "completed",
-				orchBranch: "orch/test-20260322T120000",
-				succeededTasks: 8,
-				totalTasks: 10,
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () =>
+					makeBatchState({
+						phase: "completed",
+						orchBranch: "orch/test-20260322T120000",
+						succeededTasks: 8,
+						totalTasks: 10,
+					}),
+				listOrchBranches: () => ["orch/test-20260322T120000"],
 			}),
-			listOrchBranches: () => ["orch/test-20260322T120000"],
-		}));
+		);
 		expect(result.state).toBe("completed-batch");
 		expect(result.batchId).toBe("20260322T120000");
 		expect(result.orchBranch).toBe("orch/test-20260322T120000");
@@ -148,24 +159,28 @@ describe("10.x — detectOrchState: state detection with strict precedence", () 
 	});
 
 	it("10.6: config exists + pending tasks → pending-tasks", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => null,
-			listOrchBranches: () => [],
-			countPendingTasks: () => 5,
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => null,
+				listOrchBranches: () => [],
+				countPendingTasks: () => 5,
+			}),
+		);
 		expect(result.state).toBe("pending-tasks");
 		expect(result.pendingTaskCount).toBe(5);
 		expect(result.contextMessage).toContain("5 pending tasks");
 	});
 
 	it("10.7: config exists + no pending tasks → no-tasks", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => null,
-			listOrchBranches: () => [],
-			countPendingTasks: () => 0,
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => null,
+				listOrchBranches: () => [],
+				countPendingTasks: () => 0,
+			}),
+		);
 		expect(result.state).toBe("no-tasks");
 		expect(result.contextMessage).toContain("No pending tasks");
 		expect(result.contextMessage).toContain("GitHub Issues");
@@ -175,56 +190,68 @@ describe("10.x — detectOrchState: state detection with strict precedence", () 
 
 	it("10.8: active batch takes precedence over no-config", () => {
 		// Even if config is missing, an active batch is surfaced first
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => false,
-			loadBatchState: () => makeBatchState({ phase: "executing" }),
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => false,
+				loadBatchState: () => makeBatchState({ phase: "executing" }),
+			}),
+		);
 		expect(result.state).toBe("active-batch");
 	});
 
 	it("10.9: active batch takes precedence over pending tasks", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => makeBatchState({ phase: "executing" }),
-			countPendingTasks: () => 10,
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => makeBatchState({ phase: "executing" }),
+				countPendingTasks: () => 10,
+			}),
+		);
 		expect(result.state).toBe("active-batch");
 	});
 
 	it("10.10: completed batch + branch takes precedence over no-config", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => false,
-			loadBatchState: () => makeBatchState({
-				phase: "completed",
-				orchBranch: "orch/test",
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => false,
+				loadBatchState: () =>
+					makeBatchState({
+						phase: "completed",
+						orchBranch: "orch/test",
+					}),
+				listOrchBranches: () => ["orch/test"],
 			}),
-			listOrchBranches: () => ["orch/test"],
-		}));
+		);
 		expect(result.state).toBe("completed-batch");
 	});
 
 	it("10.11: completed batch + branch takes precedence over pending tasks", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => makeBatchState({
-				phase: "completed",
-				orchBranch: "orch/test",
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () =>
+					makeBatchState({
+						phase: "completed",
+						orchBranch: "orch/test",
+					}),
+				listOrchBranches: () => ["orch/test"],
+				countPendingTasks: () => 5,
 			}),
-			listOrchBranches: () => ["orch/test"],
-			countPendingTasks: () => 5,
-		}));
+		);
 		expect(result.state).toBe("completed-batch");
 	});
 
 	it("10.12: no-config takes precedence over pending tasks", () => {
 		// If there's no config, we can't even know about tasks properly
 		// But the precedence order puts no-config after batch states
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => false,
-			loadBatchState: () => null,
-			listOrchBranches: () => [],
-			countPendingTasks: () => 3,
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => false,
+				loadBatchState: () => null,
+				listOrchBranches: () => [],
+				countPendingTasks: () => 3,
+			}),
+		);
 		expect(result.state).toBe("no-config");
 	});
 
@@ -233,74 +260,90 @@ describe("10.x — detectOrchState: state detection with strict precedence", () 
 	it("10.13: stale orch branch — completed batch but branch deleted → falls through", () => {
 		// R002-2: If batch says "completed" with an orchBranch, but that branch
 		// no longer exists in git, it should NOT detect as completed-batch.
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => makeBatchState({
-				phase: "completed",
-				orchBranch: "orch/deleted-branch",
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () =>
+					makeBatchState({
+						phase: "completed",
+						orchBranch: "orch/deleted-branch",
+					}),
+				listOrchBranches: () => [], // branch was deleted
+				countPendingTasks: () => 0,
 			}),
-			listOrchBranches: () => [], // branch was deleted
-			countPendingTasks: () => 0,
-		}));
+		);
 		// Falls through to no-tasks since config exists and no pending tasks
 		expect(result.state).toBe("no-tasks");
 	});
 
 	it("10.14: corrupt batch state (loadBatchState throws) → falls through gracefully", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => { throw new Error("corrupt JSON"); },
-			listOrchBranches: () => [],
-			countPendingTasks: () => 0,
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => {
+					throw new Error("corrupt JSON");
+				},
+				listOrchBranches: () => [],
+				countPendingTasks: () => 0,
+			}),
+		);
 		// Error is caught, falls through to no-config check
 		expect(result.state).toBe("no-tasks");
 	});
 
 	it("10.15: terminal batch states (failed, stopped, idle) are NOT active-batch", () => {
 		for (const phase of ["failed", "stopped", "idle", "completed"]) {
-			const result = detectOrchState(makeDeps({
-				hasConfig: () => true,
-				loadBatchState: () => makeBatchState({
-					phase,
-					orchBranch: "", // no orch branch → no completed-batch
+			const result = detectOrchState(
+				makeDeps({
+					hasConfig: () => true,
+					loadBatchState: () =>
+						makeBatchState({
+							phase,
+							orchBranch: "", // no orch branch → no completed-batch
+						}),
+					listOrchBranches: () => [],
+					countPendingTasks: () => 0,
 				}),
-				listOrchBranches: () => [],
-				countPendingTasks: () => 0,
-			}));
+			);
 			expect(result.state, `phase "${phase}" should NOT be active-batch`).not.toBe("active-batch");
 		}
 	});
 
 	it("10.16: orch branches exist but no batch state → completed-batch", () => {
 		// Covers the "orphaned orch branch" case (batch-state.json deleted)
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => null,
-			listOrchBranches: () => ["orch/orphan-branch"],
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => null,
+				listOrchBranches: () => ["orch/orphan-branch"],
+			}),
+		);
 		expect(result.state).toBe("completed-batch");
 		expect(result.orchBranch).toBe("orch/orphan-branch");
 		expect(result.contextMessage).toContain("orch branch");
 	});
 
 	it("10.17: multiple orphaned orch branches → completed-batch with count", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => null,
-			listOrchBranches: () => ["orch/branch-1", "orch/branch-2"],
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => null,
+				listOrchBranches: () => ["orch/branch-1", "orch/branch-2"],
+			}),
+		);
 		expect(result.state).toBe("completed-batch");
 		expect(result.contextMessage).toContain("2 orch branches");
 	});
 
 	it("10.18: single pending task uses singular form", () => {
-		const result = detectOrchState(makeDeps({
-			hasConfig: () => true,
-			loadBatchState: () => null,
-			listOrchBranches: () => [],
-			countPendingTasks: () => 1,
-		}));
+		const result = detectOrchState(
+			makeDeps({
+				hasConfig: () => true,
+				loadBatchState: () => null,
+				listOrchBranches: () => [],
+				countPendingTasks: () => 1,
+			}),
+		);
 		expect(result.state).toBe("pending-tasks");
 		expect(result.pendingTaskCount).toBe(1);
 		expect(result.contextMessage).toContain("1 pending task ");
@@ -308,15 +351,18 @@ describe("10.x — detectOrchState: state detection with strict precedence", () 
 	});
 
 	it("10.19: active-batch context includes task counters", () => {
-		const result = detectOrchState(makeDeps({
-			loadBatchState: () => makeBatchState({
-				phase: "executing",
-				succeededTasks: 4,
-				failedTasks: 1,
-				skippedTasks: 2,
-				totalTasks: 10,
+		const result = detectOrchState(
+			makeDeps({
+				loadBatchState: () =>
+					makeBatchState({
+						phase: "executing",
+						succeededTasks: 4,
+						failedTasks: 1,
+						skippedTasks: 2,
+						totalTasks: 10,
+					}),
 			}),
-		}));
+		);
 		expect(result.state).toBe("active-batch");
 		expect(result.contextMessage).toContain("4 succeeded");
 		expect(result.contextMessage).toContain("1 failed");
@@ -325,14 +371,17 @@ describe("10.x — detectOrchState: state detection with strict precedence", () 
 	});
 
 	it("10.20: completed-batch context mentions integration", () => {
-		const result = detectOrchState(makeDeps({
-			loadBatchState: () => makeBatchState({
-				phase: "completed",
-				orchBranch: "orch/test",
-				baseBranch: "main",
+		const result = detectOrchState(
+			makeDeps({
+				loadBatchState: () =>
+					makeBatchState({
+						phase: "completed",
+						orchBranch: "orch/test",
+						baseBranch: "main",
+					}),
+				listOrchBranches: () => ["orch/test"],
 			}),
-			listOrchBranches: () => ["orch/test"],
-		}));
+		);
 		expect(result.state).toBe("completed-batch");
 		expect(result.contextMessage).toContain("integrate");
 		expect(result.contextMessage).toContain("main");
@@ -508,9 +557,7 @@ describe("12.x — /orch with args: existing behavior preserved", () => {
 		expect(doOrchStartIdx).toBeGreaterThan(noArgsEnd);
 
 		// The doOrchStart helper itself calls startBatchInWorker (TP-071: worker thread)
-		const doOrchStartBody = extSource.substring(
-			extSource.indexOf("async function doOrchStart("),
-		);
+		const doOrchStartBody = extSource.substring(extSource.indexOf("async function doOrchStart("));
 		expect(doOrchStartBody).toContain("startBatchInWorker(");
 	});
 
@@ -518,9 +565,7 @@ describe("12.x — /orch with args: existing behavior preserved", () => {
 		const extSource = readSource("extension.ts");
 
 		// The doOrchStart helper should call startBatchInWorker then activateSupervisor (TP-071)
-		const doOrchStartBody = extSource.substring(
-			extSource.indexOf("async function doOrchStart("),
-		);
+		const doOrchStartBody = extSource.substring(extSource.indexOf("async function doOrchStart("));
 		const startBatchIdx = doOrchStartBody.indexOf("startBatchInWorker(");
 		const activateAfterBatch = doOrchStartBody.indexOf("activateSupervisor(", startBatchIdx);
 		expect(activateAfterBatch).toBeGreaterThan(startBatchIdx);
@@ -534,7 +579,10 @@ describe("12.x — /orch with args: existing behavior preserved", () => {
 		);
 
 		// In the no-args path, activateSupervisor is called with routingState
-		const noArgsBlock = orchHandler.substring(0, orchHandler.indexOf("return;\n\t\t\t}\n\n\t\t\tif (!requireExecCtx"));
+		const noArgsBlock = orchHandler.substring(
+			0,
+			orchHandler.indexOf("return;\n\t\t\t}\n\n\t\t\tif (!requireExecCtx"),
+		);
 		expect(noArgsBlock).toContain("activateSupervisor(");
 		expect(noArgsBlock).toContain("routingState:");
 		expect(noArgsBlock).toContain("contextMessage:");

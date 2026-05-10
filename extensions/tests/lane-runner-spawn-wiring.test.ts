@@ -57,14 +57,13 @@ describe("TP-189-A1 — lane-runner.ts worker spawn-site wires buildWorkerToolsA
 		// literal (the worker spawn payload), the `tools:` field must be
 		// set to `buildWorkerToolsAllowlist(config.workerTools)`. Tolerate
 		// trailing comma/whitespace; tolerate optional `as const` casts.
-		const expected =
-			/\btools\s*:\s*buildWorkerToolsAllowlist\(\s*config\.workerTools\s*\)/;
+		const expected = /\btools\s*:\s*buildWorkerToolsAllowlist\(\s*config\.workerTools\s*\)/;
 		assert.match(
 			laneRunnerSrc,
 			expected,
 			"lane-runner.ts must wire `tools: buildWorkerToolsAllowlist(config.workerTools)` " +
-			"in the worker spawn options. If a refactor moved this site, update both this " +
-			"test and the surrounding TP-184 NOTE comment.",
+				"in the worker spawn options. If a refactor moved this site, update both this " +
+				"test and the surrounding TP-184 NOTE comment.",
 		);
 	});
 
@@ -77,9 +76,9 @@ describe("TP-189-A1 — lane-runner.ts worker spawn-site wires buildWorkerToolsA
 			laneRunnerSrc,
 			/\btools\s*:\s*config\.workerTools\b/,
 			"lane-runner.ts must NOT pass config.workerTools directly as the worker `tools:` " +
-			"option. Use buildWorkerToolsAllowlist(config.workerTools) so engine bridge tools " +
-			"(review_step, notify_supervisor, escalate_to_supervisor, request_segment_expansion) " +
-			"are always present. See TP-184 / issue #530.",
+				"option. Use buildWorkerToolsAllowlist(config.workerTools) so engine bridge tools " +
+				"(review_step, notify_supervisor, escalate_to_supervisor, request_segment_expansion) " +
+				"are always present. See TP-184 / issue #530.",
 		);
 	});
 
@@ -102,13 +101,12 @@ describe("TP-189-A1 — lane-runner.ts worker spawn-site wires buildWorkerToolsA
 			lastAgentIdIdx > -1,
 			"no `agentId:` field found before the buildWorkerToolsAllowlist call site",
 		);
-		const linesBetween =
-			laneRunnerSrc.slice(lastAgentIdIdx, helperCallIdx).split("\n").length;
+		const linesBetween = laneRunnerSrc.slice(lastAgentIdIdx, helperCallIdx).split("\n").length;
 		assert.ok(
 			linesBetween < 80,
 			`buildWorkerToolsAllowlist call site is ${linesBetween} lines from the nearest \`agentId:\` field; ` +
-			`expected < 80 (call should be inside the AgentHostOptions object literal). ` +
-			`If the spawn site has been refactored, widen this tolerance or update the test.`,
+				`expected < 80 (call should be inside the AgentHostOptions object literal). ` +
+				`If the spawn site has been refactored, widen this tolerance or update the test.`,
 		);
 	});
 });

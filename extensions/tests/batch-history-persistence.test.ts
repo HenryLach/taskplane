@@ -4,11 +4,19 @@ import { join } from "path";
 import { tmpdir } from "os";
 
 import { expect } from "./expect.ts";
-import { loadBatchHistory, saveBatchHistory, updateBatchHistoryIntegration } from "../taskplane/persistence.ts";
+import {
+	loadBatchHistory,
+	saveBatchHistory,
+	updateBatchHistoryIntegration,
+} from "../taskplane/persistence.ts";
 import { withPreservedBatchHistory } from "../taskplane/extension.ts";
 import type { BatchHistorySummary } from "../taskplane/types.ts";
 
-function makeSummary(batchId: string, status: BatchHistorySummary["status"], startedAt = 1000): BatchHistorySummary {
+function makeSummary(
+	batchId: string,
+	status: BatchHistorySummary["status"],
+	startedAt = 1000,
+): BatchHistorySummary {
 	return {
 		batchId,
 		status,
@@ -22,23 +30,27 @@ function makeSummary(batchId: string, status: BatchHistorySummary["status"], sta
 		skippedTasks: 0,
 		blockedTasks: 0,
 		tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, costUsd: 0.01 },
-		tasks: [{
-			taskId: "TP-137",
-			taskName: "TP-137",
-			status: status === "failed" ? "failed" : "succeeded",
-			wave: 1,
-			lane: 1,
-			durationMs: 500,
-			tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, costUsd: 0.01 },
-			exitReason: null,
-		}],
-		waves: [{
-			wave: 1,
-			tasks: ["TP-137"],
-			mergeStatus: "succeeded",
-			durationMs: 500,
-			tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, costUsd: 0.01 },
-		}],
+		tasks: [
+			{
+				taskId: "TP-137",
+				taskName: "TP-137",
+				status: status === "failed" ? "failed" : "succeeded",
+				wave: 1,
+				lane: 1,
+				durationMs: 500,
+				tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, costUsd: 0.01 },
+				exitReason: null,
+			},
+		],
+		waves: [
+			{
+				wave: 1,
+				tasks: ["TP-137"],
+				mergeStatus: "succeeded",
+				durationMs: 500,
+				tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, costUsd: 0.01 },
+			},
+		],
 	};
 }
 
@@ -84,7 +96,11 @@ describe("batch history persistence", () => {
 
 		try {
 			const result = withPreservedBatchHistory(root, () => {
-				writeFileSync(historyPath, JSON.stringify([makeSummary("batch-stale", "failed", 1000)], null, 2), "utf-8");
+				writeFileSync(
+					historyPath,
+					JSON.stringify([makeSummary("batch-stale", "failed", 1000)], null, 2),
+					"utf-8",
+				);
 				return "ok";
 			});
 
@@ -141,8 +157,8 @@ describe("updateBatchHistoryIntegration (TP-179)", () => {
 
 			const history = loadBatchHistory(root);
 			expect(history).toHaveLength(2);
-			const entryA = history.find(e => e.batchId === "batch-A");
-			const entryB = history.find(e => e.batchId === "batch-B");
+			const entryA = history.find((e) => e.batchId === "batch-A");
+			const entryB = history.find((e) => e.batchId === "batch-B");
 			expect(entryA!.integratedAt).toBe(ts);
 			expect(entryB!.integratedAt).toBe(undefined);
 		} finally {

@@ -17,12 +17,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CATEGORY_ORDER = [
-	"compat-code",
-	"user-facing strings",
-	"comments/docs",
-	"types/contracts",
-];
+const CATEGORY_ORDER = ["compat-code", "user-facing strings", "comments/docs", "types/contracts"];
 
 const STRICT_FAILURE_EXIT_CODE = 2;
 const SCAN_ROOTS = ["extensions", "bin", "templates", "dashboard", "skills"];
@@ -48,10 +43,7 @@ const USER_FACING_FILES = new Set([
 	"supervisor.ts",
 ]);
 
-const TYPES_CONTRACT_FILES = new Set([
-	"types.ts",
-	"config-schema.ts",
-]);
+const TYPES_CONTRACT_FILES = new Set(["types.ts", "config-schema.ts"]);
 
 const FUNCTIONAL_PATTERNS = [
 	{
@@ -143,7 +135,8 @@ function isUserFacingLine(fileName, line) {
 	}
 
 	if (fileName === "worktree.ts") {
-		const hasDisplayContext = line.includes("message:") || line.includes("hint:") || /["'`]/.test(line);
+		const hasDisplayContext =
+			line.includes("message:") || line.includes("hint:") || /["'`]/.test(line);
 		return hasDisplayContext && /tmux/i.test(line);
 	}
 
@@ -176,8 +169,9 @@ function collectFilesRecursive(repoRoot, rootRel, out) {
 	const stack = [absRoot];
 	while (stack.length > 0) {
 		const current = stack.pop();
-		const entries = readdirSync(current, { withFileTypes: true })
-			.sort((a, b) => a.name.localeCompare(b.name));
+		const entries = readdirSync(current, { withFileTypes: true }).sort((a, b) =>
+			a.name.localeCompare(b.name),
+		);
 
 		for (let i = entries.length - 1; i >= 0; i--) {
 			const entry = entries[i];
@@ -203,7 +197,9 @@ function buildAudit() {
 		collectFilesRecursive(repoRoot, scanRoot, entriesAbs);
 	}
 
-	entriesAbs.sort((a, b) => normalizeRepoPath(relative(repoRoot, a)).localeCompare(normalizeRepoPath(relative(repoRoot, b))));
+	entriesAbs.sort((a, b) =>
+		normalizeRepoPath(relative(repoRoot, a)).localeCompare(normalizeRepoPath(relative(repoRoot, b))),
+	);
 
 	const totalsByCategory = createCategoryCounter();
 	const byFile = [];
@@ -273,7 +269,7 @@ function buildAudit() {
 		return a.pattern.localeCompare(b.pattern);
 	});
 
-	const filesWithReferences = byFile.filter(entry => entry.references > 0).length;
+	const filesWithReferences = byFile.filter((entry) => entry.references > 0).length;
 
 	return {
 		schemaVersion: 2,
@@ -322,7 +318,7 @@ function main() {
 	}
 
 	const known = new Set(["--json", "--strict", "--help"]);
-	const unknown = args.filter(arg => !known.has(arg));
+	const unknown = args.filter((arg) => !known.has(arg));
 	if (unknown.length > 0) {
 		console.error(`[tmux-reference-audit] Unknown option(s): ${unknown.join(", ")}`);
 		printUsage();

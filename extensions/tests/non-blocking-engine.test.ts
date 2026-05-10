@@ -25,9 +25,7 @@ import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 
-import {
-	emitEngineEvent,
-} from "../taskplane/persistence.ts";
+import { emitEngineEvent } from "../taskplane/persistence.ts";
 
 import {
 	buildEngineEventBase,
@@ -36,11 +34,7 @@ import {
 	DEFAULT_TASK_RUNNER_CONFIG,
 } from "../taskplane/types.ts";
 
-import type {
-	EngineEvent,
-	EngineEventCallback,
-	EngineEventType,
-} from "../taskplane/types.ts";
+import type { EngineEvent, EngineEventCallback, EngineEventType } from "../taskplane/types.ts";
 
 import { startBatchAsync } from "../taskplane/extension.ts";
 import { resumeOrchBatch } from "../taskplane/resume.ts";
@@ -58,8 +52,8 @@ function readEngineEvents(stateRoot: string): EngineEvent[] {
 	const content = readFileSync(eventsPath, "utf-8");
 	return content
 		.split("\n")
-		.filter(line => line.trim().length > 0)
-		.map(line => JSON.parse(line) as EngineEvent);
+		.filter((line) => line.trim().length > 0)
+		.map((line) => JSON.parse(line) as EngineEvent);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -176,9 +170,14 @@ describe("2.x — Engine event emission infrastructure", () => {
 
 	it("2.2: buildEngineEventBase accepts all valid EngineEventType values", () => {
 		const types: EngineEventType[] = [
-			"wave_start", "task_complete", "task_failed",
-			"merge_start", "merge_success", "merge_failed",
-			"batch_complete", "batch_paused",
+			"wave_start",
+			"task_complete",
+			"task_failed",
+			"merge_start",
+			"merge_success",
+			"merge_failed",
+			"batch_complete",
+			"batch_paused",
 		];
 		for (const type of types) {
 			const base = buildEngineEventBase(type, "batch-1", 0, "executing");
@@ -259,9 +258,13 @@ describe("2.x — Engine event emission infrastructure", () => {
 			throw new Error("callback exploded");
 		};
 		expect(() => {
-			emitEngineEvent(tmpDir, {
-				...buildEngineEventBase("wave_start", "batch-1", 0, "executing"),
-			}, throwingCallback);
+			emitEngineEvent(
+				tmpDir,
+				{
+					...buildEngineEventBase("wave_start", "batch-1", 0, "executing"),
+				},
+				throwingCallback,
+			);
 		}).not.toThrow();
 		// Event should still have been written to disk before callback
 		const events = readEngineEvents(tmpDir);
@@ -287,11 +290,24 @@ describe("3.x — JSONL persistence: events.jsonl lifecycle records", () => {
 	it("3.1: full lifecycle sequence produces correct JSONL entries", () => {
 		// Simulate a full batch lifecycle: wave_start → task_complete → merge_start → merge_success → batch_complete
 		const events: EngineEvent[] = [
-			{ ...buildEngineEventBase("wave_start", "batch-1", 0, "executing"), taskIds: ["TP-001"], laneCount: 1 },
-			{ ...buildEngineEventBase("task_complete", "batch-1", 0, "executing"), taskId: "TP-001", durationMs: 30000 },
+			{
+				...buildEngineEventBase("wave_start", "batch-1", 0, "executing"),
+				taskIds: ["TP-001"],
+				laneCount: 1,
+			},
+			{
+				...buildEngineEventBase("task_complete", "batch-1", 0, "executing"),
+				taskId: "TP-001",
+				durationMs: 30000,
+			},
 			{ ...buildEngineEventBase("merge_start", "batch-1", 0, "merging"), laneCount: 1 },
 			{ ...buildEngineEventBase("merge_success", "batch-1", 0, "merging"), totalWaves: 1 },
-			{ ...buildEngineEventBase("batch_complete", "batch-1", 0, "completed"), succeededTasks: 1, failedTasks: 0, batchDurationMs: 35000 },
+			{
+				...buildEngineEventBase("batch_complete", "batch-1", 0, "completed"),
+				succeededTasks: 1,
+				failedTasks: 0,
+				batchDurationMs: 35000,
+			},
 		];
 
 		for (const event of events) {
@@ -300,8 +316,12 @@ describe("3.x — JSONL persistence: events.jsonl lifecycle records", () => {
 
 		const written = readEngineEvents(tmpDir);
 		expect(written).toHaveLength(5);
-		expect(written.map(e => e.type)).toEqual([
-			"wave_start", "task_complete", "merge_start", "merge_success", "batch_complete",
+		expect(written.map((e) => e.type)).toEqual([
+			"wave_start",
+			"task_complete",
+			"merge_start",
+			"merge_success",
+			"batch_complete",
 		]);
 		// Verify terminal event has summary fields
 		expect(written[4].succeededTasks).toBe(1);
@@ -310,9 +330,21 @@ describe("3.x — JSONL persistence: events.jsonl lifecycle records", () => {
 
 	it("3.2: failed lifecycle produces batch_paused terminal event", () => {
 		const events: EngineEvent[] = [
-			{ ...buildEngineEventBase("wave_start", "batch-2", 0, "executing"), taskIds: ["TP-002"], laneCount: 1 },
-			{ ...buildEngineEventBase("task_failed", "batch-2", 0, "executing"), taskId: "TP-002", reason: "test failure" },
-			{ ...buildEngineEventBase("batch_paused", "batch-2", 0, "paused"), reason: "stop-wave policy: all tasks failed", failedTasks: 1 },
+			{
+				...buildEngineEventBase("wave_start", "batch-2", 0, "executing"),
+				taskIds: ["TP-002"],
+				laneCount: 1,
+			},
+			{
+				...buildEngineEventBase("task_failed", "batch-2", 0, "executing"),
+				taskId: "TP-002",
+				reason: "test failure",
+			},
+			{
+				...buildEngineEventBase("batch_paused", "batch-2", 0, "paused"),
+				reason: "stop-wave policy: all tasks failed",
+				failedTasks: 1,
+			},
 		];
 
 		for (const event of events) {
@@ -571,7 +603,8 @@ describe("6.x — /orch-resume early-return paths reset phase from 'launching' t
 		// Find the StateFileError catch block
 		const catchBlock = resumeSource.substring(
 			resumeSource.indexOf("if (err instanceof StateFileError)"),
-			resumeSource.indexOf("throw err", resumeSource.indexOf("if (err instanceof StateFileError)")) + 20,
+			resumeSource.indexOf("throw err", resumeSource.indexOf("if (err instanceof StateFileError)")) +
+				20,
 		);
 		expect(catchBlock).toContain('batchState.phase = "idle"');
 	});
@@ -698,7 +731,9 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 
 	it("8.1: startBatchAsync returns synchronously before engine work begins", async () => {
 		let engineStarted = false;
-		const engineFn = async () => { engineStarted = true; };
+		const engineFn = async () => {
+			engineStarted = true;
+		};
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 		batchState.batchId = "test-batch";
@@ -713,14 +748,16 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		// Advance past the setTimeout(0) detach
 		mock.timers.tick(1);
 		// Let microtasks settle
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		// Now engine should have run
 		expect(engineStarted).toBe(true);
 	});
 
 	it("8.2: startBatchAsync calls updateWidget on successful engine completion", async () => {
-		const engineFn = async () => { /* success */ };
+		const engineFn = async () => {
+			/* success */
+		};
 		const batchState = freshOrchBatchState();
 		batchState.phase = "executing";
 		batchState.batchId = "test-batch";
@@ -734,14 +771,16 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 
 		// Advance past setTimeout(0) and let microtask (.then) resolve
 		mock.timers.tick(1);
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		// Widget should have been updated after successful completion
 		expect(updateWidget).toHaveBeenCalledTimes(1);
 	});
 
 	it("8.3: startBatchAsync error boundary sets phase to 'failed' on engine rejection", async () => {
-		const engineFn = async () => { throw new Error("engine explosion"); };
+		const engineFn = async () => {
+			throw new Error("engine explosion");
+		};
 		const batchState = freshOrchBatchState();
 		batchState.phase = "executing";
 		batchState.batchId = "crash-batch";
@@ -752,7 +791,7 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 
 		// Advance timer and let rejection propagate
 		mock.timers.tick(1);
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		// Error boundary should have set phase to "failed"
 		expect(batchState.phase).toBe("failed");
@@ -768,7 +807,9 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 	});
 
 	it("8.4: startBatchAsync error boundary does NOT overwrite already-completed phase", async () => {
-		const engineFn = async () => { throw new Error("late crash"); };
+		const engineFn = async () => {
+			throw new Error("late crash");
+		};
 		const batchState = freshOrchBatchState();
 		// Simulate engine having already set completed before the catch fires
 		batchState.phase = "completed";
@@ -780,7 +821,7 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
 		mock.timers.tick(1);
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		// Phase should remain "completed" — error boundary checks for terminal phases
 		expect(batchState.phase).toBe("completed");
@@ -789,7 +830,9 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 	});
 
 	it("8.5: startBatchAsync error boundary does NOT overwrite already-failed phase", async () => {
-		const engineFn = async () => { throw new Error("double crash"); };
+		const engineFn = async () => {
+			throw new Error("double crash");
+		};
 		const batchState = freshOrchBatchState();
 		batchState.phase = "failed";
 		batchState.batchId = "already-failed";
@@ -801,7 +844,7 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
 		mock.timers.tick(1);
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		// Phase should remain "failed" — no double-set
 		expect(batchState.phase).toBe("failed");
@@ -836,7 +879,12 @@ describe("9.x — Behavioral: launch-window command compatibility", () => {
 		expect(hasActiveBatch).toBe(true);
 
 		// /orch-resume guard: "launching" should be recognized as actively running
-		const resumeBlockedPhases: Set<string> = new Set(["launching", "executing", "merging", "planning"]);
+		const resumeBlockedPhases: Set<string> = new Set([
+			"launching",
+			"executing",
+			"merging",
+			"planning",
+		]);
 		expect(resumeBlockedPhases.has(batchState.phase)).toBe(true);
 	});
 
@@ -912,7 +960,12 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 			terminalEventEmitted = true;
 			if (batchState.phase === "completed" || batchState.phase === "failed") {
 				const event: EngineEvent = {
-					...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+					...buildEngineEventBase(
+						"batch_complete",
+						batchState.batchId,
+						batchState.currentWaveIndex,
+						batchState.phase,
+					),
 					succeededTasks: batchState.succeededTasks,
 					failedTasks: batchState.failedTasks,
 					skippedTasks: batchState.skippedTasks,
@@ -955,8 +1008,15 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 			terminalEventEmitted = true;
 			if (batchState.phase === "paused" || batchState.phase === "stopped") {
 				const event: EngineEvent = {
-					...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
-					reason: reason || (batchState.errors.length > 0 ? batchState.errors[batchState.errors.length - 1] : "paused"),
+					...buildEngineEventBase(
+						"batch_paused",
+						batchState.batchId,
+						batchState.currentWaveIndex,
+						batchState.phase,
+					),
+					reason:
+						reason ||
+						(batchState.errors.length > 0 ? batchState.errors[batchState.errors.length - 1] : "paused"),
 					failedTasks: batchState.failedTasks,
 				};
 				emitEngineEvent(tmpDir, event, callback);
@@ -988,11 +1048,20 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 			if (terminalEventEmitted) return;
 			terminalEventEmitted = true;
 			if (batchState.phase === "completed" || batchState.phase === "failed") {
-				emitEngineEvent(tmpDir, {
-					...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
-					succeededTasks: batchState.succeededTasks,
-					failedTasks: batchState.failedTasks,
-				}, callback);
+				emitEngineEvent(
+					tmpDir,
+					{
+						...buildEngineEventBase(
+							"batch_complete",
+							batchState.batchId,
+							batchState.currentWaveIndex,
+							batchState.phase,
+						),
+						succeededTasks: batchState.succeededTasks,
+						failedTasks: batchState.failedTasks,
+					},
+					callback,
+				);
 			}
 		};
 
@@ -1022,12 +1091,21 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 			if (terminalEventEmitted) return;
 			terminalEventEmitted = true;
 			if (batchState.phase === "completed" || batchState.phase === "failed") {
-				emitEngineEvent(tmpDir, {
-					...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
-					succeededTasks: batchState.succeededTasks,
-					failedTasks: batchState.failedTasks,
-					batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
-				}, callback);
+				emitEngineEvent(
+					tmpDir,
+					{
+						...buildEngineEventBase(
+							"batch_complete",
+							batchState.batchId,
+							batchState.currentWaveIndex,
+							batchState.phase,
+						),
+						succeededTasks: batchState.succeededTasks,
+						failedTasks: batchState.failedTasks,
+						batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
+					},
+					callback,
+				);
 			}
 		};
 
@@ -1053,11 +1131,20 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 			if (terminalEventEmitted) return;
 			terminalEventEmitted = true;
 			if (batchState.phase === "paused" || batchState.phase === "stopped") {
-				emitEngineEvent(tmpDir, {
-					...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
-					reason: reason || "stopped",
-					failedTasks: batchState.failedTasks,
-				}, callback);
+				emitEngineEvent(
+					tmpDir,
+					{
+						...buildEngineEventBase(
+							"batch_paused",
+							batchState.batchId,
+							batchState.currentWaveIndex,
+							batchState.phase,
+						),
+						reason: reason || "stopped",
+						failedTasks: batchState.failedTasks,
+					},
+					callback,
+				);
 			}
 		};
 
@@ -1077,57 +1164,89 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 		const batchId = "lifecycle-test";
 
 		// Wave 0 start
-		emitEngineEvent(tmpDir, {
-			...buildEngineEventBase("wave_start", batchId, 0, "executing"),
-			taskIds: ["TP-001", "TP-002"],
-			laneCount: 2,
-		}, callback);
+		emitEngineEvent(
+			tmpDir,
+			{
+				...buildEngineEventBase("wave_start", batchId, 0, "executing"),
+				taskIds: ["TP-001", "TP-002"],
+				laneCount: 2,
+			},
+			callback,
+		);
 
 		// Tasks complete
-		emitEngineEvent(tmpDir, {
-			...buildEngineEventBase("task_complete", batchId, 0, "executing"),
-			taskId: "TP-001",
-			durationMs: 15000,
-		}, callback);
+		emitEngineEvent(
+			tmpDir,
+			{
+				...buildEngineEventBase("task_complete", batchId, 0, "executing"),
+				taskId: "TP-001",
+				durationMs: 15000,
+			},
+			callback,
+		);
 
-		emitEngineEvent(tmpDir, {
-			...buildEngineEventBase("task_failed", batchId, 0, "executing"),
-			taskId: "TP-002",
-			durationMs: 8000,
-			reason: "test failures",
-		}, callback);
+		emitEngineEvent(
+			tmpDir,
+			{
+				...buildEngineEventBase("task_failed", batchId, 0, "executing"),
+				taskId: "TP-002",
+				durationMs: 8000,
+				reason: "test failures",
+			},
+			callback,
+		);
 
 		// Merge
-		emitEngineEvent(tmpDir, {
-			...buildEngineEventBase("merge_start", batchId, 0, "merging"),
-			laneCount: 1,
-		}, callback);
+		emitEngineEvent(
+			tmpDir,
+			{
+				...buildEngineEventBase("merge_start", batchId, 0, "merging"),
+				laneCount: 1,
+			},
+			callback,
+		);
 
-		emitEngineEvent(tmpDir, {
-			...buildEngineEventBase("merge_success", batchId, 0, "merging"),
-			totalWaves: 1,
-		}, callback);
+		emitEngineEvent(
+			tmpDir,
+			{
+				...buildEngineEventBase("merge_success", batchId, 0, "merging"),
+				totalWaves: 1,
+			},
+			callback,
+		);
 
 		// Terminal
-		emitEngineEvent(tmpDir, {
-			...buildEngineEventBase("batch_complete", batchId, 0, "completed"),
-			succeededTasks: 1,
-			failedTasks: 1,
-			batchDurationMs: 25000,
-		}, callback);
+		emitEngineEvent(
+			tmpDir,
+			{
+				...buildEngineEventBase("batch_complete", batchId, 0, "completed"),
+				succeededTasks: 1,
+				failedTasks: 1,
+				batchDurationMs: 25000,
+			},
+			callback,
+		);
 
 		// Verify order in both callback and disk
 		expect(received).toHaveLength(6);
-		expect(received.map(e => e.type)).toEqual([
-			"wave_start", "task_complete", "task_failed",
-			"merge_start", "merge_success", "batch_complete",
+		expect(received.map((e) => e.type)).toEqual([
+			"wave_start",
+			"task_complete",
+			"task_failed",
+			"merge_start",
+			"merge_success",
+			"batch_complete",
 		]);
 
 		const diskEvents = readEngineEvents(tmpDir);
 		expect(diskEvents).toHaveLength(6);
-		expect(diskEvents.map(e => e.type)).toEqual([
-			"wave_start", "task_complete", "task_failed",
-			"merge_start", "merge_success", "batch_complete",
+		expect(diskEvents.map((e) => e.type)).toEqual([
+			"wave_start",
+			"task_complete",
+			"task_failed",
+			"merge_start",
+			"merge_success",
+			"batch_complete",
 		]);
 
 		// Verify event-specific fields survived serialization roundtrip
@@ -1149,13 +1268,21 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 			if (terminalEventEmitted) return;
 			terminalEventEmitted = true;
 			if (batchState.phase === "completed" || batchState.phase === "failed") {
-				emitEngineEvent(tmpDir, {
-					...buildEngineEventBase("batch_complete", batchState.batchId, 0, batchState.phase),
-				}, callback);
+				emitEngineEvent(
+					tmpDir,
+					{
+						...buildEngineEventBase("batch_complete", batchState.batchId, 0, batchState.phase),
+					},
+					callback,
+				);
 			} else if (batchState.phase === "paused" || batchState.phase === "stopped") {
-				emitEngineEvent(tmpDir, {
-					...buildEngineEventBase("batch_paused", batchState.batchId, 0, batchState.phase),
-				}, callback);
+				emitEngineEvent(
+					tmpDir,
+					{
+						...buildEngineEventBase("batch_paused", batchState.batchId, 0, batchState.phase),
+					},
+					callback,
+				);
 			}
 		};
 
@@ -1181,10 +1308,11 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 
 	it("8.1: startBatchAsync returns synchronously (handler is not blocked)", () => {
 		let engineStarted = false;
-		const engineFn = () => new Promise<void>((resolve) => {
-			engineStarted = true;
-			resolve();
-		});
+		const engineFn = () =>
+			new Promise<void>((resolve) => {
+				engineStarted = true;
+				resolve();
+			});
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
@@ -1199,10 +1327,11 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 
 	it("8.2: engine runs after setTimeout fires (next tick)", async () => {
 		let engineStarted = false;
-		const engineFn = () => new Promise<void>((resolve) => {
-			engineStarted = true;
-			resolve();
-		});
+		const engineFn = () =>
+			new Promise<void>((resolve) => {
+				engineStarted = true;
+				resolve();
+			});
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
@@ -1213,7 +1342,7 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 		// Fire the setTimeout
 		mock.timers.tick(1);
 		// Let microtasks (promise .then) settle
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		expect(engineStarted).toBe(true);
 		// Widget should be updated after engine completes
@@ -1232,7 +1361,7 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 
 		// Fire setTimeout and let promise rejection settle
 		mock.timers.tick(1);
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		expect(batchState.phase).toBe("failed");
 		expect(batchState.endedAt).not.toBeNull();
@@ -1254,7 +1383,7 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 		mock.timers.tick(1);
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		// Should still be "completed", not overwritten to "failed"
 		expect(batchState.phase).toBe("completed");
@@ -1269,7 +1398,7 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 		mock.timers.tick(1);
-		await new Promise(r => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
 
 		expect(updateWidget).toHaveBeenCalledTimes(1);
 	});
@@ -1284,7 +1413,8 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
-		const isBlocked = batchState.phase !== "idle" &&
+		const isBlocked =
+			batchState.phase !== "idle" &&
 			batchState.phase !== "completed" &&
 			batchState.phase !== "failed" &&
 			batchState.phase !== "stopped";
@@ -1306,7 +1436,8 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
-		const isInactive = batchState.phase === "idle" ||
+		const isInactive =
+			batchState.phase === "idle" ||
 			batchState.phase === "completed" ||
 			batchState.phase === "failed" ||
 			batchState.phase === "stopped";
@@ -1318,7 +1449,8 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
-		const hasActiveBatch = batchState.phase !== "idle" &&
+		const hasActiveBatch =
+			batchState.phase !== "idle" &&
 			batchState.phase !== "completed" &&
 			batchState.phase !== "failed" &&
 			batchState.phase !== "stopped";
@@ -1330,7 +1462,8 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 
-		const isRunning = batchState.phase === "launching" ||
+		const isRunning =
+			batchState.phase === "launching" ||
 			batchState.phase === "executing" ||
 			batchState.phase === "merging" ||
 			batchState.phase === "planning";
@@ -1341,10 +1474,8 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 	it("9.6: all active phases blocked by /orch-resume guard", () => {
 		const activePhases = ["launching", "executing", "merging", "planning"] as const;
 		for (const phase of activePhases) {
-			const isRunning = phase === "launching" ||
-				phase === "executing" ||
-				phase === "merging" ||
-				phase === "planning";
+			const isRunning =
+				phase === "launching" || phase === "executing" || phase === "merging" || phase === "planning";
 			expect(isRunning).toBe(true);
 		}
 	});
@@ -1352,10 +1483,8 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 	it("9.7: idle/completed/failed/stopped not blocked by /orch-resume guard", () => {
 		const resumablePhases = ["idle", "completed", "failed", "stopped"] as const;
 		for (const phase of resumablePhases) {
-			const isRunning = phase === "launching" ||
-				phase === "executing" ||
-				phase === "merging" ||
-				phase === "planning";
+			const isRunning =
+				phase === "launching" || phase === "executing" || phase === "merging" || phase === "planning";
 			expect(isRunning).toBe(false);
 		}
 	});
@@ -1401,7 +1530,7 @@ describe("11.x — Behavioral: resumeOrchBatch early-return resets phase to 'idl
 		// Phase must reset to idle (not stuck at "launching")
 		expect(batchState.phase).toBe("idle");
 		// Should have notified about no state
-		expect(notifications.some(n => n.level === "error")).toBe(true);
+		expect(notifications.some((n) => n.level === "error")).toBe(true);
 	});
 
 	it("11.2: phase resets from 'launching' to 'idle' when state file is corrupt", async () => {
@@ -1433,7 +1562,7 @@ describe("11.x — Behavioral: resumeOrchBatch early-return resets phase to 'idl
 
 		// Phase must reset to idle
 		expect(batchState.phase).toBe("idle");
-		expect(notifications.some(n => n.level === "error")).toBe(true);
+		expect(notifications.some((n) => n.level === "error")).toBe(true);
 	});
 
 	it("11.3: idle phase stays idle when no persisted state exists (no regression for non-launched state)", async () => {

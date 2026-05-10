@@ -15,7 +15,15 @@ import { join } from "path";
 
 import { execLog } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
-import type { AllocatedLane, LaneTaskOutcome, OrchBatchRuntimeState, OrchestratorConfig, PersistedTaskRecord, BatchDiagnostics, PersistedTaskExitSummary } from "./types.ts";
+import type {
+	AllocatedLane,
+	LaneTaskOutcome,
+	OrchBatchRuntimeState,
+	OrchestratorConfig,
+	PersistedTaskRecord,
+	BatchDiagnostics,
+	PersistedTaskExitSummary,
+} from "./types.ts";
 import { defaultBatchDiagnostics } from "./types.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -173,7 +181,7 @@ export function buildDiagnosticEvents(input: DiagnosticReportInput): DiagnosticE
  * Serialize diagnostic events to JSONL format (one JSON object per line).
  */
 export function eventsToJsonl(events: DiagnosticEvent[]): string {
-	return events.map(e => JSON.stringify(e)).join("\n") + "\n";
+	return events.map((e) => JSON.stringify(e)).join("\n") + "\n";
 }
 
 // ── Human-Readable Summary ───────────────────────────────────────────
@@ -206,7 +214,10 @@ function formatCost(cost: number): string {
 /**
  * Generate a human-readable markdown summary report.
  */
-export function buildMarkdownReport(input: DiagnosticReportInput, events: DiagnosticEvent[]): string {
+export function buildMarkdownReport(
+	input: DiagnosticReportInput,
+	events: DiagnosticEvent[],
+): string {
 	const { batchId, phase, mode, startedAt, endedAt, diagnostics } = input;
 	const { succeededTasks, failedTasks, skippedTasks, blockedTasks, totalTasks } = input;
 
@@ -248,7 +259,7 @@ export function buildMarkdownReport(input: DiagnosticReportInput, events: Diagno
 		lines.push(`|------|--------|---------------|------|----------|---------|`);
 		for (const evt of events) {
 			lines.push(
-				`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} | ${evt.retries} |`
+				`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} | ${evt.retries} |`,
 			);
 		}
 		lines.push(``);
@@ -276,8 +287,8 @@ export function buildMarkdownReport(input: DiagnosticReportInput, events: Diagno
 		} else {
 			for (const repoKey of repoKeys) {
 				const repoEvents = byRepo.get(repoKey)!;
-				const repoSucceeded = repoEvents.filter(e => e.status === "succeeded").length;
-				const repoFailed = repoEvents.filter(e => e.status === "failed").length;
+				const repoSucceeded = repoEvents.filter((e) => e.status === "succeeded").length;
+				const repoFailed = repoEvents.filter((e) => e.status === "failed").length;
 				const repoCost = repoEvents.reduce((sum, e) => sum + e.cost, 0);
 
 				lines.push(`### ${repoKey}`);
@@ -290,7 +301,7 @@ export function buildMarkdownReport(input: DiagnosticReportInput, events: Diagno
 				lines.push(`|------|--------|---------------|------|----------|`);
 				for (const evt of repoEvents) {
 					lines.push(
-						`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} |`
+						`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} |`,
 					);
 				}
 				lines.push(``);
@@ -377,7 +388,10 @@ export function assembleDiagnosticInput(
 ): DiagnosticReportInput {
 	// Build lookup maps for fast per-task enrichment (mirrors serializeBatchState logic).
 	const laneByTaskId = new Map<string, AllocatedLane>();
-	const allocatedTaskByTaskId = new Map<string, { allocatedTask: import("./types.ts").AllocatedTask; lane: AllocatedLane }>();
+	const allocatedTaskByTaskId = new Map<
+		string,
+		{ allocatedTask: import("./types.ts").AllocatedTask; lane: AllocatedLane }
+	>();
 	for (const lane of lanes) {
 		for (const allocTask of lane.tasks) {
 			laneByTaskId.set(allocTask.taskId, lane);
@@ -401,48 +415,46 @@ export function assembleDiagnosticInput(
 	}
 
 	// Build task records sorted by taskId for deterministic output.
-	const tasks: PersistedTaskRecord[] = [...taskIdSet]
-		.sort()
-		.map((taskId): PersistedTaskRecord => {
-			const lane = laneByTaskId.get(taskId);
-			const outcome = outcomeByTaskId.get(taskId);
-			const allocated = allocatedTaskByTaskId.get(taskId);
+	const tasks: PersistedTaskRecord[] = [...taskIdSet].sort().map((taskId): PersistedTaskRecord => {
+		const lane = laneByTaskId.get(taskId);
+		const outcome = outcomeByTaskId.get(taskId);
+		const allocated = allocatedTaskByTaskId.get(taskId);
 
-			const record: PersistedTaskRecord = {
-				taskId,
-				laneNumber: lane?.laneNumber ?? 0,
-				sessionName: outcome?.sessionName || lane?.laneSessionId || "",
-				status: outcome?.status ?? "pending",
-				taskFolder: "",
-				startedAt: outcome?.startTime ?? null,
-				endedAt: outcome?.endTime ?? null,
-				doneFileFound: outcome?.doneFileFound ?? false,
-				exitReason: outcome?.exitReason ?? "",
-			};
+		const record: PersistedTaskRecord = {
+			taskId,
+			laneNumber: lane?.laneNumber ?? 0,
+			sessionName: outcome?.sessionName || lane?.laneSessionId || "",
+			status: outcome?.status ?? "pending",
+			taskFolder: "",
+			startedAt: outcome?.startTime ?? null,
+			endedAt: outcome?.endTime ?? null,
+			doneFileFound: outcome?.doneFileFound ?? false,
+			exitReason: outcome?.exitReason ?? "",
+		};
 
-			// Repo attribution from allocated task metadata (workspace mode).
-			if (allocated?.allocatedTask.task?.promptRepoId !== undefined) {
-				record.repoId = allocated.allocatedTask.task.promptRepoId;
-			}
-			if (allocated?.allocatedTask.task?.resolvedRepoId !== undefined) {
-				record.resolvedRepoId = allocated.allocatedTask.task.resolvedRepoId;
-			}
+		// Repo attribution from allocated task metadata (workspace mode).
+		if (allocated?.allocatedTask.task?.promptRepoId !== undefined) {
+			record.repoId = allocated.allocatedTask.task.promptRepoId;
+		}
+		if (allocated?.allocatedTask.task?.resolvedRepoId !== undefined) {
+			record.resolvedRepoId = allocated.allocatedTask.task.resolvedRepoId;
+		}
 
-			// Partial progress fields from outcome.
-			if (outcome?.partialProgressCommits !== undefined) {
-				record.partialProgressCommits = outcome.partialProgressCommits;
-			}
-			if (outcome?.partialProgressBranch !== undefined) {
-				record.partialProgressBranch = outcome.partialProgressBranch;
-			}
+		// Partial progress fields from outcome.
+		if (outcome?.partialProgressCommits !== undefined) {
+			record.partialProgressCommits = outcome.partialProgressCommits;
+		}
+		if (outcome?.partialProgressBranch !== undefined) {
+			record.partialProgressBranch = outcome.partialProgressBranch;
+		}
 
-			// v3: Exit diagnostic from outcome.
-			if (outcome?.exitDiagnostic !== undefined) {
-				record.exitDiagnostic = outcome.exitDiagnostic;
-			}
+		// v3: Exit diagnostic from outcome.
+		if (outcome?.exitDiagnostic !== undefined) {
+			record.exitDiagnostic = outcome.exitDiagnostic;
+		}
 
-			return record;
-		});
+		return record;
+	});
 
 	return {
 		orchConfig,

@@ -3,4 +3,6 @@ export type ExtensionContext = any;
 
 // Stub value exports used by source files
 export class DynamicBorder {}
-export function getSettingsListTheme(): any { return {}; }
+export function getSettingsListTheme(): any {
+	return {};
+}

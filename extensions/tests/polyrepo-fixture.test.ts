@@ -33,21 +33,13 @@ import {
 	type PolyrepoFixture,
 } from "./fixtures/polyrepo-builder.ts";
 
-import {
-	resolveTaskRouting,
-	runDiscovery,
-} from "../taskplane/discovery.ts";
+import { resolveTaskRouting, runDiscovery } from "../taskplane/discovery.ts";
 
-import {
-	buildDependencyGraph,
-	computeWaves,
-	groupTasksByRepo,
-} from "../taskplane/waves.ts";
+import { buildDependencyGraph, computeWaves, groupTasksByRepo } from "../taskplane/waves.ts";
 
 import type { ParsedTask } from "../taskplane/types.ts";
 
 // ── Shared Fixture ───────────────────────────────────────────────────
-
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let fixture: PolyrepoFixture;
@@ -145,7 +137,7 @@ describe("3.x: Task discovery and routing", () => {
 			workspaceConfig: fixture.workspaceConfig,
 		});
 
-		expect(result.errors.filter(e => e.code !== "DEP_SOURCE_FALLBACK")).toHaveLength(0);
+		expect(result.errors.filter((e) => e.code !== "DEP_SOURCE_FALLBACK")).toHaveLength(0);
 		expect(result.pending.size).toBe(6);
 
 		for (const taskId of FIXTURE_TASK_IDS) {
@@ -258,7 +250,7 @@ describe("4.x: Dependency graph and wave shape", () => {
 		const wave1Groups = groupTasksByRepo(["SH-001", "AP-001", "UI-001"], pending);
 		expect(wave1Groups.length).toBe(3); // 3 repos
 
-		const repoIds = wave1Groups.map(g => g.repoId).sort();
+		const repoIds = wave1Groups.map((g) => g.repoId).sort();
 		expect(repoIds).toEqual(["api", "docs", "frontend"]);
 
 		// Each group has exactly 1 task in wave 1
@@ -269,7 +261,7 @@ describe("4.x: Dependency graph and wave shape", () => {
 		// Group wave 2 tasks
 		const wave2Groups = groupTasksByRepo(["AP-002", "UI-002"], pending);
 		expect(wave2Groups.length).toBe(2); // api and frontend
-		const wave2RepoIds = wave2Groups.map(g => g.repoId).sort();
+		const wave2RepoIds = wave2Groups.map((g) => g.repoId).sort();
 		expect(wave2RepoIds).toEqual(["api", "frontend"]);
 	});
 });
@@ -361,7 +353,7 @@ describe("5.x: Static batch-state fixture (v2-polyrepo)", () => {
 		for (const lane of fixtureData.lanes) {
 			expect(typeof lane.laneNumber).toBe("number");
 			expect(typeof lane.laneId).toBe("string");
-			expect(typeof (lane.laneSessionId)).toBe("string");
+			expect(typeof lane.laneSessionId).toBe("string");
 			expect(typeof lane.worktreePath).toBe("string");
 			expect(typeof lane.branch).toBe("string");
 			expect(Array.isArray(lane.taskIds)).toBe(true);

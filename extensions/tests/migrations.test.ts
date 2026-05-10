@@ -26,7 +26,10 @@ import type { MigrationState, TaskplaneMeta } from "../taskplane/migrations.ts";
 // ── Test Helpers ─────────────────────────────────────────────────────
 
 function createTempDir(): string {
-	const dir = join(tmpdir(), `tp-migration-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+	const dir = join(
+		tmpdir(),
+		`tp-migration-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+	);
 	mkdirSync(dir, { recursive: true });
 	return dir;
 }
@@ -279,7 +282,7 @@ describe("migrations", () => {
 		});
 
 		it("has unique migration IDs", () => {
-			const ids = MIGRATION_REGISTRY.map(m => m.id);
+			const ids = MIGRATION_REGISTRY.map((m) => m.id);
 			expect(new Set(ids).size).toBe(ids.length);
 		});
 

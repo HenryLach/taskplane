@@ -92,9 +92,7 @@ describe("1.x — Workspace config serialization", () => {
 	it("1.5: roundtrip preserves workspace config", () => {
 		const original: WorkspaceConfig = {
 			mode: "workspace",
-			repos: new Map([
-				["backend", { path: "/repo/backend", defaultBranch: "main" } as any],
-			]),
+			repos: new Map([["backend", { path: "/repo/backend", defaultBranch: "main" } as any]]),
 			routing: { tasksRoot: "/tasks", defaultRepo: "backend", strict: true } as any,
 			configPath: "/ws/config.json",
 		};
@@ -232,7 +230,7 @@ describe("3.x — Engine worker entry point structure", () => {
 
 	it("3.8: engine-worker.ts guards execution with fork sentinel check", () => {
 		const src = readSource("engine-worker.ts");
-		expect(src).toContain('TASKPLANE_ENGINE_FORK');
+		expect(src).toContain("TASKPLANE_ENGINE_FORK");
 		expect(src).toContain("process.send");
 	});
 
@@ -240,14 +238,18 @@ describe("3.x — Engine worker entry point structure", () => {
 		const src = readSource("engine-worker.ts");
 		expect(src).toContain('process.once("uncaughtException"');
 		expect(src).toContain('reportFatalAndExit("uncaughtException"');
-		expect(src).toContain('WorkerErrorSource = "enginePromise" | "uncaughtException" | "unhandledRejection"');
+		expect(src).toContain(
+			'WorkerErrorSource = "enginePromise" | "uncaughtException" | "unhandledRejection"',
+		);
 	});
 
 	it("3.10: engine-worker.ts registers unhandledRejection process-level handler", () => {
 		const src = readSource("engine-worker.ts");
 		expect(src).toContain('process.once("unhandledRejection"');
 		expect(src).toContain('reportFatalAndExit("unhandledRejection"');
-		expect(src).toContain('WorkerErrorSource = "enginePromise" | "uncaughtException" | "unhandledRejection"');
+		expect(src).toContain(
+			'WorkerErrorSource = "enginePromise" | "uncaughtException" | "unhandledRejection"',
+		);
 	});
 });
 
@@ -258,7 +260,7 @@ describe("3.x — Engine worker entry point structure", () => {
 describe("4.x — Extension worker thread integration", () => {
 	it("4.1: extension.ts imports fork from child_process", () => {
 		const src = readSource("extension.ts");
-		expect(src).toContain('import { fork');
+		expect(src).toContain("import { fork");
 		expect(src).toContain('"child_process"');
 	});
 

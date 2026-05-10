@@ -17,7 +17,7 @@ const nodeMajor = parseInt(process.versions.node.split(".")[0], 10);
 if (nodeMajor < MIN_NODE_MAJOR) {
 	console.error(
 		`\x1b[31m❌ Taskplane requires Node.js >= ${MIN_NODE_MAJOR}.0.0 (found ${process.versions.node}).\x1b[0m\n` +
-		`   Upgrade: https://nodejs.org/\n`
+			`   Upgrade: https://nodejs.org/\n`,
 	);
 	process.exit(1);
 }
@@ -173,7 +173,12 @@ export function parsePiListModelsOutput(rawOutput) {
 		if (!/^[a-z0-9][a-z0-9._-]*$/i.test(provider)) continue;
 		if (!/^[^\s]+$/.test(id)) continue;
 
-		const thinkingToken = thinkingCol >= 0 ? String(parts[thinkingCol] ?? "").trim().toLowerCase() : "";
+		const thinkingToken =
+			thinkingCol >= 0
+				? String(parts[thinkingCol] ?? "")
+						.trim()
+						.toLowerCase()
+				: "";
 		const supportsThinking = (() => {
 			if (!thinkingToken) return undefined;
 			if (["yes", "true", "on", "supported"].includes(thinkingToken)) return true;
@@ -198,8 +203,8 @@ export function parsePiListModelsOutput(rawOutput) {
 		});
 	}
 
-	return [...parsed.values()].sort((a, b) =>
-		a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id)
+	return [...parsed.values()].sort(
+		(a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id),
 	);
 }
 
@@ -349,7 +354,9 @@ function createBootstrapGlobalPreferencesForCli() {
 }
 
 function normalizeThinkingMode(value) {
-	const cleaned = String(value ?? "").trim().toLowerCase();
+	const cleaned = String(value ?? "")
+		.trim()
+		.toLowerCase();
 	if (!cleaned || cleaned === "inherit") return "";
 	if (cleaned === "on") return "high";
 	if (PI_THINKING_LEVELS.includes(cleaned)) return cleaned;
@@ -365,12 +372,17 @@ function sanitizeInitAgentConfig(raw) {
 	const defaults = createInheritInitAgentConfig();
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return defaults;
 
-	if (typeof raw.workerModel === "string") defaults.workerModel = normalizeModelValue(raw.workerModel);
-	if (typeof raw.reviewerModel === "string") defaults.reviewerModel = normalizeModelValue(raw.reviewerModel);
+	if (typeof raw.workerModel === "string")
+		defaults.workerModel = normalizeModelValue(raw.workerModel);
+	if (typeof raw.reviewerModel === "string")
+		defaults.reviewerModel = normalizeModelValue(raw.reviewerModel);
 	if (typeof raw.mergeModel === "string") defaults.mergeModel = normalizeModelValue(raw.mergeModel);
-	if (raw.workerThinking !== undefined) defaults.workerThinking = normalizeThinkingMode(raw.workerThinking);
-	if (raw.reviewerThinking !== undefined) defaults.reviewerThinking = normalizeThinkingMode(raw.reviewerThinking);
-	if (raw.mergeThinking !== undefined) defaults.mergeThinking = normalizeThinkingMode(raw.mergeThinking);
+	if (raw.workerThinking !== undefined)
+		defaults.workerThinking = normalizeThinkingMode(raw.workerThinking);
+	if (raw.reviewerThinking !== undefined)
+		defaults.reviewerThinking = normalizeThinkingMode(raw.reviewerThinking);
+	if (raw.mergeThinking !== undefined)
+		defaults.mergeThinking = normalizeThinkingMode(raw.mergeThinking);
 
 	return defaults;
 }
@@ -380,7 +392,13 @@ function resolveGlobalPreferencesPathForCli() {
 	if (agentDir) {
 		return path.join(agentDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 	}
-	return path.join(homedir(), ".pi", "agent", GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
+	return path.join(
+		homedir(),
+		".pi",
+		"agent",
+		GLOBAL_PREFERENCES_SUBDIR,
+		GLOBAL_PREFERENCES_FILENAME,
+	);
 }
 
 function writeGlobalPreferencesForCli(rawPrefs, prefsPath = resolveGlobalPreferencesPathForCli()) {
@@ -452,7 +470,11 @@ function readGlobalPreferencesForCli() {
 function loadInitAgentDefaultsFromPreferences() {
 	const { prefsPath, raw, wasBootstrapped } = readGlobalPreferencesForCli();
 	const defaults = sanitizeInitAgentConfig(raw.initAgentDefaults);
-	const hasDefaults = !!(raw.initAgentDefaults && typeof raw.initAgentDefaults === "object" && !Array.isArray(raw.initAgentDefaults));
+	const hasDefaults = !!(
+		raw.initAgentDefaults &&
+		typeof raw.initAgentDefaults === "object" &&
+		!Array.isArray(raw.initAgentDefaults)
+	);
 	return { defaults, hasDefaults, prefsPath, wasBootstrapped };
 }
 
@@ -478,10 +500,13 @@ function findModelInDiscovery(models, modelRef) {
 	if (!ref) return null;
 	const provider = ref.provider.toLowerCase();
 	const id = ref.id.toLowerCase();
-	return models.find((model) =>
-		String(model?.provider ?? "").toLowerCase() === provider
-		&& String(model?.id ?? "").toLowerCase() === id,
-	) || null;
+	return (
+		models.find(
+			(model) =>
+				String(model?.provider ?? "").toLowerCase() === provider &&
+				String(model?.id ?? "").toLowerCase() === id,
+		) || null
+	);
 }
 
 function allValuesEqual(values) {
@@ -507,16 +532,24 @@ const INIT_AGENT_ROLES = [
 	{ key: "merge", label: "Merger", modelKey: "mergeModel", thinkingKey: "mergeThinking" },
 ];
 
-async function promptMenuChoice({ title, question, options, defaultIndex = 0, askImpl = ask, logImpl = console.log }) {
+async function promptMenuChoice({
+	title,
+	question,
+	options,
+	defaultIndex = 0,
+	askImpl = ask,
+	logImpl = console.log,
+}) {
 	while (true) {
 		if (title) logImpl(`\n  ${title}`);
 		for (let i = 0; i < options.length; i++) {
 			logImpl(`    ${i + 1}. ${options[i].label}`);
 		}
 
-		const resolvedDefault = Number.isInteger(defaultIndex) && defaultIndex >= 0 && defaultIndex < options.length
-			? defaultIndex
-			: 0;
+		const resolvedDefault =
+			Number.isInteger(defaultIndex) && defaultIndex >= 0 && defaultIndex < options.length
+				? defaultIndex
+				: 0;
 		const answer = String(await askImpl(question, String(resolvedDefault + 1))).trim();
 		const asNum = Number.parseInt(answer, 10);
 		if (!Number.isNaN(asNum) && asNum >= 1 && asNum <= options.length) {
@@ -536,13 +569,14 @@ async function promptMenuChoice({ title, question, options, defaultIndex = 0, as
 	}
 }
 
-async function promptModelForRole(roleLabel, models, {
-	askImpl = ask,
-	logImpl = console.log,
-	currentModel = "",
-	preferDifferentProviderFrom = "",
-} = {}) {
-	const providers = [...new Set(models.map((model) => model.provider))].sort((a, b) => a.localeCompare(b));
+async function promptModelForRole(
+	roleLabel,
+	models,
+	{ askImpl = ask, logImpl = console.log, currentModel = "", preferDifferentProviderFrom = "" } = {},
+) {
+	const providers = [...new Set(models.map((model) => model.provider))].sort((a, b) =>
+		a.localeCompare(b),
+	);
 	const currentRef = splitModelReference(currentModel);
 
 	while (true) {
@@ -559,13 +593,17 @@ async function promptModelForRole(roleLabel, models, {
 		];
 		const providerDefaultIndex = (() => {
 			if (currentRef) {
-				return Math.max(0, providerOptions.findIndex((option) => option.value === currentRef.provider));
+				return Math.max(
+					0,
+					providerOptions.findIndex((option) => option.value === currentRef.provider),
+				);
 			}
 			if (preferDifferentProviderFrom) {
-				const preferred = providerOptions.findIndex((option) =>
-					typeof option.value === "string"
-					&& option.value !== "inherit"
-					&& option.value !== preferDifferentProviderFrom
+				const preferred = providerOptions.findIndex(
+					(option) =>
+						typeof option.value === "string" &&
+						option.value !== "inherit" &&
+						option.value !== preferDifferentProviderFrom,
 				);
 				if (preferred >= 0) return preferred;
 			}
@@ -617,13 +655,16 @@ async function promptModelForRole(roleLabel, models, {
 	}
 }
 
-async function promptThinkingForRole(roleLabel, {
-	askImpl = ask,
-	logImpl = console.log,
-	currentThinking = "",
-	currentModel = "",
-	availableModels = [],
-} = {}) {
+async function promptThinkingForRole(
+	roleLabel,
+	{
+		askImpl = ask,
+		logImpl = console.log,
+		currentThinking = "",
+		currentModel = "",
+		availableModels = [],
+	} = {},
+) {
 	const thinkingOptions = [
 		{ value: "", label: "inherit (use current session thinking)", aliases: ["inherit"] },
 		{ value: "off", label: "off" },
@@ -636,13 +677,20 @@ async function promptThinkingForRole(roleLabel, {
 
 	const selectedModel = findModelInDiscovery(availableModels, currentModel);
 	if (selectedModel?.supportsThinking === false) {
-		logImpl(`  ${INFO} ${roleLabel} model does not advertise thinking support (pi says thinking=no).`);
-		logImpl(`     ${c.dim}You can still set a thinking level; unsupported models ignore it at runtime.${c.reset}`);
+		logImpl(
+			`  ${INFO} ${roleLabel} model does not advertise thinking support (pi says thinking=no).`,
+		);
+		logImpl(
+			`     ${c.dim}You can still set a thinking level; unsupported models ignore it at runtime.${c.reset}`,
+		);
 	}
 
 	const normalized = normalizeThinkingMode(currentThinking);
 	const preferredDefault = normalized || "high";
-	const defaultIndex = Math.max(0, thinkingOptions.findIndex((option) => option.value === preferredDefault));
+	const defaultIndex = Math.max(
+		0,
+		thinkingOptions.findIndex((option) => option.value === preferredDefault),
+	);
 
 	return promptMenuChoice({
 		title: `${roleLabel}: choose thinking mode`,
@@ -700,18 +748,28 @@ export async function collectInitAgentConfig({
 	const shouldPersistFromInit = shouldGuideCrossProvider;
 
 	logImpl(`\n${c.bold}Agent model setup${c.reset}`);
-	logImpl(`  ${c.dim}Choose models for worker/reviewer/merger (inherit is always option #1).${c.reset}`);
+	logImpl(
+		`  ${c.dim}Choose models for worker/reviewer/merger (inherit is always option #1).${c.reset}`,
+	);
 
 	if (canGuideCrossProvider) {
-		logImpl(`  ${INFO} ${c.bold}First-run recommendation:${c.reset} choose reviewer/merger on a different provider than worker/session.`);
-		logImpl(`     ${c.dim}Cross-provider review catches blind spots that same-model review can miss.${c.reset}`);
+		logImpl(
+			`  ${INFO} ${c.bold}First-run recommendation:${c.reset} choose reviewer/merger on a different provider than worker/session.`,
+		);
+		logImpl(
+			`     ${c.dim}Cross-provider review catches blind spots that same-model review can miss.${c.reset}`,
+		);
 	} else if (shouldGuideCrossProvider) {
 		logImpl(`  ${INFO} Cross-provider guidance skipped: only one provider is currently available.`);
-		logImpl(`     ${c.dim}Add another provider later to enable cross-provider reviewer/merger defaults.${c.reset}`);
+		logImpl(
+			`     ${c.dim}Add another provider later to enable cross-provider reviewer/merger defaults.${c.reset}`,
+		);
 	}
 
 	const modelDefaults = INIT_AGENT_ROLES.map((role) => initAgentConfig[role.modelKey] || "");
-	const thinkingDefaults = INIT_AGENT_ROLES.map((role) => normalizeThinkingMode(initAgentConfig[role.thinkingKey]));
+	const thinkingDefaults = INIT_AGENT_ROLES.map((role) =>
+		normalizeThinkingMode(initAgentConfig[role.thinkingKey]),
+	);
 	const sameModelDefaults = allValuesEqual(modelDefaults);
 	const sameThinkingDefaults = allValuesEqual(thinkingDefaults);
 	let useSameModel = false;
@@ -752,9 +810,8 @@ export async function collectInitAgentConfig({
 
 	let workerProviderHint = splitModelReference(initAgentConfig.workerModel)?.provider || "";
 	for (const role of INIT_AGENT_ROLES) {
-		const preferDifferentProviderFrom = canGuideCrossProvider && role.key !== "worker"
-			? workerProviderHint
-			: "";
+		const preferDifferentProviderFrom =
+			canGuideCrossProvider && role.key !== "worker" ? workerProviderHint : "";
 		initAgentConfig[role.modelKey] = await promptModelForRole(role.label, discovery.models, {
 			askImpl,
 			logImpl,
@@ -762,7 +819,8 @@ export async function collectInitAgentConfig({
 			preferDifferentProviderFrom,
 		});
 		if (role.key === "worker") {
-			workerProviderHint = splitModelReference(initAgentConfig[role.modelKey])?.provider || workerProviderHint;
+			workerProviderHint =
+				splitModelReference(initAgentConfig[role.modelKey])?.provider || workerProviderHint;
 		}
 		initAgentConfig[role.thinkingKey] = await promptThinkingForRole(role.label, {
 			askImpl,
@@ -824,9 +882,7 @@ export function generateProjectConfig(vars, _initAgentConfig = null) {
 
 function generateWorkspaceYaml(repoNames, defaultRepo, tasksRoot) {
 	const normalizedTasksRoot = fwdSlash(tasksRoot);
-	const reposBlock = repoNames
-		.map((name) => `  ${name}:\n    path: "${name}"`)
-		.join("\n");
+	const reposBlock = repoNames.map((name) => `  ${name}:\n    path: "${name}"`).join("\n");
 	return `repos:\n${reposBlock}\nrouting:\n  tasks_root: "${normalizedTasksRoot}"\n  default_repo: "${defaultRepo}"\n  task_packet_repo: "${defaultRepo}"\n`;
 }
 
@@ -876,7 +932,9 @@ async function autoCommitTaskFiles(projectRoot, tasksRoot) {
 	} catch (err) {
 		// Git commit failed — warn but don't block init
 		console.log(`\n  ${WARN} Could not auto-commit task files to git.`);
-		console.log(`  ${c.dim}Run manually before using /orch: git add ${tasksRoot} && git commit -m "add taskplane tasks"${c.reset}`);
+		console.log(
+			`  ${c.dim}Run manually before using /orch: git add ${tasksRoot} && git commit -m "add taskplane tasks"${c.reset}`,
+		);
 	}
 }
 
@@ -899,7 +957,9 @@ function discoverTaskAreaMetadata(projectRoot, configRoot = projectRoot, configP
 				}
 				return { paths: [...paths], contexts: [...contexts], areaRepoIds };
 			}
-		} catch { /* fall through to YAML */ }
+		} catch {
+			/* fall through to YAML */
+		}
 	}
 
 	const runnerPath = path.join(configRoot, configPrefix, "task-runner.yaml");
@@ -978,7 +1038,8 @@ function pruneEmptyDir(dirPath) {
 function listExampleTaskTemplates() {
 	const tasksTemplatesDir = path.join(TEMPLATES_DIR, "tasks");
 	try {
-		return fs.readdirSync(tasksTemplatesDir, { withFileTypes: true })
+		return fs
+			.readdirSync(tasksTemplatesDir, { withFileTypes: true })
 			.filter((entry) => entry.isDirectory() && /^EXAMPLE-\d+/i.test(entry.name))
 			.map((entry) => entry.name)
 			.sort();
@@ -997,7 +1058,12 @@ function resolveProjectConfigJsonPath(projectRoot) {
 		try {
 			const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
 			if (pointer?.config_repo && pointer?.config_path) {
-				const pointedPath = path.resolve(projectRoot, pointer.config_repo, pointer.config_path, "taskplane-config.json");
+				const pointedPath = path.resolve(
+					projectRoot,
+					pointer.config_repo,
+					pointer.config_path,
+					"taskplane-config.json",
+				);
 				if (fs.existsSync(pointedPath)) return pointedPath;
 			}
 		} catch {
@@ -1024,7 +1090,9 @@ function cmdConfig(args) {
 		console.log(`\n${c.bold}Taskplane Config${c.reset}\n`);
 		console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}`);
 		console.log(`     Save worker/reviewer/merger model + thinking settings from this project`);
-		console.log(`     to ${c.cyan}${resolveGlobalPreferencesPathForCli()}${c.reset} for future ${c.cyan}taskplane init${c.reset} runs.\n`);
+		console.log(
+			`     to ${c.cyan}${resolveGlobalPreferencesPathForCli()}${c.reset} for future ${c.cyan}taskplane init${c.reset} runs.\n`,
+		);
 		return;
 	}
 
@@ -1047,16 +1115,23 @@ function cmdConfig(args) {
 	console.log(`\n${OK} ${c.bold}Saved init defaults.${c.reset}`);
 	console.log(`  Source: ${c.cyan}${configPath}${c.reset}`);
 	console.log(`  Target: ${c.cyan}${prefsPath}${c.reset}`);
-	console.log(`  worker:   ${saved.workerModel || "inherit"} (${saved.workerThinking || "inherit"})`);
-	console.log(`  reviewer: ${saved.reviewerModel || "inherit"} (${saved.reviewerThinking || "inherit"})`);
-	console.log(`  merger:   ${saved.mergeModel || "inherit"} (${saved.mergeThinking || "inherit"})\n`);
+	console.log(
+		`  worker:   ${saved.workerModel || "inherit"} (${saved.workerThinking || "inherit"})`,
+	);
+	console.log(
+		`  reviewer: ${saved.reviewerModel || "inherit"} (${saved.reviewerThinking || "inherit"})`,
+	);
+	console.log(
+		`  merger:   ${saved.mergeModel || "inherit"} (${saved.mergeThinking || "inherit"})\n`,
+	);
 }
 
 async function cmdUninstall(args) {
 	const projectRoot = process.cwd();
 	const dryRun = args.includes("--dry-run");
 	const yes = args.includes("--yes") || args.includes("-y");
-	const removePackage = args.includes("--package") || args.includes("--all") || args.includes("--package-only");
+	const removePackage =
+		args.includes("--package") || args.includes("--all") || args.includes("--package-only");
 	const packageOnly = args.includes("--package-only");
 	const removeProject = !packageOnly;
 	const removeTasks = removeProject && (args.includes("--remove-tasks") || args.includes("--all"));
@@ -1083,22 +1158,18 @@ async function cmdUninstall(args) {
 		".pi/orch-abort-signal",
 	];
 
-	const sidecarPrefixes = [
-		"lane-state-",
-		"worker-conversation-",
-		"merge-result-",
-		"merge-request-",
-	];
+	const sidecarPrefixes = ["lane-state-", "worker-conversation-", "merge-result-", "merge-request-"];
 
 	const filesToDelete = managedFiles
-		.map(rel => ({ rel, abs: path.join(projectRoot, rel) }))
+		.map((rel) => ({ rel, abs: path.join(projectRoot, rel) }))
 		.filter(({ abs }) => fs.existsSync(abs));
 
 	const piDir = path.join(projectRoot, ".pi");
 	const sidecarsToDelete = fs.existsSync(piDir)
-		? fs.readdirSync(piDir)
-			.filter(name => sidecarPrefixes.some(prefix => name.startsWith(prefix)))
-			.map(name => ({ rel: path.join(".pi", name), abs: path.join(piDir, name) }))
+		? fs
+				.readdirSync(piDir)
+				.filter((name) => sidecarPrefixes.some((prefix) => name.startsWith(prefix)))
+				.map((name) => ({ rel: path.join(".pi", name), abs: path.join(piDir, name) }))
 		: [];
 
 	let taskDirsToDelete = [];
@@ -1106,27 +1177,34 @@ async function cmdUninstall(args) {
 		const areaPaths = discoverTaskAreaPaths(projectRoot);
 		const rootPrefix = path.resolve(projectRoot) + path.sep;
 		taskDirsToDelete = areaPaths
-			.map(rel => ({ rel, abs: path.resolve(projectRoot, rel) }))
+			.map((rel) => ({ rel, abs: path.resolve(projectRoot, rel) }))
 			.filter(({ abs }) => abs.startsWith(rootPrefix) && fs.existsSync(abs));
 	}
 
 	const inferredInstallType = inferTaskplaneInstallScope();
 	const packageScope = local ? "local" : global ? "global" : inferredInstallType;
-	const piRemoveCmd = packageScope === "local"
-		? "pi remove -l npm:taskplane"
-		: "pi remove npm:taskplane";
+	const piRemoveCmd =
+		packageScope === "local" ? "pi remove -l npm:taskplane" : "pi remove npm:taskplane";
 
 	if (!removeProject && !removePackage) {
 		console.log(`  ${WARN} Nothing to do. Use one of:`);
-		console.log(`    ${c.cyan}taskplane uninstall${c.reset}              # remove project-scaffolded files`);
-		console.log(`    ${c.cyan}taskplane uninstall --package${c.reset}    # remove installed package via pi`);
+		console.log(
+			`    ${c.cyan}taskplane uninstall${c.reset}              # remove project-scaffolded files`,
+		);
+		console.log(
+			`    ${c.cyan}taskplane uninstall --package${c.reset}    # remove installed package via pi`,
+		);
 		console.log();
 		return;
 	}
 
 	if (removeProject) {
 		console.log(`${c.bold}Project cleanup:${c.reset}`);
-		if (filesToDelete.length === 0 && sidecarsToDelete.length === 0 && taskDirsToDelete.length === 0) {
+		if (
+			filesToDelete.length === 0 &&
+			sidecarsToDelete.length === 0 &&
+			taskDirsToDelete.length === 0
+		) {
 			console.log(`  ${c.dim}No Taskplane-managed project files found.${c.reset}`);
 		}
 		for (const f of filesToDelete) console.log(`  - remove ${f.rel}`);
@@ -1136,7 +1214,9 @@ async function cmdUninstall(args) {
 			console.log(`  ${c.dim}No task area directories found in config.${c.reset}`);
 		}
 		if (!removeTasks) {
-			console.log(`  ${c.dim}Task directories are preserved by default (use --remove-tasks to delete them).${c.reset}`);
+			console.log(
+				`  ${c.dim}Task directories are preserved by default (use --remove-tasks to delete them).${c.reset}`,
+			);
 		}
 		console.log();
 	}
@@ -1144,7 +1224,9 @@ async function cmdUninstall(args) {
 	if (removePackage) {
 		console.log(`${c.bold}Package cleanup:${c.reset}`);
 		console.log(`  - run ${piRemoveCmd}`);
-		console.log(`  ${c.dim}(removes extensions, skills, and dashboard files from this install scope)${c.reset}`);
+		console.log(
+			`  ${c.dim}(removes extensions, skills, and dashboard files from this install scope)${c.reset}`,
+		);
 		console.log();
 	}
 
@@ -1160,7 +1242,10 @@ async function cmdUninstall(args) {
 			return;
 		}
 		if (removeTasks) {
-			const taskConfirm = await confirm("This will delete task area directories recursively. Continue?", false);
+			const taskConfirm = await confirm(
+				"This will delete task area directories recursively. Continue?",
+				false,
+			);
 			if (!taskConfirm) {
 				console.log("  Aborted.");
 				return;
@@ -1246,7 +1331,7 @@ function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {
 	const gitignorePath = path.join(projectRoot, ".gitignore");
 	const fileExists = fs.existsSync(gitignorePath);
 	const existingContent = fileExists ? fs.readFileSync(gitignorePath, "utf-8") : "";
-	const existingLines = new Set(existingContent.split(/\r?\n/).map(l => l.trim()));
+	const existingLines = new Set(existingContent.split(/\r?\n/).map((l) => l.trim()));
 
 	const allEntries = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
 	const added = [];
@@ -1267,15 +1352,13 @@ function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {
 
 	if (!dryRun) {
 		// Build the block of new entries with headers
-		const runtimeAdded = added.filter(e => !e.endsWith("npm/"));
-		const npmAdded = added.filter(e => e.endsWith("npm/"));
+		const runtimeAdded = added.filter((e) => !e.endsWith("npm/"));
+		const npmAdded = added.filter((e) => e.endsWith("npm/"));
 		const newLines = [];
 
 		if (runtimeAdded.length > 0) {
 			// Only add header if it's not already present
-			const headerToCheck = prefix
-				? TASKPLANE_GITIGNORE_HEADER
-				: TASKPLANE_GITIGNORE_HEADER;
+			const headerToCheck = prefix ? TASKPLANE_GITIGNORE_HEADER : TASKPLANE_GITIGNORE_HEADER;
 			if (!existingLines.has(headerToCheck)) {
 				newLines.push(TASKPLANE_GITIGNORE_HEADER);
 			}
@@ -1321,16 +1404,17 @@ function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {
  * @param {boolean} options.interactive - If false, skip prompt and don't untrack
  * @param {string} options.prefix - Path prefix for workspace-scoped scanning (e.g., ".taskplane/")
  */
-async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, interactive = true, prefix = "" } = {}) {
+async function detectAndOfferUntrackArtifacts(
+	projectRoot,
+	{ dryRun = false, interactive = true, prefix = "" } = {},
+) {
 	// Only run in a git repo
 	if (!isInsideGitRepo(projectRoot)) return { found: [], untracked: false };
 
 	// Get list of tracked files under the relevant directories
 	// For workspace mode (prefix=".taskplane/"), scan .taskplane/.pi/ and .taskplane/.worktrees/
 	// For repo mode (no prefix), scan .pi/ and .worktrees/
-	const scanDirs = prefix
-		? [`${prefix}.pi/`, `${prefix}.worktrees/`]
-		: [".pi/", ".worktrees/"];
+	const scanDirs = prefix ? [`${prefix}.pi/`, `${prefix}.worktrees/`] : [".pi/", ".worktrees/"];
 
 	let trackedFiles;
 	try {
@@ -1338,7 +1422,9 @@ async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, int
 			cwd: projectRoot,
 			stdio: ["pipe", "pipe", "pipe"],
 			timeout: 10000,
-		}).toString().trim();
+		})
+			.toString()
+			.trim();
 		trackedFiles = raw ? raw.split(/\r?\n/) : [];
 	} catch {
 		return { found: [], untracked: false };
@@ -1348,13 +1434,13 @@ async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, int
 
 	// Build regex patterns for matching (with prefix if workspace-scoped)
 	const prefixedPatterns = prefix
-		? ALL_GITIGNORE_PATTERNS.map(p => `${prefix}${p}`)
+		? ALL_GITIGNORE_PATTERNS.map((p) => `${prefix}${p}`)
 		: ALL_GITIGNORE_PATTERNS;
-	const patterns = prefixedPatterns.map(p => patternToRegex(p));
+	const patterns = prefixedPatterns.map((p) => patternToRegex(p));
 
 	// Find tracked files that match runtime artifact patterns
-	const matchedFiles = trackedFiles.filter(file => {
-		return patterns.some(regex => regex.test(file));
+	const matchedFiles = trackedFiles.filter((file) => {
+		return patterns.some((regex) => regex.test(file));
 	});
 
 	if (matchedFiles.length === 0) return { found: [], untracked: false };
@@ -1434,7 +1520,9 @@ function isGitRepoRoot(dir) {
 			cwd: dir,
 			stdio: ["pipe", "pipe", "pipe"],
 			timeout: 5000,
-		}).toString().trim();
+		})
+			.toString()
+			.trim();
 		// Normalize paths for comparison (handles Windows path separators
 		// and 8.3 short name mismatches on Windows)
 		const normalizedToplevel = path.resolve(toplevel);
@@ -1442,7 +1530,9 @@ function isGitRepoRoot(dir) {
 		// On Windows, fs.realpathSync.native resolves 8.3 short names to
 		// long names, matching what git returns. Without this, paths like
 		// C:\Users\HENRYL~1\... won't match C:\Users\HenryLach\...
-		try { normalizedDir = fs.realpathSync.native(normalizedDir); } catch {}
+		try {
+			normalizedDir = fs.realpathSync.native(normalizedDir);
+		} catch {}
 		return normalizedToplevel === normalizedDir;
 	} catch {
 		return false;
@@ -1548,9 +1638,7 @@ function detectInitMode(dir) {
 			mode: "workspace",
 			subRepos,
 			alreadyInitialized: existingConfigRepo !== null,
-			existingConfigPath: existingConfigRepo
-				? path.join(dir, existingConfigRepo, ".taskplane")
-				: null,
+			existingConfigPath: existingConfigRepo ? path.join(dir, existingConfigRepo, ".taskplane") : null,
 		};
 	}
 
@@ -1593,7 +1681,11 @@ async function cmdInit(args) {
 		if (path.isAbsolute(tasksRootRaw)) {
 			die("--tasks-root must be relative to the project root (absolute paths are not allowed).");
 		}
-		tasksRootOverride = tasksRootRaw.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+		tasksRootOverride = tasksRootRaw
+			.trim()
+			.replace(/\\/g, "/")
+			.replace(/^\.\/+/, "")
+			.replace(/\/+$/, "");
 		if (!tasksRootOverride || tasksRootOverride === ".") {
 			die("--tasks-root must not be empty.");
 		}
@@ -1607,7 +1699,9 @@ async function cmdInit(args) {
 	console.log(`\n${c.bold}Taskplane Init${c.reset}\n`);
 
 	if (tasksRootOverride && !noExamplesFlag && !includeExamples) {
-		console.log(`  ${INFO} Using custom --tasks-root (${tasksRootOverride}); skipping example tasks by default.`);
+		console.log(
+			`  ${INFO} Using custom --tasks-root (${tasksRootOverride}); skipping example tasks by default.`,
+		);
 		console.log(`     Use --include-examples to scaffold examples into that directory.\n`);
 	}
 
@@ -1619,8 +1713,8 @@ async function cmdInit(args) {
 	if (detection.mode === "error") {
 		die(
 			"Not a git repo and no git repos found in subdirectories.\n" +
-			"  Run from inside a git repository, or from a workspace root\n" +
-			"  that contains git repositories as subdirectories."
+				"  Run from inside a git repository, or from a workspace root\n" +
+				"  that contains git repositories as subdirectories.",
 		);
 	}
 
@@ -1631,14 +1725,16 @@ async function cmdInit(args) {
 			// Non-interactive: default to repo mode (safe default, no prompt)
 			resolvedMode = "repo";
 			console.log(`  ${INFO} Ambiguous layout detected (git repo with git repo subdirectories).`);
-			console.log(`     Defaulting to ${c.cyan}repo mode${c.reset} (use interactive mode for workspace).\n`);
+			console.log(
+				`     Defaulting to ${c.cyan}repo mode${c.reset} (use interactive mode for workspace).\n`,
+			);
 		} else {
 			// Interactive: prompt the user
 			console.log(`  ${WARN} This directory is a git repo AND contains git repos as subdirectories.`);
 			console.log(`     Subdirectory repos found: ${detection.subRepos.join(", ")}\n`);
 			const modeChoice = await ask(
 				"Mode: (r)epo — treat as single monorepo, or (w)orkspace — treat subdirs as independent repos",
-				"r"
+				"r",
 			);
 			resolvedMode = modeChoice.toLowerCase().startsWith("w") ? "workspace" : "repo";
 			console.log();
@@ -1659,7 +1755,9 @@ async function cmdInit(args) {
 	// Scenario B: existing monorepo config — block reinit unless --force
 	if (effectiveAlreadyInitialized && !force && resolvedMode === "repo") {
 		console.log(`  ${INFO} Project already initialized (config exists in .pi/).`);
-		console.log(`     Run ${c.cyan}taskplane doctor${c.reset} to verify, or use ${c.cyan}--force${c.reset} to reinitialize.\n`);
+		console.log(
+			`     Run ${c.cyan}taskplane doctor${c.reset} to verify, or use ${c.cyan}--force${c.reset} to reinitialize.\n`,
+		);
 		return;
 	}
 
@@ -1690,23 +1788,30 @@ async function cmdInit(args) {
 			} catch {}
 			return null;
 		})();
-		const workspaceTasksRoot = (existingWorkspaceJson?.routing?.tasks_root
-			|| existingRootYaml?.routing?.tasks_root
-			|| "taskplane-tasks").replace(/\\/g, "/");
-		const workspaceDefaultRepo = existingWorkspaceJson?.routing?.default_repo
-			|| existingRootYaml?.routing?.default_repo
-			|| configRepo;
+		const workspaceTasksRoot = (
+			existingWorkspaceJson?.routing?.tasks_root ||
+			existingRootYaml?.routing?.tasks_root ||
+			"taskplane-tasks"
+		).replace(/\\/g, "/");
+		const workspaceDefaultRepo =
+			existingWorkspaceJson?.routing?.default_repo ||
+			existingRootYaml?.routing?.default_repo ||
+			configRepo;
 		const workspaceRepoNames = Array.from(
 			new Set([
 				...detection.subRepos,
-				...((Array.isArray(existingWorkspaceJson?.repos) ? existingWorkspaceJson.repos : [])
+				...(Array.isArray(existingWorkspaceJson?.repos) ? existingWorkspaceJson.repos : [])
 					.map((repo) => repo?.name)
-					.filter(Boolean)),
+					.filter(Boolean),
 			]),
 		).sort();
 
-		console.log(`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`);
-		console.log(`  ${INFO} Found existing Taskplane config in ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
+		console.log(
+			`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`,
+		);
+		console.log(
+			`  ${INFO} Found existing Taskplane config in ${c.cyan}${configRepo}/.taskplane/${c.reset}`,
+		);
 		console.log(`     Using existing configuration.\n`);
 
 		// ── Pointer idempotency ─────────────────────────────────
@@ -1739,16 +1844,27 @@ async function cmdInit(args) {
 				// Malformed pointer file — treat as invalid, will be overwritten
 				console.log(`  ${WARN} .pi/taskplane-pointer.json exists but is malformed — will overwrite.`);
 			}
-			if (existingPointer && existingPointer.config_repo === configRepo && existingPointer.config_path === ".taskplane") {
-				console.log(`  ${c.dim}skip${c.reset}  .pi/taskplane-pointer.json (already points to ${configRepo}/.taskplane/)`);
+			if (
+				existingPointer &&
+				existingPointer.config_repo === configRepo &&
+				existingPointer.config_path === ".taskplane"
+			) {
+				console.log(
+					`  ${c.dim}skip${c.reset}  .pi/taskplane-pointer.json (already points to ${configRepo}/.taskplane/)`,
+				);
 				console.log(`\n${OK} ${c.bold}Workspace already configured.${c.reset}`);
 				console.log(`     Run ${c.cyan}taskplane doctor${c.reset} to verify.\n`);
 				return;
 			}
 			// Pointer exists but points elsewhere (or was malformed) — prompt to overwrite
 			if (existingPointer && !isPreset) {
-				console.log(`  ${WARN} .pi/taskplane-pointer.json already exists (points to ${existingPointer.config_repo}/.taskplane/).`);
-				const proceed = await confirm("  Update pointer to point to " + configRepo + "/.taskplane/?", true);
+				console.log(
+					`  ${WARN} .pi/taskplane-pointer.json already exists (points to ${existingPointer.config_repo}/.taskplane/).`,
+				);
+				const proceed = await confirm(
+					"  Update pointer to point to " + configRepo + "/.taskplane/?",
+					true,
+				);
 				if (!proceed) {
 					console.log("  Aborted.");
 					return;
@@ -1762,11 +1878,9 @@ async function cmdInit(args) {
 			config_repo: configRepo,
 			config_path: ".taskplane",
 		};
-		writeFile(
-			pointerPath,
-			JSON.stringify(pointer, null, 2) + "\n",
-			{ label: ".pi/taskplane-pointer.json" }
-		);
+		writeFile(pointerPath, JSON.stringify(pointer, null, 2) + "\n", {
+			label: ".pi/taskplane-pointer.json",
+		});
 
 		writeFile(
 			workspaceYamlPath,
@@ -1776,11 +1890,16 @@ async function cmdInit(args) {
 
 		// ── Gitignore enforcement in config repo (Scenario D) ───
 		// Ensure .gitignore exists even when reusing existing config
-		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false, prefix: ".taskplane/" });
+		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, {
+			dryRun: false,
+			prefix: ".taskplane/",
+		});
 		if (gitignoreResult.created) {
 			console.log(`  ${c.green}create${c.reset} ${configRepo}/.gitignore`);
 		} else if (gitignoreResult.added.length > 0) {
-			console.log(`  ${c.green}update${c.reset} ${configRepo}/.gitignore (${gitignoreResult.added.length} entries added)`);
+			console.log(
+				`  ${c.green}update${c.reset} ${configRepo}/.gitignore (${gitignoreResult.added.length} entries added)`,
+			);
 		}
 
 		console.log(`\n${OK} ${c.bold}Workspace pointer created.${c.reset}\n`);
@@ -1788,8 +1907,12 @@ async function cmdInit(args) {
 		console.log(`  Pointer: ${c.cyan}.pi/taskplane-pointer.json${c.reset}`);
 		console.log(`  Workspace config: ${c.cyan}.pi/taskplane-workspace.yaml${c.reset}\n`);
 		console.log(`${c.bold}Quick start:${c.reset}`);
-		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-		console.log(`  ${c.cyan}taskplane doctor${c.reset}                                # verify setup`);
+		console.log(
+			`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`,
+		);
+		console.log(
+			`  ${c.cyan}taskplane doctor${c.reset}                                # verify setup`,
+		);
 		console.log();
 		return;
 	}
@@ -1798,7 +1921,9 @@ async function cmdInit(args) {
 	if (resolvedMode === "repo") {
 		console.log(`  ${c.dim}Mode: repo (standard monorepo)${c.reset}`);
 	} else if (resolvedMode === "workspace") {
-		console.log(`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`);
+		console.log(
+			`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`,
+		);
 	}
 	console.log();
 
@@ -1813,7 +1938,9 @@ async function cmdInit(args) {
 		if (isPreset || dryRun) {
 			// Non-interactive: pick first repo alphabetically as default
 			configRepoName = detection.subRepos[0];
-			console.log(`  ${INFO} Using ${c.cyan}${configRepoName}${c.reset} as config repo (first alphabetically).\n`);
+			console.log(
+				`  ${INFO} Using ${c.cyan}${configRepoName}${c.reset} as config repo (first alphabetically).\n`,
+			);
 		} else {
 			// Interactive: prompt user to choose config repo
 			console.log(`  Which repo should hold Taskplane config?`);
@@ -1821,10 +1948,7 @@ async function cmdInit(args) {
 				console.log(`    ${c.dim}${i + 1}.${c.reset} ${detection.subRepos[i]}`);
 			}
 			console.log();
-			const configRepoAnswer = await ask(
-				"Config repo (name or number)",
-				detection.subRepos[0]
-			);
+			const configRepoAnswer = await ask("Config repo (name or number)", detection.subRepos[0]);
 			// Accept numeric index or repo name
 			const asNum = parseInt(configRepoAnswer, 10);
 			if (asNum >= 1 && asNum <= detection.subRepos.length) {
@@ -1873,7 +1997,14 @@ async function cmdInit(args) {
 		// ── Dry-run: show what would be created ─────────────────────
 		if (dryRun) {
 			console.log(`\n${c.bold}Dry run — files that would be created:${c.reset}\n`);
-			printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, configRepoName, configRepoRoot);
+			printWorkspaceFileList(
+				vars,
+				noExamples,
+				preset,
+				exampleTemplateDirs,
+				configRepoName,
+				configRepoRoot,
+			);
 			console.log(`  ${c.green}create${c.reset} .pi/taskplane-pointer.json`);
 			console.log(`  ${c.green}create${c.reset} .pi/taskplane-workspace.yaml`);
 			console.log();
@@ -1894,7 +2025,7 @@ async function cmdInit(args) {
 			copyTemplate(
 				path.join(TEMPLATES_DIR, "agents", "local", agent),
 				path.join(taskplaneDir, "agents", agent),
-				{ skipIfExists, label: `${configRepoName}/.taskplane/agents/${agent}` }
+				{ skipIfExists, label: `${configRepoName}/.taskplane/agents/${agent}` },
 			);
 		}
 
@@ -1903,7 +2034,7 @@ async function cmdInit(args) {
 		writeFile(
 			path.join(taskplaneDir, "taskplane-config.json"),
 			JSON.stringify(projectConfig, null, 2) + "\n",
-			{ skipIfExists, label: `${configRepoName}/.taskplane/taskplane-config.json` }
+			{ skipIfExists, label: `${configRepoName}/.taskplane/taskplane-config.json` },
 		);
 
 		// Version tracker (always overwrite)
@@ -1916,12 +2047,12 @@ async function cmdInit(args) {
 		writeFile(
 			path.join(taskplaneDir, "taskplane.json"),
 			JSON.stringify(versionInfo, null, 2) + "\n",
-			{ label: `${configRepoName}/.taskplane/taskplane.json` }
+			{ label: `${configRepoName}/.taskplane/taskplane.json` },
 		);
 
 		// Workspace definition (workspace.json)
 		const workspaceConfig = {
-			repos: detection.subRepos.map(name => ({
+			repos: detection.subRepos.map((name) => ({
 				name,
 				path: `../${name}`,
 				default_branch: "main",
@@ -1935,7 +2066,7 @@ async function cmdInit(args) {
 		writeFile(
 			path.join(taskplaneDir, "workspace.json"),
 			JSON.stringify(workspaceConfig, null, 2) + "\n",
-			{ skipIfExists, label: `${configRepoName}/.taskplane/workspace.json` }
+			{ skipIfExists, label: `${configRepoName}/.taskplane/workspace.json` },
 		);
 
 		// CONTEXT.md — tasks area context
@@ -1946,11 +2077,10 @@ async function cmdInit(args) {
 			: vars.tasks_root;
 		const tasksDir = path.join(configRepoRoot, tasksRootInRepo);
 		const contextSrc = fs.readFileSync(path.join(TEMPLATES_DIR, "tasks", "CONTEXT.md"), "utf-8");
-		writeFile(
-			path.join(tasksDir, "CONTEXT.md"),
-			interpolate(contextSrc, vars),
-			{ skipIfExists, label: `${configRepoName}/${vars.tasks_root}/CONTEXT.md` }
-		);
+		writeFile(path.join(tasksDir, "CONTEXT.md"), interpolate(contextSrc, vars), {
+			skipIfExists,
+			label: `${configRepoName}/${vars.tasks_root}/CONTEXT.md`,
+		});
 
 		// Example tasks
 		if (!noExamples) {
@@ -1976,19 +2106,30 @@ async function cmdInit(args) {
 		// Use .taskplane/ prefix so patterns apply within the config repo's
 		// .taskplane/ directory (e.g., ".taskplane/.pi/batch-state.json")
 		// Per spec: standard .pi/ patterns + .worktrees/ in config repo root
-		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false, prefix: ".taskplane/" });
+		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, {
+			dryRun: false,
+			prefix: ".taskplane/",
+		});
 
 		if (gitignoreResult.created) {
 			console.log(`  ${c.green}create${c.reset} ${configRepoName}/.gitignore`);
 		} else if (gitignoreResult.added.length > 0) {
-			console.log(`  ${c.green}update${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries added)`);
+			console.log(
+				`  ${c.green}update${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries added)`,
+			);
 		} else {
-			console.log(`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`);
+			console.log(
+				`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`,
+			);
 		}
 
 		// Check for tracked runtime artifacts in config repo (workspace-scoped)
 		const wsIsInteractive = !isPreset && !dryRun;
-		await detectAndOfferUntrackArtifacts(configRepoRoot, { dryRun: false, interactive: wsIsInteractive, prefix: ".taskplane/" });
+		await detectAndOfferUntrackArtifacts(configRepoRoot, {
+			dryRun: false,
+			interactive: wsIsInteractive,
+			prefix: ".taskplane/",
+		});
 
 		// ── Pointer file in workspace root .pi/ ─────────────────────
 		const pointer = {
@@ -1998,7 +2139,7 @@ async function cmdInit(args) {
 		writeFile(
 			path.join(projectRoot, ".pi", "taskplane-pointer.json"),
 			JSON.stringify(pointer, null, 2) + "\n",
-			{ label: ".pi/taskplane-pointer.json" }
+			{ label: ".pi/taskplane-pointer.json" },
 		);
 		writeFile(
 			path.join(projectRoot, ".pi", "taskplane-workspace.yaml"),
@@ -2010,19 +2151,24 @@ async function cmdInit(args) {
 		await autoCommitTaskFiles(configRepoRoot, vars.tasks_root);
 		// Also stage and commit .taskplane/ directory and .gitignore
 		try {
-			execSync('git add .taskplane/ .gitignore', { cwd: configRepoRoot, stdio: "pipe" });
+			execSync("git add .taskplane/ .gitignore", { cwd: configRepoRoot, stdio: "pipe" });
 			const status = execSync("git diff --cached --name-only", { cwd: configRepoRoot, stdio: "pipe" })
-				.toString().trim();
+				.toString()
+				.trim();
 			if (status) {
 				execSync('git commit -m "chore: initialize taskplane workspace config"', {
 					cwd: configRepoRoot,
 					stdio: "pipe",
 				});
-				console.log(`\n  ${c.green}git${c.reset}    committed .taskplane/ and .gitignore to ${configRepoName}`);
+				console.log(
+					`\n  ${c.green}git${c.reset}    committed .taskplane/ and .gitignore to ${configRepoName}`,
+				);
 			}
 		} catch (err) {
 			console.log(`\n  ${WARN} Could not auto-commit .taskplane/ to ${configRepoName}.`);
-			console.log(`  ${c.dim}Run manually: cd ${configRepoName} && git add .taskplane/ .gitignore && git commit -m "add taskplane config"${c.reset}`);
+			console.log(
+				`  ${c.dim}Run manually: cd ${configRepoName} && git add .taskplane/ .gitignore && git commit -m "add taskplane config"${c.reset}`,
+			);
 		}
 
 		// ── Post-init guidance ──────────────────────────────────────
@@ -2030,16 +2176,26 @@ async function cmdInit(args) {
 		console.log(`  Config repo: ${c.cyan}${configRepoName}/.taskplane/${c.reset}`);
 		console.log(`  Pointer:     ${c.cyan}.pi/taskplane-pointer.json${c.reset}`);
 		console.log(`  Workspace:   ${c.cyan}.pi/taskplane-workspace.yaml${c.reset}\n`);
-		console.log(`  ${WARN} ${c.bold}Important:${c.reset} merge these changes to your default branch (e.g., ${c.cyan}develop${c.reset})`);
+		console.log(
+			`  ${WARN} ${c.bold}Important:${c.reset} merge these changes to your default branch (e.g., ${c.cyan}develop${c.reset})`,
+		);
 		console.log(`     before other team members run ${c.cyan}taskplane init${c.reset}.\n`);
 		console.log(`     cd ${configRepoName}`);
 		console.log(`     git push && ${c.dim}[create PR / merge to default branch]${c.reset}\n`);
 		console.log(`${c.bold}Quick start:${c.reset}`);
-		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-		console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
-		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
+		console.log(
+			`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`,
+		);
+		console.log(
+			`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`,
+		);
+		console.log(
+			`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`,
+		);
 		if (inferTaskplaneInstallScope() === "global") {
-			console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`);
+			console.log(
+				`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`,
+			);
 		}
 		console.log();
 		return;
@@ -2101,7 +2257,7 @@ async function cmdInit(args) {
 		copyTemplate(
 			path.join(TEMPLATES_DIR, "agents", "local", agent),
 			path.join(projectRoot, ".pi", "agents", agent),
-			{ skipIfExists, label: `.pi/agents/${agent}` }
+			{ skipIfExists, label: `.pi/agents/${agent}` },
 		);
 	}
 
@@ -2122,16 +2278,15 @@ async function cmdInit(args) {
 	writeFile(
 		path.join(projectRoot, ".pi", "taskplane.json"),
 		JSON.stringify(versionInfo, null, 2) + "\n",
-		{ label: ".pi/taskplane.json" }
+		{ label: ".pi/taskplane.json" },
 	);
 
 	// CONTEXT.md
 	const contextSrc = fs.readFileSync(path.join(TEMPLATES_DIR, "tasks", "CONTEXT.md"), "utf-8");
-	writeFile(
-		path.join(projectRoot, vars.tasks_root, "CONTEXT.md"),
-		interpolate(contextSrc, vars),
-		{ skipIfExists, label: `${vars.tasks_root}/CONTEXT.md` }
-	);
+	writeFile(path.join(projectRoot, vars.tasks_root, "CONTEXT.md"), interpolate(contextSrc, vars), {
+		skipIfExists,
+		label: `${vars.tasks_root}/CONTEXT.md`,
+	});
 
 	// Example tasks
 	if (!noExamples) {
@@ -2164,7 +2319,9 @@ async function cmdInit(args) {
 		if (gitignoreResult.created) {
 			console.log(`  ${c.green}create${c.reset} .gitignore`);
 		} else if (gitignoreResult.added.length > 0) {
-			console.log(`  ${c.green}update${c.reset} .gitignore (${gitignoreResult.added.length} entries added)`);
+			console.log(
+				`  ${c.green}update${c.reset} .gitignore (${gitignoreResult.added.length} entries added)`,
+			);
 		} else {
 			console.log(`  ${c.dim}skip${c.reset}  .gitignore (all entries already present)`);
 		}
@@ -2179,11 +2336,19 @@ async function cmdInit(args) {
 	// Report
 	console.log(`\n${OK} ${c.bold}Taskplane initialized!${c.reset}\n`);
 	console.log(`${c.bold}Quick start:${c.reset}`);
-	console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-	console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
-	console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
+	console.log(
+		`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`,
+	);
+	console.log(
+		`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`,
+	);
+	console.log(
+		`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`,
+	);
 	if (inferTaskplaneInstallScope() === "global") {
-		console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`);
+		console.log(
+			`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`,
+		);
 	}
 	console.log();
 }
@@ -2214,12 +2379,22 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const project_name = await ask("Project name", dirName);
 	const maxLanesInput = await ask("Max parallel lanes", "3");
 	const max_lanes = parseInt(maxLanesInput, 10) || 3;
-	const tasks_root_raw = tasksRootOverride || await ask("Tasks directory", "taskplane-tasks");
-	const tasks_root = tasks_root_raw.trim().replace(/\\/g, "/").replace(/^\.\//g, "").replace(/\/+$/g, "");
+	const tasks_root_raw = tasksRootOverride || (await ask("Tasks directory", "taskplane-tasks"));
+	const tasks_root = tasks_root_raw
+		.trim()
+		.replace(/\\/g, "/")
+		.replace(/^\.\//g, "")
+		.replace(/\/+$/g, "");
 	const default_area = await ask("Default area name", "general");
 	const default_prefix = await ask("Task ID prefix", "TP");
-	const test_cmd = await ask("Test command (agents run this to verify work — blank to skip)", detected.test || "");
-	const build_cmd = await ask("Build command (agents run this after tests — blank to skip)", detected.build || "");
+	const test_cmd = await ask(
+		"Test command (agents run this to verify work — blank to skip)",
+		detected.test || "",
+	);
+	const build_cmd = await ask(
+		"Build command (agents run this after tests — blank to skip)",
+		detected.build || "",
+	);
 
 	const slug = slugify(project_name);
 	const explicit_orchestrator_overrides = {};
@@ -2265,7 +2440,9 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], proje
 		const gitignoreResult = ensureGitignoreEntries(projectRoot, { dryRun: true });
 		if (gitignoreResult.added.length > 0) {
 			const action = fs.existsSync(path.join(projectRoot, ".gitignore")) ? "update" : "create";
-			console.log(`  ${c.green}${action}${c.reset} .gitignore (${gitignoreResult.added.length} entries)`);
+			console.log(
+				`  ${c.green}${action}${c.reset} .gitignore (${gitignoreResult.added.length} entries)`,
+			);
 		} else {
 			console.log(`  ${c.dim}skip${c.reset}  .gitignore (all entries already present)`);
 		}
@@ -2278,7 +2455,14 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], proje
  * Print the list of files that would be created for workspace mode (dry-run).
  * Similar to printFileList but paths are scoped to <configRepo>/.taskplane/.
  */
-function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, configRepoName, configRepoRoot) {
+function printWorkspaceFileList(
+	vars,
+	noExamples,
+	preset,
+	exampleTemplateDirs,
+	configRepoName,
+	configRepoRoot,
+) {
 	const prefix = `${configRepoName}/.taskplane`;
 	const files = [
 		`${prefix}/agents/task-worker.md`,
@@ -2299,12 +2483,19 @@ function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, c
 	for (const f of files) console.log(`  ${c.green}create${c.reset} ${f}`);
 
 	// Show gitignore entries that would be added to config repo (workspace-scoped)
-	const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: true, prefix: ".taskplane/" });
+	const gitignoreResult = ensureGitignoreEntries(configRepoRoot, {
+		dryRun: true,
+		prefix: ".taskplane/",
+	});
 	if (gitignoreResult.added.length > 0) {
 		const action = fs.existsSync(path.join(configRepoRoot, ".gitignore")) ? "update" : "create";
-		console.log(`  ${c.green}${action}${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries)`);
+		console.log(
+			`  ${c.green}${action}${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries)`,
+		);
 	} else {
-		console.log(`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`);
+		console.log(
+			`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`,
+		);
 	}
 }
 
@@ -2463,7 +2654,7 @@ function loadWorkspaceConfigForDoctor(projectRoot) {
 function parseWorkspaceYaml(raw) {
 	const lines = raw.split(/\r?\n/);
 	const result = { repos: {}, routing: {} };
-	let section = null;       // "repos" | "routing" | null
+	let section = null; // "repos" | "routing" | null
 	let currentRepoId = null; // current repo being parsed
 
 	for (const line of lines) {
@@ -2594,7 +2785,9 @@ function cmdDoctor() {
 	const pkgVersion = getPackageVersion();
 	const isProjectLocal = PACKAGE_ROOT.includes(".pi");
 	const installType = isProjectLocal ? "project-local" : "global";
-	console.log(`  ${OK} taskplane package installed ${c.dim}(v${pkgVersion}, ${installType})${c.reset}`);
+	console.log(
+		`  ${OK} taskplane package installed ${c.dim}(v${pkgVersion}, ${installType})${c.reset}`,
+	);
 
 	if (isWorkspaceMode) {
 		console.log();
@@ -2603,7 +2796,9 @@ function cmdDoctor() {
 			const codeHint = wsResult.error.code ? ` [${wsResult.error.code}]` : "";
 			console.log(`  ${FAIL} workspace mode detected but config is invalid${codeHint}`);
 			console.log(`     ${c.dim}${wsResult.error.message}${c.reset}`);
-			console.log(`     ${c.dim}→ Fix .pi/taskplane-workspace.yaml or remove it to use repo mode${c.reset}`);
+			console.log(
+				`     ${c.dim}→ Fix .pi/taskplane-workspace.yaml or remove it to use repo mode${c.reset}`,
+			);
 			issues++;
 		} else {
 			// Valid workspace config — show summary banner
@@ -2612,7 +2807,9 @@ function cmdDoctor() {
 			const repoCount = repoIds.length;
 			const defaultRepo = cfg.routing.defaultRepo;
 			const tasksRoot = cfg.routing.tasksRoot;
-			console.log(`  ${OK} workspace mode ${c.dim}(${repoCount} repo${repoCount !== 1 ? "s" : ""}, default: ${defaultRepo})${c.reset}`);
+			console.log(
+				`  ${OK} workspace mode ${c.dim}(${repoCount} repo${repoCount !== 1 ? "s" : ""}, default: ${defaultRepo})${c.reset}`,
+			);
 			console.log(`     ${c.dim}repos: ${repoIds.join(", ")}${c.reset}`);
 			console.log(`     ${c.dim}tasks_root: ${tasksRoot}${c.reset}`);
 		}
@@ -2628,22 +2825,32 @@ function cmdDoctor() {
 		let pointer = null;
 		if (!fs.existsSync(pointerPath)) {
 			console.log(`  ${FAIL} .pi/taskplane-pointer.json missing [POINTER_MISSING]`);
-			console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to create the workspace pointer${c.reset}`);
+			console.log(
+				`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to create the workspace pointer${c.reset}`,
+			);
 			issues++;
 		} else {
 			try {
 				pointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
 				if (!pointer.config_repo || !pointer.config_path) {
-					console.log(`  ${FAIL} .pi/taskplane-pointer.json missing required fields (config_repo, config_path) [POINTER_SCHEMA_INVALID]`);
-					console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to recreate the pointer${c.reset}`);
+					console.log(
+						`  ${FAIL} .pi/taskplane-pointer.json missing required fields (config_repo, config_path) [POINTER_SCHEMA_INVALID]`,
+					);
+					console.log(
+						`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to recreate the pointer${c.reset}`,
+					);
 					pointer = null;
 					issues++;
 				} else {
-					console.log(`  ${OK} .pi/taskplane-pointer.json ${c.dim}(→ ${pointer.config_repo}/${pointer.config_path})${c.reset}`);
+					console.log(
+						`  ${OK} .pi/taskplane-pointer.json ${c.dim}(→ ${pointer.config_repo}/${pointer.config_path})${c.reset}`,
+					);
 				}
 			} catch {
 				console.log(`  ${FAIL} .pi/taskplane-pointer.json is not valid JSON [POINTER_PARSE_ERROR]`);
-				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to recreate the pointer${c.reset}`);
+				console.log(
+					`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to recreate the pointer${c.reset}`,
+				);
 				issues++;
 			}
 		}
@@ -2658,12 +2865,16 @@ function cmdDoctor() {
 				configRepoRoot = null;
 				issues++;
 			} else if (!isInsideGitRepo(configRepoRoot)) {
-				console.log(`  ${FAIL} config repo is not a git repository: ${pointer.config_repo} [CONFIG_REPO_NOT_GIT]`);
+				console.log(
+					`  ${FAIL} config repo is not a git repository: ${pointer.config_repo} [CONFIG_REPO_NOT_GIT]`,
+				);
 				console.log(`     ${c.dim}→ Run: git init ${configRepoRoot}${c.reset}`);
 				configRepoRoot = null;
 				issues++;
 			} else {
-				console.log(`  ${OK} config repo: ${pointer.config_repo} ${c.dim}(${configRepoRoot})${c.reset}`);
+				console.log(
+					`  ${OK} config repo: ${pointer.config_repo} ${c.dim}(${configRepoRoot})${c.reset}`,
+				);
 			}
 		}
 
@@ -2672,8 +2883,12 @@ function cmdDoctor() {
 		if (configRepoRoot) {
 			const taskplaneDir = path.join(configRepoRoot, pointer.config_path);
 			if (!fs.existsSync(taskplaneDir)) {
-				console.log(`  ${FAIL} ${pointer.config_repo}/${pointer.config_path}/ not found [CONFIG_DIR_NOT_FOUND]`);
-				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to create the config directory${c.reset}`);
+				console.log(
+					`  ${FAIL} ${pointer.config_repo}/${pointer.config_path}/ not found [CONFIG_DIR_NOT_FOUND]`,
+				);
+				console.log(
+					`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to create the config directory${c.reset}`,
+				);
 				issues++;
 			} else {
 				console.log(`  ${OK} ${pointer.config_repo}/${pointer.config_path}/ exists`);
@@ -2689,7 +2904,9 @@ function cmdDoctor() {
 					cwd: configRepoRoot,
 					stdio: ["pipe", "pipe", "pipe"],
 					timeout: 5000,
-				}).toString().trim();
+				})
+					.toString()
+					.trim();
 
 				// Detect default branch (try origin/HEAD, fall back to main/master heuristic)
 				let defaultBranch = null;
@@ -2698,7 +2915,9 @@ function cmdDoctor() {
 						cwd: configRepoRoot,
 						stdio: ["pipe", "pipe", "pipe"],
 						timeout: 5000,
-					}).toString().trim();
+					})
+						.toString()
+						.trim();
 					// refs/remotes/origin/main → main
 					defaultBranch = originHead.replace(/^refs\/remotes\/origin\//, "");
 				} catch {
@@ -2721,28 +2940,40 @@ function cmdDoctor() {
 				if (defaultBranch && currentBranch !== defaultBranch) {
 					// Check if .taskplane/ exists on the default branch via git ls-tree
 					try {
-						const lsOutput = execFileSync("git", ["ls-tree", "--name-only", defaultBranch, pointer.config_path + "/"], {
-							cwd: configRepoRoot,
-							stdio: ["pipe", "pipe", "pipe"],
-							timeout: 5000,
-						}).toString().trim();
+						const lsOutput = execFileSync(
+							"git",
+							["ls-tree", "--name-only", defaultBranch, pointer.config_path + "/"],
+							{
+								cwd: configRepoRoot,
+								stdio: ["pipe", "pipe", "pipe"],
+								timeout: 5000,
+							},
+						)
+							.toString()
+							.trim();
 
 						if (lsOutput) {
 							console.log(`  ${OK} ${pointer.config_path}/ exists on default branch (${defaultBranch})`);
 						} else {
-							console.log(`  ${WARN} ${pointer.config_path}/ exists on current branch (${currentBranch}) but not on default branch (${defaultBranch})`);
+							console.log(
+								`  ${WARN} ${pointer.config_path}/ exists on current branch (${currentBranch}) but not on default branch (${defaultBranch})`,
+							);
 							console.log(`     ${c.dim}→ Merge to ${defaultBranch} so teammates can onboard${c.reset}`);
 						}
 					} catch {
 						// ls-tree failed — directory doesn't exist on that branch
-						console.log(`  ${WARN} ${pointer.config_path}/ exists on current branch (${currentBranch}) but not on default branch (${defaultBranch})`);
+						console.log(
+							`  ${WARN} ${pointer.config_path}/ exists on current branch (${currentBranch}) but not on default branch (${defaultBranch})`,
+						);
 						console.log(`     ${c.dim}→ Merge to ${defaultBranch} so teammates can onboard${c.reset}`);
 					}
 				} else if (defaultBranch && currentBranch === defaultBranch) {
 					console.log(`  ${OK} ${pointer.config_path}/ on default branch (${defaultBranch})`);
 				} else {
 					// Could not determine default branch — skip this check silently
-					console.log(`  ${INFO} could not determine default branch for ${pointer.config_repo} — skipping branch check`);
+					console.log(
+						`  ${INFO} could not determine default branch for ${pointer.config_repo} — skipping branch check`,
+					);
 				}
 			} catch {
 				// git commands failed — skip branch check
@@ -2760,8 +2991,12 @@ function cmdDoctor() {
 
 			// Check path exists on disk
 			if (!fs.existsSync(resolvedPath)) {
-				console.log(`  ${FAIL} repo: ${repoId} — path not found: ${resolvedPath} [WORKSPACE_REPO_PATH_NOT_FOUND]`);
-				console.log(`     ${c.dim}→ Check repos.${repoId}.path in .pi/taskplane-workspace.yaml${c.reset}`);
+				console.log(
+					`  ${FAIL} repo: ${repoId} — path not found: ${resolvedPath} [WORKSPACE_REPO_PATH_NOT_FOUND]`,
+				);
+				console.log(
+					`     ${c.dim}→ Check repos.${repoId}.path in .pi/taskplane-workspace.yaml${c.reset}`,
+				);
 				issues++;
 				continue;
 			}
@@ -2775,9 +3010,13 @@ function cmdDoctor() {
 				});
 				console.log(`  ${OK} repo: ${repoId} ${c.dim}(${resolvedPath})${c.reset}`);
 			} catch {
-				console.log(`  ${FAIL} repo: ${repoId} — not a git repository: ${resolvedPath} [WORKSPACE_REPO_NOT_GIT]`);
+				console.log(
+					`  ${FAIL} repo: ${repoId} — not a git repository: ${resolvedPath} [WORKSPACE_REPO_NOT_GIT]`,
+				);
 				console.log(`     ${c.dim}→ Run: git init ${resolvedPath}${c.reset}`);
-				console.log(`     ${c.dim}  or fix repos.${repoId}.path in .pi/taskplane-workspace.yaml${c.reset}`);
+				console.log(
+					`     ${c.dim}  or fix repos.${repoId}.path in .pi/taskplane-workspace.yaml${c.reset}`,
+				);
 				issues++;
 			}
 		}
@@ -2785,11 +3024,13 @@ function cmdDoctor() {
 
 	// Check project config (common — both modes)
 	console.log();
-	const hasUnifiedJson = fs.existsSync(path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"));
-	const hasYamlFallback = !hasUnifiedJson && (
-		fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-runner.yaml")) ||
-		fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-orchestrator.yaml"))
+	const hasUnifiedJson = fs.existsSync(
+		path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"),
 	);
+	const hasYamlFallback =
+		!hasUnifiedJson &&
+		(fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-runner.yaml")) ||
+			fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-orchestrator.yaml")));
 	const configFiles = [
 		// JSON is required unless legacy YAML exists as fallback
 		{ path: "taskplane-config.json", required: !hasYamlFallback, hide: false },
@@ -2840,8 +3081,16 @@ function cmdDoctor() {
 	// Detect YAML config files without a JSON equivalent (taskplane-config.json).
 	{
 		const yamlRunnerPath = path.join(configLocation.root, configLocation.prefix, "task-runner.yaml");
-		const yamlOrchestratorPath = path.join(configLocation.root, configLocation.prefix, "task-orchestrator.yaml");
-		const jsonConfigPath = path.join(configLocation.root, configLocation.prefix, "taskplane-config.json");
+		const yamlOrchestratorPath = path.join(
+			configLocation.root,
+			configLocation.prefix,
+			"task-orchestrator.yaml",
+		);
+		const jsonConfigPath = path.join(
+			configLocation.root,
+			configLocation.prefix,
+			"taskplane-config.json",
+		);
 
 		const hasYamlRunner = fs.existsSync(yamlRunnerPath);
 		const hasYamlOrchestrator = fs.existsSync(yamlOrchestratorPath);
@@ -2849,12 +3098,18 @@ function cmdDoctor() {
 
 		if ((hasYamlRunner || hasYamlOrchestrator) && !hasJsonConfig) {
 			console.log(`  ${WARN} legacy YAML config detected in ${configLocation.label}`);
-			console.log(`     ${c.dim}→ Run /taskplane-settings to migrate to taskplane-config.json${c.reset}`);
+			console.log(
+				`     ${c.dim}→ Run /taskplane-settings to migrate to taskplane-config.json${c.reset}`,
+			);
 		}
 	}
 
 	// Check task areas from config
-	const { paths: taskAreaPaths, contexts: taskAreaContexts, areaRepoIds } = discoverTaskAreaMetadata(projectRoot, configLocation.root, configLocation.prefix);
+	const {
+		paths: taskAreaPaths,
+		contexts: taskAreaContexts,
+		areaRepoIds,
+	} = discoverTaskAreaMetadata(projectRoot, configLocation.root, configLocation.prefix);
 	if (taskAreaPaths.length > 0) {
 		console.log();
 		for (const areaPath of taskAreaPaths) {
@@ -2886,8 +3141,12 @@ function cmdDoctor() {
 			if (knownRepoIds.includes(repoId)) {
 				console.log(`  ${OK} area '${areaName}' repo_id: ${repoId}`);
 			} else {
-				console.log(`  ${FAIL} area '${areaName}' repo_id '${repoId}' does not match any workspace repo [AREA_REPO_ID_UNKNOWN]`);
-				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repoId in ${configLocation.label}/taskplane-config.json${c.reset}`);
+				console.log(
+					`  ${FAIL} area '${areaName}' repo_id '${repoId}' does not match any workspace repo [AREA_REPO_ID_UNKNOWN]`,
+				);
+				console.log(
+					`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repoId in ${configLocation.label}/taskplane-config.json${c.reset}`,
+				);
 				issues++;
 			}
 		}
@@ -2921,22 +3180,30 @@ function cmdDoctor() {
 			const gitignorePath = path.join(configRepoRoot, ".gitignore");
 			const gitignoreExists = fs.existsSync(gitignorePath);
 			if (!gitignoreExists) {
-				console.log(`  ${WARN} ${configRepoName}/.gitignore missing — Taskplane runtime entries not protected`);
-				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+				console.log(
+					`  ${WARN} ${configRepoName}/.gitignore missing — Taskplane runtime entries not protected`,
+				);
+				console.log(
+					`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`,
+				);
 				// WARN doesn't increment issues (it's advisory, not a failure)
 			} else {
 				const content = fs.readFileSync(gitignorePath, "utf-8");
-				const existingLines = new Set(content.split(/\r?\n/).map(l => l.trim()));
+				const existingLines = new Set(content.split(/\r?\n/).map((l) => l.trim()));
 				const allEntries = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
 				const missing = allEntries
-					.map(entry => `${prefix}${entry}`)
-					.filter(prefixed => !existingLines.has(prefixed));
+					.map((entry) => `${prefix}${entry}`)
+					.filter((prefixed) => !existingLines.has(prefixed));
 
 				if (missing.length === 0) {
 					console.log(`  ${OK} ${configRepoName}/.gitignore has all Taskplane runtime entries`);
 				} else {
-					console.log(`  ${WARN} ${configRepoName}/.gitignore missing ${missing.length} Taskplane runtime entr${missing.length === 1 ? "y" : "ies"}`);
-					console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+					console.log(
+						`  ${WARN} ${configRepoName}/.gitignore missing ${missing.length} Taskplane runtime entr${missing.length === 1 ? "y" : "ies"}`,
+					);
+					console.log(
+						`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`,
+					);
 				}
 			}
 
@@ -2947,22 +3214,26 @@ function cmdDoctor() {
 					cwd: configRepoRoot,
 					stdio: ["pipe", "pipe", "pipe"],
 					timeout: 10000,
-				}).toString().trim();
+				})
+					.toString()
+					.trim();
 				const trackedFiles = raw ? raw.split(/\r?\n/) : [];
 
 				if (trackedFiles.length > 0) {
-					const prefixedPatterns = ALL_GITIGNORE_PATTERNS.map(p => `${prefix}${p}`);
-					const patterns = prefixedPatterns.map(p => patternToRegex(p));
-					const matchedFiles = trackedFiles.filter(file =>
-						patterns.some(regex => regex.test(file))
-					);
+					const prefixedPatterns = ALL_GITIGNORE_PATTERNS.map((p) => `${prefix}${p}`);
+					const patterns = prefixedPatterns.map((p) => patternToRegex(p));
+					const matchedFiles = trackedFiles.filter((file) => patterns.some((regex) => regex.test(file)));
 
 					if (matchedFiles.length > 0) {
-						console.log(`  ${FAIL} ${matchedFiles.length} runtime artifact${matchedFiles.length === 1 ? "" : "s"} tracked by git in ${configRepoName}`);
+						console.log(
+							`  ${FAIL} ${matchedFiles.length} runtime artifact${matchedFiles.length === 1 ? "" : "s"} tracked by git in ${configRepoName}`,
+						);
 						for (const file of matchedFiles) {
 							console.log(`     ${c.dim}${file}${c.reset}`);
 						}
-						console.log(`     ${c.dim}→ Run: cd ${configRepoName} && git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+						console.log(
+							`     ${c.dim}→ Run: cd ${configRepoName} && git rm --cached ${matchedFiles.join(" ")}${c.reset}`,
+						);
 						issues++;
 					} else {
 						console.log(`  ${OK} no runtime artifacts tracked by git in ${configRepoName}`);
@@ -2983,18 +3254,24 @@ function cmdDoctor() {
 		const gitignoreExists = fs.existsSync(gitignorePath);
 		if (!gitignoreExists) {
 			console.log(`  ${WARN} .gitignore missing — Taskplane runtime entries not protected`);
-			console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+			console.log(
+				`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`,
+			);
 		} else {
 			const content = fs.readFileSync(gitignorePath, "utf-8");
-			const existingLines = new Set(content.split(/\r?\n/).map(l => l.trim()));
+			const existingLines = new Set(content.split(/\r?\n/).map((l) => l.trim()));
 			const allEntries = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
-			const missing = allEntries.filter(entry => !existingLines.has(entry));
+			const missing = allEntries.filter((entry) => !existingLines.has(entry));
 
 			if (missing.length === 0) {
 				console.log(`  ${OK} .gitignore has all Taskplane runtime entries`);
 			} else {
-				console.log(`  ${WARN} .gitignore missing ${missing.length} Taskplane runtime entr${missing.length === 1 ? "y" : "ies"}`);
-				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+				console.log(
+					`  ${WARN} .gitignore missing ${missing.length} Taskplane runtime entr${missing.length === 1 ? "y" : "ies"}`,
+				);
+				console.log(
+					`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`,
+				);
 			}
 		}
 
@@ -3005,17 +3282,19 @@ function cmdDoctor() {
 				cwd: projectRoot,
 				stdio: ["pipe", "pipe", "pipe"],
 				timeout: 10000,
-			}).toString().trim();
+			})
+				.toString()
+				.trim();
 			const trackedFiles = raw ? raw.split(/\r?\n/) : [];
 
 			if (trackedFiles.length > 0) {
-				const patterns = ALL_GITIGNORE_PATTERNS.map(p => patternToRegex(p));
-				const matchedFiles = trackedFiles.filter(file =>
-					patterns.some(regex => regex.test(file))
-				);
+				const patterns = ALL_GITIGNORE_PATTERNS.map((p) => patternToRegex(p));
+				const matchedFiles = trackedFiles.filter((file) => patterns.some((regex) => regex.test(file)));
 
 				if (matchedFiles.length > 0) {
-					console.log(`  ${FAIL} ${matchedFiles.length} runtime artifact${matchedFiles.length === 1 ? "" : "s"} tracked by git`);
+					console.log(
+						`  ${FAIL} ${matchedFiles.length} runtime artifact${matchedFiles.length === 1 ? "" : "s"} tracked by git`,
+					);
 					for (const file of matchedFiles) {
 						console.log(`     ${c.dim}${file}${c.reset}`);
 					}
@@ -3036,7 +3315,9 @@ function cmdDoctor() {
 	if (issues === 0) {
 		console.log(`${OK} ${c.green}All checks passed!${c.reset}\n`);
 	} else {
-		console.log(`${FAIL} ${issues} issue(s) found. Run ${c.cyan}taskplane init${c.reset} to fix config issues.\n`);
+		console.log(
+			`${FAIL} ${issues} issue(s) found. Run ${c.cyan}taskplane init${c.reset} to fix config issues.\n`,
+		);
 		process.exit(1);
 	}
 }
@@ -3057,7 +3338,9 @@ function cmdVersion() {
 	if (fs.existsSync(tpJson)) {
 		try {
 			const info = JSON.parse(fs.readFileSync(tpJson, "utf-8"));
-			console.log(`  Config:   .pi/taskplane.json (v${info.version}, initialized ${info.installedAt?.slice(0, 10) || "unknown"})`);
+			console.log(
+				`  Config:   .pi/taskplane.json (v${info.version}, initialized ${info.installedAt?.slice(0, 10) || "unknown"})`,
+			);
 		} catch {
 			console.log(`  Config:   .pi/taskplane.json (unreadable)`);
 		}

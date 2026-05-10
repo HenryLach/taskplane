@@ -2,30 +2,88 @@
  * Merge orchestration, merge agents, merge worktree
  * @module orch/merge
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync, readdirSync, type Dirent } from "fs";
+import {
+	readFileSync,
+	writeFileSync,
+	existsSync,
+	unlinkSync,
+	copyFileSync,
+	mkdirSync,
+	rmSync,
+	readdirSync,
+	type Dirent,
+} from "fs";
 import { readFile as fsReadFile } from "fs/promises";
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 
 import { execLog, isV2AgentAlive, setV2LivenessRegistryCache } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MERGE_HEALTH_POLL_INTERVAL_MS, MERGE_HEALTH_WARNING_THRESHOLD_MS, MERGE_HEALTH_STUCK_THRESHOLD_MS, MergeError, VALID_MERGE_STATUSES, buildEngineEventBase } from "./types.ts";
-import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig, MergeHealthStatus, MergeHealthEventType, MergeSessionSnapshot, MergeSessionHealthState, EngineEvent, OrchBatchPhase, RuntimeMergeSnapshot, RuntimeAgentTelemetrySnapshot } from "./types.ts";
+import {
+	MERGE_POLL_INTERVAL_MS,
+	MERGE_RESULT_GRACE_MS,
+	MERGE_RESULT_READ_RETRIES,
+	MERGE_RESULT_READ_RETRY_DELAY_MS,
+	MERGE_SPAWN_RETRY_MAX,
+	MERGE_TIMEOUT_MAX_RETRIES,
+	MERGE_TIMEOUT_MS,
+	MERGE_HEALTH_POLL_INTERVAL_MS,
+	MERGE_HEALTH_WARNING_THRESHOLD_MS,
+	MERGE_HEALTH_STUCK_THRESHOLD_MS,
+	MergeError,
+	VALID_MERGE_STATUSES,
+	buildEngineEventBase,
+} from "./types.ts";
+import type {
+	AllocatedLane,
+	LaneExecutionResult,
+	MergeLaneResult,
+	MergeResult,
+	MergeResultStatus,
+	MergeWaveResult,
+	OrchestratorConfig,
+	RepoMergeOutcome,
+	TaskRunnerConfig,
+	TransactionRecord,
+	TransactionStatus,
+	VerificationBaselineResult,
+	WaveExecutionResult,
+	WorkspaceConfig,
+	MergeHealthStatus,
+	MergeHealthEventType,
+	MergeSessionSnapshot,
+	MergeSessionHealthState,
+	EngineEvent,
+	OrchBatchPhase,
+	RuntimeMergeSnapshot,
+	RuntimeAgentTelemetrySnapshot,
+} from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { readManifest, writeManifest, buildRegistrySnapshot, writeRegistrySnapshot, readRegistrySnapshot, writeMergeSnapshot } from "./process-registry.ts";
+import {
+	readManifest,
+	writeManifest,
+	buildRegistrySnapshot,
+	writeRegistrySnapshot,
+	readRegistrySnapshot,
+	writeMergeSnapshot,
+} from "./process-registry.ts";
 import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { emitEngineEvent } from "./persistence.ts";
 import { loadOrchestratorConfig } from "./config.ts";
-import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
+import {
+	captureBaseline,
+	diffFingerprints,
+	runVerificationCommands,
+	parseTestOutput,
+	deduplicateFingerprints,
+} from "./verification.ts";
 import { spawnAgent } from "./agent-host.ts";
 import type { AgentHostOptions, AgentHostResult, AgentTelemetryCallback } from "./agent-host.ts";
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
-
-
 
 // ── Merge Implementation ─────────────────────────────────────────────
 
@@ -47,10 +105,7 @@ import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./v
  */
 export function parseMergeResult(resultPath: string): MergeResult {
 	if (!existsSync(resultPath)) {
-		throw new MergeError(
-			"MERGE_RESULT_INVALID",
-			`Merge result file not found: ${resultPath}`,
-		);
+		throw new MergeError("MERGE_RESULT_INVALID", `Merge result file not found: ${resultPath}`);
 	}
 
 	const pickString = (obj: Record<string, unknown>, ...keys: string[]): string | null => {
@@ -64,50 +119,55 @@ export function parseMergeResult(resultPath: string): MergeResult {
 	};
 
 	const hasFlatVerification = (obj: Record<string, unknown>): boolean =>
-		typeof obj.verification_passed === "boolean"
-		|| Array.isArray(obj.verification_commands)
-		|| typeof obj.verification_output === "string"
-		|| typeof obj.verification_exit_code === "number";
+		typeof obj.verification_passed === "boolean" ||
+		Array.isArray(obj.verification_commands) ||
+		typeof obj.verification_output === "string" ||
+		typeof obj.verification_exit_code === "number";
 
-	const normalizeVerification = (obj: Record<string, unknown>): MergeResult["verification"] | null => {
-		const nested = (obj.verification && typeof obj.verification === "object")
-			? obj.verification as Record<string, unknown>
-			: null;
+	const normalizeVerification = (
+		obj: Record<string, unknown>,
+	): MergeResult["verification"] | null => {
+		const nested =
+			obj.verification && typeof obj.verification === "object"
+				? (obj.verification as Record<string, unknown>)
+				: null;
 
 		if (!nested && !hasFlatVerification(obj)) {
 			return null;
 		}
 
 		const passedFromBool =
-			(nested && typeof nested.passed === "boolean" ? nested.passed : undefined)
-			?? (nested && typeof nested.all_passed === "boolean" ? nested.all_passed : undefined)
-			?? (typeof obj.verification_passed === "boolean" ? obj.verification_passed : undefined);
+			(nested && typeof nested.passed === "boolean" ? nested.passed : undefined) ??
+			(nested && typeof nested.all_passed === "boolean" ? nested.all_passed : undefined) ??
+			(typeof obj.verification_passed === "boolean" ? obj.verification_passed : undefined);
 
 		const exitCode =
-			(nested && typeof nested.exitCode === "number" ? nested.exitCode : undefined)
-			?? (nested && typeof nested.exit_code === "number" ? nested.exit_code : undefined)
-			?? (typeof obj.verification_exit_code === "number" ? obj.verification_exit_code : undefined);
+			(nested && typeof nested.exitCode === "number" ? nested.exitCode : undefined) ??
+			(nested && typeof nested.exit_code === "number" ? nested.exit_code : undefined) ??
+			(typeof obj.verification_exit_code === "number" ? obj.verification_exit_code : undefined);
 
-		const passed = typeof passedFromBool === "boolean"
-			? passedFromBool
-			: (typeof exitCode === "number" ? exitCode === 0 : false);
+		const passed =
+			typeof passedFromBool === "boolean"
+				? passedFromBool
+				: typeof exitCode === "number"
+					? exitCode === 0
+					: false;
 
-		const ran = (nested && typeof nested.ran === "boolean")
-			? nested.ran
-			: (
-				typeof passedFromBool === "boolean"
-				|| typeof exitCode === "number"
-				|| (nested && typeof nested.command === "string")
-				|| (nested && typeof nested.summary === "string")
-				|| typeof obj.verification_output === "string"
-				|| Array.isArray(obj.verification_commands)
-			);
+		const ran =
+			nested && typeof nested.ran === "boolean"
+				? nested.ran
+				: typeof passedFromBool === "boolean" ||
+					typeof exitCode === "number" ||
+					(nested && typeof nested.command === "string") ||
+					(nested && typeof nested.summary === "string") ||
+					typeof obj.verification_output === "string" ||
+					Array.isArray(obj.verification_commands);
 
 		const output = (
-			(nested && typeof nested.output === "string" ? nested.output : undefined)
-			?? (nested && typeof nested.summary === "string" ? nested.summary : undefined)
-			?? (nested && typeof nested.notes === "string" ? nested.notes : undefined)
-			?? (typeof obj.verification_output === "string" ? obj.verification_output : "")
+			(nested && typeof nested.output === "string" ? nested.output : undefined) ??
+			(nested && typeof nested.summary === "string" ? nested.summary : undefined) ??
+			(nested && typeof nested.notes === "string" ? nested.notes : undefined) ??
+			(typeof obj.verification_output === "string" ? obj.verification_output : "")
 		).slice(0, 2000);
 
 		return { ran, passed, output };
@@ -163,9 +223,14 @@ export function parseMergeResult(resultPath: string): MergeResult {
 
 			// Validate status value
 			if (!VALID_MERGE_STATUSES.has(parsed.status)) {
-				execLog("merge", "parse", `unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`, {
-					resultPath,
-				});
+				execLog(
+					"merge",
+					"parse",
+					`unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`,
+					{
+						resultPath,
+					},
+				);
 				parsed.status = "BUILD_FAILURE";
 			}
 
@@ -173,19 +238,20 @@ export function parseMergeResult(resultPath: string): MergeResult {
 			const mergeCommit = pickString(parsed, "merge_commit", "mergeCommit") ?? "";
 			const conflicts = Array.isArray(parsed.conflicts)
 				? parsed.conflicts
-					.filter((c): c is { file: string; type: string; resolved: boolean; resolution?: string } => (
-						typeof c === "object"
-						&& c !== null
-						&& typeof (c as { file?: unknown }).file === "string"
-						&& typeof (c as { type?: unknown }).type === "string"
-						&& typeof (c as { resolved?: unknown }).resolved === "boolean"
-					))
-					.map(c => ({
-						file: c.file,
-						type: c.type,
-						resolved: c.resolved,
-						...(typeof c.resolution === "string" ? { resolution: c.resolution } : {}),
-					}))
+						.filter(
+							(c): c is { file: string; type: string; resolved: boolean; resolution?: string } =>
+								typeof c === "object" &&
+								c !== null &&
+								typeof (c as { file?: unknown }).file === "string" &&
+								typeof (c as { type?: unknown }).type === "string" &&
+								typeof (c as { resolved?: unknown }).resolved === "boolean",
+						)
+						.map((c) => ({
+							file: c.file,
+							type: c.type,
+							resolved: c.resolved,
+							...(typeof c.resolution === "string" ? { resolution: c.resolution } : {}),
+						}))
 				: [];
 
 			// Normalize optional fields with defaults
@@ -212,7 +278,7 @@ export function parseMergeResult(resultPath: string): MergeResult {
 	throw new MergeError(
 		"MERGE_RESULT_INVALID",
 		`Failed to parse merge result JSON after ${MERGE_RESULT_READ_RETRIES} attempts. ` +
-		`Last error: ${lastParseError}. File: ${resultPath}`,
+			`Last error: ${lastParseError}. File: ${resultPath}`,
 	);
 }
 
@@ -232,10 +298,7 @@ export function parseMergeResult(resultPath: string): MergeResult {
  */
 export async function parseMergeResultAsync(resultPath: string): Promise<MergeResult> {
 	if (!existsSync(resultPath)) {
-		throw new MergeError(
-			"MERGE_RESULT_INVALID",
-			`Merge result file not found: ${resultPath}`,
-		);
+		throw new MergeError("MERGE_RESULT_INVALID", `Merge result file not found: ${resultPath}`);
 	}
 
 	const pickString = (obj: Record<string, unknown>, ...keys: string[]): string | null => {
@@ -249,50 +312,55 @@ export async function parseMergeResultAsync(resultPath: string): Promise<MergeRe
 	};
 
 	const hasFlatVerification = (obj: Record<string, unknown>): boolean =>
-		typeof obj.verification_passed === "boolean"
-		|| Array.isArray(obj.verification_commands)
-		|| typeof obj.verification_output === "string"
-		|| typeof obj.verification_exit_code === "number";
+		typeof obj.verification_passed === "boolean" ||
+		Array.isArray(obj.verification_commands) ||
+		typeof obj.verification_output === "string" ||
+		typeof obj.verification_exit_code === "number";
 
-	const normalizeVerification = (obj: Record<string, unknown>): MergeResult["verification"] | null => {
-		const nested = (obj.verification && typeof obj.verification === "object")
-			? obj.verification as Record<string, unknown>
-			: null;
+	const normalizeVerification = (
+		obj: Record<string, unknown>,
+	): MergeResult["verification"] | null => {
+		const nested =
+			obj.verification && typeof obj.verification === "object"
+				? (obj.verification as Record<string, unknown>)
+				: null;
 
 		if (!nested && !hasFlatVerification(obj)) {
 			return null;
 		}
 
 		const passedFromBool =
-			(nested && typeof nested.passed === "boolean" ? nested.passed : undefined)
-			?? (nested && typeof nested.all_passed === "boolean" ? nested.all_passed : undefined)
-			?? (typeof obj.verification_passed === "boolean" ? obj.verification_passed : undefined);
+			(nested && typeof nested.passed === "boolean" ? nested.passed : undefined) ??
+			(nested && typeof nested.all_passed === "boolean" ? nested.all_passed : undefined) ??
+			(typeof obj.verification_passed === "boolean" ? obj.verification_passed : undefined);
 
 		const exitCode =
-			(nested && typeof nested.exitCode === "number" ? nested.exitCode : undefined)
-			?? (nested && typeof nested.exit_code === "number" ? nested.exit_code : undefined)
-			?? (typeof obj.verification_exit_code === "number" ? obj.verification_exit_code : undefined);
+			(nested && typeof nested.exitCode === "number" ? nested.exitCode : undefined) ??
+			(nested && typeof nested.exit_code === "number" ? nested.exit_code : undefined) ??
+			(typeof obj.verification_exit_code === "number" ? obj.verification_exit_code : undefined);
 
-		const passed = typeof passedFromBool === "boolean"
-			? passedFromBool
-			: (typeof exitCode === "number" ? exitCode === 0 : false);
+		const passed =
+			typeof passedFromBool === "boolean"
+				? passedFromBool
+				: typeof exitCode === "number"
+					? exitCode === 0
+					: false;
 
-		const ran = (nested && typeof nested.ran === "boolean")
-			? nested.ran
-			: (
-				typeof passedFromBool === "boolean"
-				|| typeof exitCode === "number"
-				|| (nested && typeof nested.command === "string")
-				|| (nested && typeof nested.summary === "string")
-				|| typeof obj.verification_output === "string"
-				|| Array.isArray(obj.verification_commands)
-			);
+		const ran =
+			nested && typeof nested.ran === "boolean"
+				? nested.ran
+				: typeof passedFromBool === "boolean" ||
+					typeof exitCode === "number" ||
+					(nested && typeof nested.command === "string") ||
+					(nested && typeof nested.summary === "string") ||
+					typeof obj.verification_output === "string" ||
+					Array.isArray(obj.verification_commands);
 
 		const output = (
-			(nested && typeof nested.output === "string" ? nested.output : undefined)
-			?? (nested && typeof nested.summary === "string" ? nested.summary : undefined)
-			?? (nested && typeof nested.notes === "string" ? nested.notes : undefined)
-			?? (typeof obj.verification_output === "string" ? obj.verification_output : "")
+			(nested && typeof nested.output === "string" ? nested.output : undefined) ??
+			(nested && typeof nested.summary === "string" ? nested.summary : undefined) ??
+			(nested && typeof nested.notes === "string" ? nested.notes : undefined) ??
+			(typeof obj.verification_output === "string" ? obj.verification_output : "")
 		).slice(0, 2000);
 
 		return { ran, passed, output };
@@ -345,9 +413,14 @@ export async function parseMergeResultAsync(resultPath: string): Promise<MergeRe
 			parsed.status = String(parsed.status).toUpperCase();
 
 			if (!VALID_MERGE_STATUSES.has(parsed.status)) {
-				execLog("merge", "parse", `unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`, {
-					resultPath,
-				});
+				execLog(
+					"merge",
+					"parse",
+					`unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`,
+					{
+						resultPath,
+					},
+				);
 				parsed.status = "BUILD_FAILURE";
 			}
 
@@ -355,19 +428,20 @@ export async function parseMergeResultAsync(resultPath: string): Promise<MergeRe
 			const mergeCommit = pickString(parsed, "merge_commit", "mergeCommit") ?? "";
 			const conflicts = Array.isArray(parsed.conflicts)
 				? parsed.conflicts
-					.filter((c): c is { file: string; type: string; resolved: boolean; resolution?: string } => (
-						typeof c === "object"
-						&& c !== null
-						&& typeof (c as { file?: unknown }).file === "string"
-						&& typeof (c as { type?: unknown }).type === "string"
-						&& typeof (c as { resolved?: unknown }).resolved === "boolean"
-					))
-					.map(c => ({
-						file: c.file,
-						type: c.type,
-						resolved: c.resolved,
-						...(typeof c.resolution === "string" ? { resolution: c.resolution } : {}),
-					}))
+						.filter(
+							(c): c is { file: string; type: string; resolved: boolean; resolution?: string } =>
+								typeof c === "object" &&
+								c !== null &&
+								typeof (c as { file?: unknown }).file === "string" &&
+								typeof (c as { type?: unknown }).type === "string" &&
+								typeof (c as { resolved?: unknown }).resolved === "boolean",
+						)
+						.map((c) => ({
+							file: c.file,
+							type: c.type,
+							resolved: c.resolved,
+							...(typeof c.resolution === "string" ? { resolution: c.resolution } : {}),
+						}))
 				: [];
 
 			return {
@@ -392,7 +466,7 @@ export async function parseMergeResultAsync(resultPath: string): Promise<MergeRe
 	throw new MergeError(
 		"MERGE_RESULT_INVALID",
 		`Failed to parse merge result JSON after ${MERGE_RESULT_READ_RETRIES} attempts. ` +
-		`Last error: ${lastParseError}. File: ${resultPath}`,
+			`Last error: ${lastParseError}. File: ${resultPath}`,
 	);
 }
 
@@ -424,10 +498,9 @@ function stageSkippedArtifactsToTargetBranch(
 	const resolvedTmpPath = resolve(tmpWorktreePath);
 
 	try {
-		const addResult = spawnSync(
-			"git", ["worktree", "add", resolvedTmpPath, targetBranch],
-			{ cwd: repoRoot },
-		);
+		const addResult = spawnSync("git", ["worktree", "add", resolvedTmpPath, targetBranch], {
+			cwd: repoRoot,
+		});
 		if (addResult.status !== 0) {
 			execLog("merge", `W${waveIndex}`, `failed to create temp worktree for skipped artifacts`, {
 				stderr: addResult.stderr?.toString().trim(),
@@ -459,7 +532,9 @@ function stageSkippedArtifactsToTargetBranch(
 						copyFileSync(srcPath, destPath);
 						spawnSync("git", ["add", "--", relPath], { cwd: resolvedTmpPath });
 						staged++;
-					} catch { /* best effort */ }
+					} catch {
+						/* best effort */
+					}
 				}
 
 				for (const dirName of ALLOWED_DIRS) {
@@ -469,9 +544,7 @@ function stageSkippedArtifactsToTargetBranch(
 						const entries = readdirSync(laneDir, { recursive: true, withFileTypes: true });
 						for (const entry of entries) {
 							if (!entry.isFile()) continue;
-							const entryPath = entry.parentPath
-								? join(entry.parentPath, entry.name)
-								: entry.name;
+							const entryPath = entry.parentPath ? join(entry.parentPath, entry.name) : entry.name;
 							const fileRel = relative(laneDir, entryPath).replace(/\\/g, "/");
 							if (fileRel.startsWith("..")) continue;
 							const relPath = `${relFolder}/${dirName}/${fileRel}`;
@@ -482,7 +555,9 @@ function stageSkippedArtifactsToTargetBranch(
 							spawnSync("git", ["add", "--", relPath], { cwd: resolvedTmpPath });
 							staged++;
 						}
-					} catch { /* best effort */ }
+					} catch {
+						/* best effort */
+					}
 				}
 			}
 		}
@@ -495,7 +570,7 @@ function stageSkippedArtifactsToTargetBranch(
 			);
 			if (commitResult.status === 0) {
 				execLog("merge", `W${waveIndex}`, `staged ${staged} artifact(s) from skipped-only lanes`, {
-					lanes: lanes.map(l => l.laneNumber).join(","),
+					lanes: lanes.map((l) => l.laneNumber).join(","),
 				});
 			} else {
 				execLog("merge", `W${waveIndex}`, `failed to commit skipped-task artifacts`, {
@@ -511,12 +586,16 @@ function stageSkippedArtifactsToTargetBranch(
 		// Clean up the temporary worktree
 		try {
 			spawnSync("git", ["worktree", "remove", "--force", resolvedTmpPath], { cwd: repoRoot });
-		} catch { /* best effort cleanup */ }
+		} catch {
+			/* best effort cleanup */
+		}
 		try {
 			if (existsSync(resolvedTmpPath)) {
 				rmSync(resolvedTmpPath, { recursive: true, force: true });
 			}
-		} catch { /* best effort cleanup */ }
+		} catch {
+			/* best effort cleanup */
+		}
 	}
 }
 
@@ -584,10 +663,10 @@ export function buildMergeRequest(
 	verifyCommands: string[],
 	resultFilePath: string,
 ): string {
-	const taskIds = lane.tasks.map(t => t.taskId).join(", ");
+	const taskIds = lane.tasks.map((t) => t.taskId).join(", ");
 	// TP-169: Guard against null task stubs from reconstructAllocatedLanes
 	const fileScopes = lane.tasks
-		.flatMap(t => t.task?.fileScope || [])
+		.flatMap((t) => t.task?.fileScope || [])
 		.filter((f, i, arr) => arr.indexOf(f) === i); // deduplicate
 
 	const mergeMessage = `merge: wave ${waveIndex} lane ${lane.laneNumber} — ${taskIds}`;
@@ -605,15 +684,13 @@ export function buildMergeRequest(
 		`${mergeMessage}`,
 		"",
 		`## Tasks Completed`,
-		...lane.tasks.map(t => `- ${t.taskId}: ${t.task?.taskName ?? "(unknown)"}`),
+		...lane.tasks.map((t) => `- ${t.taskId}: ${t.task?.taskName ?? "(unknown)"}`),
 		"",
 		`## File Scope`,
-		...(fileScopes.length > 0
-			? fileScopes.map(f => `- ${f}`)
-			: ["- (no file scope declared)"]),
+		...(fileScopes.length > 0 ? fileScopes.map((f) => `- ${f}`) : ["- (no file scope declared)"]),
 		"",
 		`## Verification Commands`,
-		...verifyCommands.map(cmd => `\`\`\`bash\n${cmd}\n\`\`\``),
+		...verifyCommands.map((cmd) => `\`\`\`bash\n${cmd}\n\`\`\``),
 		"",
 		`## Result File`,
 		`result_file: ${resultFilePath.split("\\").join("/")}`,
@@ -624,12 +701,12 @@ export function buildMergeRequest(
 		"",
 		"```json",
 		"{",
-		"  \"status\": \"SUCCESS\" | \"CONFLICT_RESOLVED\" | \"CONFLICT_UNRESOLVED\" | \"BUILD_FAILURE\",",
-		"  \"source_branch\": \"<source branch name>\",",
-		"  \"target_branch\": \"<target branch name>\",",
-		"  \"merge_commit\": \"<merge commit sha or empty string>\",",
-		"  \"conflicts\": [{ \"file\": \"...\", \"type\": \"...\", \"resolved\": true|false }],",
-		"  \"verification\": { \"ran\": true|false, \"passed\": true|false, \"output\": \"...\" }",
+		'  "status": "SUCCESS" | "CONFLICT_RESOLVED" | "CONFLICT_UNRESOLVED" | "BUILD_FAILURE",',
+		'  "source_branch": "<source branch name>",',
+		'  "target_branch": "<target branch name>",',
+		'  "merge_commit": "<merge commit sha or empty string>",',
+		'  "conflicts": [{ "file": "...", "type": "...", "resolved": true|false }],',
+		'  "verification": { "ran": true|false, "passed": true|false, "output": "..." }',
 		"}",
 		"```",
 		"",
@@ -647,8 +724,6 @@ export function buildMergeRequest(
 
 	return lines.join("\n");
 }
-
-
 
 /**
  * Spawn a merge agent via Runtime V2 direct agent-host (no terminal multiplexer).
@@ -698,17 +773,28 @@ export async function spawnMergeAgentV2(
 		agentRoot ? join(agentRoot, "task-merger.md") : "",
 		join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"),
 	].filter(Boolean);
-	const systemPromptPath = systemPromptCandidates.find(p => existsSync(p)) || "";
+	const systemPromptPath = systemPromptCandidates.find((p) => existsSync(p)) || "";
 	let systemPrompt: string | undefined;
 	if (systemPromptPath) {
-		try { systemPrompt = readFileSync(systemPromptPath, "utf-8"); } catch { /* use default */ }
+		try {
+			systemPrompt = readFileSync(systemPromptPath, "utf-8");
+		} catch {
+			/* use default */
+		}
 	}
 
 	// Resolve event/exit paths
 	const sidecarRoot = join(stateRoot ?? repoRoot, ".pi");
 	const bid = batchId || "unknown";
 	const eventsPath = join(sidecarRoot, "runtime", bid, "agents", sessionName, "events.jsonl");
-	const exitSummaryPath = join(sidecarRoot, "runtime", bid, "agents", sessionName, "exit-summary.json");
+	const exitSummaryPath = join(
+		sidecarRoot,
+		"runtime",
+		bid,
+		"agents",
+		sessionName,
+		"exit-summary.json",
+	);
 
 	// Mailbox directory
 	let mailboxDir: string | null = null;
@@ -752,16 +838,24 @@ export async function spawnMergeAgentV2(
 	// (e.g. "orch-henry-merge-1" → 1, "orch-henry-merge-2" → 2).
 	const mergeNumberMatch = sessionName.match(/-merge-(\d+)$/);
 	if (!mergeNumberMatch) {
-		execLog("merge", sessionName, "warning: could not parse merge number from session name — defaulting to 1", { sessionName });
+		execLog(
+			"merge",
+			sessionName,
+			"warning: could not parse merge number from session name — defaulting to 1",
+			{ sessionName },
+		);
 	}
 	const mergeNumber = mergeNumberMatch ? parseInt(mergeNumberMatch[1], 10) : 1;
 	const mergeStartedAt = Date.now();
 
 	// Helper: build a RuntimeAgentTelemetrySnapshot from a partial AgentHostResult.
-	const buildAgentSnap = (tel: Partial<AgentHostResult>, status: RuntimeAgentTelemetrySnapshot["status"]): RuntimeAgentTelemetrySnapshot => ({
+	const buildAgentSnap = (
+		tel: Partial<AgentHostResult>,
+		status: RuntimeAgentTelemetrySnapshot["status"],
+	): RuntimeAgentTelemetrySnapshot => ({
 		agentId: sessionName,
 		status,
-		elapsedMs: tel.durationMs ?? (Date.now() - mergeStartedAt),
+		elapsedMs: tel.durationMs ?? Date.now() - mergeStartedAt,
 		toolCalls: tel.toolCalls ?? 0,
 		contextPct: tel.contextUsage?.percent ?? 0,
 		costUsd: tel.costUsd ?? 0,
@@ -786,7 +880,9 @@ export async function spawnMergeAgentV2(
 				updatedAt: Date.now(),
 			};
 			writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
-		} catch { /* non-fatal */ }
+		} catch {
+			/* non-fatal */
+		}
 	};
 
 	const { promise, kill } = spawnAgent(opts, undefined, onMergeTelemetry);
@@ -804,7 +900,9 @@ export async function spawnMergeAgentV2(
 			updatedAt: Date.now(),
 		};
 		writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, initialSnap);
-	} catch { /* non-fatal */ }
+	} catch {
+		/* non-fatal */
+	}
 
 	// Store the kill handle for external cleanup (pause/abort).
 	// The promise runs in background — caller uses waitForMergeResult()
@@ -813,65 +911,78 @@ export async function spawnMergeAgentV2(
 
 	// Fire-and-forget: the background promise handles exit logging and
 	// writes a terminal snapshot ("complete" or "failed") when the agent exits.
-	promise.then(result => {
-		activeMergeAgents.delete(sessionName);
-		execLog("merge", sessionName, "merge agent exited (V2)", {
-			exitCode: result.exitCode,
-			durationMs: result.durationMs,
-			costUsd: result.costUsd,
-			killed: result.killed,
-		});
-		// Write terminal snapshot. Promise resolves for both successful and
-		// failed exits, so derive status from result fields rather than
-		// relying on .catch to handle failures.
-		// Determine terminal status. A clean post-success kill sets registry
-		// manifest to "exited" via killMergeAgentV2(name, true=cleanExit).
-		// Check the registry first so a successful-then-killed agent is shown
-		// as "complete" rather than "failed".
-		let terminalStatus: RuntimeMergeSnapshot["status"] = "complete";
-		try {
-			const manifest = readManifest(mergeStateRoot, bid, sessionName as any);
-			if (manifest?.status === "exited") {
-				terminalStatus = "complete";
-			} else if (result.exitCode !== 0 || !result.agentEnded) {
-				terminalStatus = "failed";
+	promise
+		.then((result) => {
+			activeMergeAgents.delete(sessionName);
+			execLog("merge", sessionName, "merge agent exited (V2)", {
+				exitCode: result.exitCode,
+				durationMs: result.durationMs,
+				costUsd: result.costUsd,
+				killed: result.killed,
+			});
+			// Write terminal snapshot. Promise resolves for both successful and
+			// failed exits, so derive status from result fields rather than
+			// relying on .catch to handle failures.
+			// Determine terminal status. A clean post-success kill sets registry
+			// manifest to "exited" via killMergeAgentV2(name, true=cleanExit).
+			// Check the registry first so a successful-then-killed agent is shown
+			// as "complete" rather than "failed".
+			let terminalStatus: RuntimeMergeSnapshot["status"] = "complete";
+			try {
+				const manifest = readManifest(mergeStateRoot, bid, sessionName as any);
+				if (manifest?.status === "exited") {
+					terminalStatus = "complete";
+				} else if (result.exitCode !== 0 || !result.agentEnded) {
+					terminalStatus = "failed";
+				}
+			} catch {
+				if (result.exitCode !== 0 || !result.agentEnded) terminalStatus = "failed";
 			}
-		} catch {
-			if (result.exitCode !== 0 || !result.agentEnded) terminalStatus = "failed";
-		}
-		try {
-			const snap: RuntimeMergeSnapshot = {
-				batchId: bid,
-				mergeNumber,
+			try {
+				const snap: RuntimeMergeSnapshot = {
+					batchId: bid,
+					mergeNumber,
+					sessionName,
+					waveIndex: waveIndex ?? 0,
+					status: terminalStatus,
+					agent: buildAgentSnap(result, terminalStatus === "complete" ? "exited" : "crashed"),
+					updatedAt: Date.now(),
+				};
+				writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+			} catch {
+				/* non-fatal */
+			}
+		})
+		.catch((err) => {
+			activeMergeAgents.delete(sessionName);
+			execLog(
+				"merge",
 				sessionName,
-				waveIndex: waveIndex ?? 0,
-				status: terminalStatus,
-				agent: buildAgentSnap(result, terminalStatus === "complete" ? "exited" : "crashed"),
-				updatedAt: Date.now(),
-			};
-			writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
-		} catch { /* non-fatal */ }
-	}).catch(err => {
-		activeMergeAgents.delete(sessionName);
-		execLog("merge", sessionName, `merge agent error (V2): ${err instanceof Error ? err.message : String(err)}`);
-		// Write a failed terminal snapshot on unexpected rejection.
-		try {
-			const snap: RuntimeMergeSnapshot = {
-				batchId: bid,
-				mergeNumber,
-				sessionName,
-				waveIndex: waveIndex ?? 0,
-				status: "failed",
-				agent: buildAgentSnap({}, "crashed"),
-				updatedAt: Date.now(),
-			};
-			writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
-		} catch { /* non-fatal */ }
-	});
+				`merge agent error (V2): ${err instanceof Error ? err.message : String(err)}`,
+			);
+			// Write a failed terminal snapshot on unexpected rejection.
+			try {
+				const snap: RuntimeMergeSnapshot = {
+					batchId: bid,
+					mergeNumber,
+					sessionName,
+					waveIndex: waveIndex ?? 0,
+					status: "failed",
+					agent: buildAgentSnap({}, "crashed"),
+					updatedAt: Date.now(),
+				};
+				writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+			} catch {
+				/* non-fatal */
+			}
+		});
 }
 
 /** Active V2 merge agent handles for cleanup/abort. @since TP-108 */
-const activeMergeAgents = new Map<string, { promise: Promise<AgentHostResult>; kill: () => void; stateRoot?: string; batchId?: string }>();
+const activeMergeAgents = new Map<
+	string,
+	{ promise: Promise<AgentHostResult>; kill: () => void; stateRoot?: string; batchId?: string }
+>();
 
 /**
  * Kill a V2 merge agent if it's still running.
@@ -893,7 +1004,9 @@ export function killMergeAgentV2(sessionName: string, cleanExit?: boolean): bool
 					const snapshot = buildRegistrySnapshot(handle.stateRoot, handle.batchId);
 					writeRegistrySnapshot(handle.stateRoot, snapshot);
 				}
-			} catch { /* best effort */ }
+			} catch {
+				/* best effort */
+			}
 		}
 		activeMergeAgents.delete(sessionName);
 		return true;
@@ -937,7 +1050,11 @@ export function reloadMergeTimeoutMs(configRoot: string, pointerConfigRoot?: str
 	} catch (err: unknown) {
 		// Config re-read is best-effort — fall back to default on failure
 		const errMsg = err instanceof Error ? err.message : String(err);
-		execLog("merge", "config-reload", `failed to re-read merge timeout from config: ${errMsg} — using default`);
+		execLog(
+			"merge",
+			"config-reload",
+			`failed to re-read merge timeout from config: ${errMsg} — using default`,
+		);
 		return MERGE_TIMEOUT_MS;
 	}
 }
@@ -989,11 +1106,16 @@ export async function waitForMergeResult(
 				try {
 					const lateResult = await parseMergeResultAsync(resultPath);
 					if (SUCCESSFUL_MERGE_STATUSES.has(lateResult.status)) {
-						execLog("merge", sessionName, "merge agent slow but succeeded — accepting result at timeout", {
-							status: lateResult.status,
-							elapsed,
-							timeoutMs,
-						});
+						execLog(
+							"merge",
+							sessionName,
+							"merge agent slow but succeeded — accepting result at timeout",
+							{
+								status: lateResult.status,
+								elapsed,
+								timeoutMs,
+							},
+						);
 						// Clean up agent (may still be running post-write)
 						killMergeAgentV2(sessionName, true);
 						return lateResult;
@@ -1012,8 +1134,8 @@ export async function waitForMergeResult(
 			throw new MergeError(
 				"MERGE_TIMEOUT",
 				`Merge agent '${sessionName}' did not produce a result within ` +
-				`${Math.round(timeoutMs / 1000)}s. The agent has been killed. ` +
-				`Check the merge request and agent logs.`,
+					`${Math.round(timeoutMs / 1000)}s. The agent has been killed. ` +
+					`Check the merge request and agent logs.`,
 			);
 		}
 
@@ -1032,7 +1154,11 @@ export async function waitForMergeResult(
 				if (err instanceof MergeError && err.code === "MERGE_RESULT_INVALID") {
 					await sleepAsync(MERGE_RESULT_READ_RETRY_DELAY_MS);
 					if (existsSync(resultPath)) {
-						try { return await parseMergeResultAsync(resultPath); } catch { /* give up */ }
+						try {
+							return await parseMergeResultAsync(resultPath);
+						} catch {
+							/* give up */
+						}
 					}
 				}
 			}
@@ -1051,14 +1177,18 @@ export async function waitForMergeResult(
 			} else if (Date.now() - sessionDiedAt >= MERGE_RESULT_GRACE_MS) {
 				// Grace period expired — one final check
 				if (existsSync(resultPath)) {
-					try { return await parseMergeResultAsync(resultPath); } catch { /* fall through */ }
+					try {
+						return await parseMergeResultAsync(resultPath);
+					} catch {
+						/* fall through */
+					}
 				}
 
 				throw new MergeError(
 					"MERGE_SESSION_DIED",
 					`Merge agent '${sessionName}' exited without writing ` +
-					`a result file to '${resultPath}'. The merge may have crashed. ` +
-					`Check agent logs for diagnostics.`,
+						`a result file to '${resultPath}'. The merge may have crashed. ` +
+						`Check agent logs for diagnostics.`,
 				);
 			}
 		}
@@ -1081,25 +1211,28 @@ export async function waitForMergeResult(
  * @param repoRoot     - Main repository root for git operations
  * @param context      - Logging context (e.g., "W1" for wave 1)
  */
-function forceRemoveMergeWorktree(
-	mergeWorkDir: string,
-	repoRoot: string,
-	context: string,
-): void {
+function forceRemoveMergeWorktree(mergeWorkDir: string, repoRoot: string, context: string): void {
 	if (!existsSync(mergeWorkDir)) return;
 
 	// Try git worktree remove --force first
-	const removeResult = spawnSync("git", ["worktree", "remove", mergeWorkDir, "--force"], { cwd: repoRoot });
+	const removeResult = spawnSync("git", ["worktree", "remove", mergeWorkDir, "--force"], {
+		cwd: repoRoot,
+	});
 	if (removeResult.status === 0) {
 		return;
 	}
 
 	// Fallback: force-remove the directory and prune git worktree state
 	const stderr = removeResult.stderr?.toString().trim() || "";
-	execLog("merge", context, `git worktree remove failed for merge worktree, applying force cleanup`, {
-		error: stderr.slice(0, 200),
-		path: mergeWorkDir,
-	});
+	execLog(
+		"merge",
+		context,
+		`git worktree remove failed for merge worktree, applying force cleanup`,
+		{
+			error: stderr.slice(0, 200),
+			path: mergeWorkDir,
+		},
+	);
 
 	try {
 		rmSync(mergeWorkDir, { recursive: true, force: true });
@@ -1107,14 +1240,18 @@ function forceRemoveMergeWorktree(
 	} catch (rmErr: unknown) {
 		// Node's rmSync may fail on Windows reserved-name files — try OS-level removal
 		const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
-		execLog("merge", context, `rmSync failed for merge worktree, trying OS-level removal`, { error: rmMsg });
+		execLog("merge", context, `rmSync failed for merge worktree, trying OS-level removal`, {
+			error: rmMsg,
+		});
 		try {
 			if (process.platform === "win32") {
 				execSync(`rd /s /q "${mergeWorkDir}"`, { stdio: "pipe", timeout: 30_000 });
 			} else {
 				execSync(`rm -rf "${mergeWorkDir}"`, { stdio: "pipe", timeout: 30_000 });
 			}
-			execLog("merge", context, `OS-level removal of merge worktree succeeded`, { path: mergeWorkDir });
+			execLog("merge", context, `OS-level removal of merge worktree succeeded`, {
+				path: mergeWorkDir,
+			});
 		} catch (osErr: unknown) {
 			const osMsg = osErr instanceof Error ? osErr.message : String(osErr);
 			execLog("merge", context, `OS-level removal also failed — manual cleanup needed`, {
@@ -1149,17 +1286,11 @@ function forceRemoveMergeWorktree(
  */
 function persistTransactionRecord(record: TransactionRecord, stateRoot: string): string | null {
 	try {
-		const repoSlug = record.repoId
-			? record.repoId.replace(/[^a-zA-Z0-9_-]/g, "_")
-			: "default";
+		const repoSlug = record.repoId ? record.repoId.replace(/[^a-zA-Z0-9_-]/g, "_") : "default";
 		const verifyDir = join(stateRoot, ".pi", "verification", record.opId);
 		mkdirSync(verifyDir, { recursive: true });
 		const fileName = `txn-b${record.batchId}-repo-${repoSlug}-wave-${record.waveIndex}-lane-${record.laneNumber}.json`;
-		writeFileSync(
-			join(verifyDir, fileName),
-			JSON.stringify(record, null, 2),
-			"utf-8",
-		);
+		writeFileSync(join(verifyDir, fileName), JSON.stringify(record, null, 2), "utf-8");
 		execLog("merge", `W${record.waveIndex}`, `transaction record persisted`, {
 			file: fileName,
 			status: record.status,
@@ -1229,11 +1360,7 @@ function runPostMergeVerification(
 		// when mergeWaveByRepo() calls mergeWave() once per repo group.
 		const repoSuffix = repoId ? `-repo-${repoId.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "";
 		const postFileName = `post-b${batchId}-w${waveIndex}${repoSuffix}-lane${laneNumber}.json`;
-		writeFileSync(
-			join(verifyDir, postFileName),
-			JSON.stringify(postMerge, null, 2),
-			"utf-8",
-		);
+		writeFileSync(join(verifyDir, postFileName), JSON.stringify(postMerge, null, 2), "utf-8");
 	} catch {
 		// Best effort — persistence failure doesn't block verification
 	}
@@ -1264,7 +1391,7 @@ function runPostMergeVerification(
 	// Only when flakyReruns > 0 (0 = disabled — any new failure immediately blocks)
 	if (flakyReruns > 0) {
 		// Identify which commandIds produced new failures
-		const failedCommandIds = new Set(diff.newFailures.map(fp => fp.commandId));
+		const failedCommandIds = new Set(diff.newFailures.map((fp) => fp.commandId));
 		const rerunCommands: Record<string, string> = {};
 		for (const cmdId of failedCommandIds) {
 			if (testingCommands[cmdId]) {
@@ -1275,10 +1402,15 @@ function runPostMergeVerification(
 		// Re-run up to flakyReruns times; break early if failures clear
 		let clearedOnRerun = false;
 		for (let attempt = 0; attempt < flakyReruns; attempt++) {
-			execLog("merge", sessionName, `new failures detected — running flaky re-run ${attempt + 1}/${flakyReruns}`, {
-				failedCommands: [...failedCommandIds].join(", "),
-				rerunCount: Object.keys(rerunCommands).length,
-			});
+			execLog(
+				"merge",
+				sessionName,
+				`new failures detected — running flaky re-run ${attempt + 1}/${flakyReruns}`,
+				{
+					failedCommands: [...failedCommandIds].join(", "),
+					rerunCount: Object.keys(rerunCommands).length,
+				},
+			);
 
 			const rerunResults = runVerificationCommands(rerunCommands, mergeWorkDir);
 
@@ -1292,12 +1424,18 @@ function runPostMergeVerification(
 
 			// Re-diff: compare baseline against re-run results for the failed commands only
 			// Filter baseline fingerprints to only the commands we re-ran
-			const baselineForRerun = baseline.fingerprints.filter(fp => failedCommandIds.has(fp.commandId));
+			const baselineForRerun = baseline.fingerprints.filter((fp) =>
+				failedCommandIds.has(fp.commandId),
+			);
 			const rerunDiff = diffFingerprints(baselineForRerun, dedupedRerun);
 
 			if (rerunDiff.newFailures.length === 0) {
 				// Failures disappeared on re-run — flaky suspected
-				execLog("merge", sessionName, `flaky re-run ${attempt + 1} cleared all new failures — classifying as flaky_suspected`);
+				execLog(
+					"merge",
+					sessionName,
+					`flaky re-run ${attempt + 1} cleared all new failures — classifying as flaky_suspected`,
+				);
 				clearedOnRerun = true;
 				break;
 			}
@@ -1306,11 +1444,10 @@ function runPostMergeVerification(
 			if (attempt === flakyReruns - 1) {
 				const summary = rerunDiff.newFailures
 					.slice(0, 5)
-					.map(fp => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
+					.map((fp) => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
 					.join("; ");
-				const truncated = rerunDiff.newFailures.length > 5
-					? ` ... and ${rerunDiff.newFailures.length - 5} more`
-					: "";
+				const truncated =
+					rerunDiff.newFailures.length > 5 ? ` ... and ${rerunDiff.newFailures.length - 5} more` : "";
 
 				return {
 					performed: true,
@@ -1340,11 +1477,10 @@ function runPostMergeVerification(
 	// flakyReruns === 0 or fallthrough: new failures block immediately
 	const summary = diff.newFailures
 		.slice(0, 5)
-		.map(fp => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
+		.map((fp) => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
 		.join("; ");
-	const truncated = diff.newFailures.length > 5
-		? ` ... and ${diff.newFailures.length - 5} more`
-		: "";
+	const truncated =
+		diff.newFailures.length > 5 ? ` ... and ${diff.newFailures.length - 5} more` : "";
 
 	return {
 		performed: true,
@@ -1427,14 +1563,12 @@ export async function mergeWave(
 	// TP-078: When forceMixedOutcome is true, lanes with both succeeded and
 	// failed/stalled tasks are also considered mergeable. This allows the
 	// orch_force_merge tool to merge succeeded commits from mixed-outcome lanes.
-	const mergeableLanes = completedLanes.filter(lane => {
+	const mergeableLanes = completedLanes.filter((lane) => {
 		const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 		if (!outcome) return false;
 
-		const hasSucceeded = outcome.tasks.some(t => t.status === "succeeded");
-		const hasHardFailure = outcome.tasks.some(
-			t => t.status === "failed" || t.status === "stalled",
-		);
+		const hasSucceeded = outcome.tasks.some((t) => t.status === "succeeded");
+		const hasHardFailure = outcome.tasks.some((t) => t.status === "failed" || t.status === "stalled");
 
 		if (forceMixedOutcome) {
 			// In force mode, merge any lane with at least one succeeded task
@@ -1449,11 +1583,11 @@ export async function mergeWave(
 		// partial progress (STATUS.md updates) that should be staged on the target
 		// branch so it survives integration. Stage artifacts directly without
 		// creating a full merge worktree.
-		const skippedOnlyLanes = completedLanes.filter(lane => {
+		const skippedOnlyLanes = completedLanes.filter((lane) => {
 			if (!lane.worktreePath) return false;
 			const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 			if (!outcome) return false;
-			return outcome.tasks.some(t => t.status === "skipped");
+			return outcome.tasks.some((t) => t.status === "skipped");
 		});
 		if (skippedOnlyLanes.length > 0) {
 			stageSkippedArtifactsToTargetBranch(skippedOnlyLanes, waveIndex, repoRoot, targetBranch);
@@ -1477,21 +1611,22 @@ export async function mergeWave(
 	// These lanes won't have their branches merged, but their task artifacts
 	// (STATUS.md, .reviews) should still be staged so partial progress is preserved
 	// through integration. Only lanes with worktree paths can contribute artifacts.
-	const mergeableLaneNumbers = new Set(mergeableLanes.map(l => l.laneNumber));
-	const skippedArtifactLanes = completedLanes.filter(lane => {
+	const mergeableLaneNumbers = new Set(mergeableLanes.map((l) => l.laneNumber));
+	const skippedArtifactLanes = completedLanes.filter((lane) => {
 		if (mergeableLaneNumbers.has(lane.laneNumber)) return false;
 		if (!lane.worktreePath) return false;
 		const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 		if (!outcome) return false;
-		return outcome.tasks.some(t => t.status === "skipped");
+		return outcome.tasks.some((t) => t.status === "skipped");
 	});
 
 	execLog("merge", `W${waveIndex}`, `merging ${orderedLanes.length} lane(s)`, {
 		order: config.merge.order,
-		lanes: orderedLanes.map(l => l.laneNumber).join(","),
-		skippedArtifactLanes: skippedArtifactLanes.length > 0
-			? skippedArtifactLanes.map(l => l.laneNumber).join(",")
-			: undefined,
+		lanes: orderedLanes.map((l) => l.laneNumber).join(","),
+		skippedArtifactLanes:
+			skippedArtifactLanes.length > 0
+				? skippedArtifactLanes.map((l) => l.laneNumber).join(",")
+				: undefined,
 	});
 
 	// ── Create isolated merge worktree ──────────────────────────────
@@ -1513,7 +1648,9 @@ export async function mergeWave(
 	}
 	try {
 		spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
-	} catch { /* branch may not exist */ }
+	} catch {
+		/* branch may not exist */
+	}
 
 	// Create temp branch at target branch HEAD, then worktree
 	const branchResult = spawnSync("git", ["branch", tempBranch, targetBranch], { cwd: repoRoot });
@@ -1521,20 +1658,28 @@ export async function mergeWave(
 		const err = branchResult.stderr?.toString().trim() || "unknown error";
 		execLog("merge", `W${waveIndex}`, `failed to create temp branch: ${err}`);
 		return {
-			waveIndex, status: "failed", laneResults: [],
-			failedLane: null, failureReason: `Failed to create merge temp branch: ${err}`,
+			waveIndex,
+			status: "failed",
+			laneResults: [],
+			failedLane: null,
+			failureReason: `Failed to create merge temp branch: ${err}`,
 			totalDurationMs: Date.now() - startTime,
 		};
 	}
 
-	const wtResult = spawnSync("git", ["worktree", "add", mergeWorkDir, tempBranch], { cwd: repoRoot });
+	const wtResult = spawnSync("git", ["worktree", "add", mergeWorkDir, tempBranch], {
+		cwd: repoRoot,
+	});
 	if (wtResult.status !== 0) {
 		const err = wtResult.stderr?.toString().trim() || "unknown error";
 		execLog("merge", `W${waveIndex}`, `failed to create merge worktree: ${err}`);
 		spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
 		return {
-			waveIndex, status: "failed", laneResults: [],
-			failedLane: null, failureReason: `Failed to create merge worktree: ${err}`,
+			waveIndex,
+			status: "failed",
+			laneResults: [],
+			failedLane: null,
+			failureReason: `Failed to create merge worktree: ${err}`,
 			totalDurationMs: Date.now() - startTime,
 		};
 	}
@@ -1559,18 +1704,33 @@ export async function mergeWave(
 		// Verification is enabled but no testing commands configured — treat as
 		// baseline-unavailable. Strict/permissive handling below.
 		if (verificationMode === "strict") {
-			execLog("merge", `W${waveIndex}`, "verification enabled but no testing commands configured — strict mode: failing merge");
+			execLog(
+				"merge",
+				`W${waveIndex}`,
+				"verification enabled but no testing commands configured — strict mode: failing merge",
+			);
 			// Clean up worktree and temp branch before returning failure
 			forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
-			try { spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot }); } catch { /* best effort */ }
+			try {
+				spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
+			} catch {
+				/* best effort */
+			}
 			return {
-				waveIndex, status: "failed", laneResults: [],
+				waveIndex,
+				status: "failed",
+				laneResults: [],
 				failedLane: null,
-				failureReason: "Verification enabled (strict mode) but no testing commands configured in taskRunner.testing.commands",
+				failureReason:
+					"Verification enabled (strict mode) but no testing commands configured in taskRunner.testing.commands",
 				totalDurationMs: Date.now() - startTime,
 			};
 		} else {
-			execLog("merge", `W${waveIndex}`, "verification enabled but no testing commands configured — permissive mode: continuing without verification");
+			execLog(
+				"merge",
+				`W${waveIndex}`,
+				"verification enabled but no testing commands configured — permissive mode: continuing without verification",
+			);
 		}
 	}
 
@@ -1591,11 +1751,7 @@ export async function mergeWave(
 			// when mergeWaveByRepo() calls mergeWave() once per repo group.
 			const repoSuffix = repoId ? `-repo-${repoId.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "";
 			const baselineFileName = `baseline-b${batchId}-w${waveIndex}${repoSuffix}.json`;
-			writeFileSync(
-				join(verifyDir, baselineFileName),
-				JSON.stringify(baseline, null, 2),
-				"utf-8",
-			);
+			writeFileSync(join(verifyDir, baselineFileName), JSON.stringify(baseline, null, 2), "utf-8");
 
 			execLog("merge", `W${waveIndex}`, "verification baseline captured", {
 				fingerprints: baseline.fingerprints.length,
@@ -1610,17 +1766,28 @@ export async function mergeWave(
 				});
 				// Clean up worktree and temp branch before returning failure
 				forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
-				try { spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot }); } catch { /* best effort */ }
+				try {
+					spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
+				} catch {
+					/* best effort */
+				}
 				return {
-					waveIndex, status: "failed", laneResults: [],
+					waveIndex,
+					status: "failed",
+					laneResults: [],
 					failedLane: null,
 					failureReason: `Verification baseline capture failed (strict mode): ${errMsg}`,
 					totalDurationMs: Date.now() - startTime,
 				};
 			}
-			execLog("merge", `W${waveIndex}`, `baseline capture failed — permissive mode: continuing without baseline verification`, {
-				error: errMsg,
-			});
+			execLog(
+				"merge",
+				`W${waveIndex}`,
+				`baseline capture failed — permissive mode: continuing without baseline verification`,
+				{
+					error: errMsg,
+				},
+			);
 			// Permissive: baseline capture failure is non-fatal — merge proceeds without
 			// orchestrator-side verification. Merge-agent verification (merge.verify)
 			// still applies independently.
@@ -1659,7 +1826,10 @@ export async function mergeWave(
 		// This is the rollback target if verification detects new failures.
 		let baseHEAD = "";
 		{
-			const headResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: mergeWorkDir, encoding: "utf-8" });
+			const headResult = spawnSync("git", ["rev-parse", "HEAD"], {
+				cwd: mergeWorkDir,
+				encoding: "utf-8",
+			});
 			if (headResult.status === 0) {
 				baseHEAD = headResult.stdout.trim();
 			}
@@ -1668,7 +1838,10 @@ export async function mergeWave(
 		// ── TP-033: Capture laneHEAD (source branch tip being merged in) ──
 		let laneHEAD = "";
 		{
-			const laneRef = spawnSync("git", ["rev-parse", lane.branch], { cwd: repoRoot, encoding: "utf-8" });
+			const laneRef = spawnSync("git", ["rev-parse", lane.branch], {
+				cwd: repoRoot,
+				encoding: "utf-8",
+			});
 			if (laneRef.status === 0) {
 				laneHEAD = laneRef.stdout.trim();
 			}
@@ -1730,28 +1903,62 @@ export async function mergeWave(
 						// Apply 2× backoff: double the timeout for each retry attempt
 						currentTimeoutMs = freshTimeoutMs * Math.pow(2, attempt);
 
-						execLog("merge", sessionName, `retry ${attempt}/${MERGE_TIMEOUT_MAX_RETRIES} after timeout — respawning merge agent`, {
-							newTimeoutMs: currentTimeoutMs,
-							newTimeoutMin: Math.round(currentTimeoutMs / 60_000),
-							attempt,
-						});
+						execLog(
+							"merge",
+							sessionName,
+							`retry ${attempt}/${MERGE_TIMEOUT_MAX_RETRIES} after timeout — respawning merge agent`,
+							{
+								newTimeoutMs: currentTimeoutMs,
+								newTimeoutMin: Math.round(currentTimeoutMs / 60_000),
+								attempt,
+							},
+						);
 
 						// Clean up stale result file from prior attempt
 						if (existsSync(resultFilePath)) {
-							try { unlinkSync(resultFilePath); } catch { /* best effort */ }
+							try {
+								unlinkSync(resultFilePath);
+							} catch {
+								/* best effort */
+							}
 						}
 
 						// Re-spawn merge agent for the retry.
 						// Kill previous V2 agent handle to prevent orphan/duplicate.
 						killMergeAgentV2(sessionName);
-						await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId, waveIndex);
+						await spawnMergeAgentV2(
+							sessionName,
+							repoRoot,
+							mergeWorkDir,
+							requestFilePath,
+							config,
+							stateRoot,
+							agentRoot,
+							batchId,
+							waveIndex,
+						);
 					} else {
 						// First attempt: spawn merge agent (Runtime V2)
-						await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId, waveIndex);
+						await spawnMergeAgentV2(
+							sessionName,
+							repoRoot,
+							mergeWorkDir,
+							requestFilePath,
+							config,
+							stateRoot,
+							agentRoot,
+							batchId,
+							waveIndex,
+						);
 					}
 
 					try {
-						mergeResult = await waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs, runtimeBackend);
+						mergeResult = await waitForMergeResult(
+							resultFilePath,
+							sessionName,
+							currentTimeoutMs,
+							runtimeBackend,
+						);
 						// TP-056: Deregister session from health monitor on completion
 						if (healthMonitor) healthMonitor.removeSession(sessionName);
 						lastTimeoutError = null;
@@ -1820,11 +2027,12 @@ export async function mergeWave(
 				case "CONFLICT_UNRESOLVED":
 					execLog("merge", sessionName, "merge failed — unresolved conflicts", {
 						conflictCount: mergeResult.conflicts.length,
-						files: mergeResult.conflicts.map(c => c.file).join(", "),
+						files: mergeResult.conflicts.map((c) => c.file).join(", "),
 					});
 					failedLane = lane.laneNumber;
-					failureReason = `Unresolved merge conflicts in lane ${lane.laneNumber}: ` +
-						mergeResult.conflicts.map(c => c.file).join(", ");
+					failureReason =
+						`Unresolved merge conflicts in lane ${lane.laneNumber}: ` +
+						mergeResult.conflicts.map((c) => c.file).join(", ");
 					break;
 
 				case "BUILD_FAILURE":
@@ -1838,7 +2046,8 @@ export async function mergeWave(
 						baselineActive: !!baseline,
 					});
 					failedLane = lane.laneNumber;
-					failureReason = `Post-merge verification failed in lane ${lane.laneNumber}: ` +
+					failureReason =
+						`Post-merge verification failed in lane ${lane.laneNumber}: ` +
 						mergeResult.verification.output.slice(0, 500);
 					break;
 			}
@@ -1846,7 +2055,10 @@ export async function mergeWave(
 			// ── TP-033: Capture mergedHEAD after successful merge commit ──
 			let mergedHEAD: string | null = null;
 			if (mergeResult.status === "SUCCESS" || mergeResult.status === "CONFLICT_RESOLVED") {
-				const postMergeRef = spawnSync("git", ["rev-parse", "HEAD"], { cwd: mergeWorkDir, encoding: "utf-8" });
+				const postMergeRef = spawnSync("git", ["rev-parse", "HEAD"], {
+					cwd: mergeWorkDir,
+					encoding: "utf-8",
+				});
 				if (postMergeRef.status === 0) {
 					mergedHEAD = postMergeRef.stdout.trim();
 				}
@@ -1916,7 +2128,8 @@ export async function mergeWave(
 							// ref advancement MUST NOT proceed for ANY lane, because the temp
 							// branch HEAD includes the unverified commit.
 							const resetErr = resetResult.stderr?.toString().trim() || "unknown error";
-							laneResult.error = `verification_new_failure: rollback reset failed (${resetErr}) — ` +
+							laneResult.error =
+								`verification_new_failure: rollback reset failed (${resetErr}) — ` +
 								`temp branch may contain failing merge commit, advancement blocked`;
 							blockAdvancement = true;
 							txnStatus = "rollback_failed";
@@ -1931,15 +2144,21 @@ export async function mergeWave(
 							];
 							rollbackFailed = true;
 
-							execLog("merge", sessionName, `CRITICAL: rollback reset failed: ${resetErr} — safe-stop triggered`, {
-								preLaneHead: preLaneHead.slice(0, 8),
-								recoveryCommands: txnRecoveryCommands,
-							});
+							execLog(
+								"merge",
+								sessionName,
+								`CRITICAL: rollback reset failed: ${resetErr} — safe-stop triggered`,
+								{
+									preLaneHead: preLaneHead.slice(0, 8),
+									recoveryCommands: txnRecoveryCommands,
+								},
+							);
 						}
 					} else {
 						// TP-032 R006-2: No pre-lane HEAD captured — cannot roll back.
 						// Block advancement since the bad commit cannot be removed.
-						laneResult.error = `verification_new_failure: no pre-lane HEAD available for rollback — ` +
+						laneResult.error =
+							`verification_new_failure: no pre-lane HEAD available for rollback — ` +
 							`advancement blocked`;
 						blockAdvancement = true;
 						txnStatus = "rollback_failed";
@@ -1957,18 +2176,28 @@ export async function mergeWave(
 						];
 						rollbackFailed = true;
 
-						execLog("merge", sessionName, "CRITICAL: no baseHEAD — cannot roll back, safe-stop triggered");
+						execLog(
+							"merge",
+							sessionName,
+							"CRITICAL: no baseHEAD — cannot roll back, safe-stop triggered",
+						);
 					}
 
 					failedLane = lane.laneNumber;
-					failureReason = `Verification baseline comparison detected ${verificationResult.newFailureCount} new failure(s) ` +
+					failureReason =
+						`Verification baseline comparison detected ${verificationResult.newFailureCount} new failure(s) ` +
 						`in lane ${lane.laneNumber} (${verificationResult.preExistingCount} pre-existing). ` +
 						verificationResult.newFailureSummary.slice(0, 300);
 				} else if (verificationResult.classification === "flaky_suspected") {
-					execLog("merge", sessionName, "flaky test suspected — failures disappeared on re-run (warning only)", {
-						newFailures: verificationResult.newFailureCount,
-						flakyRerun: true,
-					});
+					execLog(
+						"merge",
+						sessionName,
+						"flaky test suspected — failures disappeared on re-run (warning only)",
+						{
+							newFailures: verificationResult.newFailureCount,
+							flakyRerun: true,
+						},
+					);
 					// Warning only — does not block merge advancement
 				} else {
 					execLog("merge", sessionName, "orchestrator-side verification passed", {
@@ -2001,7 +2230,6 @@ export async function mergeWave(
 
 			// Stop merging if this lane failed
 			if (failedLane !== null) break;
-
 		} catch (err: unknown) {
 			// Clean up request file on error
 			try {
@@ -2106,7 +2334,7 @@ export async function mergeWave(
 		// because their code was not merged; staging .DONE would create false
 		// completion markers on the orch branch.
 		const SKIPPED_ARTIFACT_NAMES = ["STATUS.md", "REVIEW_VERDICT.json"];
-		const skippedArtifactLaneNumbers = new Set(skippedArtifactLanes.map(l => l.laneNumber));
+		const skippedArtifactLaneNumbers = new Set(skippedArtifactLanes.map((l) => l.laneNumber));
 
 		// Include both merged lanes and skipped-artifact lanes in staging.
 		const artifactStagingLanes = [...orderedLanes, ...skippedArtifactLanes];
@@ -2117,9 +2345,14 @@ export async function mergeWave(
 
 			for (const allocTask of lane.tasks) {
 				if (!allocTask.task?.taskFolder?.trim()) {
-					execLog("merge", `W${waveIndex}`, `skipping task with missing taskFolder (possibly dynamically expanded)`, {
-						taskId: allocTask.taskId,
-					});
+					execLog(
+						"merge",
+						`W${waveIndex}`,
+						`skipping task with missing taskFolder (possibly dynamically expanded)`,
+						{
+							taskId: allocTask.taskId,
+						},
+					);
 					continue;
 				}
 				const absFolder = resolve(allocTask.task.taskFolder);
@@ -2190,7 +2423,10 @@ export async function mergeWave(
 						const resolvedSrc = resolve(repoRootSrc);
 						const srcRelToRepo = relative(resolvedRepoRoot, resolvedSrc).replace(/\\/g, "/");
 						if (srcRelToRepo.startsWith("..") || srcRelToRepo.startsWith("/")) {
-							execLog("merge", `W${waveIndex}`, `skipping artifact source outside repo root`, { path: relPath, src: repoRootSrc });
+							execLog("merge", `W${waveIndex}`, `skipping artifact source outside repo root`, {
+								path: relPath,
+								src: repoRootSrc,
+							});
 							continue;
 						}
 						srcPath = repoRootSrc;
@@ -2211,14 +2447,26 @@ export async function mergeWave(
 			}
 
 			if (staged > 0) {
-				spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md, REVIEW_VERDICT.json, .reviews/*)`], { cwd: mergeWorkDir });
+				spawnSync(
+					"git",
+					[
+						"commit",
+						"-m",
+						`checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md, REVIEW_VERDICT.json, .reviews/*)`,
+					],
+					{ cwd: mergeWorkDir },
+				);
 				execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`, {
 					skipped,
 					preserved,
 					allowedCandidates: allowedRelPaths.size,
 				});
 			} else {
-				execLog("merge", `W${waveIndex}`, `no task artifacts to stage (0 of ${allowedRelPaths.size} candidates present/changed, ${preserved} preserved from lane merge)`);
+				execLog(
+					"merge",
+					`W${waveIndex}`,
+					`no task artifacts to stage (0 of ${allowedRelPaths.size} candidates present/changed, ${preserved} preserved from lane merge)`,
+				);
 			}
 
 			// Keep both .DONE and STATUS.md in develop's working tree:
@@ -2235,13 +2483,19 @@ export async function mergeWave(
 	// that would be included in branch advancement — so we block entirely.
 	// Also exclude verification_new_failure lanes (with successful rollback) from
 	// success accounting: they have laneResult.error set, so !r.error filters them.
-	const anySuccess = !blockAdvancement && laneResults.some(
-		r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
-	);
+	const anySuccess =
+		!blockAdvancement &&
+		laneResults.some(
+			(r) => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
+		);
 
 	if (blockAdvancement) {
-		execLog("merge", `W${waveIndex}`, "branch advancement BLOCKED due to verification rollback failure — " +
-			"temp branch may contain unverified merge commit");
+		execLog(
+			"merge",
+			`W${waveIndex}`,
+			"branch advancement BLOCKED due to verification rollback failure — " +
+				"temp branch may contain unverified merge commit",
+		);
 	}
 
 	if (anySuccess) {
@@ -2296,7 +2550,9 @@ export async function mergeWave(
 			} else {
 				// Not checked out — safe to use update-ref without touching the worktree.
 				// Use compare-and-swap (3-arg form) to guard against concurrent branch movement.
-				const oldRefResult = spawnSync("git", ["rev-parse", `refs/heads/${targetBranch}`], { cwd: repoRoot });
+				const oldRefResult = spawnSync("git", ["rev-parse", `refs/heads/${targetBranch}`], {
+					cwd: repoRoot,
+				});
 				const oldRef = oldRefResult.status === 0 ? oldRefResult.stdout.toString().trim() : "";
 
 				const updateRefArgs = oldRef
@@ -2328,10 +2584,15 @@ export async function mergeWave(
 	// branch for manual recovery. The operator can use the recovery commands in
 	// the transaction record to restore consistency.
 	if (rollbackFailed) {
-		execLog("merge", `W${waveIndex}`, "SAFE-STOP: preserving merge worktree and temp branch for recovery", {
-			mergeWorkDir,
-			tempBranch,
-		});
+		execLog(
+			"merge",
+			`W${waveIndex}`,
+			"SAFE-STOP: preserving merge worktree and temp branch for recovery",
+			{
+				mergeWorkDir,
+				tempBranch,
+			},
+		);
 	} else {
 		// TP-029: Apply forceRemoveMergeWorktree fallback so locked/corrupted
 		// merge worktrees don't persist between attempts.
@@ -2340,7 +2601,9 @@ export async function mergeWave(
 			// Small delay to ensure worktree lock is released
 			await sleepAsync(500);
 			spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
-		} catch { /* best effort */ }
+		} catch {
+			/* best effort */
+		}
 	}
 
 	// Determine overall status
@@ -2356,7 +2619,9 @@ export async function mergeWave(
 	const totalDurationMs = Date.now() - startTime;
 
 	execLog("merge", `W${waveIndex}`, `wave merge complete: ${status}`, {
-		mergedLanes: laneResults.filter(r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")).length,
+		mergedLanes: laneResults.filter(
+			(r) => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
+		).length,
 		failedLane: failedLane ?? 0,
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
@@ -2386,7 +2651,6 @@ export async function mergeWave(
 	return result;
 }
 
-
 // ── Repo-Scoped Merge ────────────────────────────────────────────────
 
 /**
@@ -2412,7 +2676,7 @@ export function groupLanesByRepo(
 	}
 
 	const sortedKeys = [...groupMap.keys()].sort();
-	return sortedKeys.map(key => ({
+	return sortedKeys.map((key) => ({
 		repoId: key || undefined,
 		lanes: groupMap.get(key)!,
 	}));
@@ -2477,13 +2741,11 @@ export async function mergeWaveByRepo(
 
 	// Filter to mergeable lanes (same criteria as mergeWave).
 	// TP-078: When forceMixedOutcome is true, lanes with mixed outcomes are also included.
-	const mergeableLanes = completedLanes.filter(lane => {
+	const mergeableLanes = completedLanes.filter((lane) => {
 		const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 		if (!outcome) return false;
-		const hasSucceeded = outcome.tasks.some(t => t.status === "succeeded");
-		const hasHardFailure = outcome.tasks.some(
-			t => t.status === "failed" || t.status === "stalled",
-		);
+		const hasSucceeded = outcome.tasks.some((t) => t.status === "succeeded");
+		const hasHardFailure = outcome.tasks.some((t) => t.status === "failed" || t.status === "stalled");
 		if (forceMixedOutcome) return hasSucceeded;
 		return hasSucceeded && !hasHardFailure;
 	});
@@ -2491,11 +2753,11 @@ export async function mergeWaveByRepo(
 	if (mergeableLanes.length === 0) {
 		// TP-171: Even when no lanes are mergeable, skipped-task lanes may have
 		// partial progress that should be staged on the target branch.
-		const skippedOnlyLanes = completedLanes.filter(lane => {
+		const skippedOnlyLanes = completedLanes.filter((lane) => {
 			if (!lane.worktreePath) return false;
 			const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 			if (!outcome) return false;
-			return outcome.tasks.some(t => t.status === "skipped");
+			return outcome.tasks.some((t) => t.status === "skipped");
 		});
 		if (skippedOnlyLanes.length > 0) {
 			// In workspace mode, group skipped lanes by repo and stage per-repo.
@@ -2522,7 +2784,7 @@ export async function mergeWaveByRepo(
 	const repoGroups = groupLanesByRepo(mergeableLanes);
 
 	execLog("merge", `W${waveIndex}`, `merging across ${repoGroups.length} repo group(s)`, {
-		repos: repoGroups.map(g => g.repoId ?? "(default)").join(", "),
+		repos: repoGroups.map((g) => g.repoId ?? "(default)").join(", "),
 		totalLanes: mergeableLanes.length,
 	});
 
@@ -2577,21 +2839,21 @@ export async function mergeWaveByRepo(
 			repoRoot: groupRepoRoot,
 			baseBranch: groupBaseBranch,
 			laneCount: group.lanes.length,
-			lanes: group.lanes.map(l => l.laneNumber).join(","),
+			lanes: group.lanes.map((l) => l.laneNumber).join(","),
 		});
 
 		// TP-171: Build allGroupLanes from all completed lanes for this repo
 		// (not just mergeable) so mergeWave() can compute skippedArtifactLanes.
 		const groupRepoId = group.repoId;
-		const allGroupLanes = completedLanes.filter(l => (l.repoId ?? undefined) === groupRepoId);
-		const allGroupLaneNumbers = new Set(allGroupLanes.map(l => l.laneNumber));
+		const allGroupLanes = completedLanes.filter((l) => (l.repoId ?? undefined) === groupRepoId);
+		const allGroupLaneNumbers = new Set(allGroupLanes.map((l) => l.laneNumber));
 
 		// Build a filtered WaveExecutionResult containing all lanes for this repo
 		// (including skipped-only lanes that aren't in the mergeable group).
 		const filteredWaveResult: WaveExecutionResult = {
 			...waveResult,
-			laneResults: waveResult.laneResults.filter(lr => allGroupLaneNumbers.has(lr.laneNumber)),
-			allocatedLanes: waveResult.allocatedLanes.filter(l => allGroupLaneNumbers.has(l.laneNumber)),
+			laneResults: waveResult.laneResults.filter((lr) => allGroupLaneNumbers.has(lr.laneNumber)),
+			allocatedLanes: waveResult.allocatedLanes.filter((l) => allGroupLaneNumbers.has(l.laneNumber)),
 		};
 
 		const groupResult = await mergeWave(
@@ -2658,9 +2920,14 @@ export async function mergeWaveByRepo(
 			const processedIndex = repoGroups.indexOf(group);
 			const remainingGroups = repoGroups.slice(processedIndex + 1);
 			if (remainingGroups.length > 0) {
-				execLog("merge", `W${waveIndex}`, `safe-stop: skipping ${remainingGroups.length} remaining repo group(s) after rollback failure`, {
-					skippedRepos: remainingGroups.map(g => g.repoId ?? "(default)").join(", "),
-				});
+				execLog(
+					"merge",
+					`W${waveIndex}`,
+					`safe-stop: skipping ${remainingGroups.length} remaining repo group(s) after rollback failure`,
+					{
+						skippedRepos: remainingGroups.map((g) => g.repoId ?? "(default)").join(", "),
+					},
+				);
 			}
 			break;
 		}
@@ -2668,14 +2935,14 @@ export async function mergeWaveByRepo(
 
 	// TP-171: Stage artifacts for repos that have only skipped lanes but were
 	// not included in the mergeable repoGroups.
-	const processedRepoIds = new Set(repoGroups.map(g => g.repoId));
-	const skippedOnlyRepoLanes = completedLanes.filter(lane => {
+	const processedRepoIds = new Set(repoGroups.map((g) => g.repoId));
+	const skippedOnlyRepoLanes = completedLanes.filter((lane) => {
 		if (!lane.worktreePath) return false;
 		const laneRepoId = lane.repoId ?? undefined;
 		if (processedRepoIds.has(laneRepoId)) return false; // already handled by mergeWave
 		const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 		if (!outcome) return false;
-		return outcome.tasks.some(t => t.status === "skipped");
+		return outcome.tasks.some((t) => t.status === "skipped");
 	});
 	// TP-171 R004: Gate artifact staging behind safe-stop — do not advance
 	// any branch refs when a rollback failure has been detected.
@@ -2694,7 +2961,7 @@ export async function mergeWaveByRepo(
 	//   both lane-level failures AND repo setup failures with failedLane=null)
 	// TP-032 R006-3: Exclude verification_new_failure lanes from success determination
 	const anyLaneSucceeded = allLaneResults.some(
-		r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
+		(r) => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 	);
 
 	let status: MergeWaveResult["status"];
@@ -2710,8 +2977,10 @@ export async function mergeWaveByRepo(
 
 	execLog("merge", `W${waveIndex}`, `repo-scoped wave merge complete: ${status}`, {
 		repoCount: repoOutcomes.length,
-		repoStatuses: repoOutcomes.map(r => `${r.repoId ?? "default"}:${r.status}`).join(", "),
-		mergedLanes: allLaneResults.filter(r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")).length,
+		repoStatuses: repoOutcomes.map((r) => `${r.repoId ?? "default"}:${r.status}`).join(", "),
+		mergedLanes: allLaneResults.filter(
+			(r) => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
+		).length,
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
 
@@ -2739,8 +3008,6 @@ export async function mergeWaveByRepo(
 
 	return aggregateResult;
 }
-
-
 
 // ── Auto-Integration ─────────────────────────────────────────────────
 
@@ -2839,7 +3106,9 @@ export function attemptAutoIntegration(
 		}
 	}
 
-	execLog(logCategory, batchId, `auto-integrated: ${baseBranch} advanced to ${orchBranch}`, { orchHead });
+	execLog(logCategory, batchId, `auto-integrated: ${baseBranch} advanced to ${orchBranch}`, {
+		orchHead,
+	});
 	onNotify(ORCH_MESSAGES.orchIntegrationAutoSuccess(orchBranch, baseBranch), "info");
 	return true;
 }
@@ -3042,12 +3311,7 @@ export class MergeHealthMonitor {
 				const resultPath = this._resultPaths.get(sessionName) ?? "";
 				const hasResultFile = resultPath ? existsSync(resultPath) : false;
 
-				const newStatus = classifyMergeHealth(
-					sessionAlive,
-					hasResultFile,
-					state,
-					now,
-				);
+				const newStatus = classifyMergeHealth(sessionAlive, hasResultFile, state, now);
 
 				state.status = newStatus;
 
@@ -3132,4 +3396,3 @@ export class MergeHealthMonitor {
 		return new Map(this.sessions);
 	}
 }
-

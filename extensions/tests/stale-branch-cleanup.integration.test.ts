@@ -19,7 +19,12 @@ import { deleteStaleBranches } from "../taskplane/worktree.ts";
 import type { StaleBranchCleanupResult } from "../taskplane/worktree.ts";
 import { runGit } from "../taskplane/git.ts";
 import { syncTaskOutcomesFromMonitor } from "../taskplane/persistence.ts";
-import type { LaneTaskOutcome, MonitorState, TaskMonitorSnapshot, LaneMonitorSnapshot } from "../taskplane/types.ts";
+import type {
+	LaneTaskOutcome,
+	MonitorState,
+	TaskMonitorSnapshot,
+	LaneMonitorSnapshot,
+} from "../taskplane/types.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -42,7 +47,10 @@ function branchExists(repoRoot: string, branchName: string): boolean {
 function listBranches(repoRoot: string, pattern: string): string[] {
 	const result = runGit(["branch", "--list", pattern], repoRoot);
 	if (!result.ok || !result.stdout.trim()) return [];
-	return result.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean);
+	return result.stdout
+		.split("\n")
+		.map((b) => b.replace(/^\*?\s+/, "").trim())
+		.filter(Boolean);
 }
 
 // ── deleteStaleBranches Tests ────────────────────────────────────────
@@ -55,7 +63,11 @@ describe("deleteStaleBranches — TP-051", () => {
 	});
 
 	afterEach(() => {
-		try { rmSync(repoRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+		try {
+			rmSync(repoRoot, { recursive: true, force: true });
+		} catch {
+			/* best effort */
+		}
 	});
 
 	it("deletes task/{opId}-lane-* branches for the operator", () => {
@@ -213,7 +225,7 @@ describe("syncTaskOutcomesFromMonitor — TP-051 task startedAt fix", () => {
 			taskId: "TP-001",
 			status: "running",
 			lastHeartbeat: staleStatusMtime, // STATUS.md mtime — stale
-			observedAt: now,                 // actual poll time
+			observedAt: now, // actual poll time
 		});
 
 		syncTaskOutcomesFromMonitor(monitor, outcomes);
@@ -257,15 +269,17 @@ describe("syncTaskOutcomesFromMonitor — TP-051 task startedAt fix", () => {
 		const monitorObserved = 510000;
 
 		// Pre-populated outcome from executeLane (has a real startTime)
-		const outcomes: LaneTaskOutcome[] = [{
-			taskId: "TP-001",
-			status: "running",
-			startTime: executionStartTime,
-			endTime: null,
-			exitReason: "Task in progress",
-			sessionName: "orch-lane-1",
-			doneFileFound: false,
-		}];
+		const outcomes: LaneTaskOutcome[] = [
+			{
+				taskId: "TP-001",
+				status: "running",
+				startTime: executionStartTime,
+				endTime: null,
+				exitReason: "Task in progress",
+				sessionName: "orch-lane-1",
+				doneFileFound: false,
+			},
+		];
 
 		const monitor = makeMonitorWithCurrentTask({
 			taskId: "TP-001",
