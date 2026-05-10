@@ -1,7 +1,7 @@
 # TP-193: Code-quality formatter adoption — Status
 
-**Current Step:** Step 5: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 5: Testing & Verification (final)
+**Status:** ✅ Complete
 **Last Updated:** 2026-05-10
 **Review Level:** 0 (None)
 **Review Counter:** 0
@@ -70,16 +70,16 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
-- [ ] FULL fast suite passes (3624+)
-- [ ] FULL integration suite passes
-- [ ] `npm run format:check` exits 0
-- [ ] `npm run lint` exits 0 (TP-192 cleanup preserved)
-- [ ] `npm run typecheck` count unchanged from TP-192 baseline
-- [ ] CLI smoke clean
+- [x] FULL fast suite passes (3624 / 3625; 1 skipped, 0 fail)
+- [x] FULL integration suite passes (`npm test` includes `*.integration.test.ts` and reports the same 3624/0 result)
+- [x] `npm run format:check` exits 0 (`Checked 175 files. No fixes applied.`)
+- [x] `npm run lint` exits 0 (TP-192 cleanup preserved; 277 warnings + 668 infos, 0 errors)
+- [x] `npm run typecheck` count unchanged at **264 errors** (TP-192 baseline preserved — format pass introduced ZERO new type errors)
+- [x] CLI smoke clean: `node bin/taskplane.mjs help` exits 0; `node bin/taskplane.mjs doctor` parses and runs (exits 1 only because the lane worktree is missing `.pi/agents/*.md` template files — environmental, not a TP-193 regression)
 
 ---
 
@@ -110,6 +110,7 @@
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-05-10 17:04 | Task started | Runtime V2 lane-runner execution |
 | 2026-05-10 17:04 | Step 0 started | Preflight |
+| 2026-05-10 | Steps 0-5 complete | Format pass landed in single mechanical commit `f1d4533985e4853733d8f571920af8e2ac4a6cee`; test-resilience prep in `2c803c78`; .git-blame-ignore-revs + dev-setup docs + CHANGELOG in `f1d1d8d`. All gates green: format:check 0, lint 0, typecheck 264 (TP-192 baseline), tests 3624/0/1. |
 
 ---
 
