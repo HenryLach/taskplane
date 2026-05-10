@@ -34,7 +34,7 @@
 ---
 
 ### Step 1: Plan the cleanup strategy per error category
-**Status:** ✅ Complete (plan-review APPROVE — R001)
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint.
 
@@ -64,7 +64,7 @@
 ---
 
 ### Step 2: Apply fixes by category
-**Status:** ✅ Complete (Review Level 1 — Plan Only; code review skipped per PROMPT assessment)
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step (the only code review for this task).
 
@@ -170,6 +170,8 @@
 | 2026-05-10 | Step 2 implementation | All 9 errors fixed. Commit 28fbb159. |
 | 2026-05-10 | Step 3 verification | lint=0, tests=3624/1/0, typecheck=264 (↓ from 267), CLI smoke clean |
 | 2026-05-10 | Step 4 docs & delivery | CHANGELOG entry added; commit 390a4376. Task complete. |
+| 2026-05-10 16:35 | Worker iter 1 | done in 926s, tools: 81 |
+| 2026-05-10 16:35 | Task complete | .DONE created |
 
 ---
 
