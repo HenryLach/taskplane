@@ -1,10 +1,10 @@
 # TP-194: Code-quality gates flip — Status
 
-**Current Step:** Step 2: Implement Part 1 — CI workflow updates
+**Current Step:** Step 3: Implement Part 2 — activate reviewer downgrade rule
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -50,7 +50,7 @@
 ---
 
 ### Step 2: Implement Part 1 — CI workflow updates
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > Plan-reviewer must have APPROVED Step 1 before proceeding.
 > ⚠️ Code-review fires after this step.
@@ -127,7 +127,8 @@
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
 | 1 | plan | 1 | REVISE | .reviews/R001-plan-step1.md |
-| 2 | plan | 1 | APPROVE | (re-review, no file written; verdict captured here) |
+| 2 | plan | 1 | APPROVE | .reviews/R002-plan-step1.md |
+| 3 | code | 2 | APPROVE | .reviews/R003-code-step2.md |
 
 ---
 
@@ -213,3 +214,4 @@ Because this task keeps the single-`ci`-job structure (rationale: separate jobs 
 This is Discoveries-only documentation, not a new automated test. The TP-188 source-pattern tests already verify the downgrade rule is wired; the manual smoke confirms it fires end-to-end with the activation now live.
 | 2026-05-10 21:52 | Review R001 | plan Step 1: REVISE |
 | 2026-05-10 21:54 | Review R002 | plan Step 1: APPROVE |
+| 2026-05-10 21:55 | Review R003 | code Step 2: APPROVE |
