@@ -1,10 +1,10 @@
 # TP-194: Code-quality gates flip — Status
 
-**Current Step:** Step 4: Implement Parts 3-4 — documentation
+**Current Step:** Step 5: Branch protection (operator handoff)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** M
 
@@ -74,7 +74,7 @@
 ---
 
 ### Step 4: Implement Parts 3-4 — documentation
-**Status:** 🟨 In Progress (R005 fix applied)
+**Status:** ✅ Complete (R005 fix applied, R006 APPROVE)
 
 **R005 revision:** reviewer flagged that `npm run lint:fix` was referenced in the new development-setup section but the script did not exist in `package.json`. The same `lint:fix` reference also exists in the pre-existing Biome section of the same file (line 161). Cleanest fix is to add the missing script (`"lint:fix": "biome lint --write --no-errors-on-unmatched ."`), which matches Biome's documented autofix command. Verified gates still pass after the package.json edit (`typecheck`, `lint`, `format:check` all exit 0). Note: actually invoking `npm run lint:fix` rewrites files — those rewrites were reverted; the script is documented for contributors but not run during this task.
 
@@ -132,6 +132,8 @@
 | 2 | plan | 1 | APPROVE | .reviews/R002-plan-step1.md |
 | 3 | code | 2 | APPROVE | .reviews/R003-code-step2.md |
 | 4 | code | 3 | APPROVE | .reviews/R004-code-step3.md |
+| 5 | code | 4 | REVISE | .reviews/R005-code-step4.md |
+| 6 | code | 4 | APPROVE | .reviews/R006-code-step4.md |
 
 ---
 
@@ -220,3 +222,4 @@ This is Discoveries-only documentation, not a new automated test. The TP-188 sou
 | 2026-05-10 21:55 | Review R003 | code Step 2: APPROVE |
 | 2026-05-10 21:57 | Review R004 | code Step 3: APPROVE |
 | 2026-05-10 21:59 | Review R005 | code Step 4: REVISE |
+| 2026-05-10 22:01 | Review R006 | code Step 4: APPROVE |
