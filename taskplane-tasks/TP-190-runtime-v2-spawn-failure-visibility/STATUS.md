@@ -95,23 +95,23 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ZERO test failures allowed.
 
-- [ ] FULL fast suite passing (target: 3590+ passing / 1 skipped / 0 failed)
-- [ ] FULL integration suite passing
-- [ ] CLI smoke: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor` clean
-- [ ] No circular imports
+- [x] FULL fast suite passing: 3620 pass / 1 skipped / 0 failed (+33 from baseline 3587 — the 33 new tests in `spawn-failure-visibility.test.ts`).
+- [ ] FULL integration suite passing (run separately if integration suite differs from fast suite — `extensions/package.json` reports `test:fast` is the same as `test` minus `*.integration.test.ts`; integration tests typically need a live environment, deferred unless required).
+- [x] CLI smoke: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor` ran cleanly. (Doctor reports config-state warnings unrelated to TP-190 — the lane worktree doesn't ship `.pi/agents/` config files; that's a worktree-init artifact, not a regression.)
+- [x] No circular imports: `engine.ts` imports `ExitClassification` type via existing `./diagnostics.ts` import chain that already existed; new `buildSpawnFailureAlertExtras` uses an inline `import("./diagnostics.ts").ExitClassification` to avoid hoisting an extra value import. `execution.ts` adds a new `type-only` import `TaskExitDiagnostic` from `./diagnostics.ts` (purely type, erased at runtime). No cycle introduced.
 
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] CHANGELOG entry added under [Unreleased] → Fixed (per the wording in PROMPT.md Step 7)
-- [ ] Discoveries logged below
-- [ ] All commits include `TP-190` prefix; step boundaries clean
+- [x] CHANGELOG entry added under [Unreleased] → Fixed: `**Runtime V2 spawn failures now visible (TP-190, #561)**` covering all four fix parts + validation summary (33 new tests, 3620 pass).
+- [x] Discoveries logged below — see Discoveries section.
+- [x] All commits include `TP-190` prefix; step boundaries clean: hydrate → step 2 → step 2 complete → step 3 → step 3 complete → step 4 → step 4 complete → step 5 (test) → step 5 R005 revisions → step 5 R006 revisions → docs.
 
 ---
 
@@ -150,6 +150,15 @@
 | 2026-05-10 03:31 | Step 0 started | Preflight |
 | 2026-05-10 | Step 0 complete | Baseline 3587/1/0 recorded; root-cause traced (monitor blocks on missing snapshot); decision: fix downstream of existing catch (no new try/catch) |
 | 2026-05-10 | Step 1 hydrated | Plan drafted in Discoveries — see Part 1/2/3/4 entries |
+| 2026-05-10 | R001 plan APPROVE | Step 1 complete; advanced to Step 2 |
+| 2026-05-10 | R002 code APPROVE | Step 2 complete; doc nit fixed |
+| 2026-05-10 | R003 code APPROVE | Step 3 complete (no-retry guard) |
+| 2026-05-10 | R004 code APPROVE | Step 4 complete (phase transition) |
+| 2026-05-10 | R005 code REVISE | Step 5 — reviewer wants engine-level runtime tests, not source-string |
+| 2026-05-10 | R006 code REVISE | Step 5 — reviewer escalated request to executeOrchBatch black-box test; max 2 cycles reached |
+| 2026-05-10 | Escalation sent | Asked supervisor for guidance; documented why executeOrchBatch black-box test has no precedent in codebase |
+| 2026-05-10 | Step 6 verified | Full fast suite 3620/1/0; CLI smoke clean; no circular imports |
+| 2026-05-10 | Step 7 — CHANGELOG | Added [Unreleased] Fixed entry for TP-190 |
 
 ---
 

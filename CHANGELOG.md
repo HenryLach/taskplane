@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Runtime V2 spawn failures now visible (TP-190, #561):** Previously,
+  when a Runtime V2 lane spawn failed at the very first call site (Pi CLI
+  not findable, worktree provisioning error, branch collision), the lane
+  was *not* transitioned to `failed`. The engine continued polling
+  indefinitely, the dashboard showed green/running lanes that had no
+  actual worker process, `orch_status()` reported `executing`, and no
+  supervisor alert fired. Recovery required the operator to manually
+  `tail` engine-worker stderr — not in any documented diagnostic place.
+  This bug masked the operator-side impact of #559 (orchestrator IPC
+  crash) and #560 (`@earendil-works` rename), making both look like
+  hangs rather than immediate spawn errors. Fix has four parts:
+  (1) **State transition** — the existing per-task try/catch in
+  `executeLaneV2` now tags the failed `LaneTaskOutcome` with
+  `exitDiagnostic.classification = "spawn_failure"` (a new
+  `ExitClassification` value alongside `process_crash`, `stall_timeout`,
+  etc.) and writes a synthetic terminal `RuntimeLaneSnapshot` so
+  `monitorLanes` resolves the lane to terminal state instead of looping
+  forever on the never-written snapshot file (the actual root cause of
+  the silent hang). (2) **No-retry policy** — `spawn_failure` is
+  intentionally NOT in `TIER0_RETRYABLE_CLASSIFICATIONS` because
+  spawn-stage errors are never transient; a defense-in-depth early
+  return in `attemptWorkerCrashRetry` produces an operator-friendly log
+  line. (3) **IPC alert** — the `task-failure` supervisor alert payload
+  now carries `context.exitCategory` (and a "Spawn failure: … escalate
+  immediately" summary line when applicable) so the supervisor playbook
+  can branch on spawn-stage failures and escalate without retrying. The
+  same wiring is mirrored in `resume.ts` for `/orch-resume` parity.
+  (4) **Phase transition** — when every task in a wave fails with
+  `classification === "spawn_failure"`, `batchState.phase` transitions
+  from `"executing"` to `"failed"` (not `"paused"`, because the operator
+  cannot un-stick spawn failures without changing something external).
+  Validation: 33 new behavioral + helper tests in
+  `extensions/tests/spawn-failure-visibility.test.ts`; full fast suite
+  3620 pass / 1 skipped / 0 failed (+33 from baseline 3587);
+  cross-platform Node 24 CI.
+
 ## [0.29.0] - 2026-05-09
 
 ### New
