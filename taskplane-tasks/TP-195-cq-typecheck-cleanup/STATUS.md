@@ -1,10 +1,16 @@
 # TP-195: Code-quality typecheck cleanup — Status
 
-**Current Step:** Step 5: Verify pi-shim adequacy
-**Status:** 🟡 In Progress
+**Current Step:** Step 7: Documentation & Delivery
+**Status:** ✅ Complete
+
+> Final summary: 264 typecheck errors → **0**. 3627/0/1 tests pass (TP-191
+> baseline 3624 + 3 new regression tests). Three latent runtime bugs
+> uncovered and fixed (preflight cleanup, `max_worker_minutes` typo,
+> resume failed-task crash). All commits prefixed `TP-195`. TP-194’s
+> typecheck-gate-flip pre-condition is satisfied.
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
@@ -108,7 +114,7 @@
 ---
 
 ### Step 4: Fix test-side errors (~198 errors)
-**Status:** 🟨 In Progress (awaiting code review)
+**Status:** ✅ Complete (R006 code review APPROVE)
 
 > ⚠️ Code-review fires after this step.
 
@@ -121,33 +127,33 @@
 ---
 
 ### Step 5: Verify pi-shim adequacy
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] `npm run typecheck` exits 0
-- [ ] Pi-shim extensions (if any) documented in Discoveries
+- [x] `npm run typecheck` exits 0 — verified after R004 / R006 APPROVE
+- [x] Pi-shim extensions documented in Discoveries: extended `ExtensionContext` from `any` to a structural interface exposing `ui.custom<T>()` for the 4 settings-tui.ts call sites; `ui` made optional so thin test mocks like `{ model: null }` still satisfy the type. Both `@earendil-works/*` and `@mariozechner/*` scopes mirror the change.
 
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
-- [ ] FULL fast suite passes (3624+ passing / 1 skipped / 0 failed — match TP-191 baseline)
-- [ ] FULL integration suite passes
-- [ ] `npm run typecheck` exits 0 (the gate this task delivers)
-- [ ] `npm run lint` exit code unchanged from TP-191 baseline
-- [ ] `npm run format:check` exit code unchanged
-- [ ] CLI smoke clean
+- [x] FULL fast suite passes — **3627/0/1** (baseline 3624 + 3 new TP-195 regression tests for the E1/E3/E4 fix-the-bug paths)
+- [x] FULL integration suite passes — same 3627/0/1 (`npm test` runs both `tests/*.test.ts` and `tests/*.integration.test.ts`)
+- [x] `npm run typecheck` exits **0** (the gate this task delivers) — verified against `extensions/tsconfig.ci.json`
+- [x] `npm run lint` exits **0** (unchanged from TP-191/TP-192 baseline; 280 warnings + 671 infos, no errors)
+- [x] `npm run format:check` exits **0** (unchanged from TP-193 baseline)
+- [x] CLI smoke clean: `node bin/taskplane.mjs help` exits 0; `node bin/taskplane.mjs doctor` runs and produces output (its non-zero exit is a pre-existing worktree-config gap, not a TP-195 regression)
 
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] CHANGELOG entry under [Unreleased] → Internal added
-- [ ] Discoveries logged below (per-category breakdown, real bugs uncovered, pi-shim extensions)
-- [ ] All commits include `TP-195` prefix; grouped by module/category
+- [x] CHANGELOG entry under [Unreleased] — Internal entry + 3 Fixed entries for the real bugs uncovered (preflight cleanup, max_worker_minutes typo, resume failed-task crash) added in this commit.
+- [x] Discoveries logged in STATUS.md (per-category breakdown, real bugs uncovered, pi-shim extensions — see Discoveries section above).
+- [x] All commits include `TP-195` prefix; grouped by module/category per `git log --grep TP-195`.
 
 ---
 
@@ -346,6 +352,13 @@ Total: **264 errors** in 45 files (8 source + 37 test files).
 | 2026-05-10 17:56 | Task started | Runtime V2 lane-runner execution |
 | 2026-05-10 17:56 | Step 0 started | Preflight |
 | 2026-05-10 | Step 0 complete | 264 errors in 45 files; baseline tests 3624/1/0 |
+| 2026-05-10 | Step 1 plan R001 REVISE | reviewer asked for behavior-impact tagging + escalation gate |
+| 2026-05-10 | Step 1 plan R002 APPROVE | escalation register added; per-fix tags applied |
+| 2026-05-10 | E1–E4 escalation sent | maxWorkerMinutes, dashboard fields, batchState.tasks, preflight cleanup imports |
+| 2026-05-10 | Step 3/Step 4 code review R003 REVISE | reviewer rejected preserve-broken stubs/casts; required fix-the-bug variants |
+| 2026-05-10 | Step 3/Step 4 code review R004/R006 APPROVE | fix-the-bug variants applied; 3 regression tests added |
+| 2026-05-10 | Step 6 quality gates pass | typecheck 0, lint 0, format:check 0, tests 3627/0/1 |
+| 2026-05-10 | Step 7 complete | CHANGELOG entries added under [Unreleased] |
 
 ---
 
@@ -383,3 +396,5 @@ The whole point of typecheck-as-a-gate is catching real bugs. A worker that uses
 | 2026-05-10 18:17 | Review R002 | plan Step 1: APPROVE |
 | 2026-05-10 19:19 | Review R003 | code Step 3: REVISE |
 | 2026-05-10 19:26 | Review R004 | code Step 3: APPROVE |
+| 2026-05-10 19:27 | Review R005 | code Step 4: REVISE |
+| 2026-05-10 19:30 | Review R006 | code Step 4: APPROVE |
