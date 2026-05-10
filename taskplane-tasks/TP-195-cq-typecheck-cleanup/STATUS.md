@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** L
 
@@ -42,7 +42,9 @@
 - [x] Per-category fix approach documented in Discoveries
 - [x] Real-bug-vs-drift categorization complete (see 'Per-category strategy' table below)
 - [x] Anti-shortcut policy reaffirmed in Discoveries
-- [x] Decision on shared mock-helper: **introduce `extensions/tests/helpers/mock-orchestrator-config.ts`** with `makeOrchestratorConfig(overrides?)` factory — both top-3 test files (workspace-config.integration, worktree-lifecycle.integration, plus orch-state-persistence and others) share the same `OrchestratorConfig` shape and accumulate the same `pre_warm/merge/failure/monitoring/verification` missing-fields churn (per error inventory). One factory dedupes ~50% of the TS2741/TS2739 mock-drift errors.
+- [x] Decision on shared mock-helper: **introduce `extensions/tests/helpers/mock-orchestrator-config.ts`** with `makeOrchestratorConfig(overrides?)` factory. Defaults sourced from the schema (read `OrchestratorConfig` interface in `extensions/taskplane/types.ts`; for each required field use the schema's documented default value or a stable test-acceptable literal that matches what production code paths assume — e.g., `max_lanes: 3`, `worktree_location: "sibling"`, `merge_mode: "sequential"`). Each call site supplies focused overrides for the fields the test cares about, so semantic drift is impossible.
+- [x] **Behavior-impact tagging applied** to every planned source-side fix below (`type-drift-only` / `behavior-neutral` / `behavior-affecting (escalate)`)
+- [x] **Escalation sent** for the 4 `behavior-affecting` items (see 'Escalation register' below); will not apply those fixes until operator responds. Type-drift-only and behavior-neutral fixes proceed in parallel.
 
 ---
 
@@ -179,22 +181,61 @@
 - **NO `Object.assign({}, ..., { ... } as Type)` casts.** Build mock objects with full required-field coverage via the helper or explicit literal.
 - **For real bugs** discovered during fixes, document in Discoveries; if the fix would meaningfully change runtime behavior, the change-honoring-config or honoring-real-data fix is preferred (the typecheck gate's purpose is exposing these latent bugs). If the change would be operator-surprising, escalate.
 
+### Escalation register
+
+Four planned fixes change runtime behavior. Per the PROMPT (“If a fix would change runtime behavior, STOP and document in Discoveries — escalate to the operator”), escalation has been sent and these items are GATED until the operator responds.
+
+| # | File / line | Behavior change | Recommendation |
+|---|---|---|---|
+| E1 | execution.ts:2902 (`maxWorkerMinutes` typo) | Operator-set `max_worker_minutes` would be honored instead of always falling through to 120 | Fix the bug |
+| E2 | extension.ts:2409–2415 (dashboard fields) | Widget refresh now correctly fires on completion-counts and step-progress changes (currently only on `currentTaskId`) | Fix the bug — cosmetic only |
+| E3 | resume.ts:2369 (`batchState.tasks.find`) | Code path that previously crashed (`undefined.find`) now resolves correctly via the lane-allocation lookup | Fix the bug — preserving a crash isn’t valuable |
+| E4 | engine.ts:2597–2624 (4 missing cleanup imports) | Preflight cleanup feature (sweep stale artifacts / rotate logs / size cap / prior-batch cleanup) starts working as advertised; currently silently a no-op since TP-065 | Fix the bug |
+
+**Fallback if operator says “preserve broken state”** for any item:
+- E1 — cast: `(config.failure as { maxWorkerMinutes?: number } \| undefined)?.maxWorkerMinutes \|\| 120`. Type-clean, runtime unchanged.
+- E2 — drop the 4 broken comparisons; check only `currentTaskId`. Same observed behavior as today.
+- E3 — cast: `(batchState as { tasks?: PersistedTaskRecord[] }).tasks?.find(...)`. Safe, still always undefined.
+- E4 — delete the inline calls (currently a no-op anyway via try/catch swallow).
+
 ### Order of attack
 
 **Step 2 (mechanical autofixes):** None safe. Skip with note in Discoveries (every fix needs judgment per anti-shortcut policy).
 
-**Step 3 (runtime source first, ~68 errors across 8 files):**
-1. **types.ts** — add `EXEC_MISSING_TASK_FOLDER` to ExecutionErrorCode (used by execution.ts:2385).
-2. **process-registry.ts** — re-export `RuntimeRegistry` so dynamic-import references in execution.ts resolve. Cleanest fix.
-3. **execution.ts** — (20 errors): import `RuntimeRegistry`, fix `config.project?.name`, fix `maxWorkerMinutes` typo, widen `execLog` extra type (signature change cascades to engine.ts/resume.ts), drop dead `config.orchestrator?.batchId`.
-4. **engine.ts** — (11 errors): add 4 missing imports from cleanup.ts, fix discriminated-union narrowing on `processSegmentExpansionRequestAtBoundary` return type, the rest auto-resolve from execLog widening.
-5. **persistence.ts** — (8 errors): fix `ReconstructResult` discriminated-union narrowing, drop `taskName`, drop dead `m.packet.packetRepoId/packetTaskPath` reads, use 2-step casts.
-6. **resume.ts** — (8 errors): fix `batchState.tasks` lookup, hoist phase to local var for narrowing, the rest auto-resolve from execLog widening.
-7. **extension.ts** — (8 errors): fix `MonitorState.tasksDone/tasksFailed` field names, fix snapshot drilling to `currentTaskSnapshot?.currentStepNumber/totalChecked`.
-8. **config-loader.ts** — (5 errors): drop dead tmux check, use 2-step casts, change return type to DeepPartial.
-9. **settings-tui.ts** — (4 errors): no source change — fix by extending pi-shim.
-10. **merge.ts** — (4 errors): hoist normalized status, change return type to Promise<void>, the rest auto-resolve from execLog widening.
-11. **pi-shims.d.ts** — extend `ExtensionContext` interface for typed `ui.custom<T>()`.
+**Step 3 (runtime source first, ~68 errors across 8 files; per-fix tags in brackets):**
+
+1. **types.ts** — add `EXEC_MISSING_TASK_FOLDER` to ExecutionErrorCode union. `[type-drift-only]` (runtime already throws this code via `new ExecutionError("EXEC_MISSING_TASK_FOLDER", ...)`; type union missed it).
+2. **process-registry.ts** — re-export `RuntimeRegistry` from `./types.ts`. `[type-drift-only]` (pure re-export; no behavior change).
+3. **execution.ts** — (20 errors):
+   - import `RuntimeRegistry` directly from `types.ts` (#162, #170). `[type-drift-only]`
+   - drop dead `config.orchestrator?.batchId` (field doesn’t exist; falls through to env var). `[behavior-neutral]`
+   - replace `config.project?.name || "project"` with `extraEnvVars?.TASKPLANE_PROJECT_NAME || "project"`. `[behavior-neutral]` (when env unset, identical "project" fallback; aligns with how lane-runner already reads project name).
+   - widen `execLog` `extra` parameter from `Record<string, string\|number\|boolean>` to `Record<string, unknown>`. `[behavior-neutral]` (template-string `${v}` stringifies all values identically; runtime output unchanged).
+   - **`maxWorkerMinutes` typo fix — GATED on E1 escalation. `[behavior-affecting (escalate)]`**
+4. **engine.ts** — (11 errors):
+   - fix discriminated-union narrowing on `processSegmentExpansionRequestAtBoundary` return type by adding `reason?: undefined` to the success branch. `[type-drift-only]` (TS-only; narrows the existing union without changing runtime).
+   - 5 errors auto-resolve once `execLog` widens. `[type-drift-only]`
+   - **4 missing cleanup imports — GATED on E4 escalation. `[behavior-affecting (escalate)]`**
+5. **persistence.ts** — (8 errors):
+   - fix `ReconstructResult` discriminated-union narrowing (add `error?: undefined` to success branch). `[type-drift-only]`
+   - drop `taskName: taskId` field that doesn’t exist on `PersistedTaskRecord` (no consumer reads it from persisted records). `[behavior-neutral]`
+   - drop dead `m.packet.packetRepoId/packetTaskPath` reads (always undefined; if-branches never fire). `[behavior-neutral]`
+   - use 2-step `as unknown as Record<string, unknown>` casts for the property-bag widening at #1506/#2528/#2530. `[type-drift-only]`
+6. **resume.ts** — (8 errors):
+   - hoist `batchState.phase` to a local `OrchBatchPhase`-typed variable to bypass narrowing-on-property at #3299/#3340. `[type-drift-only]` (pattern already in use earlier in same function at #3366/#3476).
+   - 5 errors auto-resolve once `execLog` widens. `[type-drift-only]`
+   - **`batchState.tasks.find` lookup fix — GATED on E3 escalation. `[behavior-affecting (escalate)]`**
+7. **extension.ts** — (8 errors): **all 8 GATED on E2 escalation. `[behavior-affecting (escalate)]`**
+8. **config-loader.ts** — (5 errors):
+   - drop dead `prefs.spawnMode === "tmux"` check (raw input is migrated upstream at #169 before being assigned to typed prefs). `[behavior-neutral]`
+   - use 2-step `as unknown as Record<string, unknown>` casts at #1007/#1028. `[type-drift-only]`
+   - change `loadProjectOverrides` return type and `migrateProjectOverrides` parameter to `DeepPartial<TaskplaneConfig>` (already exported). `[type-drift-only]`
+9. **settings-tui.ts** — (4 errors): no source change — fix by extending pi-shim. `[type-drift-only]`
+10. **merge.ts** — (4 errors):
+    - hoist normalized status to a local `const normalizedStatus = String(parsed.status).toUpperCase()` before the `.has()` checks at #225/#415. `[type-drift-only]` (runtime evaluation order unchanged).
+    - change `spawnMergeAgentV2` return type from `Promise<AgentHostResult>` to `Promise<void>`. `[type-drift-only]` (function never returns a value; callers `await` but ignore return).
+    - 1 error auto-resolves once `execLog` widens. `[type-drift-only]`
+11. **pi-shims.d.ts** — extend `ExtensionContext` interface for typed `ui.custom<T>()` and parallel scope. `[type-drift-only]`
 
 **Step 4 (test-side, ~196 errors across 37 files):**
 1. Introduce `extensions/tests/helpers/mock-orchestrator-config.ts` factory.
@@ -307,3 +348,4 @@ The above counts are sage's estimate based on a sample run; the live count in St
 The whole point of typecheck-as-a-gate is catching real bugs. A worker that uses `as any` or `// @ts-expect-error` shortcuts to make the type checker happy is defeating the purpose. The plan reviewer and code reviewer must both verify that NO such shortcuts appear in the diff. If a fix legitimately needs a `@ts-expect-error`, the comment MUST justify it (e.g., naming the underlying TypeScript issue or pi-package shim limitation).
 
 **Strict mode is OUT of scope.** This task delivers typecheck-clean at CURRENT strictness only (`strict: false, noImplicitAny: false`). Strictness ratchet is a separate post-TP-194 follow-up that can decide later whether to do all-at-once strict or per-flag ratchet.
+| 2026-05-10 18:12 | Review R001 | plan Step 1: REVISE |
