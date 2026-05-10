@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -56,8 +56,10 @@
 - [x] `scripts` block added (typecheck, lint, format, format:check)
 - [x] `devDependencies` added (Biome 2.4.15, TypeScript 5.6.3)
 - [x] `npm install` succeeds; root `package-lock.json` created/refreshed
-- [x] All four scripts execute to completion: `typecheck` exit 1 (tsconfig.ci.json absent until Step 3 — expected), `lint` exit 1 (9 errors, 264 warnings — inventory for TP-192), `format:check` exit 0 (0 files, formatter disabled — expected), `format` exit 0 (same)
+- [x] All four scripts execute to completion: `typecheck` exit 1 (tsconfig.ci.json absent until Step 3 — expected), `lint` exit 1 (9 errors, 264 warnings — inventory for TP-192), `format:check` exit 1 (no files in scope yet — expanded in Step 4), `format` exit 1 (same)
 - [x] Full fast suite still passes: 3624 passing / 1 skipped / 0 failed (no behavior change)
+- [x] R002 REVISE response: pull `templates/agents/task-reviewer.md` activation note forward + broaden wording to cover all three quality checks (typecheck/lint/format:check), so reviewer policy aligns with spec section 6.1.7's three-failure expectation
+- [x] STATUS.md exit-code log corrected (R002 suggestion: format/format:check were exit 1, not exit 0)
 
 ---
 
@@ -95,7 +97,7 @@
 > ⚠️ Code-review fires after this step.
 
 - [ ] `.pi/taskplane-config.json` `taskRunner.testing.commands` adds typecheck, lint, format:check
-- [ ] `templates/agents/task-reviewer.md` carries temporary activation note (per spec 6.1.6)
+- [x] `templates/agents/task-reviewer.md` carries temporary activation note (per spec 6.1.6, broadened to cover all three quality checks; pulled forward into Step 2 revision to address R002 REVISE)
 - [ ] `.github/workflows/ci.yml` lint step uses `npm run lint` (still `continue-on-error: true`)
 - [ ] CI workflow YAML validates
 
@@ -128,6 +130,7 @@
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
 | 1 | plan | 1 | APPROVE | .reviews/R001-plan-step1.md |
+| 2 | code | 2 | REVISE | .reviews/R002-code-step2.md |
 
 ---
 
@@ -324,3 +327,4 @@ with:
 
 **Pinned-version exception clause:** if `@biomejs/biome@2.4.15` is no longer the latest 2.x at task-execution time, use the latest stable in the same minor line and document the choice in Discoveries. Same for TypeScript 5.6.3 — use latest stable 5.x if a newer one exists. Major-version drift (e.g., Biome 3.x) should NOT be picked up automatically without operator confirmation.
 | 2026-05-10 14:48 | Review R001 | plan Step 1: APPROVE |
+| 2026-05-10 14:53 | Review R002 | code Step 2: REVISE |
