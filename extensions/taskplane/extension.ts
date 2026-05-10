@@ -396,15 +396,18 @@ export function withPreservedBatchHistory<T>(stateRoot: string, operation: () =>
 	try {
 		return operation();
 	} finally {
-		if (!snapshot) return;
-		try {
-			const dir = dirname(snapshot.filePath);
-			if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-			const tmpPath = snapshot.filePath + ".tmp";
-			writeFileSync(tmpPath, snapshot.raw);
-			renameSync(tmpPath, snapshot.filePath);
-		} catch {
-			// Best effort only — never block integration completion.
+		// Conditional cleanup (no `return` in finally — Biome lint/correctness/noUnsafeFinally).
+		// Restore the snapshot only when one was captured pre-operation.
+		if (snapshot) {
+			try {
+				const dir = dirname(snapshot.filePath);
+				if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+				const tmpPath = snapshot.filePath + ".tmp";
+				writeFileSync(tmpPath, snapshot.raw);
+				renameSync(tmpPath, snapshot.filePath);
+			} catch {
+				// Best effort only — never block integration completion.
+			}
 		}
 	}
 }

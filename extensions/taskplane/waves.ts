@@ -7,7 +7,7 @@ import { join } from "path";
 import { parseDependencyReference } from "./discovery.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { AllocationError, buildSegmentId, getTaskDurationMinutes } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, TaskSegmentPlan, TaskSegmentPlanMap, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, TaskSegmentPlan, TaskSegmentPlanMap, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ensureLaneWorktrees, removeAllWorktrees, removeWorktree } from "./worktree.ts";
 

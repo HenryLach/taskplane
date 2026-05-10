@@ -99,7 +99,7 @@ export function parsePromptMd(content: string, promptPath: string): CoreParsedTa
 	const steps: StepInfo[] = [];
 	const stepRegex = /###\s+Step\s+(\d+):\s*(.+)/g;
 	const positions: { number: number; name: string; start: number }[] = [];
-	let m;
+	let m: RegExpExecArray | null;
 	while ((m = stepRegex.exec(text)) !== null) {
 		positions.push({ number: parseInt(m[1]), name: m[2].trim(), start: m.index });
 	}
@@ -107,7 +107,7 @@ export function parsePromptMd(content: string, promptPath: string): CoreParsedTa
 		const section = text.slice(positions[i].start, i + 1 < positions.length ? positions[i + 1].start : text.length);
 		const checkboxes: { text: string; checked: boolean }[] = [];
 		const cbRegex = /^\s*-\s*\[([ xX])\]\s*(.*)/gm;
-		let cb;
+		let cb: RegExpExecArray | null;
 		while ((cb = cbRegex.exec(section)) !== null) {
 			checkboxes.push({ text: cb[2].trim(), checked: cb[1].toLowerCase() === "x" });
 		}
@@ -124,7 +124,7 @@ export function parsePromptMd(content: string, promptPath: string): CoreParsedTa
 	const ctxMatch = text.match(/##\s+Context to Read First\s*\n+([\s\S]*?)(?=\n##\s|$)/);
 	if (ctxMatch) {
 		const pathRegex = /`([^\s`]+\.(?:md|yaml|json|go|ts|js))`/g;
-		let pm;
+		let pm: RegExpExecArray | null;
 		while ((pm = pathRegex.exec(ctxMatch[1])) !== null) contextDocs.push(pm[1]);
 	}
 
