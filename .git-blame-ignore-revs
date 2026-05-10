@@ -1,0 +1,22 @@
+# .git-blame-ignore-revs
+#
+# This file lists commits that should be ignored by `git blame` so the
+# history doesn't bottom out on bulk reformatting passes. Each entry is
+# the full 40-character SHA of a commit whose changes are purely
+# mechanical (e.g., a one-shot formatter migration).
+#
+# To opt in once per developer:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Without that config, `git blame` still works — it just shows the format
+# commit as the author of every line it touched, instead of the underlying
+# author. The config is recommended, not required.
+#
+# See `docs/maintainers/development-setup.md` for setup instructions.
+
+# TP-193: Code-quality formatter adoption — single-pass `biome format
+# --write .` across the entire taskplane codebase. Applies the rules
+# locked in `biome.json` (tab indent, double quotes, trailing commas,
+# semicolons, lineWidth 100, lf endings, arrow parens). 161 files
+# touched; no logic changes.
+f1d4533985e4853733d8f571920af8e2ac4a6cee
