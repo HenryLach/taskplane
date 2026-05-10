@@ -305,9 +305,14 @@ describe("9.x: Merge host V2 migration (TP-108)", () => {
 	});
 
 	it("9.5: mergeWave routes spawn to V2 when backend is v2", () => {
-		// Both retry and first-attempt paths must have V2 routing
+		// Both retry and first-attempt paths must have V2 routing.
+		// TP-193 fold: bumped slice window 16000 → 24000. The original 16000 was
+		// tight against the post-format-pass `merge.ts` length; the second
+		// `spawnMergeAgentV2(` call landed at ~offset 15999 in the merged state,
+		// putting its opening paren just outside the window. 24000 leaves
+		// comfortable headroom for future formatter-induced growth.
 		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
-		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
+		const block = mergeSrc.slice(fnIdx, fnIdx + 24000);
 		const v2SpawnCount = (block.match(/spawnMergeAgentV2\(/g) || []).length;
 		expect(v2SpawnCount).toBeGreaterThanOrEqual(2); // first attempt + retry
 	});
@@ -418,8 +423,11 @@ describe("11.x: Merge V2 liveness + abort correctness", () => {
 	});
 
 	it("11.6: merge path has no TMUX health-monitor registration", () => {
+		// TP-193 fold: bumped slice window 16000 → 24000 (same rationale as 9.5
+		// above — the post-format-pass mergeWave function is ~16k chars and a
+		// 16000 slice is tight against future growth).
 		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
-		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
+		const block = mergeSrc.slice(fnIdx, fnIdx + 24000);
 		expect(block).not.toContain("addSession");
 	});
 
