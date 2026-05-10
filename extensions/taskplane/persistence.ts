@@ -1503,7 +1503,11 @@ export function serializeBatchState(
 	// Extra fields are placed at the end of the object (after known schema fields)
 	// and will not overwrite any known field.
 	if (state._extraFields) {
-		const output = persisted as Record<string, unknown>;
+		// TP-195: 2-step `as unknown as` widening. PersistedBatchState is
+		// structurally a string-keyed record at runtime; the cast lets us
+		// add unknown extra fields for serialization roundtrip fidelity
+		// without TypeScript requiring sufficient type overlap.
+		const output = persisted as unknown as Record<string, unknown>;
 		for (const [key, value] of Object.entries(state._extraFields)) {
 			if (!(key in output)) {
 				output[key] = value;
@@ -2328,8 +2332,19 @@ export function loadBatchMetaRuntimeArtifact(
  *
  * @since TP-187 (#539)
  */
+// TP-195: `error?: undefined` on the success branch makes this a well-formed
+// discriminated union under `strict: false`. Without it, `if (!result.ok)`
+// does not narrow `error` because non-strict narrowing requires every
+// member of the union to share the discriminating fields. Runtime semantics
+// unchanged — the success branch never carries an error.
 export type ReconstructResult =
-	| { ok: true; state: PersistedBatchState; batchId: string; selectionNote: string }
+	| {
+			ok: true;
+			state: PersistedBatchState;
+			batchId: string;
+			selectionNote: string;
+			error?: undefined;
+	  }
 	| { ok: false; error: string };
 
 /**
@@ -2511,9 +2526,12 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 		for (const taskId of knownTaskIds) {
 			const m = manifestByTaskId.get(taskId);
 			const lane = m ? laneMap.get(m.laneNumber) : undefined;
+			// TP-195: dropped `taskName: taskId` — not on `PersistedTaskRecord`
+			// schema; no consumer reads `.taskName` from persisted records
+			// (only from `ParsedTask`). Was being added via untyped property
+			// bag cast that the Step 0 typecheck inventory flagged.
 			const taskRecord: PersistedTaskRecord = {
 				taskId,
-				taskName: taskId,
 				taskFolder: m?.packet?.taskFolder ?? "",
 				status: "pending",
 				sessionName: m?.agentId ?? "",
@@ -2524,10 +2542,13 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 				doneFileFound: false,
 			};
 			if (m?.repoId) taskRecord.repoId = m.repoId;
-			if (m?.packet?.packetRepoId)
-				(taskRecord as Record<string, unknown>).packetRepoId = m.packet.packetRepoId;
-			if (m?.packet?.packetTaskPath)
-				(taskRecord as Record<string, unknown>).packetTaskPath = m.packet.packetTaskPath;
+			// TP-195: dropped dead reads of `m.packet.packetRepoId` /
+			// `.packetTaskPath`. `m.packet` is `PacketPaths` which has only
+			// `promptPath`/`statusPath`/`donePath`/`reviewsDir`/`taskFolder`
+			// — the `packetRepoId`/`packetTaskPath` fields exist on
+			// `PersistedTaskRecord` and `ParsedTask`, not on `PacketPaths`,
+			// so these reads always returned undefined and the if-branches
+			// never fired. Removed under the no-behavior-change guarantee.
 			tasks.push(taskRecord);
 		}
 

@@ -681,6 +681,7 @@ function makeWorkspaceConfig(
 		routing: {
 			tasksRoot: "/workspace/tasks",
 			defaultRepo,
+			taskPacketRepo: defaultRepo,
 		},
 		configPath: "/workspace/.pi/taskplane-workspace.yaml",
 	};
@@ -1088,6 +1089,7 @@ describe("13.x: TASK_REPO_UNRESOLVED when all sources are undefined", () => {
 			routing: {
 				tasksRoot: "/workspace/tasks",
 				defaultRepo: "", // empty default
+				taskPacketRepo: "",
 			},
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
@@ -1277,7 +1279,7 @@ describe("16.x: Routing errors appear as fatal errors in formatted output", () =
 		const workspaceConfig: WorkspaceConfig = {
 			mode: "workspace",
 			repos: repoMap,
-			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" },
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "", taskPacketRepo: "" },
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 		const taskAreas: Record<string, TaskArea> = {
@@ -1625,7 +1627,7 @@ Repo: nonexistent
 		const workspaceConfig: WorkspaceConfig = {
 			mode: "workspace",
 			repos: repoMap,
-			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" }, // empty default
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "", taskPacketRepo: "" }, // empty default
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 
@@ -1902,6 +1904,7 @@ describe("17.x: Actionable routing error guidance", () => {
 			routing: {
 				tasksRoot: "/workspace/tasks",
 				defaultRepo: "", // empty = unresolvable
+				taskPacketRepo: "",
 			},
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};

@@ -54,7 +54,12 @@ import {
 	computeResumePoint,
 	reconstructAllocatedLanes,
 } from "../taskplane/resume.ts";
-import { freshOrchBatchState, BATCH_STATE_SCHEMA_VERSION } from "../taskplane/types.ts";
+import {
+	freshOrchBatchState,
+	BATCH_STATE_SCHEMA_VERSION,
+	defaultResilienceState,
+	defaultBatchDiagnostics,
+} from "../taskplane/types.ts";
 import type {
 	AllocatedLane,
 	AllocatedTask,
@@ -214,7 +219,11 @@ describe("8.1: Repo-mode state — mode=repo, no repo fields", () => {
 		try {
 			const validated = validatePersistedState(data);
 			expect(validated.lanes[0].laneSessionId).toBe("orch-legacy-lane-1");
-			expect((validated.lanes[0] as Record<string, unknown>).tmuxSessionName).toBeUndefined();
+			// TP-195: 2-step `as unknown as` widening for the legitimate
+			// property-bag access (verifying a legacy field was stripped).
+			expect(
+				(validated.lanes[0] as unknown as Record<string, unknown>).tmuxSessionName,
+			).toBeUndefined();
 			expect(errors.some((line) => line.includes("lanes[].tmuxSessionName"))).toBe(true);
 		} finally {
 			console.error = originalConsoleError;
@@ -605,6 +614,9 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			blockedTasks: 0,
 			blockedTaskIds: [],
 			lastError: null,
+			resilience: defaultResilienceState(),
+			diagnostics: defaultBatchDiagnostics(),
+			segments: [],
 			errors: [],
 		};
 
@@ -658,6 +670,9 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			blockedTasks: 0,
 			blockedTaskIds: [],
 			lastError: null,
+			resilience: defaultResilienceState(),
+			diagnostics: defaultBatchDiagnostics(),
+			segments: [],
 			errors: [],
 		};
 
@@ -718,6 +733,9 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			blockedTasks: 0,
 			blockedTaskIds: [],
 			lastError: null,
+			resilience: defaultResilienceState(),
+			diagnostics: defaultBatchDiagnostics(),
+			segments: [],
 			errors: [],
 		};
 
@@ -845,8 +863,8 @@ describe("8.7: Repo-mode waves — groupTasksByRepo returns single default group
 		pending.set("TP-621", monoTask("TP-621", { dependencies: ["TP-620"] }));
 		pending.set("TP-622", monoTask("TP-622", { dependencies: ["TP-621"] }));
 
-		const graph = buildDependencyGraph(pending);
 		const completed = new Set<string>();
+		const graph = buildDependencyGraph(pending, completed);
 		const result = computeWaves(graph, completed, pending);
 
 		expect(result.errors).toHaveLength(0);
@@ -862,8 +880,8 @@ describe("8.7: Repo-mode waves — groupTasksByRepo returns single default group
 		pending.set("TP-631", monoTask("TP-631"));
 		pending.set("TP-632", monoTask("TP-632", { dependencies: ["TP-630", "TP-631"] }));
 
-		const graph = buildDependencyGraph(pending);
 		const completed = new Set<string>();
+		const graph = buildDependencyGraph(pending, completed);
 		const result = computeWaves(graph, completed, pending);
 
 		expect(result.errors).toHaveLength(0);

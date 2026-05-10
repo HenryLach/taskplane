@@ -303,7 +303,14 @@ Check CI dashboard at https://ci.example.com before approving merges.
 		const batchState = makeTestBatchState();
 		const config = {
 			...DEFAULT_ORCHESTRATOR_CONFIG,
-			orchestrator: { ...DEFAULT_ORCHESTRATOR_CONFIG.orchestrator, integration: "manual" },
+			// TP-195: `as const` on the literal narrows it to the union
+			// member required by `OrchestratorConfig.orchestrator.integration`
+			// ("manual" | "supervised" | "auto"); plain string broadened to
+			// `string` rejected the assignment.
+			orchestrator: {
+				...DEFAULT_ORCHESTRATOR_CONFIG.orchestrator,
+				integration: "manual" as const,
+			},
 		};
 		const supervisorConfig = { model: "", autonomy: "supervised" as const };
 
@@ -317,7 +324,11 @@ Check CI dashboard at https://ci.example.com before approving merges.
 		const batchState = makeTestBatchState();
 		const config = {
 			...DEFAULT_ORCHESTRATOR_CONFIG,
-			orchestrator: { ...DEFAULT_ORCHESTRATOR_CONFIG.orchestrator, integration: "supervised" },
+			// TP-195: see 4.4 rationale.
+			orchestrator: {
+				...DEFAULT_ORCHESTRATOR_CONFIG.orchestrator,
+				integration: "supervised" as const,
+			},
 		};
 		const supervisorConfig = { model: "", autonomy: "supervised" as const };
 

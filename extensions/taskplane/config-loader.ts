@@ -43,6 +43,7 @@ import type {
 	OrchestratorSection,
 	WorkspaceSectionConfig,
 	GlobalPreferences,
+	DeepPartial,
 } from "./config-schema.ts";
 
 // ── Error Types ──────────────────────────────────────────────────────
@@ -471,7 +472,7 @@ function resolveConfigFilePath(configRoot: string, filename: string): string {
  * Returns the parsed config or null if the file doesn't exist.
  * Throws ConfigLoadError for malformed JSON or unsupported versions.
  */
-function loadJsonConfig(configRoot: string): Partial<TaskplaneConfig> | null {
+function loadJsonConfig(configRoot: string): DeepPartial<TaskplaneConfig> | null {
 	const jsonPath = resolveConfigFilePath(configRoot, PROJECT_CONFIG_FILENAME);
 	if (!existsSync(jsonPath)) return null;
 
@@ -509,7 +510,7 @@ function loadJsonConfig(configRoot: string): Partial<TaskplaneConfig> | null {
 		);
 	}
 
-	const overrides: Partial<TaskplaneConfig> = {};
+	const overrides: DeepPartial<TaskplaneConfig> = {};
 	if (
 		parsed.taskRunner &&
 		typeof parsed.taskRunner === "object" &&
@@ -882,11 +883,13 @@ export function applyGlobalPreferences(
 	});
 
 	// spawnMode: enum — apply if defined (not a string-empty check)
+	// TP-195: dropped dead `prefs.spawnMode === "tmux"` migration check.
+	// `prefs.spawnMode` is typed as `"subprocess"` only (see
+	// `GlobalPreferences.spawnMode` in config-schema.ts). Raw input is
+	// migrated upstream at line ~169 BEFORE assignment to the typed
+	// `prefs` object, so by this point the value is already "subprocess"
+	// or undefined — the comparison can never be true. Behavior-neutral.
 	if (prefs.spawnMode !== undefined) {
-		if (prefs.spawnMode === "tmux") {
-			prefs.spawnMode = "subprocess";
-			console.error(`[taskplane] Auto-migrated runtime preference: spawnMode "tmux" → "subprocess"`);
-		}
 		config.orchestrator.orchestrator.spawnMode = prefs.spawnMode;
 	}
 
@@ -982,7 +985,10 @@ export function resolveConfigRoot(cwd: string, pointerConfigRoot?: string): stri
 	return cwd;
 }
 
-function mergeProjectOverrides(config: TaskplaneConfig, overrides: Partial<TaskplaneConfig>): void {
+function mergeProjectOverrides(
+	config: TaskplaneConfig,
+	overrides: DeepPartial<TaskplaneConfig>,
+): void {
 	if (overrides.taskRunner) {
 		deepMerge(config.taskRunner as Record<string, any>, overrides.taskRunner as Record<string, any>);
 	}
@@ -1000,11 +1006,25 @@ function mergeProjectOverrides(config: TaskplaneConfig, overrides: Partial<Taskp
 	}
 }
 
-function migrateProjectOverrides(overrides: Partial<TaskplaneConfig>, configRoot: string): boolean {
+// TP-195: switched parameter to `DeepPartial<TaskplaneConfig>` to match the
+// nested-section partial shape produced by `loadProjectOverrides` (the YAML
+// loaders return `Partial<TaskRunnerSection>` etc., which `Partial<TaskplaneConfig>`
+// rejects — it makes top-level fields optional but inner sections stay full).
+function migrateProjectOverrides(
+	overrides: DeepPartial<TaskplaneConfig>,
+	configRoot: string,
+): boolean {
 	if (_projectMigrationDone) return false;
 
 	let migrated = false;
-	const orchestratorCore = overrides.orchestrator?.orchestrator as
+	// TP-195: 2-step `as unknown as` widening. The structurally-typed
+	// `OrchestratorCoreConfig` is being treated as a property bag for
+	// migration purposes (legacy `tmuxPrefix` -> `sessionPrefix`,
+	// `spawnMode "tmux"` -> `"subprocess"`). Both source and target
+	// types are object-shaped at runtime; the cast is structurally
+	// legitimate, just outside the narrow set of conversions TS allows
+	// in a single step.
+	const orchestratorCore = overrides.orchestrator?.orchestrator as unknown as
 		| Record<string, unknown>
 		| undefined;
 	if (orchestratorCore && hasOwn(orchestratorCore, "tmuxPrefix")) {
@@ -1025,7 +1045,11 @@ function migrateProjectOverrides(overrides: Partial<TaskplaneConfig>, configRoot
 		migrated = true;
 	}
 
-	const workerConfig = overrides.taskRunner?.worker as Record<string, unknown> | undefined;
+	// TP-195: 2-step `as unknown as` widening (same rationale as the
+	// orchestratorCore cast above).
+	const workerConfig = overrides.taskRunner?.worker as unknown as
+		| Record<string, unknown>
+		| undefined;
 	if (workerConfig?.spawnMode === "tmux") {
 		(workerConfig as any).spawnMode = "subprocess";
 		console.error(`[taskplane] Auto-migrated: taskRunner.worker.spawnMode "tmux" → "subprocess"`);
@@ -1067,7 +1091,12 @@ function migrateProjectOverrides(overrides: Partial<TaskplaneConfig>, configRoot
 	return migrated;
 }
 
-export function loadProjectOverrides(configRoot: string): Partial<TaskplaneConfig> {
+// TP-195: return type widened from `Partial<TaskplaneConfig>` to
+// `DeepPartial<TaskplaneConfig>` so the nested `Partial<TaskRunnerSection>` /
+// `Partial<OrchestratorSection>` returned by the YAML loaders are
+// assignable. `Partial<TaskplaneConfig>` only relaxes top-level optionality
+// while keeping inner sections fully required.
+export function loadProjectOverrides(configRoot: string): DeepPartial<TaskplaneConfig> {
 	const jsonOverrides = loadJsonConfig(configRoot);
 	if (jsonOverrides !== null) {
 		return jsonOverrides;
@@ -1077,7 +1106,7 @@ export function loadProjectOverrides(configRoot: string): Partial<TaskplaneConfi
 	const orchestrator = loadOrchestratorYaml(configRoot);
 	const workspace = loadWorkspaceYaml(configRoot);
 
-	const overrides: Partial<TaskplaneConfig> = {};
+	const overrides: DeepPartial<TaskplaneConfig> = {};
 	if (Object.keys(taskRunner).length > 0) overrides.taskRunner = taskRunner;
 	if (Object.keys(orchestrator).length > 0) overrides.orchestrator = orchestrator;
 	if (workspace) overrides.workspace = workspace;

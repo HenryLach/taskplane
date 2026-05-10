@@ -798,7 +798,7 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 				["api", { id: "api", path: "/repos/api" }],
 				["frontend", { id: "frontend", path: "/repos/frontend" }],
 			]),
-			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "docs" },
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "docs", taskPacketRepo: "docs" },
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 

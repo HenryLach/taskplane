@@ -376,7 +376,7 @@ Repo: api
 		);
 
 		const taskAreas: Record<string, TaskArea> = {
-			tasks: { path: areaDir, prefix: "TP" },
+			tasks: { path: areaDir, prefix: "TP", context: "" },
 		};
 
 		// Run discovery in repo mode (no workspace config)
@@ -470,7 +470,7 @@ Repo: api
 		);
 
 		const taskAreas: Record<string, TaskArea> = {
-			tasks: { path: areaDir, prefix: "TP" },
+			tasks: { path: areaDir, prefix: "TP", context: "" },
 		};
 		const workspaceConfig = makeWorkspaceConfig({
 			api: { path: "./api" },
@@ -519,7 +519,7 @@ Repo: api
 		);
 
 		const taskAreas: Record<string, TaskArea> = {
-			tasks: { path: areaDir, prefix: "TP" },
+			tasks: { path: areaDir, prefix: "TP", context: "" },
 		};
 		const workspaceConfig = makeWorkspaceConfig({
 			api: { path: "./api" },
@@ -566,7 +566,7 @@ describe("35.x: Repo mode placeholder resolution", () => {
 		);
 
 		const taskAreas: Record<string, TaskArea> = {
-			tasks: { path: areaDir, prefix: "TP" },
+			tasks: { path: areaDir, prefix: "TP", context: "" },
 		};
 
 		// No workspace config = repo mode

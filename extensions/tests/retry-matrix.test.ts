@@ -99,7 +99,9 @@ function makeMockCallbacks(options: { performMergeResults?: MergeWaveResult[] } 
 		log: (message) => logs.push(message),
 		notify: (message, level) => notifications.push({ message, level }),
 		updateMergeResult: () => {},
-		sleep: (ms) => sleepCalls.push(ms),
+		sleep: (ms) => {
+			sleepCalls.push(ms);
+		},
 	};
 
 	return {
@@ -137,9 +139,11 @@ describe("1.x — classifyMergeFailure", () => {
 					result: {
 						status: "CONFLICT_UNRESOLVED",
 						source_branch: "task/lane-1",
+
+						target_branch: "main",
 						merge_commit: "",
-						conflicts: [{ file: "src/a.ts", type: "content" }],
-						verification: { passed: false, commands: [], output: "" },
+						conflicts: [{ file: "src/a.ts", type: "content", resolved: false }],
+						verification: { ran: true, passed: false, output: "" },
 					},
 				}),
 			],
@@ -298,9 +302,11 @@ describe("3.x — Non-retriable class: merge_conflict_unresolved", () => {
 					result: {
 						status: "CONFLICT_UNRESOLVED",
 						source_branch: "task/lane-1",
+
+						target_branch: "main",
 						merge_commit: "",
-						conflicts: [{ file: "src/a.ts", type: "content" }],
-						verification: { passed: false, commands: [], output: "" },
+						conflicts: [{ file: "src/a.ts", type: "content", resolved: false }],
+						verification: { ran: true, passed: false, output: "" },
 					},
 				}),
 			],
@@ -324,9 +330,11 @@ describe("3.x — Non-retriable class: merge_conflict_unresolved", () => {
 					result: {
 						status: "CONFLICT_UNRESOLVED",
 						source_branch: "task/lane-1",
+
+						target_branch: "main",
 						merge_commit: "",
-						conflicts: [{ file: "src/a.ts", type: "content" }],
-						verification: { passed: false, commands: [], output: "" },
+						conflicts: [{ file: "src/a.ts", type: "content", resolved: false }],
+						verification: { ran: true, passed: false, output: "" },
 					},
 				}),
 			],
@@ -834,9 +842,11 @@ describe("9.x — Workspace-scoped counters (repoId in scope key)", () => {
 					result: {
 						status: "BUILD_FAILURE",
 						source_branch: "task/lane-1",
+
+						target_branch: "main",
 						merge_commit: "",
 						conflicts: [],
-						verification: { passed: false, commands: [], output: "" },
+						verification: { ran: true, passed: false, output: "" },
 					},
 				}),
 			],
