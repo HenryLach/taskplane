@@ -1,11 +1,11 @@
 # TP-197: Dashboard segment-level progress indicators — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Plan the API + visual design
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S-M
 
 > **Hydration:** Worker expands Step 2/3 with concrete render-site checkboxes
@@ -17,14 +17,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (fresh from v0.30.0)
-- [ ] All four gates pass on baseline
-- [ ] Issue #464 read in full
-- [ ] Tier 3 context files read (dashboard/public/app.js, style.css, server.cjs, types.ts segment shapes)
-- [ ] API verification: does `dashboard/server.cjs` already surface segment data, or does the worker need to extend it?
-- [ ] Real-world test case identified (recent multi-segment batch in `.pi/runtime/<batchId>/`)
+- [x] On `main` (fresh from v0.30.0) — base 6b5d9de from `main`, segment-followups feature branch merged via #576
+- [x] All four gates pass on baseline — typecheck 0, lint 0, format:check 0, tests 3627/3628 pass (1 skipped)
+- [x] Issue #464 read in full
+- [x] Tier 3 context files read (dashboard/public/app.js, style.css, server.cjs, types.ts segment shapes)
+- [x] API verification: `dashboard/server.cjs` line 1257 already exposes `segments: state.segments || []` to the frontend. Each segment record carries `{ segmentId, taskId, repoId, status, laneId, ... }` per `PersistedSegmentRecord` (types.ts:2885). No API extension needed; rendering work is purely client-side in `app.js` + `style.css`.
+- [x] Real-world test case identified — current `.pi/batch-state.json` (this very batch) has segments[] populated but only single-segment per task. For visual validation we will construct a synthetic batch-state fixture with multi-segment tasks (taskA has 3 segments across shared-libs/web-client/admin) and load it via the dashboard's static server. Manual visual verification will also exercise the same code paths against any future real polyrepo batch via the tp-test-workspace.
 
 ---
 
@@ -96,6 +96,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| **API already complete** — `dashboard/server.cjs` (line 1257) exposes `segments: state.segments \|\| []` with full `PersistedSegmentRecord` shape (`{segmentId, taskId, repoId, status, laneId, sessionName, worktreePath, branch, startedAt, endedAt, retries, dependsOnSegmentIds, exitDiagnostic?}`). Tasks already carry `segmentIds: string[]`. No server-side work required — Step 2 "data plumbing" reduces to a no-op aside from validating existing shape. | Frontend-only change; Step 2 noted as verification | `dashboard/server.cjs:1257`, `extensions/taskplane/types.ts:2885` |
+| **Existing partial rendering** — `parseSegmentId`, `segmentProgressText`, `buildSegmentStatusMap`, `taskSegmentProgress`, `laneActiveSegmentInfo` already exist (app.js lines 323–405). Lane header shows a single “Segment N/T: repo” pill (`.lane-segment`, line 758); task row shows the same per-task (`.task-segment-progress`, line 864). **Missing: per-segment status indicators** — today’s render shows only the *current* segment, not the row of ✅/⏳/⬚ status across ALL segments. | This is the visibility gap TP-197 closes | `dashboard/public/app.js:323-405,758,864` |
+| **Progress-bar plumbing already segment-scoped (TP-174)** — `v2Progress` (the runtime V2 lane snapshot) already provides segment-scoped checked/total, used in app.js:818-829 (`useV2Progress`). The bar today reflects current-segment progress when V2 snapshot is fresh. **Missing: two-tone visual** showing completed segments + current-segment progress portion. Optional enhancement per Step 1 plan. | Address as a visual layer over existing data | `dashboard/public/app.js:805-829` |
 
 ---
 
@@ -104,6 +107,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-10 23:34 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-10 23:34 | Step 0 started | Preflight |
+| 2026-05-10 | Step 0 complete | API already complete; rendering work is purely client-side |
+| 2026-05-10 | Step 1 started | Plan API + visual design |
 
 ---
 
