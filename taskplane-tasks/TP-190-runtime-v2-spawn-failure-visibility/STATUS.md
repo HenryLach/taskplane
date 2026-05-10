@@ -1,10 +1,10 @@
 # TP-190: Runtime V2 spawn-failure visibility — Status
 
-**Current Step:** Step 5: Add behavioral regression test
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
@@ -81,7 +81,7 @@
 ---
 
 ### Step 5: Add behavioral regression test
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Final code-review checkpoint after this step.
 
@@ -95,7 +95,7 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
@@ -107,7 +107,7 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] CHANGELOG entry added under [Unreleased] → Fixed: `**Runtime V2 spawn failures now visible (TP-190, #561)**` covering all four fix parts + validation summary (33 new tests, 3620 pass).
 - [x] Discoveries logged below — see Discoveries section.
@@ -123,6 +123,9 @@
 | R002 | code | 2 | APPROVE | .reviews/R002-code-step2.md |
 | R003 | code | 3 | APPROVE | .reviews/R003-code-step3.md |
 | R004 | code | 4 | APPROVE | .reviews/R004-code-step4.md |
+| R005 | code | 5 | REVISE  | .reviews/R005-code-step5.md |
+| R006 | code | 5 | REVISE  | .reviews/R006-code-step5.md |
+| R007 | code | 5 | APPROVE | .reviews/R007-code-step5.md |
 
 ---
 
@@ -159,6 +162,7 @@
 | 2026-05-10 | Escalation sent | Asked supervisor for guidance; documented why executeOrchBatch black-box test has no precedent in codebase |
 | 2026-05-10 | Step 6 verified | Full fast suite 3620/1/0; CLI smoke clean; no circular imports |
 | 2026-05-10 | Step 7 — CHANGELOG | Added [Unreleased] Fixed entry for TP-190 |
+| 2026-05-10 | R007 code APPROVE | Step 5 cleared on third review (§6.1b satisfies PROMPT verbatim assertions); task complete |
 
 ---
 
@@ -196,3 +200,4 @@ bring them back into sync (or at least surface the discrepancy as a failure).
 | 2026-05-10 03:55 | Review R004 | code Step 4: APPROVE |
 | 2026-05-10 04:05 | Review R005 | code Step 5: REVISE |
 | 2026-05-10 04:12 | Review R006 | code Step 5: REVISE |
+| 2026-05-10 04:24 | Review R007 | code Step 5: APPROVE |
