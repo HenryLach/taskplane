@@ -8,9 +8,10 @@ import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter 
 import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, RuntimeLaneSnapshot, SupervisorAlertCallback } from "./types.ts";
 import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
-import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed, buildRegistrySnapshot, writeRegistrySnapshot } from "./process-registry.ts";
+import type { TaskExitDiagnostic } from "./diagnostics.ts";
+import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed, buildRegistrySnapshot, writeRegistrySnapshot, writeLaneSnapshot } from "./process-registry.ts";
 import { allocateLanes } from "./waves.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { runGit, runGitWithEnv } from "./git.ts";
@@ -829,18 +830,31 @@ export async function resolveTaskMonitorState(
 			// Assume alive initially, but if stale for >30s consult the registry
 			// to avoid indefinite false "running" if the lane-runner died.
 			const staleMs = snap?.updatedAt ? (now - snap.updatedAt) : 0;
+			const trackerAgeMs = now - tracker.firstObservedAt;
 			if (staleMs > 30_000) {
 				// Snapshot hasn't been updated for 30s+ — check registry as fallback.
 				// But also check if the tracker just started (firstObservedAt within
 				// last 60s) — wave transitions can leave stale snapshots from the
 				// prior wave/task while the new worker is still spawning.
-				const trackerAgeMs = now - tracker.firstObservedAt;
 				if (trackerAgeMs < 60_000) {
 					// New task, stale snapshot — give the worker startup grace period
 					sessionAlive = true;
 				} else {
 					sessionAlive = isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber);
 				}
+			} else if (snap == null && trackerAgeMs >= 60_000) {
+				// TP-190 (#561 sage post-mortem): when NO snapshot exists at all
+				// (not even stale) and the tracker has been observing this task
+				// for >= 60s, fall back to the registry liveness check. Without
+				// this branch, a snapshot-write failure in the spawn-failure catch
+				// (disk full, permission error, transient I/O hiccup) leaves
+				// `snap == null` AND `staleMs == 0`, which previously hit the
+				// unconditional-alive default below — reintroducing the same
+				// monitor hang the spawn-failure catch was supposed to fix.
+				// 60s tracker-age threshold matches the existing startup-grace
+				// boundary so we don't false-fail a slow-starting worker that
+				// hasn't yet written its first snapshot.
+				sessionAlive = isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber);
 			} else {
 				sessionAlive = true;
 			}
@@ -2722,17 +2736,90 @@ export async function executeLaneV2(
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
 			execLog(laneId, task.taskId, `Runtime V2 execution error: ${errMsg}`);
+
+			// TP-190 (#561): Spawn-stage failures (Pi CLI not findable, worktree
+			// provisioning failure, etc.) reach this catch synchronously —
+			// `spawnAgent()` calls `resolvePiCliPath()` and other resolvers that
+			// throw before any process is registered. Tag the outcome with the
+			// `spawn_failure` ExitClassification so:
+			//   1. The retry classifier (TIER0_RETRYABLE_CLASSIFICATIONS) excludes
+			//      it deterministically — spawn errors are never transient.
+			//   2. The supervisor `task-failure` IPC alert can carry
+			//      `context.exitCategory = "spawn_failure"` so the playbook can
+			//      escalate immediately rather than retrying.
+			//   3. The engine's post-wave logic can transition `phase` to
+			//      `"failed"` when every lane in a wave spawn-failed.
+			const spawnExitDiagnostic: TaskExitDiagnostic = {
+				classification: "spawn_failure",
+				exitCode: null,
+				errorMessage: errMsg,
+				tokensUsed: null,
+				contextPct: null,
+				partialProgressCommits: 0,
+				partialProgressBranch: null,
+				durationSec: 0,
+				lastKnownStep: null,
+				lastKnownCheckbox: null,
+				repoId: lane.repoId ?? "default",
+			};
+			const workerAgentId = buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker");
 			outcomes.push({
 				taskId: task.taskId,
 				status: "failed",
 				segmentId: taskSegmentId,
 				startTime: Date.now(),
 				endTime: Date.now(),
-				exitReason: `Runtime V2 execution error: ${errMsg}`,
-				sessionName: buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"),
+				exitReason: `spawn failure: ${errMsg}`,
+				sessionName: workerAgentId,
 				doneFileFound: false,
 				laneNumber: lane.laneNumber,
+				exitDiagnostic: spawnExitDiagnostic,
 			});
+
+			// TP-190 (#561): Write a synthetic terminal lane snapshot so the
+			// monitor (`monitorLanes` → `resolveTaskMonitorState`) reads
+			// `snap.taskId === taskId` AND `snap.status === "failed"`, which sets
+			// `sessionAlive = false` and triggers Priority 3 ("Session exited
+			// without .DONE → failed"). Without this, the monitor's
+			// `snap == null` startup-grace branch keeps `sessionAlive = true`
+			// indefinitely and `executeWave` blocks forever on `await
+			// monitorPromise`. Use the full `RuntimeLaneSnapshot` shape so
+			// dashboard consumers stay schema-consistent.
+			try {
+				const spawnFailureSnapshot: RuntimeLaneSnapshot = {
+					batchId,
+					laneNumber: lane.laneNumber,
+					laneId: `lane-${lane.laneNumber}`,
+					repoId: lane.repoId ?? "default",
+					taskId: task.taskId,
+					segmentId: taskSegmentId,
+					status: "failed",
+					worker: {
+						agentId: workerAgentId,
+						status: "crashed",
+						elapsedMs: 0,
+						toolCalls: 0,
+						contextPct: 0,
+						costUsd: 0,
+						lastTool: "",
+						inputTokens: 0,
+						outputTokens: 0,
+						cacheReadTokens: 0,
+						cacheWriteTokens: 0,
+					},
+					reviewer: null,
+					progress: null,
+					updatedAt: Date.now(),
+				};
+				writeLaneSnapshot(stateRoot, batchId, lane.laneNumber, spawnFailureSnapshot as unknown as Record<string, unknown>);
+			} catch (snapErr) {
+				// Best effort — if the snapshot write fails, the monitor's
+				// 30s-staleness fallback (snap with old updatedAt) eventually
+				// kicks in via the registry liveness check. Log so this is
+				// visible in operator diagnostics, but do NOT throw.
+				execLog(laneId, task.taskId, `spawn-failure snapshot write failed (non-fatal): ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`);
+			}
+
 			shouldSkipRemaining = true;
 		}
 	}

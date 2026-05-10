@@ -52,7 +52,14 @@ export interface SessionTokenCounts {
  * | `session_vanished`   | Session disappeared without exit summary             |
  * | `stall_timeout`      | No STATUS.md progress for stall_timeout minutes      |
  * | `user_killed`        | User manually killed the session (e.g., forced process kill) |
+ * | `spawn_failure`      | Worker process never spawned (e.g., Pi CLI not findable, worktree provisioning) |
  * | `unknown`            | Could not determine cause                            |
+ *
+ * Note: `spawn_failure` (TP-190, #561) is set BEFORE any agent process exists —
+ * it is produced synchronously when `spawnAgent()` throws (resolvePiCliPath
+ * miss, file-system error, etc.). It is intentionally NOT in
+ * `TIER0_RETRYABLE_CLASSIFICATIONS` because spawn-stage failures are never
+ * transient; retrying without operator intervention only burns budget.
  */
 export type ExitClassification =
 	| "completed"
@@ -64,6 +71,7 @@ export type ExitClassification =
 	| "session_vanished"
 	| "stall_timeout"
 	| "user_killed"
+	| "spawn_failure"
 	| "unknown";
 
 /**
@@ -79,6 +87,7 @@ export const EXIT_CLASSIFICATIONS: readonly ExitClassification[] = [
 	"session_vanished",
 	"stall_timeout",
 	"user_killed",
+	"spawn_failure",
 	"unknown",
 ] as const;
 

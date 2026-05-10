@@ -1810,8 +1810,13 @@ export type Tier0RecoveryPattern =
  *
  * These are transient failures where re-running the task has a reasonable
  * chance of success. Classifications NOT in this set (e.g., user_killed,
- * stall_timeout, context_overflow) indicate persistent problems that
- * won't be fixed by retrying.
+ * stall_timeout, context_overflow, spawn_failure) indicate persistent
+ * problems that won't be fixed by retrying.
+ *
+ * **TP-190 (#561):** `spawn_failure` is intentionally excluded — spawn-stage
+ * errors (Pi CLI not findable, worktree provisioning failure, branch
+ * collision) are never transient and require operator action. Retrying
+ * silently would just burn the retry budget and delay the alert.
  *
  * @since TP-039
  */
@@ -2132,6 +2137,25 @@ export interface SupervisorAlertContext {
 	waveIndex?: number;
 	/** Exit reason string (for task-failure alerts) */
 	exitReason?: string;
+	/**
+	 * Structured exit category for task-failure alerts.
+	 *
+	 * Mirrors `LaneTaskOutcome.exitDiagnostic.classification` for IPC
+	 * consumption by the supervisor. Optional for backward compatibility
+	 * — absent when the engine produces a task-failure alert without
+	 * structured diagnostic data.
+	 *
+	 * Notable values consumed by the supervisor playbook:
+	 * - `"spawn_failure"` (TP-190, #561): worker process never spawned
+	 *   (Pi CLI not findable, worktree provisioning error, etc.). Never
+	 *   transient — the playbook MUST escalate immediately rather than
+	 *   retry. When the post-wave phase-transition logic detects an
+	 *   all-spawn-failed wave it also flips `batchState.phase` to
+	 *   `"failed"`; that transition is independent of this alert.
+	 *
+	 * @since TP-190 (#561)
+	 */
+	exitCategory?: ExitClassification;
 	/** Segment frontier snapshot for task-failure diagnosis */
 	segmentFrontier?: SupervisorSegmentFrontierSnapshot;
 	/** Agent ID (for agent-message alerts) */
