@@ -751,7 +751,7 @@ By the time PR D (TP-191) ships:
 
 Sage was consulted during spec design (2026-05-10). Key influences:
 
-- **Don't bundle TS strictness with Tier-1.** Sage assessed all-at-once strict in TP-191 as high-risk; spec defers to TP-192.
+- **Don't bundle TS strictness with Tier-1.** Sage assessed all-at-once strict during the gate-flip work as high-risk; spec defers to a post-TP-194 follow-up.
 - **Use dedicated shims, not test mocks** for pi-package module resolution in CI typecheck.
 - **Promote CHANGELOG fragments to Tier-1.5.** Don't bury in Tier-2; high operational pain warrants near-term action.
 - **Reviewer-agent activation requires baseline-green-first.** Otherwise reviewer REVISEs on pre-existing errors. Spec sequences PR B and PR C before PR D's downgrade activation.
