@@ -1,7 +1,7 @@
 # TP-197: Dashboard segment-level progress indicators — Status
 
 **Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-05-10
 **Review Level:** 1
 **Review Counter:** 2
@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Plan the API + visual design
-**Status:** ✅ Complete
+**Status:** ✅ Complete (APPROVE on R002 after R001 REVISE)
 
 > ⚠️ Plan-review checkpoint.
 
@@ -179,12 +179,13 @@ Hydrated implementation breakdown (per APPROVE'd plan):
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] CHANGELOG entry under [Unreleased] → Enhanced
-- [ ] Discoveries logged
-- [ ] Issue-close comment draft for #464
-- [ ] All commits include `TP-197` prefix
+- [x] CHANGELOG entry under [Unreleased] → Enhanced (with backwards-compat note + responsive-CSS rationale + no-API-change confirmation)
+- [x] User guide updated: `docs/tutorials/use-the-dashboard.md` → Workspace mode (multi-repo) section now documents the per-segment pill row
+- [x] Discoveries logged (see table below)
+- [x] Issue-close comment draft for #464 (see Notes section below)
+- [x] All commits include `TP-197` prefix
 
 ---
 
@@ -203,6 +204,7 @@ Hydrated implementation breakdown (per APPROVE'd plan):
 |-----------|-------------|----------|
 | **API already complete** — `dashboard/server.cjs` (line 1257) exposes `segments: state.segments \|\| []` with full `PersistedSegmentRecord` shape (`{segmentId, taskId, repoId, status, laneId, sessionName, worktreePath, branch, startedAt, endedAt, retries, dependsOnSegmentIds, exitDiagnostic?}`). Tasks already carry `segmentIds: string[]`. No server-side work required — Step 2 "data plumbing" reduces to a no-op aside from validating existing shape. | Frontend-only change; Step 2 noted as verification | `dashboard/server.cjs:1257`, `extensions/taskplane/types.ts:2885` |
 | **Existing partial rendering** — `parseSegmentId`, `segmentProgressText`, `buildSegmentStatusMap`, `taskSegmentProgress`, `laneActiveSegmentInfo` already exist (app.js lines 323–405). Lane header shows a single “Segment N/T: repo” pill (`.lane-segment`, line 758); task row shows the same per-task (`.task-segment-progress`, line 864). **Missing: per-segment status indicators** — today’s render shows only the *current* segment, not the row of ✅/⏳/⬚ status across ALL segments. | This is the visibility gap TP-197 closes | `dashboard/public/app.js:323-405,758,864` |
+| **Helper-level testability for vanilla-JS dashboard** — the dashboard frontend (`dashboard/public/app.js`) is browser-side vanilla JS with no module exports, traditionally not covered by the node-test suite. This task introduces a working pattern: extract the helper function from the source file by brace-balancing, evaluate in a sandbox with a minimal `escapeHtml` polyfill, and assert against the returned HTML string. This unlocks node-test coverage for any pure-string-returning helper in `app.js`. Pattern: see `extensions/tests/dashboard-segment-pill-row.test.ts`. | Pattern available for reuse | `extensions/tests/dashboard-segment-pill-row.test.ts` |
 | **Responsive-CSS gotcha (R001)** — `.task-step` cell is `display: none` under `@media (max-width: 900px)` (style.css:1240). The original plan to place pills inside `.task-step` would have hidden them on mobile/narrow viewports. Revised plan moves pills to a new grid row 3 spanning cols 3–7, mirroring the `task-title-subtitle` pattern from TP-485, which is unaffected by the 900px media query. | Plan revised; pill row placed in row 3 sub-row | `dashboard/public/style.css:1237-1241` |
 | **Progress-bar plumbing already segment-scoped (TP-174)** — `v2Progress` (the runtime V2 lane snapshot) already provides segment-scoped checked/total, used in app.js:818-829 (`useV2Progress`). The bar today reflects current-segment progress when V2 snapshot is fresh. **Missing: two-tone visual** showing completed segments + current-segment progress portion. Optional enhancement per Step 1 plan. | Address as a visual layer over existing data | `dashboard/public/app.js:805-829` |
 
@@ -220,6 +222,11 @@ Hydrated implementation breakdown (per APPROVE'd plan):
 | 2026-05-10 | R001 returned REVISE | `.task-step` hidden at <=900px; pill placement revised |
 | 2026-05-10 | R002 returned APPROVE | Plan approved; ready for implementation |
 | 2026-05-10 | Step 2 started | Verify segment data plumbing |
+| 2026-05-10 | Step 2 complete | API shape confirmed, no server change |
+| 2026-05-10 | Step 3 implementation | taskSegmentPillRow helper + grid row 3 CSS + 11 unit tests added |
+| 2026-05-10 | Step 4 gates | typecheck 0, lint 0, format:check 0, tests 3638/0/1 (was 3627; +11) |
+| 2026-05-10 | Step 5 docs | CHANGELOG + use-the-dashboard.md updated; issue-close draft prepared |
+| 2026-05-10 | All steps complete | Ready for merge |
 
 ---
 
@@ -230,6 +237,38 @@ Hydrated implementation breakdown (per APPROVE'd plan):
 ---
 
 ## Notes
+
+### Issue-close comment draft for #464
+
+When this PR merges, post the following on https://github.com/HenryLach/taskplane/issues/464:
+
+> Closed by TP-197 (PR #…). The dashboard now renders a per-segment status
+> pill row on each multi-segment task row, with one pill per segment
+> (✅ succeeded / ⏳ running / ⬚ pending / ❌ failed / ⏸ stalled /
+> ↷ skipped) plus the segment’s repo ID. The currently-executing
+> segment is visually emphasized. Non-final segment completion produces a
+> visible ✅ → ⏳ transition even though `.DONE` remains suppressed per
+> TP-145.
+>
+> Backwards-compatibility: single-segment tasks render an empty pill row
+> (auto-collapsed grid sub-row), so non-segmented batches look identical
+> to before. The pill row is placed outside the `.task-step` cell so it
+> stays visible on narrow viewports where `.task-step` is hidden by the
+> existing 900px media query.
+>
+> No API change was required — `batch.segments[]`, `task.segmentIds`,
+> and `runtimeLaneSnapshots[*].segmentId` were already exposed. The
+> progress bar itself is unchanged; TP-174 had already made it
+> segment-scoped via the V2 lane snapshot’s per-segment counts.
+>
+> Tests: 11 new helper-level unit tests in
+> `extensions/tests/dashboard-segment-pill-row.test.ts` cover
+> multi-segment rendering, current-segment emphasis, single-segment
+> fallback, malformed inputs, and XSS-safe escaping. Full suite:
+> 3638 pass / 0 fail / 1 skipped (was 3627 + 11 new). All four CI gates
+> green.
+
+---
 
 **Why this is separate from TP-196:**
 

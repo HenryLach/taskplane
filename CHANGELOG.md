@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhanced
+
+- **Dashboard segment-level progress indicators (TP-197, #464):** Multi-segment
+  task rows now show a horizontal pill row of per-segment status badges —
+  one pill per segment with a status icon (✅ succeeded · ⏳ running · ⬚
+  pending · ❌ failed · ⏸ stalled · ↷ skipped) plus the segment’s repo
+  ID. The currently-executing segment is visually emphasized. This closes
+  the operator-visibility gap introduced by TP-145’s `.DONE` suppression for
+  non-final segments: previously, multi-segment lanes sat “running” with
+  no segment-level signal during the suppression window, which made wave 2+
+  batches where all tasks were mid-segment appear stuck. With the pill row
+  in place, operators can see at a glance which segments have finished,
+  which is running, and which remain. The progress bar itself is unchanged
+  — TP-174 already made it segment-scoped via the V2 lane snapshot’s
+  per-segment counts; the new pill row provides the missing context that
+  makes the existing bar legible as “current segment’s progress.”
+
+  Backwards-compatibility: single-segment tasks render an empty pill row
+  (auto-collapsed grid sub-row), so the DOM and visual layout for
+  non-segmented batches are identical to before. The pill row lives in a
+  new grid row 3 of `.task-row` (cols 3–7), mirroring the
+  `task-title-subtitle` pattern from TP-485, and is intentionally placed
+  *outside* the `.task-step` cell so the existing `@media (max-width: 900px)`
+  rule that hides `.task-step` does not hide segment context on narrow
+  viewports. No `dashboard/server.cjs` change was required — the existing
+  API response already exposed `batch.segments[]`, `task.segmentIds`, and
+  `runtimeLaneSnapshots[*].segmentId`.
+
 ## [0.30.0] - 2026-05-10
 
 ### Fixed
