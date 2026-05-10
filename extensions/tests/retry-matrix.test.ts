@@ -617,7 +617,9 @@ describe("7.x — Exhaustion forces paused", () => {
 		// emission block inserted before phase assignment in the exhausted branch.
 		// TP-076: Window increased from 2400 to 3200 to accommodate supervisor alert
 		// emission block inserted after onNotify in the exhausted branch.
-		const afterExhausted = engineSource.substring(exhaustedIdx, exhaustedIdx + 3200);
+		// TP-193: Window increased from 3200 to 4500 to accommodate vertical re-wrapping
+		// from the Biome formatter adoption (multi-arg calls split across lines).
+		const afterExhausted = engineSource.substring(exhaustedIdx, exhaustedIdx + 4500);
 		expect(afterExhausted).toContain('batchState.phase = "paused"');
 		expect(afterExhausted).toContain("merge-retry-exhausted");
 		expect(afterExhausted).toContain("preserveWorktreesForResume = true");
@@ -632,7 +634,9 @@ describe("7.x — Exhaustion forces paused", () => {
 
 		// TP-076: Window increased from 1200 to 2000 to accommodate supervisor alert
 		// emission block inserted after onNotify in the exhausted branch.
-		const afterExhausted = resumeSource.substring(exhaustedIdx, exhaustedIdx + 2000);
+		// TP-193: Window increased from 2000 to 3000 to accommodate vertical re-wrapping
+		// from the Biome formatter adoption (multi-arg calls split across lines).
+		const afterExhausted = resumeSource.substring(exhaustedIdx, exhaustedIdx + 3000);
 		expect(afterExhausted).toContain('batchState.phase = "paused"');
 		expect(afterExhausted).toContain("merge-retry-exhausted");
 		expect(afterExhausted).toContain("preserveWorktreesForResume = true");

@@ -417,7 +417,7 @@ describe("9.x: Agent-host option and event attribution contract", () => {
 	it("9.8: get_session_stats is requested immediately then on bounded cadence", () => {
 		expect(hostSrc).toContain("const STATS_REFRESH_EVERY_ASSISTANT_MESSAGES = 5");
 		expect(hostSrc).toContain("assistantMessageEnds += 1");
-		expect(hostSrc).toContain("assistantMessageEnds === 1 || assistantMessageEnds % STATS_REFRESH_EVERY_ASSISTANT_MESSAGES === 0");
+		expect(hostSrc).toContainNormalized("assistantMessageEnds === 1 || assistantMessageEnds % STATS_REFRESH_EVERY_ASSISTANT_MESSAGES === 0");
 		expect(hostSrc).toContain("{ type: \"get_session_stats\" }");
 	});
 

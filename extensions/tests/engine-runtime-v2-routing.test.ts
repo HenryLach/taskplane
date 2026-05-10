@@ -76,7 +76,7 @@ describe("2.x: executeWave backend parameter", () => {
 	});
 
 	it("2.3: executeWave routes lanes directly to executeLaneV2", () => {
-		expect(executionSrc).toContain("const lanePromises = lanes.map(lane =>");
+		expect(executionSrc).toContainNormalized("const lanePromises = lanes.map((lane) =>");
 		expect(executionSrc).toContain("executeLaneV2(lane, config");
 	});
 
@@ -154,11 +154,16 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 	});
 
 	it("5.3: all makeResult calls pass config, statusPath, reviewerStatePath, and telemetry", () => {
+		// TP-193: Whitespace-normalize source so cosmetic formatter wrapping
+		// (multi-line argument lists) doesn't break literal-string match.
+		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
 		// Every return makeResult(...) should end with config, statusPath, reviewerStatePath[, lastTelemetry[, snapshotSegmentCtx]]
-		const calls = laneRunnerSrc.match(/return makeResult\(/g);
+		const calls = normSrc.match(/return makeResult\(/g);
 		// Worker-result calls pass lastTelemetry; skipped calls don't (no agent ran).
 		// TP-174: Calls may additionally pass snapshotSegmentCtx after lastTelemetry.
-		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, reviewerStatePath, lastTelemetry[^)]*\)/g);
+		const callsWithTelemetry = normSrc.match(
+			/config, statusPath, reviewerStatePath, lastTelemetry[^)]*\)/g,
+		);
 		expect(calls).not.toBe(null);
 		// At least 3 calls pass telemetry (failed, max-iter-failed, succeeded)
 		expect(callsWithTelemetry).not.toBe(null);
@@ -166,9 +171,14 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 	});
 
 	it("5.4: lastTelemetry is scoped across loop and post-loop completion checks", () => {
-		const declIdx = laneRunnerSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
-		const loopIdx = laneRunnerSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
-		const postLoopUseIdx = laneRunnerSrc.lastIndexOf("config, statusPath, reviewerStatePath, lastTelemetry");
+		// TP-193: Whitespace-normalize source so cosmetic formatter wrapping
+		// doesn't break literal-string indexOf lookups for multi-arg call sites.
+		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
+		const declIdx = normSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
+		const loopIdx = normSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
+		const postLoopUseIdx = normSrc.lastIndexOf(
+			"config, statusPath, reviewerStatePath, lastTelemetry",
+		);
 		expect(declIdx).toBeGreaterThan(-1);
 		expect(loopIdx).toBeGreaterThan(-1);
 		expect(postLoopUseIdx).toBeGreaterThan(-1);

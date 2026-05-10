@@ -162,7 +162,9 @@ describe("2.x: Lane-runner supervisor escalation (TP-172)", () => {
 
 	it("2.11: close directives cause session to close normally", () => {
 		const closeIdx = laneRunnerSrc.indexOf("CLOSE_DIRECTIVES");
-		const closeBlock = laneRunnerSrc.slice(closeIdx, closeIdx + 800);
+		// Use a generous window so cosmetic re-wrapping by the formatter doesn't
+		// push `return null` outside the slice.
+		const closeBlock = laneRunnerSrc.slice(closeIdx, closeIdx + 1500);
 		expect(closeBlock).toContain('"skip"');
 		expect(closeBlock).toContain('"let it fail"');
 		expect(closeBlock).toContain('"close"');

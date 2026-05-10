@@ -597,11 +597,12 @@ describe("TP-190 #561: engine.ts wire-up for spawn_failure", () => {
 		// expected side effects (phase transition + persist + terminal + break).
 		const phaseIdx = engineSrc.indexOf("allFailedAreSpawnFailures");
 		expect(phaseIdx).toBeGreaterThan(-1);
-		const phaseBlock = engineSrc.slice(phaseIdx, phaseIdx + 2000);
-		expect(phaseBlock).toContain("isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes)");
+		// TP-193: Window increased from 2000 to 3500 to absorb formatter re-wrapping.
+		const phaseBlock = engineSrc.slice(phaseIdx, phaseIdx + 3500);
+		expect(phaseBlock).toContainNormalized("isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes)");
 		expect(phaseBlock).toContain('batchState.phase = "failed"');
 		// Persist + terminal event + break out of wave loop.
-		expect(phaseBlock).toContain("persistRuntimeState(\"wave-spawn-failure\"");
+		expect(phaseBlock).toContainNormalized("persistRuntimeState(\"wave-spawn-failure\"");
 		expect(phaseBlock).toContain("emitTerminalEvent(");
 		expect(phaseBlock).toContain("break;");
 	});
@@ -611,7 +612,8 @@ describe("TP-190 #561: engine.ts wire-up for spawn_failure", () => {
 		// fix the underlying cause first. The PROMPT explicitly chose
 		// 'failed' for this reason.
 		const phaseIdx = engineSrc.indexOf("allFailedAreSpawnFailures");
-		const phaseBlock = engineSrc.slice(phaseIdx, phaseIdx + 2000);
+		// TP-193: Window increased from 2000 to 3500 to absorb formatter re-wrapping.
+		const phaseBlock = engineSrc.slice(phaseIdx, phaseIdx + 3500);
 		// 'paused' must not be the destination phase here.
 		expect(phaseBlock).not.toContain('batchState.phase = "paused"');
 	});
@@ -643,7 +645,7 @@ describe("TP-190 #561: execution.ts catch hardening", () => {
 
 	it("5.2: catch writes a synthetic terminal RuntimeLaneSnapshot via writeLaneSnapshot", () => {
 		expect(executionSrc).toContain("spawnFailureSnapshot");
-		expect(executionSrc).toContain("writeLaneSnapshot(stateRoot, batchId, lane.laneNumber");
+		expect(executionSrc).toContainNormalized("writeLaneSnapshot(stateRoot, batchId, lane.laneNumber");
 	});
 
 	it("5.3: synthetic snapshot uses status='failed' so monitorLanes Priority 3 fires", () => {

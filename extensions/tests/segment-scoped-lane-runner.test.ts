@@ -407,9 +407,12 @@ describe("7.x: Legacy fallback — no behavior change for tasks without markers"
 	});
 
 	it("7.5: step completion check falls back to isStepComplete when no segment context", () => {
-		// allComplete else branch uses isStepComplete
-		const fallbackPattern = /allComplete = parsed\.steps\.every\(step =>/;
-		expect(fallbackPattern.test(laneRunnerSrc)).toBe(true);
+		// allComplete else branch uses isStepComplete.
+		// TP-193: pattern accepts both `step =>` and `(step) =>` (formatter
+		// inserts arrow parens) and uses normalized whitespace.
+		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
+		const fallbackPattern = /allComplete = parsed\.steps\.every\(\(?step\)? =>/;
+		expect(fallbackPattern.test(normSrc)).toBe(true);
 	});
 
 	it("7.6: emitSnapshot receives null segmentContext for non-segment tasks", () => {
@@ -440,12 +443,15 @@ describe("8.x: Snapshot segment-scoped progress (emitSnapshot)", () => {
 	});
 
 	it("8.3: all emitSnapshot calls pass snapshotSegmentCtx", () => {
-		const calls = laneRunnerSrc.match(/emitSnapshot\(config,.*snapshotSegmentCtx\)/g);
+		// TP-193: Whitespace-normalize so cosmetic formatter wrapping (multi-arg
+		// emitSnapshot calls split across lines) doesn't break the regex match.
+		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
+		const calls = normSrc.match(/emitSnapshot\(config,.*?snapshotSegmentCtx\)/g);
 		expect(calls).not.toBe(null);
 		expect(calls!.length).toBeGreaterThanOrEqual(2);
 	});
 
 	it("8.4: makeResult passes segmentCtx to emitSnapshot", () => {
-		expect(laneRunnerSrc).toContain("emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx)");
+		expect(laneRunnerSrc).toContainNormalized("emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx)");
 	});
 });

@@ -688,7 +688,9 @@ describe("TP-187 #538: lane-respawned IPC wiring is end-to-end", () => {
 
 	it("executeLaneV2 emits onLaneRespawned at the top of the function body before the task loop", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
-		const body = executionSrc.slice(start, start + 7500);
+		// TP-193: Window bumped from 7500 to 12000 to absorb formatter re-wrapping
+		// (multi-arg calls split across lines lengthens the function body).
+		const body = executionSrc.slice(start, start + 12000);
 		const respawnIdx = body.indexOf("onLaneRespawned(lane.laneNumber");
 		const forIdx = body.indexOf("for (const task of lane.tasks)");
 		expect(respawnIdx).not.toBe(-1);

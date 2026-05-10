@@ -1589,7 +1589,7 @@ describe("17.x — Manual mode: operator told to /orch-integrate (R006)", () => 
 
 		// Find the onTerminal callback that handles manual mode
 		// The pattern: phase !== "completed" OR manual mode → presentBatchSummary + deactivateSupervisor
-		expect(source).toContain("presentBatchSummary(pi, orchBatchState");
+		expect(source).toContainNormalized("presentBatchSummary(pi, orchBatchState");
 		expect(source).toContain("deactivateSupervisor(pi, supervisorState)");
 
 		// Verify manual mode does NOT call triggerSupervisorIntegration

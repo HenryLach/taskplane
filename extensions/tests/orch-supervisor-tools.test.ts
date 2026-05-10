@@ -131,13 +131,13 @@ describe("2.x: Tool parameter schemas are correct", () => {
 	it("2.3: orch_resume has optional force boolean parameter", () => {
 		const block = getToolBlock("orch_resume");
 		expect(block).toContain("force:");
-		expect(block).toContain("Type.Optional(Type.Boolean(");
+		expect(block).toContainNormalized("Type.Optional(Type.Boolean(");
 	});
 
 	it("2.4: orch_abort has optional hard boolean parameter", () => {
 		const block = getToolBlock("orch_abort");
 		expect(block).toContain("hard:");
-		expect(block).toContain("Type.Optional(Type.Boolean(");
+		expect(block).toContainNormalized("Type.Optional(Type.Boolean(");
 	});
 
 	it("2.5: orch_integrate has mode, force, and branch parameters", () => {

@@ -11,6 +11,14 @@ interface ExpectMethods {
 	toBe(expected: unknown): void;
 	toEqual(expected: unknown): void;
 	toContain(needle: unknown): void;
+	/**
+	 * Like `toContain`, but whitespace-insensitive when matching strings.
+	 * Both haystack and needle have any run of whitespace collapsed to a
+	 * single space before checking. Intended for source-grep tests so they
+	 * survive cosmetic formatter changes (line wrapping, indentation,
+	 * inserted parentheses around arrow params, etc.).
+	 */
+	toContainNormalized(needle: string): void;
 	toHaveLength(n: number): void;
 	toBeDefined(): void;
 	toBeUndefined(): void;
@@ -54,6 +62,19 @@ export function expect(actual: unknown): ExpectMethods {
 			} else {
 				assert.fail(`toContain: actual is neither string nor array`);
 			}
+		},
+		toContainNormalized(needle: string) {
+			assert.ok(
+				typeof actual === "string",
+				`toContainNormalized: actual must be a string, got ${typeof actual}`,
+			);
+			const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+			const hayN = normalize(actual as string);
+			const needleN = normalize(needle);
+			assert.ok(
+				hayN.includes(needleN),
+				`Expected (whitespace-normalized) string to contain "${needleN}"`,
+			);
 		},
 		toHaveLength(n: number) {
 			assert.strictEqual((actual as any).length, n);
@@ -189,6 +210,19 @@ export function expect(actual: unknown): ExpectMethods {
 			} else {
 				assert.fail(`not.toContain: actual is neither string nor array`);
 			}
+		},
+		toContainNormalized(needle: string) {
+			assert.ok(
+				typeof actual === "string",
+				`not.toContainNormalized: actual must be a string, got ${typeof actual}`,
+			);
+			const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+			const hayN = normalize(actual as string);
+			const needleN = normalize(needle);
+			assert.ok(
+				!hayN.includes(needleN),
+				`Expected (whitespace-normalized) string NOT to contain "${needleN}"`,
+			);
 		},
 		toHaveLength(n: number) {
 			assert.notStrictEqual((actual as any).length, n);

@@ -153,7 +153,7 @@ describe("2.x — Kill-and-retry: timeout triggers retry with 2x timeout", () =>
 			mergeSource.indexOf("// First attempt: spawn merge agent"),
 		);
 		expect(retrySection).toContain("killMergeAgentV2(sessionName)");
-		expect(retrySection).toContain("spawnMergeAgentV2(sessionName");
+		expect(retrySection).toContainNormalized("spawnMergeAgentV2(sessionName");
 	});
 
 	it("2.7: retry logs attempt number and new timeout values", () => {
@@ -228,7 +228,7 @@ describe("3.x — Second retry uses 4x timeout (backoff verification)", () => {
 		const mergeSource = readSource("merge.ts");
 
 		// The retry loop calls waitForMergeResult with the computed timeout + backend
-		expect(mergeSource).toContain("waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs, runtimeBackend)");
+		expect(mergeSource).toContainNormalized("waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs, runtimeBackend)");
 	});
 
 	it("3.5: with custom config timeout of 15 min, retries use 30 min and 60 min", () => {

@@ -138,14 +138,14 @@ describe("1.x — orch_force_merge tool registration", () => {
 		const idx = extensionSource.indexOf('name: "orch_force_merge"');
 		const block = extensionSource.slice(idx, idx + 2000);
 		expect(block).toContain("waveIndex:");
-		expect(block).toContain("Type.Optional(Type.Number(");
+		expect(block).toContainNormalized("Type.Optional(Type.Number(");
 	});
 
 	it("1.3 — orch_force_merge has optional skipFailed boolean parameter", () => {
 		const idx = extensionSource.indexOf('name: "orch_force_merge"');
 		const block = extensionSource.slice(idx, idx + 2000);
 		expect(block).toContain("skipFailed:");
-		expect(block).toContain("Type.Optional(Type.Boolean(");
+		expect(block).toContainNormalized("Type.Optional(Type.Boolean(");
 	});
 
 	it("1.4 — orch_force_merge has description, promptSnippet, and promptGuidelines", () => {

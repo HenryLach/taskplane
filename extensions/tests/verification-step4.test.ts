@@ -326,7 +326,7 @@ describe("R009-2: Rollback/advancement safety — merge.ts (source verification)
 
 	it("2.5: blockAdvancement prevents anySuccess determination", () => {
 		// anySuccess must check !blockAdvancement first
-		expect(mergeSource).toContain("const anySuccess = !blockAdvancement &&");
+		expect(mergeSource).toContainNormalized("const anySuccess = !blockAdvancement &&");
 	});
 
 	it("2.6: blockAdvancement true logs branch advancement BLOCKED message", () => {
@@ -614,13 +614,13 @@ describe("Flaky handling: flakyReruns control paths (source verification)", () =
 	it("5.4: flaky re-run only re-runs commands that produced new failures", () => {
 		// Must extract failed commandIds from diff.newFailures
 		expect(mergeSource).toContain("failedCommandIds");
-		expect(mergeSource).toContain("diff.newFailures.map(fp => fp.commandId)");
+		expect(mergeSource).toContainNormalized("diff.newFailures.map((fp) => fp.commandId)");
 	});
 
 	it("5.5: flaky re-run re-diffs against baseline (not full post-merge)", () => {
 		// The re-run diff should compare baseline against re-run, not against original post-merge
 		expect(mergeSource).toContain("baselineForRerun");
-		expect(mergeSource).toContain("baseline.fingerprints.filter(fp => failedCommandIds.has(fp.commandId))");
+		expect(mergeSource).toContainNormalized("baseline.fingerprints.filter((fp) => failedCommandIds.has(fp.commandId))");
 	});
 
 	it("5.6: flakyReruns > 1 iterates up to N times with early break", () => {

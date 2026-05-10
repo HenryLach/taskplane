@@ -396,8 +396,13 @@ describe("TP-143 segment expansion engine coverage", () => {
 
 	it("boundary handling keeps deterministic request ordering and failed-origin/malformed file lifecycle guards", () => {
 		const src = readFileSync(new URL("../taskplane/engine.ts", import.meta.url), "utf-8");
-		expect(src).toMatch(/orderedRequests = \[\.\.\.parsedRequests\.valid\]\.sort\(\(a, b\) => a\.request\.requestId\.localeCompare\(b\.request\.requestId\)\)/);
-		expect(src).toContain("markSegmentExpansionRequestFile(requestFile.filePath, \"discarded\")");
+		// TP-193: Whitespace-normalize so the formatter's vertical re-wrapping
+		// of long chained-call expressions doesn't break the regex match.
+		const normSrc = src.replace(/\s+/g, " ");
+		expect(normSrc).toMatch(
+			/orderedRequests = \[\.\.\.parsedRequests\.valid\]\.sort\(\(a, b\) => a\.request\.requestId\.localeCompare\(b\.request\.requestId\)\)/,
+		);
+		expect(src).toContain('markSegmentExpansionRequestFile(requestFile.filePath, "discarded")');
 		expect(src).toContain("segment expansion request malformed");
 	});
 });

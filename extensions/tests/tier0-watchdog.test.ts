@@ -212,11 +212,13 @@ describe("2.x — Retry exhaustion pauses batch with escalation event", () => {
 		expect(mergeExhaustIdx).not.toBe(-1);
 		// Search for merge_timeout pattern escalation
 		expect(engineSource).toContain('"merge_timeout"');
-		// Find the merge timeout handling section and verify escalation
+		// Find the merge timeout handling section and verify escalation.
+		// TP-193: Use [\s\S] (or normalize) so the formatter-induced newlines
+		// between `emitTier0Escalation(` and `merge_timeout` don't break the match.
 		const mergeSection = engineSource.substring(
 			engineSource.indexOf("applyMergeRetryLoop"),
 		);
-		const mergeEscalation = mergeSection.match(/emitTier0Escalation.*merge_timeout/g);
+		const mergeEscalation = mergeSection.match(/emitTier0Escalation[\s\S]*?merge_timeout/g);
 		expect(mergeEscalation).not.toBeNull();
 	});
 });
@@ -841,8 +843,9 @@ describe("8.x — Per-pattern exhaustion coverage", () => {
 			// Find the section handling this pattern
 			const sectionIdx = engineSource.indexOf(sourceSection);
 			expect(sectionIdx).not.toBe(-1);
-			// From that section, find exhausted event
-			const section = engineSource.substring(sectionIdx, sectionIdx + 5000);
+			// From that section, find exhausted event.
+			// TP-193: Window bumped from 5000 to 8000 to absorb formatter re-wrapping.
+			const section = engineSource.substring(sectionIdx, sectionIdx + 8000);
 			expect(section).toContain("tier0_recovery_exhausted");
 		});
 
@@ -850,8 +853,9 @@ describe("8.x — Per-pattern exhaustion coverage", () => {
 			const engineSource = readSource("engine.ts");
 			const sectionIdx = engineSource.indexOf(sourceSection);
 			expect(sectionIdx).not.toBe(-1);
-			const section = engineSource.substring(sectionIdx, sectionIdx + 5000);
-			expect(section).toContain("emitTier0Escalation(");
+			// TP-193: Window bumped from 5000 to 8000 to absorb formatter re-wrapping.
+			const section = engineSource.substring(sectionIdx, sectionIdx + 8000);
+			expect(section).toContainNormalized("emitTier0Escalation(");
 		});
 	}
 

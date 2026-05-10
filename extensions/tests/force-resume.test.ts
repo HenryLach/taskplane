@@ -329,9 +329,12 @@ describe("force-resume runtime path in resumeOrchBatch — source verification",
 		// The isForceResume guard must check for stopped|failed specifically
 		expect(resumeSource).toContain('persistedState.phase === "stopped"');
 		expect(resumeSource).toContain('persistedState.phase === "failed"');
-		// isForceResume should be gated on force AND (stopped|failed)
+		// isForceResume should be gated on force AND (stopped|failed).
+		// TP-193: Whitespace-normalize so the formatter's vertical re-wrapping
+		// of long boolean expressions doesn't break the regex.
+		const normSrc = resumeSource.replace(/\s+/g, " ");
 		const isForceResumePattern = /const isForceResume = force && \(persistedState\.phase === "stopped" \|\| persistedState\.phase === "failed"\)/;
-		expect(resumeSource).toMatch(isForceResumePattern);
+		expect(normSrc).toMatch(isForceResumePattern);
 	});
 });
 

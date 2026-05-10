@@ -65,7 +65,7 @@ describe("1.x: read_agent_status tool", () => {
 	it("1.2: has optional lane number parameter", () => {
 		const block = getToolBlock("read_agent_status");
 		expect(block).toContain("lane:");
-		expect(block).toContain("Type.Optional(Type.Number(");
+		expect(block).toContainNormalized("Type.Optional(Type.Number(");
 	});
 
 	it("1.3: has description and promptSnippet", () => {

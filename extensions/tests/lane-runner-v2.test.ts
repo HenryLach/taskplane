@@ -282,7 +282,7 @@ describe("6.x: Segment-aware lane execution contracts", () => {
 	it("6.4: lane snapshots include segmentId", () => {
 		expect(laneRunnerSrc).toContain("segmentId: string | null");
 		expect(laneRunnerSrc).toContain("segmentId,");
-		expect(laneRunnerSrc).toContain("emitSnapshot(config, taskId, segmentId");
+		expect(laneRunnerSrc).toContainNormalized("emitSnapshot(config, taskId, segmentId");
 	});
 });
 
@@ -339,6 +339,6 @@ describe("8.x: Multi-segment .DONE timing (TP-145)", () => {
 		// This means the .DONE creation block runs normally
 		expect(laneRunnerSrc).toContain("segmentId != null");
 		// The logical expression evaluates to false when segmentId is null
-		expect(laneRunnerSrc).toContain("const isNonFinalSegment = segmentId != null");
+		expect(laneRunnerSrc).toContainNormalized("const isNonFinalSegment = segmentId != null");
 	});
 });

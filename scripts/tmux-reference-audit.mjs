@@ -102,6 +102,32 @@ function isCommentLine(trimmed, inBlockComment) {
 	return false;
 }
 
+/**
+ * Test files contain string-literal assertions of the form
+ *   expect(src).not.toContain('execSync("tmux ...")')
+ * which look identical to real functional TMUX usage to a regex scanner.
+ * These are NEGATIVE assertions verifying that production code does NOT
+ * call into TMUX, not actual TMUX calls. Skip functional-usage detection
+ * inside test files; they're not shipped and never trigger TMUX execution.
+ *
+ * (The line is still counted as a `tmux` reference under compat-code; only
+ * the strict-mode functional-usage gate is skipped.)
+ *
+ * Added under TP-193 because Biome's `quoteStyle: "double"` rule rewrote
+ * test assertions like `'execSync(\'tmux ...\')'` to `"execSync('tmux ...')"`,
+ * removing the escaped quotes that previously hid these literal strings
+ * from FUNCTIONAL_PATTERNS regex matching.
+ */
+function isTestSourceFile(relPath) {
+	return (
+		relPath.includes("/tests/") ||
+		relPath.endsWith(".test.ts") ||
+		relPath.endsWith(".test.tsx") ||
+		relPath.endsWith(".test.mjs") ||
+		relPath.endsWith(".integration.test.ts")
+	);
+}
+
 function detectFunctionalUsage(line) {
 	for (const pattern of FUNCTIONAL_PATTERNS) {
 		if (pattern.regex.test(line)) return pattern.id;
@@ -210,7 +236,7 @@ function buildAudit() {
 				fileByCategory[category] += matchCount;
 				totalsByCategory[category] += matchCount;
 
-				if (executableFile && !commentLine) {
+				if (executableFile && !commentLine && !isTestSourceFile(relPath)) {
 					const patternId = detectFunctionalUsage(line);
 					if (patternId) {
 						const firstIndex = line.toLowerCase().indexOf("tmux");
