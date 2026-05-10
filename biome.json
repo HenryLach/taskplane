@@ -42,6 +42,18 @@
     }
   },
   "formatter": {
-    "enabled": false
+    "enabled": true,
+    "indentStyle": "tab",
+    "indentWidth": 1,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "trailingCommas": "all",
+      "semicolons": "always",
+      "arrowParentheses": "always"
+    }
   }
 }

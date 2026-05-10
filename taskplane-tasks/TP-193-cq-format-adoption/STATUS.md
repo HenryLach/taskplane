@@ -1,6 +1,6 @@
 # TP-193: Code-quality formatter adoption — Status
 
-**Current Step:** Step 1: Configure formatter rules
+**Current Step:** Step 2: Apply biome format --write
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 0 (None)
@@ -30,12 +30,12 @@
 ---
 
 ### Step 1: Configure formatter rules in biome.json
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] `biome.json` formatter block updated per spec 6.3.1
-- [ ] `javascript.formatter` block updated per spec 6.3.1
-- [ ] `npm run format:check` reports many files needing formatting (sanity)
-- [ ] Commit: `chore(TP-193): configure Biome formatter rules`
+- [x] `biome.json` formatter block updated per spec 6.3.1
+- [x] `javascript.formatter` block updated per spec 6.3.1
+- [x] `npm run format:check` reports many files needing formatting (175 files / 175 errors, sanity)
+- [x] Commit: `chore(TP-193): configure Biome formatter rules`
 
 ---
 
