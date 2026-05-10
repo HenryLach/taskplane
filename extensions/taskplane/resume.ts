@@ -2160,11 +2160,19 @@ export async function resumeOrchBatch(
 			const frontierSummary = segmentFrontier
 				? `  Segment frontier: ${segmentFrontier.terminalSegments}/${segmentFrontier.totalSegments} terminal\n`
 				: "";
+			// TP-190 (#561): Mirror engine.ts emission — propagate the structured
+			// exit category so /orch-resume task-failure alerts route through the
+			// same supervisor playbook branches as /orch.
+			const exitCategory = outcome?.exitDiagnostic?.classification;
+			const spawnFailureLine = exitCategory === "spawn_failure"
+				? `  Spawn failure: worker process never started — escalate immediately (do not retry)\n`
+				: "";
 			emitAlert({
 				category: "task-failure",
 				summary:
 					`⚠️ Task failure: ${taskId}\n` +
 					`  Exit reason: ${exitReason}\n` +
+					spawnFailureLine +
 					segmentSummary +
 					frontierSummary +
 					`  Lane: ${laneForTask?.laneId ?? "unknown"} (lane ${laneForTask?.laneNumber ?? "?"})\n` +
@@ -2184,6 +2192,7 @@ export async function resumeOrchBatch(
 					laneNumber: laneForTask?.laneNumber,
 					waveIndex: waveIdx,
 					exitReason,
+					exitCategory,
 					partialProgress: hasPartialProgress,
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},

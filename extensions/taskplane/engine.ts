@@ -3084,11 +3084,20 @@ export async function executeOrchBatch(
 			const frontierSummary = segmentFrontier
 				? `  Segment frontier: ${segmentFrontier.terminalSegments}/${segmentFrontier.totalSegments} terminal\n`
 				: "";
+			// TP-190 (#561): Surface the structured exit category so the supervisor
+			// playbook can branch deterministically. In particular,
+			// `exitCategory === "spawn_failure"` signals an immediate-escalation
+			// failure (not a retry candidate) — the worker process never spawned.
+			const exitCategory = outcome?.exitDiagnostic?.classification;
+			const spawnFailureLine = exitCategory === "spawn_failure"
+				? `  Spawn failure: worker process never started — escalate immediately (do not retry)\n`
+				: "";
 			emitAlert({
 				category: "task-failure",
 				summary:
 					`⚠️ Task failure: ${taskId}\n` +
 					`  Exit reason: ${exitReason}\n` +
+					spawnFailureLine +
 					segmentSummary +
 					frontierSummary +
 					`  Lane: ${laneForTask?.laneId ?? "unknown"} (lane ${laneForTask?.laneNumber ?? "?"})\n` +
@@ -3108,6 +3117,7 @@ export async function executeOrchBatch(
 					laneNumber: laneForTask?.laneNumber,
 					waveIndex: waveIdx,
 					exitReason,
+					exitCategory,
 					partialProgress: hasPartialProgress,
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},

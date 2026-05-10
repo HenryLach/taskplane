@@ -1,10 +1,10 @@
 # TP-190: Runtime V2 spawn-failure visibility — Status
 
-**Current Step:** Step 1: Plan all four parts of the fix
+**Current Step:** Step 2: Implement Part 1 — state-transition + IPC alert
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -32,7 +32,7 @@
 ---
 
 ### Step 1: Plan all four parts of the fix
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
@@ -45,15 +45,15 @@
 ---
 
 ### Step 2: Implement Part 1 — state-transition + IPC alert
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > Plan-reviewer must have APPROVED Step 1 before proceeding.
 > ⚠️ Code-review fires after this step.
 
-- [ ] `"spawn-failure"` added to `ExitCategory` enum in `types.ts`
-- [ ] `task-failure` IPC alert payload extended to carry the new category
-- [ ] Verified `lane.status` and `task.status` transition to `failed` via existing serialization paths
-- [ ] Targeted tests pass (existing supervisor-recovery-flows + any directly-affected tests)
+- [x] `"spawn_failure"` added to `ExitClassification` enum in `diagnostics.ts` (and `EXIT_CLASSIFICATIONS` array; doc comment updated). `TIER0_RETRYABLE_CLASSIFICATIONS` doc note added in `types.ts` calling out the deliberate exclusion.
+- [x] `task-failure` IPC alert payload extended to carry the new category (added `exitCategory?: ExitClassification` to `SupervisorAlertContext`; populated in `engine.ts` and mirrored in `resume.ts`; alert summary now includes a "Spawn failure: … escalate immediately" line when applicable).
+- [x] Verified `lane.status` and `task.status` transition to `failed` via existing serialization paths — `executeLaneV2`'s catch now (a) populates `exitDiagnostic.classification = "spawn_failure"` on the failed `LaneTaskOutcome`, (b) writes a synthetic terminal `RuntimeLaneSnapshot` with `status: "failed"` so `monitorLanes` exits via Priority 3, unblocking `executeWave` and the existing engine.ts failedTaskIds aggregation. No new persistence schema changes needed.
+- [x] Targeted tests pass: 129/129 across `supervisor-recovery-flows.test.ts`, `diagnostic-reports.test.ts`, `lane-runner-v2.test.ts`.
 
 ---
 
@@ -118,6 +118,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| R001 | plan | 1 | APPROVE | .reviews/R001-plan-step1.md |
 
 ---
 
@@ -156,6 +157,10 @@
 
 ## Notes
 
+**R001 (plan, Step 1) suggestions** — advisory only, but adopted in this task:
+- Use the full `RuntimeLaneSnapshot` shape (not a minimal stub) when writing the synthetic terminal snapshot in the catch, for dashboard schema-consistency.
+- Mirror the new `context.exitCategory` field into resume.ts's `task-failure` emission for parity across /orch and /orch-resume.
+
 **Critical observation from issue #561 repro:** the existing per-task try/catch
 inside `executeLaneV2` (execution.ts line ~2724) IS already producing the
 "failed" outcome with the spawn error message. The user's stderr log shows
@@ -172,3 +177,4 @@ catches.
 empty when spawns fail. So the registry knows. The bug is that the lane state
 machine and the registry are out of sync today — fixing this task should
 bring them back into sync (or at least surface the discrepancy as a failure).
+| 2026-05-10 03:42 | Review R001 | plan Step 1: APPROVE |
