@@ -1,6 +1,6 @@
 # TP-191: Code-quality prep — Status
 
-**Current Step:** Step 6: Testing & Verification
+**Current Step:** Step 7: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
@@ -106,15 +106,14 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 > ZERO test failures allowed.
 
-- [ ] FULL fast suite passes: 3624+ passing / 1 skipped / 0 failed
-- [ ] FULL integration suite passes
-- [ ] CLI smoke clean
-- [ ] All four scripts run to completion
-- [ ] No circular imports introduced
+- [x] FULL test suite passes (`tests/*.test.ts` covers fast + integration since `*.integration.test.ts` matches `*.test.ts`): **3624 passing / 1 skipped / 0 failed** (3625 total). Matches baseline; zero new failures.
+- [x] CLI smoke clean: `node bin/taskplane.mjs help` exit 0, `node bin/taskplane.mjs doctor` exit 0 (doctor reports pre-existing project-level warnings unrelated to TP-191; they exist on baseline).
+- [x] All four scripts run to completion: `typecheck` exit 2 / 267 errors (TP-194 baseline); `lint` exit 1 / 9 errors+277 warnings+660 infos / 175 files (TP-192 baseline); `format:check` exit 1 / 0 files (formatter disabled until TP-193); `format` exit 1 / 0 files (same).
+- [x] No circular imports introduced — this task added a `.d.ts` file (no runtime imports), updated configs (no imports), updated docs (no imports). No source-tree import edges were added or removed.
 
 ---
 
