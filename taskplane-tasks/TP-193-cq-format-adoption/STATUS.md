@@ -93,6 +93,7 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| **Operator freeze-window pre-confirmation (2026-05-10)** | Step 0 unblocked | Supervisor verified no internal PRs in flight after TP-192 merge. The two open community PRs (#520 Nix CLI resolution by @chenxin-yan, #516 polyrepo by @loopyd DRAFT) are external forks; their rebase pain is the contributors' responsibility on their next update, not ours. Operator explicitly confirmed proceeding with TP-193 immediately after TP-192 merge. Step 0 freeze-window check should treat this row as the captured confirmation. |
 
 ---
 
