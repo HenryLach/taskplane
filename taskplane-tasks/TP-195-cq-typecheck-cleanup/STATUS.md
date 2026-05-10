@@ -55,7 +55,7 @@
 ---
 
 ### Step 2: Apply mechanical auto-fixes (if any safe ones exist)
-**Status:** ✅ Complete (skipped — no safe mechanical fixes per Step 1 plan)
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step. SKIPPED — nothing was changed.
 
@@ -67,7 +67,7 @@
 ---
 
 ### Step 3: Fix runtime-source errors (~68 errors)
-**Status:** ✅ Complete (R004 code review APPROVE after R003 REVISE)
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -114,7 +114,7 @@
 ---
 
 ### Step 4: Fix test-side errors (~198 errors)
-**Status:** ✅ Complete (R006 code review APPROVE)
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -359,6 +359,9 @@ Total: **264 errors** in 45 files (8 source + 37 test files).
 | 2026-05-10 | Step 3/Step 4 code review R004/R006 APPROVE | fix-the-bug variants applied; 3 regression tests added |
 | 2026-05-10 | Step 6 quality gates pass | typecheck 0, lint 0, format:check 0, tests 3627/0/1 |
 | 2026-05-10 | Step 7 complete | CHANGELOG entries added under [Unreleased] |
+| 2026-05-10 19:35 | Agent escalate | **TP-195 Step 1 plan review = REVISE — need decision on 4 behavior-affecting type fixes** /  / Reviewer flagged that the plan applies real-bug fixes that change runtime behavior, which the PROMPT says |
+| 2026-05-10 19:35 | Worker iter 1 | done in 5962s, tools: 579 |
+| 2026-05-10 19:35 | Task complete | .DONE created |
 
 ---
 
