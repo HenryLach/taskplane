@@ -8,14 +8,17 @@ import {
 	processSegmentExpansionRequestAtBoundary,
 	resolveTaskWorkerAgentId,
 } from "../taskplane/engine.ts";
-import {
-	buildResumeRuntimeWavePlan,
-	reconstructSegmentFrontier,
-} from "../taskplane/resume.ts";
+import { buildResumeRuntimeWavePlan, reconstructSegmentFrontier } from "../taskplane/resume.ts";
 import { defaultBatchDiagnostics, defaultResilienceState } from "../taskplane/types.ts";
-import type { PersistedBatchState, PersistedSegmentRecord, SegmentExpansionRequest } from "../taskplane/types.ts";
+import type {
+	PersistedBatchState,
+	PersistedSegmentRecord,
+	SegmentExpansionRequest,
+} from "../taskplane/types.ts";
 
-function makeExpansionRequest(overrides: Partial<SegmentExpansionRequest> = {}): SegmentExpansionRequest {
+function makeExpansionRequest(
+	overrides: Partial<SegmentExpansionRequest> = {},
+): SegmentExpansionRequest {
 	return {
 		requestId: "exp-001",
 		taskId: "TP-900",
@@ -44,19 +47,21 @@ function makeState(overrides: Partial<PersistedBatchState> = {}): PersistedBatch
 		totalWaves: 1,
 		wavePlan: [["TP-900"]],
 		lanes: [],
-		tasks: [{
-			taskId: "TP-900",
-			laneNumber: 1,
-			sessionName: "",
-			status: "pending",
-			taskFolder: "/tmp/tasks/TP-900",
-			startedAt: null,
-			endedAt: null,
-			doneFileFound: false,
-			exitReason: "",
-			segmentIds: ["TP-900::api"],
-			activeSegmentId: null,
-		}],
+		tasks: [
+			{
+				taskId: "TP-900",
+				laneNumber: 1,
+				sessionName: "",
+				status: "pending",
+				taskFolder: "/tmp/tasks/TP-900",
+				startedAt: null,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				segmentIds: ["TP-900::api"],
+				activeSegmentId: null,
+			},
+		],
 		mergeResults: [],
 		totalTasks: 1,
 		succeededTasks: 0,
@@ -102,18 +107,30 @@ describe("TP-143 segment expansion engine coverage", () => {
 				{ segmentId: "TP-901::c", taskId: "TP-901", repoId: "c", order: 2 },
 			],
 			nextSegmentIndex: 2,
-			statusBySegmentId: new Map([["TP-901::a", "succeeded"], ["TP-901::b", "succeeded"], ["TP-901::c", "pending"]]),
-			dependsOnBySegmentId: new Map([["TP-901::a", []], ["TP-901::b", ["TP-901::a"]], ["TP-901::c", ["TP-901::b"]]]),
+			statusBySegmentId: new Map([
+				["TP-901::a", "succeeded"],
+				["TP-901::b", "succeeded"],
+				["TP-901::c", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-901::a", []],
+				["TP-901::b", ["TP-901::a"]],
+				["TP-901::c", ["TP-901::b"]],
+			]),
 			terminalStatus: "pending",
 		};
-		const linear = applySegmentExpansionMutation(linearState, makeExpansionRequest({
-			requestId: "exp-linear",
-			taskId: "TP-901",
-			fromSegmentId: "TP-901::b",
-			requestedRepoIds: ["x"],
-			placement: "after-current",
-			edges: [],
-		}), "TP-901::b");
+		const linear = applySegmentExpansionMutation(
+			linearState,
+			makeExpansionRequest({
+				requestId: "exp-linear",
+				taskId: "TP-901",
+				fromSegmentId: "TP-901::b",
+				requestedRepoIds: ["x"],
+				placement: "after-current",
+				edges: [],
+			}),
+			"TP-901::b",
+		);
 		expect(linear.insertedSegmentIds).toEqual(["TP-901::x"]);
 		expect(linearState.dependsOnBySegmentId.get("TP-901::c")).toEqual(["TP-901::x"]);
 
@@ -125,18 +142,30 @@ describe("TP-143 segment expansion engine coverage", () => {
 				{ segmentId: "TP-902::c", taskId: "TP-902", repoId: "c", order: 2 },
 			],
 			nextSegmentIndex: 1,
-			statusBySegmentId: new Map([["TP-902::a", "succeeded"], ["TP-902::b", "pending"], ["TP-902::c", "pending"]]),
-			dependsOnBySegmentId: new Map([["TP-902::a", []], ["TP-902::b", ["TP-902::a"]], ["TP-902::c", ["TP-902::a"]]]),
+			statusBySegmentId: new Map([
+				["TP-902::a", "succeeded"],
+				["TP-902::b", "pending"],
+				["TP-902::c", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-902::a", []],
+				["TP-902::b", ["TP-902::a"]],
+				["TP-902::c", ["TP-902::a"]],
+			]),
 			terminalStatus: "pending",
 		};
-		const fanout = applySegmentExpansionMutation(fanoutState, makeExpansionRequest({
-			requestId: "exp-fanout",
-			taskId: "TP-902",
-			fromSegmentId: "TP-902::a",
-			requestedRepoIds: ["x"],
-			placement: "after-current",
-			edges: [],
-		}), "TP-902::a");
+		const fanout = applySegmentExpansionMutation(
+			fanoutState,
+			makeExpansionRequest({
+				requestId: "exp-fanout",
+				taskId: "TP-902",
+				fromSegmentId: "TP-902::a",
+				requestedRepoIds: ["x"],
+				placement: "after-current",
+				edges: [],
+			}),
+			"TP-902::a",
+		);
 		expect(fanout.insertedSegmentIds).toEqual(["TP-902::x"]);
 		expect(fanoutState.dependsOnBySegmentId.get("TP-902::b")).toEqual(["TP-902::x"]);
 		expect(fanoutState.dependsOnBySegmentId.get("TP-902::c")).toEqual(["TP-902::x"]);
@@ -149,20 +178,35 @@ describe("TP-143 segment expansion engine coverage", () => {
 				{ segmentId: "TP-903::c", taskId: "TP-903", repoId: "c", order: 2 },
 			],
 			nextSegmentIndex: 1,
-			statusBySegmentId: new Map([["TP-903::a", "succeeded"], ["TP-903::b", "pending"], ["TP-903::c", "pending"]]),
-			dependsOnBySegmentId: new Map([["TP-903::a", []], ["TP-903::b", ["TP-903::a"]], ["TP-903::c", ["TP-903::a"]]]),
+			statusBySegmentId: new Map([
+				["TP-903::a", "succeeded"],
+				["TP-903::b", "pending"],
+				["TP-903::c", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-903::a", []],
+				["TP-903::b", ["TP-903::a"]],
+				["TP-903::c", ["TP-903::a"]],
+			]),
 			terminalStatus: "pending",
 		};
-		const end = applySegmentExpansionMutation(endState, makeExpansionRequest({
-			requestId: "exp-end",
-			taskId: "TP-903",
-			fromSegmentId: "TP-903::c",
-			requestedRepoIds: ["x", "y"],
-			placement: "end",
-			edges: [{ from: "x", to: "y" }],
-		}), "TP-903::c");
+		const end = applySegmentExpansionMutation(
+			endState,
+			makeExpansionRequest({
+				requestId: "exp-end",
+				taskId: "TP-903",
+				fromSegmentId: "TP-903::c",
+				requestedRepoIds: ["x", "y"],
+				placement: "end",
+				edges: [{ from: "x", to: "y" }],
+			}),
+			"TP-903::c",
+		);
 		expect(end.insertedSegmentIds).toEqual(["TP-903::x", "TP-903::y"]);
-		expect(endState.dependsOnBySegmentId.get("TP-903::x")?.sort()).toEqual(["TP-903::b", "TP-903::c"]);
+		expect(endState.dependsOnBySegmentId.get("TP-903::x")?.sort()).toEqual([
+			"TP-903::b",
+			"TP-903::c",
+		]);
 
 		const repeatState: any = {
 			taskId: "TP-904",
@@ -171,17 +215,27 @@ describe("TP-143 segment expansion engine coverage", () => {
 				{ segmentId: "TP-904::api::3", taskId: "TP-904", repoId: "api", order: 1 },
 			],
 			nextSegmentIndex: 1,
-			statusBySegmentId: new Map([["TP-904::api", "succeeded"], ["TP-904::api::3", "pending"]]),
-			dependsOnBySegmentId: new Map([["TP-904::api", []], ["TP-904::api::3", ["TP-904::api"]]]),
+			statusBySegmentId: new Map([
+				["TP-904::api", "succeeded"],
+				["TP-904::api::3", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-904::api", []],
+				["TP-904::api::3", ["TP-904::api"]],
+			]),
 			terminalStatus: "pending",
 		};
-		const repeat = applySegmentExpansionMutation(repeatState, makeExpansionRequest({
-			requestId: "exp-repeat",
-			taskId: "TP-904",
-			fromSegmentId: "TP-904::api::3",
-			requestedRepoIds: ["api"],
-			placement: "end",
-		}), "TP-904::api::3");
+		const repeat = applySegmentExpansionMutation(
+			repeatState,
+			makeExpansionRequest({
+				requestId: "exp-repeat",
+				taskId: "TP-904",
+				fromSegmentId: "TP-904::api::3",
+				requestedRepoIds: ["api"],
+				placement: "end",
+			}),
+			"TP-904::api::3",
+		);
 		expect(repeat.insertedSegmentIds).toEqual(["TP-904::api::4"]);
 	});
 
@@ -192,7 +246,14 @@ describe("TP-143 segment expansion engine coverage", () => {
 			"TP-905",
 			"TP-905::api",
 			"agent-1",
-			{ filePath: "/tmp/segment-expansion-exp-005.json", request: makeExpansionRequest({ taskId: "TP-905", fromSegmentId: "TP-905::api", requestedRepoIds: ["web"] }) },
+			{
+				filePath: "/tmp/segment-expansion-exp-005.json",
+				request: makeExpansionRequest({
+					taskId: "TP-905",
+					fromSegmentId: "TP-905::api",
+					requestedRepoIds: ["web"],
+				}),
+			},
 			baseState,
 			{ repos: new Map([["api", {}]]) } as any,
 			new Set<string>(),
@@ -204,9 +265,25 @@ describe("TP-143 segment expansion engine coverage", () => {
 			"TP-905",
 			"TP-905::api",
 			"agent-1",
-			{ filePath: "/tmp/segment-expansion-exp-006.json", request: makeExpansionRequest({ taskId: "TP-905", fromSegmentId: "TP-905::api", requestedRepoIds: ["api", "web"], edges: [{ from: "api", to: "web" }, { from: "web", to: "api" }] }) },
+			{
+				filePath: "/tmp/segment-expansion-exp-006.json",
+				request: makeExpansionRequest({
+					taskId: "TP-905",
+					fromSegmentId: "TP-905::api",
+					requestedRepoIds: ["api", "web"],
+					edges: [
+						{ from: "api", to: "web" },
+						{ from: "web", to: "api" },
+					],
+				}),
+			},
 			baseState,
-			{ repos: new Map([["api", {}], ["web", {}]]) } as any,
+			{
+				repos: new Map([
+					["api", {}],
+					["web", {}],
+				]),
+			} as any,
 			new Set<string>(),
 		);
 		expect(cycle.ok).toBe(false);
@@ -217,7 +294,14 @@ describe("TP-143 segment expansion engine coverage", () => {
 			"TP-905",
 			"TP-905::api",
 			"agent-1",
-			{ filePath: "/tmp/segment-expansion-exp-007.json", request: makeExpansionRequest({ requestId: "exp-dupe", taskId: "TP-905", fromSegmentId: "TP-905::api" }) },
+			{
+				filePath: "/tmp/segment-expansion-exp-007.json",
+				request: makeExpansionRequest({
+					requestId: "exp-dupe",
+					taskId: "TP-905",
+					fromSegmentId: "TP-905::api",
+				}),
+			},
 			baseState,
 			{ repos: new Map([["api", {}]]) } as any,
 			knownRequestIds,
@@ -228,7 +312,14 @@ describe("TP-143 segment expansion engine coverage", () => {
 			"TP-905",
 			"TP-905::api",
 			"agent-1",
-			{ filePath: "/tmp/segment-expansion-exp-007-dupe.json", request: makeExpansionRequest({ requestId: "exp-dupe", taskId: "TP-905", fromSegmentId: "TP-905::api" }) },
+			{
+				filePath: "/tmp/segment-expansion-exp-007-dupe.json",
+				request: makeExpansionRequest({
+					requestId: "exp-dupe",
+					taskId: "TP-905",
+					fromSegmentId: "TP-905::api",
+				}),
+			},
 			baseState,
 			{ repos: new Map([["api", {}]]) } as any,
 			knownRequestIds,
@@ -240,22 +331,35 @@ describe("TP-143 segment expansion engine coverage", () => {
 		const state = makeState({
 			wavePlan: [["TP-906"]],
 			totalWaves: 1,
-			tasks: [{
-				taskId: "TP-906",
-				laneNumber: 1,
-				sessionName: "",
-				status: "pending",
-				taskFolder: "/tmp/tasks/TP-906",
-				startedAt: null,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-906::api", "TP-906::web"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-906",
+					laneNumber: 1,
+					sessionName: "",
+					status: "pending",
+					taskFolder: "/tmp/tasks/TP-906",
+					startedAt: null,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-906::api", "TP-906::web"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [
-				makeSegment({ taskId: "TP-906", segmentId: "TP-906::api", status: "succeeded", endedAt: Date.now() - 200 }),
-				makeSegment({ taskId: "TP-906", segmentId: "TP-906::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-906::api"] }),
+				makeSegment({
+					taskId: "TP-906",
+					segmentId: "TP-906::api",
+					status: "succeeded",
+					endedAt: Date.now() - 200,
+				}),
+				makeSegment({
+					taskId: "TP-906",
+					segmentId: "TP-906::web",
+					repoId: "web",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-906::api"],
+				}),
 			],
 		});
 
@@ -268,19 +372,21 @@ describe("TP-143 segment expansion engine coverage", () => {
 		const state = makeState({
 			wavePlan: [["TP-920"]],
 			totalWaves: 1,
-			tasks: [{
-				taskId: "TP-920",
-				laneNumber: 1,
-				sessionName: "",
-				status: "pending",
-				taskFolder: "/tmp/tasks/TP-920",
-				startedAt: Date.now() - 400,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-920::api-service", "TP-920::web-client"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-920",
+					laneNumber: 1,
+					sessionName: "",
+					status: "pending",
+					taskFolder: "/tmp/tasks/TP-920",
+					startedAt: Date.now() - 400,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-920::api-service", "TP-920::web-client"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [
 				makeSegment({
 					taskId: "TP-920",
@@ -305,7 +411,9 @@ describe("TP-143 segment expansion engine coverage", () => {
 		reconstructSegmentFrontier(state);
 		expect(state.tasks[0].activeSegmentId).toBe("TP-920::web-client");
 		expect(buildResumeRuntimeWavePlan(state)).toEqual([["TP-920"], ["TP-920"]]);
-		const persistedExpanded = state.segments.find((segment) => segment.segmentId === "TP-920::web-client");
+		const persistedExpanded = state.segments.find(
+			(segment) => segment.segmentId === "TP-920::web-client",
+		);
 		expect(persistedExpanded?.expandedFrom).toBe("TP-920::api-service");
 		expect(persistedExpanded?.expansionRequestId).toBe("exp-tp920");
 	});
@@ -314,19 +422,21 @@ describe("TP-143 segment expansion engine coverage", () => {
 		const state = makeState({
 			wavePlan: [["TP-921"]],
 			totalWaves: 1,
-			tasks: [{
-				taskId: "TP-921",
-				laneNumber: 1,
-				sessionName: "",
-				status: "pending",
-				taskFolder: "/tmp/tasks/TP-921",
-				startedAt: Date.now() - 500,
-				endedAt: null,
-				doneFileFound: false,
-				exitReason: "",
-				segmentIds: ["TP-921::shared-libs", "TP-921::api-service", "TP-921::shared-libs::2"],
-				activeSegmentId: null,
-			}],
+			tasks: [
+				{
+					taskId: "TP-921",
+					laneNumber: 1,
+					sessionName: "",
+					status: "pending",
+					taskFolder: "/tmp/tasks/TP-921",
+					startedAt: Date.now() - 500,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-921::shared-libs", "TP-921::api-service", "TP-921::shared-libs::2"],
+					activeSegmentId: null,
+				},
+			],
 			segments: [
 				makeSegment({
 					taskId: "TP-921",
@@ -363,9 +473,7 @@ describe("TP-143 segment expansion engine coverage", () => {
 	it("resume-seeded processed request IDs block duplicate expansion processing", () => {
 		const knownRequestIds = collectProcessedSegmentExpansionRequestIds({
 			resilience: {
-				repairHistory: [
-					{ id: "exp-resume-dup", strategy: "segment-expansion-request" },
-				] as any,
+				repairHistory: [{ id: "exp-resume-dup", strategy: "segment-expansion-request" }] as any,
 			},
 		} as any);
 		expect([...knownRequestIds]).toEqual(["exp-resume-dup"]);
@@ -396,8 +504,17 @@ describe("TP-143 segment expansion engine coverage", () => {
 
 	it("boundary handling keeps deterministic request ordering and failed-origin/malformed file lifecycle guards", () => {
 		const src = readFileSync(new URL("../taskplane/engine.ts", import.meta.url), "utf-8");
-		expect(src).toMatch(/orderedRequests = \[\.\.\.parsedRequests\.valid\]\.sort\(\(a, b\) => a\.request\.requestId\.localeCompare\(b\.request\.requestId\)\)/);
-		expect(src).toContain("markSegmentExpansionRequestFile(requestFile.filePath, \"discarded\")");
+		// TP-193: Whitespace-normalize so the formatter's vertical re-wrapping
+		// of long chained-call expressions doesn't break the regex match.
+		const normSrc = src
+			.replace(/\s+/g, " ")
+			.replace(/([(\[{])\s+/g, "$1")
+			.replace(/\s+([)\]},])/g, "$1")
+			.replace(/,([)\]}])/g, "$1");
+		expect(normSrc).toMatch(
+			/orderedRequests = \[\.\.\.parsedRequests\.valid\]\.sort\(\(a, b\) => a\.request\.requestId\.localeCompare\(b\.request\.requestId\)\)/,
+		);
+		expect(src).toContain('markSegmentExpansionRequestFile(requestFile.filePath, "discarded")');
 		expect(src).toContain("segment expansion request malformed");
 	});
 });
@@ -439,7 +556,13 @@ describe("TP-145 expansion edge validation anchor-repo fix", () => {
 				}),
 			},
 			segmentState,
-			{ repos: new Map([["shared-libs", {}], ["api-service", {}], ["web-client", {}]]) } as any,
+			{
+				repos: new Map([
+					["shared-libs", {}],
+					["api-service", {}],
+					["web-client", {}],
+				]),
+			} as any,
 			new Set<string>(),
 		);
 		expect(result.ok).toBe(true);
@@ -448,9 +571,7 @@ describe("TP-145 expansion edge validation anchor-repo fix", () => {
 	it("accepts edge between two new repos (existing behavior preserved)", () => {
 		const segmentState: any = {
 			terminalStatus: "pending",
-			orderedSegments: [
-				{ segmentId: "TP-951::api", taskId: "TP-951", repoId: "api", order: 0 },
-			],
+			orderedSegments: [{ segmentId: "TP-951::api", taskId: "TP-951", repoId: "api", order: 0 }],
 			statusBySegmentId: new Map([["TP-951::api", "running"]]),
 			dependsOnBySegmentId: new Map([["TP-951::api", []]]),
 		};
@@ -470,7 +591,13 @@ describe("TP-145 expansion edge validation anchor-repo fix", () => {
 				}),
 			},
 			segmentState,
-			{ repos: new Map([["api", {}], ["web", {}], ["mobile", {}]]) } as any,
+			{
+				repos: new Map([
+					["api", {}],
+					["web", {}],
+					["mobile", {}],
+				]),
+			} as any,
 			new Set<string>(),
 		);
 		expect(result.ok).toBe(true);
@@ -479,9 +606,7 @@ describe("TP-145 expansion edge validation anchor-repo fix", () => {
 	it("still rejects edge to truly unknown repo", () => {
 		const segmentState: any = {
 			terminalStatus: "pending",
-			orderedSegments: [
-				{ segmentId: "TP-952::api", taskId: "TP-952", repoId: "api", order: 0 },
-			],
+			orderedSegments: [{ segmentId: "TP-952::api", taskId: "TP-952", repoId: "api", order: 0 }],
 			statusBySegmentId: new Map([["TP-952::api", "running"]]),
 			dependsOnBySegmentId: new Map([["TP-952::api", []]]),
 		};
@@ -501,7 +626,12 @@ describe("TP-145 expansion edge validation anchor-repo fix", () => {
 				}),
 			},
 			segmentState,
-			{ repos: new Map([["api", {}], ["web", {}]]) } as any,
+			{
+				repos: new Map([
+					["api", {}],
+					["web", {}],
+				]),
+			} as any,
 			new Set<string>(),
 		);
 		expect(result.ok).toBe(false);
@@ -542,7 +672,13 @@ describe("TP-145 expansion edge validation anchor-repo fix", () => {
 				}),
 			},
 			segmentState,
-			{ repos: new Map([["shared-libs", {}], ["api-service", {}], ["web-client", {}]]) } as any,
+			{
+				repos: new Map([
+					["shared-libs", {}],
+					["api-service", {}],
+					["web-client", {}],
+				]),
+			} as any,
 			new Set<string>(),
 		);
 		expect(result.ok).toBe(true);
@@ -553,22 +689,26 @@ describe("TP-145 expansion edge validation anchor-repo fix", () => {
 
 describe("TP-165 resolveTaskWorkerAgentId worker ID resolution", () => {
 	it("returns outcome.sessionName when present", () => {
-		const outcomes: any[] = [{
-			taskId: "TP-100",
-			sessionName: "orch-henry-lane-1-worker",
-			status: "succeeded",
-		}];
+		const outcomes: any[] = [
+			{
+				taskId: "TP-100",
+				sessionName: "orch-henry-lane-1-worker",
+				status: "succeeded",
+			},
+		];
 		const laneByTaskId = new Map();
 		const result = resolveTaskWorkerAgentId("TP-100", outcomes, laneByTaskId);
 		expect(result).toBe("orch-henry-lane-1-worker");
 	});
 
 	it("falls back to canonical worker agent ID via agentIdPrefix when outcome sessionName is empty", () => {
-		const outcomes: any[] = [{
-			taskId: "TP-100",
-			sessionName: "",
-			status: "succeeded",
-		}];
+		const outcomes: any[] = [
+			{
+				taskId: "TP-100",
+				sessionName: "",
+				status: "succeeded",
+			},
+		];
 		const laneByTaskId = new Map([
 			["TP-100", { laneSessionId: "orch-henry-lane-1", laneNumber: 1 } as any],
 		]);
@@ -589,11 +729,13 @@ describe("TP-165 resolveTaskWorkerAgentId worker ID resolution", () => {
 		// In workspace mode, laneSessionId includes repoId and local lane number
 		// (e.g., "orch-op-api-lane-1"), but the worker agent ID uses the global
 		// laneNumber (e.g., lane 3 globally → "orch-op-lane-3-worker").
-		const outcomes: any[] = [{
-			taskId: "TP-200",
-			sessionName: "",
-			status: "succeeded",
-		}];
+		const outcomes: any[] = [
+			{
+				taskId: "TP-200",
+				sessionName: "",
+				status: "succeeded",
+			},
+		];
 		const laneByTaskId = new Map([
 			["TP-200", { laneSessionId: "orch-op-api-lane-1", laneNumber: 3 } as any],
 		]);

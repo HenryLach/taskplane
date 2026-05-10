@@ -64,23 +64,21 @@ const execCalls: ExecCall[] = [];
 let currentHandler: ExecHandler = () => Buffer.from("");
 
 const realChildProcess = await import("node:child_process");
-const mockExecFileSync = mock.fn(
-	(cmd: string, args?: readonly string[]): Buffer => {
-		const safeArgs = args ?? [];
-		execCalls.push({ cmd, args: safeArgs });
-		const result = currentHandler(cmd, safeArgs);
-		if (Buffer.isBuffer(result)) return result;
-		const err = new Error("mocked subprocess failure") as Error & {
-			stderr?: Buffer;
-			stdout?: Buffer;
-			status?: number;
-		};
-		err.stderr = Buffer.from(result.stderr);
-		err.stdout = Buffer.from(result.stdout ?? "");
-		err.status = 1;
-		throw err;
-	},
-);
+const mockExecFileSync = mock.fn((cmd: string, args?: readonly string[]): Buffer => {
+	const safeArgs = args ?? [];
+	execCalls.push({ cmd, args: safeArgs });
+	const result = currentHandler(cmd, safeArgs);
+	if (Buffer.isBuffer(result)) return result;
+	const err = new Error("mocked subprocess failure") as Error & {
+		stderr?: Buffer;
+		stdout?: Buffer;
+		status?: number;
+	};
+	err.stderr = Buffer.from(result.stderr);
+	err.stdout = Buffer.from(result.stdout ?? "");
+	err.status = 1;
+	throw err;
+});
 
 mock.module("child_process", {
 	namedExports: {
@@ -141,7 +139,8 @@ function makeRepoRoot(): string {
  */
 function porcelainList(paths: string[]): Buffer {
 	const blocks = paths.map(
-		(p) => `worktree ${p}\nHEAD 0000000000000000000000000000000000000000\nbranch refs/heads/task/lane-1`,
+		(p) =>
+			`worktree ${p}\nHEAD 0000000000000000000000000000000000000000\nbranch refs/heads/task/lane-1`,
 	);
 	return Buffer.from(blocks.join("\n\n") + "\n");
 }
@@ -159,9 +158,7 @@ describe("TP-189-A4 — removeWorktree() Windows fallback decision branches", ()
 				if (cmd === "git" && args[0] === "worktree" && args[1] === "list") {
 					listCallCount++;
 					// Pre-removal: target IS registered. Post-prune: target is gone.
-					return listCallCount === 1
-						? porcelainList([wt.path])
-						: Buffer.from("");
+					return listCallCount === 1 ? porcelainList([wt.path]) : Buffer.from("");
 				}
 				if (cmd === "git" && args[0] === "worktree" && args[1] === "remove") {
 					return { kind: "throw", stderr: "error: failed to delete 'foo': Filename too long" };
@@ -199,10 +196,7 @@ describe("TP-189-A4 — removeWorktree() Windows fallback decision branches", ()
 				`expected exactly 1 cmd /c rd /s /q invocation, got ${cmdRdCalls.length}`,
 			);
 			// And it must have used the documented arg shape with backslash-normalized path.
-			assert.deepStrictEqual(
-				cmdRdCalls[0].args.slice(0, 4),
-				["/c", "rd", "/s", "/q"],
-			);
+			assert.deepStrictEqual(cmdRdCalls[0].args.slice(0, 4), ["/c", "rd", "/s", "/q"]);
 			assert.strictEqual(
 				cmdRdCalls[0].args[4],
 				wt.path.replace(/\//g, "\\"),

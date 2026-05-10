@@ -80,7 +80,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	try { rmSync(testRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+	try {
+		rmSync(testRoot, { recursive: true, force: true });
+	} catch {
+		/* ignore */
+	}
 });
 
 // ── Helper: make a minimal valid verdict JSON ────────────────────────
@@ -163,11 +167,13 @@ describe("1.x: parseVerdict", () => {
 	});
 
 	it("1.8: valid PASS verdict parsed correctly", () => {
-		const v = parseVerdict(makeVerdictJson({
-			verdict: "PASS",
-			confidence: "high",
-			summary: "Looks good",
-		}));
+		const v = parseVerdict(
+			makeVerdictJson({
+				verdict: "PASS",
+				confidence: "high",
+				summary: "Looks good",
+			}),
+		);
 		expect(v.verdict).toBe("PASS");
 		expect(v.confidence).toBe("high");
 		expect(v.summary).toBe("Looks good");
@@ -175,13 +181,27 @@ describe("1.x: parseVerdict", () => {
 	});
 
 	it("1.9: valid NEEDS_FIXES verdict parsed with findings", () => {
-		const v = parseVerdict(makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation", description: "Bug found", file: "foo.ts", remediation: "fix it" },
-				{ severity: "suggestion", category: "incomplete_work", description: "Style issue", file: "bar.ts", remediation: "" },
-			],
-		}));
+		const v = parseVerdict(
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Bug found",
+						file: "foo.ts",
+						remediation: "fix it",
+					},
+					{
+						severity: "suggestion",
+						category: "incomplete_work",
+						description: "Style issue",
+						file: "bar.ts",
+						remediation: "",
+					},
+				],
+			}),
+		);
 		expect(v.verdict).toBe("NEEDS_FIXES");
 		expect(v.findings).toHaveLength(2);
 		expect(v.findings[0].severity).toBe("critical");
@@ -190,22 +210,44 @@ describe("1.x: parseVerdict", () => {
 	});
 
 	it("1.10: findings with invalid severity are dropped", () => {
-		const v = parseVerdict(makeVerdictJson({
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation", description: "valid", file: "", remediation: "" },
-				{ severity: "banana", category: "incorrect_implementation", description: "invalid severity", file: "", remediation: "" },
-			],
-		}));
+		const v = parseVerdict(
+			makeVerdictJson({
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "valid",
+						file: "",
+						remediation: "",
+					},
+					{
+						severity: "banana",
+						category: "incorrect_implementation",
+						description: "invalid severity",
+						file: "",
+						remediation: "",
+					},
+				],
+			}),
+		);
 		expect(v.findings).toHaveLength(1);
 		expect(v.findings[0].severity).toBe("critical");
 	});
 
 	it("1.11: findings with invalid category are dropped", () => {
-		const v = parseVerdict(makeVerdictJson({
-			findings: [
-				{ severity: "important", category: "weird_cat", description: "unknown cat", file: "", remediation: "" },
-			],
-		}));
+		const v = parseVerdict(
+			makeVerdictJson({
+				findings: [
+					{
+						severity: "important",
+						category: "weird_cat",
+						description: "unknown cat",
+						file: "",
+						remediation: "",
+					},
+				],
+			}),
+		);
 		expect(v.findings).toHaveLength(0);
 	});
 
@@ -215,22 +257,24 @@ describe("1.x: parseVerdict", () => {
 	});
 
 	it("1.13: statusReconciliation entries parsed", () => {
-		const v = parseVerdict(makeVerdictJson({
-			statusReconciliation: [
-				{ checkbox: "Step 2 checkbox", actualState: "not_done", evidence: "tests failing" },
-			],
-		}));
+		const v = parseVerdict(
+			makeVerdictJson({
+				statusReconciliation: [
+					{ checkbox: "Step 2 checkbox", actualState: "not_done", evidence: "tests failing" },
+				],
+			}),
+		);
 		expect(v.statusReconciliation).toHaveLength(1);
 		expect(v.statusReconciliation[0].checkbox).toBe("Step 2 checkbox");
 		expect(v.statusReconciliation[0].actualState).toBe("not_done");
 	});
 
 	it("1.14: statusReconciliation entry with invalid actualState is dropped", () => {
-		const v = parseVerdict(makeVerdictJson({
-			statusReconciliation: [
-				{ checkbox: "Step 1", actualState: "unknown_state", evidence: "n/a" },
-			],
-		}));
+		const v = parseVerdict(
+			makeVerdictJson({
+				statusReconciliation: [{ checkbox: "Step 1", actualState: "unknown_state", evidence: "n/a" }],
+			}),
+		);
 		expect(v.statusReconciliation).toHaveLength(0);
 	});
 });
@@ -248,7 +292,9 @@ describe("2.x: applyVerdictRules", () => {
 
 	it("2.2: any critical finding → fail", () => {
 		const result = applyVerdictRules(
-			makeVerdict({ findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })] }),
+			makeVerdict({
+				findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })],
+			}),
 			"no_critical",
 		);
 		expect(result.pass).toBe(false);
@@ -300,7 +346,9 @@ describe("2.x: applyVerdictRules", () => {
 
 	it("2.9: status_mismatch category in findings → fail", () => {
 		const v = makeVerdict({
-			findings: [makeFinding({ severity: "suggestion", category: "status_mismatch", description: "mismatch" })],
+			findings: [
+				makeFinding({ severity: "suggestion", category: "status_mismatch", description: "mismatch" }),
+			],
 		});
 		const result = applyVerdictRules(v, "no_critical");
 		expect(result.pass).toBe(false);
@@ -367,14 +415,17 @@ describe("3.x: Quality gate config", () => {
 
 	it("3.4: quality gate YAML settings are loaded and mapped", () => {
 		const dir = makeTestDir("qg-yaml");
-		writeTaskRunnerYaml(dir, [
-			"quality_gate:",
-			"  enabled: true",
-			"  review_model: anthropic/claude-4-sonnet",
-			"  max_review_cycles: 3",
-			"  max_fix_cycles: 2",
-			"  pass_threshold: no_important",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			dir,
+			[
+				"quality_gate:",
+				"  enabled: true",
+				"  review_model: anthropic/claude-4-sonnet",
+				"  max_review_cycles: 3",
+				"  max_fix_cycles: 2",
+				"  pass_threshold: no_important",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.qualityGate.enabled).toBe(true);
@@ -416,10 +467,7 @@ describe("3.x: Quality gate config", () => {
 
 	it("3.6: partial quality gate YAML merges with defaults", () => {
 		const dir = makeTestDir("qg-partial-yaml");
-		writeTaskRunnerYaml(dir, [
-			"quality_gate:",
-			"  enabled: true",
-		].join("\n"));
+		writeTaskRunnerYaml(dir, ["quality_gate:", "  enabled: true"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.qualityGate.enabled).toBe(true);
@@ -473,21 +521,32 @@ describe("4.x: readAndEvaluateVerdict fail-open", () => {
 
 	it("4.5: verdict file with NEEDS_FIXES and critical finding → fail evaluation", () => {
 		const dir = makeTestDir("needs-fixes-critical");
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation", description: "broken", file: "a.ts", remediation: "fix" },
-			],
-		}), "utf-8");
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "broken",
+						file: "a.ts",
+						remediation: "fix",
+					},
+				],
+			}),
+			"utf-8",
+		);
 		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
 		expect(verdict.verdict).toBe("NEEDS_FIXES");
 		expect(evaluation.pass).toBe(false);
-		expect(evaluation.failReasons.some(r => r.rule === "critical_finding")).toBe(true);
+		expect(evaluation.failReasons.some((r) => r.rule === "critical_finding")).toBe(true);
 	});
 
 	it("4.6: non-existent directory → synthetic PASS (no crash)", () => {
 		const { verdict, evaluation } = readAndEvaluateVerdict(
-			join(testRoot, "completely-nonexistent-directory"), "no_critical",
+			join(testRoot, "completely-nonexistent-directory"),
+			"no_critical",
 		);
 		expect(verdict.verdict).toBe("PASS");
 		expect(evaluation.pass).toBe(true);
@@ -495,24 +554,44 @@ describe("4.x: readAndEvaluateVerdict fail-open", () => {
 
 	it("4.7: verdict file with only suggestions under no_critical → pass", () => {
 		const dir = makeTestDir("suggestions-only");
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "PASS",
-			findings: [
-				{ severity: "suggestion", category: "incomplete_work", description: "minor", file: "", remediation: "" },
-			],
-		}), "utf-8");
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "PASS",
+				findings: [
+					{
+						severity: "suggestion",
+						category: "incomplete_work",
+						description: "minor",
+						file: "",
+						remediation: "",
+					},
+				],
+			}),
+			"utf-8",
+		);
 		const { evaluation } = readAndEvaluateVerdict(dir, "no_critical");
 		expect(evaluation.pass).toBe(true);
 	});
 
 	it("4.8: verdict file with suggestions under all_clear → fail", () => {
 		const dir = makeTestDir("suggestions-all-clear");
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "PASS",
-			findings: [
-				{ severity: "suggestion", category: "incomplete_work", description: "minor", file: "", remediation: "" },
-			],
-		}), "utf-8");
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "PASS",
+				findings: [
+					{
+						severity: "suggestion",
+						category: "incomplete_work",
+						description: "minor",
+						file: "",
+						remediation: "",
+					},
+				],
+			}),
+			"utf-8",
+		);
 		const { evaluation } = readAndEvaluateVerdict(dir, "all_clear");
 		expect(evaluation.pass).toBe(false);
 	});
@@ -529,8 +608,16 @@ describe("5.x: generateFeedbackMd", () => {
 			confidence: "high",
 			summary: "Issues found",
 			findings: [
-				makeFinding({ severity: "critical", category: "incorrect_implementation", description: "Critical bug" }),
-				makeFinding({ severity: "important", category: "missing_requirement", description: "Missing feature" }),
+				makeFinding({
+					severity: "critical",
+					category: "incorrect_implementation",
+					description: "Critical bug",
+				}),
+				makeFinding({
+					severity: "important",
+					category: "missing_requirement",
+					description: "Missing feature",
+				}),
 				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Style nit" }),
 			],
 		});
@@ -550,8 +637,16 @@ describe("5.x: generateFeedbackMd", () => {
 			confidence: "medium",
 			summary: "Not perfect",
 			findings: [
-				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Consider renaming" }),
-				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Add a comment" }),
+				makeFinding({
+					severity: "suggestion",
+					category: "incomplete_work",
+					description: "Consider renaming",
+				}),
+				makeFinding({
+					severity: "suggestion",
+					category: "incomplete_work",
+					description: "Add a comment",
+				}),
 			],
 		});
 		const md = generateFeedbackMd(v, 1, 2, "all_clear");
@@ -566,8 +661,16 @@ describe("5.x: generateFeedbackMd", () => {
 		const v = makeVerdict({
 			verdict: "NEEDS_FIXES",
 			findings: [
-				makeFinding({ severity: "important", category: "missing_requirement", description: "Must fix" }),
-				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Nice to have" }),
+				makeFinding({
+					severity: "important",
+					category: "missing_requirement",
+					description: "Must fix",
+				}),
+				makeFinding({
+					severity: "suggestion",
+					category: "incomplete_work",
+					description: "Nice to have",
+				}),
 			],
 		});
 		const md = generateFeedbackMd(v, 1, 2, "no_important");
@@ -585,7 +688,9 @@ describe("5.x: generateFeedbackMd", () => {
 	it("5.5: includes STATUS reconciliation issues", () => {
 		const v = makeVerdict({
 			verdict: "NEEDS_FIXES",
-			findings: [makeFinding({ severity: "critical", category: "status_mismatch", description: "mismatch" })],
+			findings: [
+				makeFinding({ severity: "critical", category: "status_mismatch", description: "mismatch" }),
+			],
 			statusReconciliation: [
 				{ checkbox: "Step 1 done", actualState: "not_done" as const, evidence: "No code changes" },
 			],
@@ -725,15 +830,21 @@ describe("7.x: Verdict rules threshold matrix", () => {
 	});
 
 	it("7.2: no_critical: 1 critical → FAIL", () => {
-		const v = makeVerdict({ findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })] });
+		const v = makeVerdict({
+			findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })],
+		});
 		const result = applyVerdictRules(v, "no_critical");
 		expect(result.pass).toBe(false);
-		expect(result.failReasons.some(r => r.rule === "critical_finding")).toBe(true);
+		expect(result.failReasons.some((r) => r.rule === "critical_finding")).toBe(true);
 	});
 
 	it("7.3: no_critical: 5 important → PASS (important not blocked at this threshold)", () => {
 		const findings = Array.from({ length: 5 }, (_, i) =>
-			makeFinding({ severity: "important", category: "missing_requirement", description: `issue ${i}` }),
+			makeFinding({
+				severity: "important",
+				category: "missing_requirement",
+				description: `issue ${i}`,
+			}),
 		);
 		const result = applyVerdictRules(makeVerdict({ findings }), "no_critical");
 		expect(result.pass).toBe(true);
@@ -749,11 +860,13 @@ describe("7.x: Verdict rules threshold matrix", () => {
 
 	it("7.5: no_critical: status_mismatch → FAIL regardless", () => {
 		const v = makeVerdict({
-			findings: [makeFinding({ severity: "suggestion", category: "status_mismatch", description: "mismatch" })],
+			findings: [
+				makeFinding({ severity: "suggestion", category: "status_mismatch", description: "mismatch" }),
+			],
 		});
 		const result = applyVerdictRules(v, "no_critical");
 		expect(result.pass).toBe(false);
-		expect(result.failReasons.some(r => r.rule === "status_mismatch")).toBe(true);
+		expect(result.failReasons.some((r) => r.rule === "status_mismatch")).toBe(true);
 	});
 
 	// ── no_important threshold ───────────────────────────────────────
@@ -769,16 +882,24 @@ describe("7.x: Verdict rules threshold matrix", () => {
 
 	it("7.7: no_important: 3 important → FAIL (at threshold)", () => {
 		const findings = Array.from({ length: 3 }, (_, i) =>
-			makeFinding({ severity: "important", category: "missing_requirement", description: `issue ${i}` }),
+			makeFinding({
+				severity: "important",
+				category: "missing_requirement",
+				description: `issue ${i}`,
+			}),
 		);
 		const result = applyVerdictRules(makeVerdict({ findings }), "no_important");
 		expect(result.pass).toBe(false);
-		expect(result.failReasons.some(r => r.rule === "important_threshold")).toBe(true);
+		expect(result.failReasons.some((r) => r.rule === "important_threshold")).toBe(true);
 	});
 
 	it("7.8: no_important: 4 important → FAIL (above threshold)", () => {
 		const findings = Array.from({ length: 4 }, (_, i) =>
-			makeFinding({ severity: "important", category: "missing_requirement", description: `issue ${i}` }),
+			makeFinding({
+				severity: "important",
+				category: "missing_requirement",
+				description: `issue ${i}`,
+			}),
 		);
 		const result = applyVerdictRules(makeVerdict({ findings }), "no_important");
 		expect(result.pass).toBe(false);
@@ -790,13 +911,11 @@ describe("7.x: Verdict rules threshold matrix", () => {
 		});
 		const result = applyVerdictRules(v, "no_important");
 		expect(result.pass).toBe(false);
-		expect(result.failReasons.some(r => r.rule === "critical_finding")).toBe(true);
+		expect(result.failReasons.some((r) => r.rule === "critical_finding")).toBe(true);
 	});
 
 	it("7.10: no_important: suggestions only → PASS", () => {
-		const findings = Array.from({ length: 5 }, () =>
-			makeFinding({ severity: "suggestion" }),
-		);
+		const findings = Array.from({ length: 5 }, () => makeFinding({ severity: "suggestion" }));
 		const result = applyVerdictRules(makeVerdict({ findings }), "no_important");
 		expect(result.pass).toBe(true);
 	});
@@ -818,7 +937,9 @@ describe("7.x: Verdict rules threshold matrix", () => {
 
 	it("7.13: all_clear: 1 important → FAIL", () => {
 		const v = makeVerdict({
-			findings: [makeFinding({ severity: "important", category: "missing_requirement", description: "missing" })],
+			findings: [
+				makeFinding({ severity: "important", category: "missing_requirement", description: "missing" }),
+			],
 		});
 		const result = applyVerdictRules(v, "all_clear");
 		expect(result.pass).toBe(false);
@@ -826,7 +947,13 @@ describe("7.x: Verdict rules threshold matrix", () => {
 
 	it("7.14: all_clear: 1 critical → FAIL", () => {
 		const v = makeVerdict({
-			findings: [makeFinding({ severity: "critical", category: "incorrect_implementation", description: "broken" })],
+			findings: [
+				makeFinding({
+					severity: "critical",
+					category: "incorrect_implementation",
+					description: "broken",
+				}),
+			],
 		});
 		const result = applyVerdictRules(v, "all_clear");
 		expect(result.pass).toBe(false);
@@ -842,28 +969,34 @@ describe("7.x: Verdict rules threshold matrix", () => {
 		});
 		const result = applyVerdictRules(v, "all_clear");
 		expect(result.pass).toBe(false);
-		expect(result.failReasons.some(r => r.rule === "critical_finding")).toBe(true);
+		expect(result.failReasons.some((r) => r.rule === "critical_finding")).toBe(true);
 	});
 
 	// ── Cross-threshold: status_mismatch always blocks ───────────────
 
 	it("7.16: status_mismatch blocks at no_critical", () => {
 		const v = makeVerdict({
-			findings: [makeFinding({ severity: "suggestion", category: "status_mismatch", description: "x" })],
+			findings: [
+				makeFinding({ severity: "suggestion", category: "status_mismatch", description: "x" }),
+			],
 		});
 		expect(applyVerdictRules(v, "no_critical").pass).toBe(false);
 	});
 
 	it("7.17: status_mismatch blocks at no_important", () => {
 		const v = makeVerdict({
-			findings: [makeFinding({ severity: "suggestion", category: "status_mismatch", description: "x" })],
+			findings: [
+				makeFinding({ severity: "suggestion", category: "status_mismatch", description: "x" }),
+			],
 		});
 		expect(applyVerdictRules(v, "no_important").pass).toBe(false);
 	});
 
 	it("7.18: status_mismatch blocks at all_clear", () => {
 		const v = makeVerdict({
-			findings: [makeFinding({ severity: "suggestion", category: "status_mismatch", description: "x" })],
+			findings: [
+				makeFinding({ severity: "suggestion", category: "status_mismatch", description: "x" }),
+			],
 		});
 		expect(applyVerdictRules(v, "all_clear").pass).toBe(false);
 	});
@@ -875,7 +1008,7 @@ describe("7.x: Verdict rules threshold matrix", () => {
 			const v = makeVerdict({ verdict: "NEEDS_FIXES", findings: [] });
 			const result = applyVerdictRules(v, threshold);
 			expect(result.pass).toBe(false);
-			expect(result.failReasons.some(r => r.rule === "verdict_says_needs_fixes")).toBe(true);
+			expect(result.failReasons.some((r) => r.rule === "verdict_says_needs_fixes")).toBe(true);
 		}
 	});
 });
@@ -901,10 +1034,14 @@ describe("8.x: Gate decision logic (unit)", () => {
 
 	it("8.2: enabled + PASS verdict → evaluation.pass is true (gate would create .DONE)", () => {
 		const dir = makeTestDir("pass-done");
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "PASS",
-			findings: [],
-		}), "utf-8");
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "PASS",
+				findings: [],
+			}),
+			"utf-8",
+		);
 		const { evaluation } = readAndEvaluateVerdict(dir, "no_critical");
 		expect(evaluation.pass).toBe(true);
 		// In the task-runner, pass=true → writeFileSync(donePath, ...) with quality gate metadata
@@ -912,12 +1049,22 @@ describe("8.x: Gate decision logic (unit)", () => {
 
 	it("8.3: enabled + NEEDS_FIXES with critical → evaluation.pass is false (.DONE NOT created)", () => {
 		const dir = makeTestDir("fail-no-done");
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation", description: "bug", file: "", remediation: "" },
-			],
-		}), "utf-8");
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "bug",
+						file: "",
+						remediation: "",
+					},
+				],
+			}),
+			"utf-8",
+		);
 		const { evaluation } = readAndEvaluateVerdict(dir, "no_critical");
 		expect(evaluation.pass).toBe(false);
 		// .DONE should NOT be created when evaluation.pass is false
@@ -927,11 +1074,15 @@ describe("8.x: Gate decision logic (unit)", () => {
 	it("8.4: PASS verdict includes quality gate metadata expectations", () => {
 		// Verify the verdict structure that task-runner uses to populate .DONE content
 		const dir = makeTestDir("pass-metadata");
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "PASS",
-			confidence: "high",
-			summary: "All requirements met",
-		}), "utf-8");
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "PASS",
+				confidence: "high",
+				summary: "All requirements met",
+			}),
+			"utf-8",
+		);
 		const { verdict } = readAndEvaluateVerdict(dir, "no_critical");
 		expect(verdict.verdict).toBe("PASS");
 		expect(verdict.confidence).toBe("high");
@@ -946,8 +1097,16 @@ describe("8.x: Gate decision logic (unit)", () => {
 			verdict: "NEEDS_FIXES",
 			summary: "Multiple issues remain after remediation",
 			findings: [
-				makeFinding({ severity: "critical", category: "incorrect_implementation", description: "Broken parser" }),
-				makeFinding({ severity: "important", category: "missing_requirement", description: "Missing validation" }),
+				makeFinding({
+					severity: "critical",
+					category: "incorrect_implementation",
+					description: "Broken parser",
+				}),
+				makeFinding({
+					severity: "important",
+					category: "missing_requirement",
+					description: "Missing validation",
+				}),
 				makeFinding({ severity: "important", category: "incomplete_work", description: "No tests" }),
 			],
 		});
@@ -955,8 +1114,8 @@ describe("8.x: Gate decision logic (unit)", () => {
 		expect(evaluation.pass).toBe(false);
 
 		// Verify the findings summary the task-runner would log
-		const criticals = verdict.findings.filter(f => f.severity === "critical");
-		const importants = verdict.findings.filter(f => f.severity === "important");
+		const criticals = verdict.findings.filter((f) => f.severity === "critical");
+		const importants = verdict.findings.filter((f) => f.severity === "important");
 		expect(criticals).toHaveLength(1);
 		expect(importants).toHaveLength(2);
 	});
@@ -978,7 +1137,11 @@ describe("9.x: Remediation cycle determinism (unit)", () => {
 			confidence: "high",
 			summary: "Critical bugs found",
 			findings: [
-				makeFinding({ severity: "critical", category: "incorrect_implementation", description: "Buffer overflow in parser" }),
+				makeFinding({
+					severity: "critical",
+					category: "incorrect_implementation",
+					description: "Buffer overflow in parser",
+				}),
 			],
 		});
 		const feedback = generateFeedbackMd(v, 1, 2, "no_critical");
@@ -1017,7 +1180,11 @@ describe("9.x: Remediation cycle determinism (unit)", () => {
 		const failVerdict = makeVerdict({
 			verdict: "NEEDS_FIXES",
 			findings: [
-				makeFinding({ severity: "critical", category: "incorrect_implementation", description: "still broken" }),
+				makeFinding({
+					severity: "critical",
+					category: "incorrect_implementation",
+					description: "still broken",
+				}),
 			],
 		});
 
@@ -1073,9 +1240,9 @@ describe("9.x: Remediation cycle determinism (unit)", () => {
 		});
 
 		// Under no_critical threshold, only critical/important are counted in summary
-		const criticals = v.findings.filter(f => f.severity === "critical");
-		const importants = v.findings.filter(f => f.severity === "important");
-		const suggestions = v.findings.filter(f => f.severity === "suggestion");
+		const criticals = v.findings.filter((f) => f.severity === "critical");
+		const importants = v.findings.filter((f) => f.severity === "important");
+		const suggestions = v.findings.filter((f) => f.severity === "suggestion");
 		expect(criticals).toHaveLength(2);
 		expect(importants).toHaveLength(1);
 		expect(suggestions).toHaveLength(1);
@@ -1100,7 +1267,11 @@ describe("9.x: Remediation cycle determinism (unit)", () => {
 		const v = makeVerdict({
 			verdict: "NEEDS_FIXES",
 			findings: [
-				makeFinding({ severity: "important", category: "incomplete_work", description: "Still incomplete" }),
+				makeFinding({
+					severity: "important",
+					category: "incomplete_work",
+					description: "Still incomplete",
+				}),
 			],
 		});
 		const feedbackCycle2 = generateFeedbackMd(v, 2, 3, "no_critical");
@@ -1343,7 +1514,11 @@ describe("11.x: Composed gate decision flow", () => {
 	 */
 	function deleteVerdictFile(taskFolder: string): void {
 		const verdictPath = join(taskFolder, VERDICT_FILENAME);
-		try { if (existsSync(verdictPath)) unlinkSync(verdictPath); } catch { /* ignore */ }
+		try {
+			if (existsSync(verdictPath)) unlinkSync(verdictPath);
+		} catch {
+			/* ignore */
+		}
 	}
 
 	// ── 11.1: Full PASS flow — verdict → .DONE created ──────────────
@@ -1353,12 +1528,15 @@ describe("11.x: Composed gate decision flow", () => {
 		const taskId = "TP-FLOW-PASS";
 
 		// Agent writes a PASS verdict
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "PASS",
-			confidence: "high",
-			summary: "All requirements met, tests pass",
-			findings: [],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "PASS",
+				confidence: "high",
+				summary: "All requirements met, tests pass",
+				findings: [],
+			}),
+		);
 
 		// Gate reads and evaluates (same call as task-runner)
 		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
@@ -1385,15 +1563,23 @@ describe("11.x: Composed gate decision flow", () => {
 		const maxReviewCycles = 2;
 
 		// Agent writes a NEEDS_FIXES verdict
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			confidence: "high",
-			summary: "Critical bug in parser",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "Buffer overflow", file: "parser.ts", remediation: "Add bounds check" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				confidence: "high",
+				summary: "Critical bug in parser",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Buffer overflow",
+						file: "parser.ts",
+						remediation: "Add bounds check",
+					},
+				],
+			}),
+		);
 
 		// Gate reads and evaluates
 		const { verdict, evaluation } = readAndEvaluateVerdict(dir, threshold);
@@ -1441,13 +1627,21 @@ describe("11.x: Composed gate decision flow", () => {
 
 		// ── Cycle 1: Review fails ────────────────────────────────
 		reviewCycle++;
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "OOB read", file: "parser.ts", remediation: "Add length check" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "OOB read",
+						file: "parser.ts",
+						remediation: "Add length check",
+					},
+				],
+			}),
+		);
 
 		const result1 = readAndEvaluateVerdict(dir, threshold);
 		expect(result1.evaluation.pass).toBe(false);
@@ -1472,12 +1666,15 @@ describe("11.x: Composed gate decision flow", () => {
 		// ── Cycle 2: Review passes ───────────────────────────────
 		reviewCycle++;
 		// Agent writes a PASS verdict after fix
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "PASS",
-			confidence: "high",
-			summary: "Fix verified, all requirements met",
-			findings: [],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "PASS",
+				confidence: "high",
+				summary: "Fix verified, all requirements met",
+				findings: [],
+			}),
+		);
 
 		const result2 = readAndEvaluateVerdict(dir, threshold);
 		expect(result2.evaluation.pass).toBe(true);
@@ -1517,16 +1714,29 @@ describe("11.x: Composed gate decision flow", () => {
 
 		// ── Cycle 1: fails ───────────────────────────────────────
 		reviewCycle++;
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			summary: "Critical bugs",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "Memory leak", file: "pool.ts", remediation: "Free buffer" },
-				{ severity: "important", category: "missing_requirement",
-				  description: "No error handling", file: "pool.ts", remediation: "Add try/catch" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				summary: "Critical bugs",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Memory leak",
+						file: "pool.ts",
+						remediation: "Free buffer",
+					},
+					{
+						severity: "important",
+						category: "missing_requirement",
+						description: "No error handling",
+						file: "pool.ts",
+						remediation: "Add try/catch",
+					},
+				],
+			}),
+		);
 
 		const r1 = readAndEvaluateVerdict(dir, threshold);
 		lastVerdict = r1.verdict;
@@ -1540,14 +1750,22 @@ describe("11.x: Composed gate decision flow", () => {
 
 		// ── Cycle 2: still fails ─────────────────────────────────
 		reviewCycle++;
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			summary: "Memory leak partially fixed but new issue",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "Double free", file: "pool.ts", remediation: "Track allocation state" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				summary: "Memory leak partially fixed but new issue",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Double free",
+						file: "pool.ts",
+						remediation: "Track allocation state",
+					},
+				],
+			}),
+		);
 
 		const r2 = readAndEvaluateVerdict(dir, threshold);
 		lastVerdict = r2.verdict;
@@ -1560,8 +1778,8 @@ describe("11.x: Composed gate decision flow", () => {
 		expect(existsSync(join(dir, ".DONE"))).toBe(false);
 
 		// Verify findings summary for logging (mirrors task-runner terminal failure logic)
-		const criticals = lastVerdict!.findings.filter(f => f.severity === "critical");
-		const importants = lastVerdict!.findings.filter(f => f.severity === "important");
+		const criticals = lastVerdict!.findings.filter((f) => f.severity === "critical");
+		const importants = lastVerdict!.findings.filter((f) => f.severity === "important");
 		const summaryParts = [
 			criticals.length > 0 ? `${criticals.length} critical` : "",
 			importants.length > 0 ? `${importants.length} important` : "",
@@ -1577,13 +1795,21 @@ describe("11.x: Composed gate decision flow", () => {
 		const threshold: PassThreshold = "no_critical";
 
 		// Cycle 1: review fails
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "Bug", file: "a.ts", remediation: "fix" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Bug",
+						file: "a.ts",
+						remediation: "fix",
+					},
+				],
+			}),
+		);
 
 		const r1 = readAndEvaluateVerdict(dir, threshold);
 		expect(r1.evaluation.pass).toBe(false);
@@ -1642,13 +1868,21 @@ describe("11.x: Composed gate decision flow", () => {
 
 		// ── Cycle 1: fails ───────────────────────────────────────
 		reviewCycle++;
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "Bug", file: "a.ts", remediation: "fix" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Bug",
+						file: "a.ts",
+						remediation: "fix",
+					},
+				],
+			}),
+		);
 
 		const r1 = readAndEvaluateVerdict(dir, threshold);
 		expect(r1.evaluation.pass).toBe(false);
@@ -1660,13 +1894,21 @@ describe("11.x: Composed gate decision flow", () => {
 
 		// ── Cycle 2: still fails ─────────────────────────────────
 		reviewCycle++;
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "Still broken", file: "a.ts", remediation: "try again" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Still broken",
+						file: "a.ts",
+						remediation: "try again",
+					},
+				],
+			}),
+		);
 
 		const r2 = readAndEvaluateVerdict(dir, threshold);
 		expect(r2.evaluation.pass).toBe(false);
@@ -1689,15 +1931,23 @@ describe("11.x: Composed gate decision flow", () => {
 		const threshold: PassThreshold = "all_clear";
 
 		// Agent writes verdict with only suggestions
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			confidence: "medium",
-			summary: "Minor issues remain",
-			findings: [
-				{ severity: "suggestion", category: "incomplete_work",
-				  description: "Variable naming", file: "utils.ts", remediation: "Rename to be descriptive" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				confidence: "medium",
+				summary: "Minor issues remain",
+				findings: [
+					{
+						severity: "suggestion",
+						category: "incomplete_work",
+						description: "Variable naming",
+						file: "utils.ts",
+						remediation: "Rename to be descriptive",
+					},
+				],
+			}),
+		);
 
 		const { verdict, evaluation } = readAndEvaluateVerdict(dir, threshold);
 		expect(evaluation.pass).toBe(false);
@@ -1714,10 +1964,13 @@ describe("11.x: Composed gate decision flow", () => {
 		// Same findings under no_critical would PASS (suggestions don't block)
 		// Note: can't re-read the same file because verdict value "NEEDS_FIXES"
 		// triggers verdict_says_needs_fixes rule. Test via applyVerdictRules directly.
-		const noCritEval = applyVerdictRules(makeVerdict({
-			verdict: "PASS",
-			findings: verdict.findings,
-		}), "no_critical");
+		const noCritEval = applyVerdictRules(
+			makeVerdict({
+				verdict: "PASS",
+				findings: verdict.findings,
+			}),
+			"no_critical",
+		);
 		expect(noCritEval.pass).toBe(true);
 	});
 
@@ -1727,13 +1980,21 @@ describe("11.x: Composed gate decision flow", () => {
 		const dir = makeTestDir("flow-verdict-delete");
 
 		// Write a NEEDS_FIXES verdict
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "NEEDS_FIXES",
-			findings: [
-				{ severity: "critical", category: "incorrect_implementation",
-				  description: "Bug", file: "a.ts", remediation: "fix" },
-			],
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "NEEDS_FIXES",
+				findings: [
+					{
+						severity: "critical",
+						category: "incorrect_implementation",
+						description: "Bug",
+						file: "a.ts",
+						remediation: "fix",
+					},
+				],
+			}),
+		);
 
 		// Read and evaluate — NEEDS_FIXES
 		const r1 = readAndEvaluateVerdict(dir, "no_critical");
@@ -1749,10 +2010,13 @@ describe("11.x: Composed gate decision flow", () => {
 		expect(r2.verdict.summary).toContain("fail-open");
 
 		// Write a new PASS verdict (normal case: agent succeeds)
-		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
-			verdict: "PASS",
-			summary: "Fixed",
-		}));
+		writeFileSync(
+			join(dir, VERDICT_FILENAME),
+			makeVerdictJson({
+				verdict: "PASS",
+				summary: "Fixed",
+			}),
+		);
 
 		const r3 = readAndEvaluateVerdict(dir, "no_critical");
 		expect(r3.evaluation.pass).toBe(true);

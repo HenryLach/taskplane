@@ -83,7 +83,9 @@ function makeNpmRootWithScopes(scopes: ReadonlyArray<"@earendil-works" | "@mario
  * `npm_config_prefix` redirecting `npm root -g`. Returns the resolved path
  * or throws (capturing stderr) so test assertions can match either outcome.
  */
-function probeResolveInChild(npmConfigPrefix: string | null): { ok: true; resolved: string } | { ok: false; stderr: string } {
+function probeResolveInChild(
+	npmConfigPrefix: string | null,
+): { ok: true; resolved: string } | { ok: false; stderr: string } {
 	const probeScript = `
 		import("${pathToFileUrl(join(repoRoot, "taskplane", "path-resolver.ts"))}").then((m) => {
 			try {

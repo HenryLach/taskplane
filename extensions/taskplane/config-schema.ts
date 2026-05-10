@@ -66,7 +66,6 @@ export const CONFIG_VERSION = 1;
  */
 export const PROJECT_CONFIG_FILENAME = "taskplane-config.json";
 
-
 // ── Task Runner Section Interfaces ───────────────────────────────────
 
 /** Project metadata */
@@ -207,7 +206,6 @@ export interface QualityGateConfig {
 	passThreshold: PassThreshold;
 }
 
-
 // ── Task Runner Combined Section ─────────────────────────────────────
 
 /**
@@ -256,7 +254,6 @@ export interface TaskRunnerSection {
 	 */
 	modelFallback: ModelFallbackMode;
 }
-
 
 // ── Orchestrator Section Interfaces ──────────────────────────────────
 
@@ -393,7 +390,6 @@ export interface VerificationConfig {
 	flakyReruns: number;
 }
 
-
 // ── Orchestrator Combined Section ────────────────────────────────────
 
 /**
@@ -428,7 +424,6 @@ export interface OrchestratorSection {
 	supervisor: SupervisorSectionConfig;
 }
 
-
 // ── Workspace Section Interfaces ─────────────────────────────────────
 
 /** Workspace repo definition (JSON config shape). */
@@ -458,7 +453,6 @@ export interface WorkspaceSectionConfig {
 	/** Routing contract for workspace mode. */
 	routing: WorkspaceRoutingSectionConfig;
 }
-
 
 // ── Unified Config ───────────────────────────────────────────────────
 
@@ -490,7 +484,6 @@ export interface TaskplaneConfig {
 	/** Optional workspace config (JSON-first; legacy YAML fallback supported). */
 	workspace?: WorkspaceSectionConfig;
 }
-
 
 // ── Global Preferences (Layer 2) ─────────────────────────────────────
 
@@ -527,11 +520,12 @@ export interface InitAgentDefaultsPreferences {
 	mergeThinking?: string;
 }
 
-export type DeepPartial<T> = T extends Array<infer U>
-	? Array<DeepPartial<U>>
-	: T extends object
-		? { [K in keyof T]?: DeepPartial<T[K]> }
-		: T;
+export type DeepPartial<T> =
+	T extends Array<infer U>
+		? Array<DeepPartial<U>>
+		: T extends object
+			? { [K in keyof T]?: DeepPartial<T[K]> }
+			: T;
 
 export interface GlobalPreferences {
 	/**
@@ -589,7 +583,6 @@ export const GLOBAL_PREFERENCES_FILENAME = "preferences.json";
  * Subdirectory under the agent dir for taskplane preferences.
  */
 export const GLOBAL_PREFERENCES_SUBDIR = "taskplane";
-
 
 // ── Defaults ─────────────────────────────────────────────────────────
 

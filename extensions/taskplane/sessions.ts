@@ -25,7 +25,7 @@ export function listOrchSessions(
 	if (!batchState || batchState.currentLanes.length === 0) return [];
 
 	return batchState.currentLanes
-		.map(lane => ({
+		.map((lane) => ({
 			sessionName: lane.laneSessionId,
 			laneId: lane.laneId,
 			taskId: lane.tasks.length > 0 ? lane.tasks[0].taskId : null,

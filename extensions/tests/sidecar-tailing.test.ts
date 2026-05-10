@@ -32,18 +32,20 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+	try {
+		rmSync(tmpDir, { recursive: true, force: true });
+	} catch {}
 });
 
 /** Append JSONL events to the sidecar file */
 function appendEvents(...events: object[]): void {
-	const content = events.map(e => JSON.stringify(e) + "\n").join("");
+	const content = events.map((e) => JSON.stringify(e) + "\n").join("");
 	appendFileSync(sidecarPath, content);
 }
 
 /** Create the sidecar file with initial events */
 function writeEvents(...events: object[]): void {
-	const content = events.map(e => JSON.stringify(e) + "\n").join("");
+	const content = events.map((e) => JSON.stringify(e) + "\n").join("");
 	writeFileSync(sidecarPath, content);
 }
 
@@ -212,9 +214,7 @@ describe("tailSidecarJsonl — incremental reading", () => {
 		expect(delta2.hadEvents).toBe(false);
 
 		// Tick 3: append 1 new event
-		appendEvents(
-			{ type: "message_end", message: { usage: { input: 200, output: 80, cost: 0.02 } } },
-		);
+		appendEvents({ type: "message_end", message: { usage: { input: 200, output: 80, cost: 0.02 } } });
 		const delta3 = tailSidecarJsonl(sidecarPath, state);
 		expect(delta3.inputTokens).toBe(200);
 		expect(delta3.outputTokens).toBe(80);
@@ -302,9 +302,7 @@ describe("tailSidecarJsonl — retry state persistence", () => {
 		expect(d1.retriesStarted).toBe(1);
 
 		// Tick 2: unrelated events during retry
-		appendEvents(
-			{ type: "message_end", message: { usage: { input: 100, output: 50, cost: 0.01 } } },
-		);
+		appendEvents({ type: "message_end", message: { usage: { input: 100, output: 50, cost: 0.01 } } });
 		const d2 = tailSidecarJsonl(sidecarPath, state);
 		expect(d2.retryActive).toBe(true); // still active
 		expect(d2.retriesStarted).toBe(0); // no new retries
@@ -408,13 +406,16 @@ describe("tailSidecarJsonl — partial-line buffering", () => {
 describe("tailSidecarJsonl — malformed lines", () => {
 	it("skips malformed JSON lines without breaking", () => {
 		const state = createSidecarTailState();
-		writeFileSync(sidecarPath, [
-			JSON.stringify({ type: "agent_start" }),
-			"this is not JSON",
-			JSON.stringify({ type: "message_end", message: { usage: { input: 100, output: 50 } } }),
-			"{malformed json",
-			JSON.stringify({ type: "tool_execution_start", toolName: "read", args: { path: "f.ts" } }),
-		].join("\n") + "\n");
+		writeFileSync(
+			sidecarPath,
+			[
+				JSON.stringify({ type: "agent_start" }),
+				"this is not JSON",
+				JSON.stringify({ type: "message_end", message: { usage: { input: 100, output: 50 } } }),
+				"{malformed json",
+				JSON.stringify({ type: "tool_execution_start", toolName: "read", args: { path: "f.ts" } }),
+			].join("\n") + "\n",
+		);
 
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.hadEvents).toBe(true);
@@ -436,12 +437,10 @@ describe("tailSidecarJsonl — malformed lines", () => {
 
 	it("skips empty and whitespace-only lines", () => {
 		const state = createSidecarTailState();
-		writeFileSync(sidecarPath, [
-			"",
-			"  ",
-			JSON.stringify({ type: "agent_start" }),
-			"",
-		].join("\n") + "\n");
+		writeFileSync(
+			sidecarPath,
+			["", "  ", JSON.stringify({ type: "agent_start" }), ""].join("\n") + "\n",
+		);
 
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.hadEvents).toBe(true);
@@ -455,9 +454,7 @@ describe("tailSidecarJsonl — final tail scenarios", () => {
 		const state = createSidecarTailState();
 
 		// Tick 1: initial events
-		writeEvents(
-			{ type: "message_end", message: { usage: { input: 100, output: 50, cost: 0.01 } } },
-		);
+		writeEvents({ type: "message_end", message: { usage: { input: 100, output: 50, cost: 0.01 } } });
 		tailSidecarJsonl(sidecarPath, state);
 
 		// Events written between last tick and session exit
@@ -581,9 +578,7 @@ describe("tailSidecarJsonl — poll loop integration simulation", () => {
 		expect(totalToolCalls).toBe(1);
 
 		// Tick 2: retry starts
-		appendEvents(
-			{ type: "auto_retry_start", attempt: 1, errorMessage: "rate_limit", delayMs: 5000 },
-		);
+		appendEvents({ type: "auto_retry_start", attempt: 1, errorMessage: "rate_limit", delayMs: 5000 });
 		delta = tailSidecarJsonl(sidecarPath, state);
 		if (delta.hadEvents) onTelemetry(delta);
 		expect(retryActive).toBe(true);
@@ -622,11 +617,13 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 	it("extracts contextUsage.percent from response event (TP-094 fix)", () => {
 		const state = createSidecarTailState();
 		// Pi sends `percent` (not `percentUsed`) in contextUsage
-		writeEvents(
-			{ type: "response", success: true, data: {
+		writeEvents({
+			type: "response",
+			success: true,
+			data: {
 				contextUsage: { percent: 42.5, tokens: 425000, contextWindow: 1000000 },
-			}},
-		);
+			},
+		});
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage).not.toBe(null);
 		expect(delta.contextUsage!.percent).toBe(42.5);
@@ -637,11 +634,13 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 	it("accepts legacy percentUsed as backward-compatible fallback", () => {
 		const state = createSidecarTailState();
 		// Hypothetical older format with percentUsed
-		writeEvents(
-			{ type: "response", success: true, data: {
+		writeEvents({
+			type: "response",
+			success: true,
+			data: {
 				contextUsage: { percentUsed: 55.0, totalTokens: 550000, maxTokens: 1000000 },
-			}},
-		);
+			},
+		});
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage).not.toBe(null);
 		expect(delta.contextUsage!.percent).toBe(55.0);
@@ -651,29 +650,27 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 
 	it("prefers percent over percentUsed when both present", () => {
 		const state = createSidecarTailState();
-		writeEvents(
-			{ type: "response", success: true, data: {
+		writeEvents({
+			type: "response",
+			success: true,
+			data: {
 				contextUsage: { percent: 60.0, percentUsed: 59.0, totalTokens: 600000, maxTokens: 1000000 },
-			}},
-		);
+			},
+		});
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage!.percent).toBe(60.0);
 	});
 
 	it("contextUsage is null when response has no contextUsage (older pi)", () => {
 		const state = createSidecarTailState();
-		writeEvents(
-			{ type: "response", success: true, data: {} },
-		);
+		writeEvents({ type: "response", success: true, data: {} });
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage).toBe(null);
 	});
 
 	it("sets sawStatsResponseWithoutContextUsage when response lacks it", () => {
 		const state = createSidecarTailState();
-		writeEvents(
-			{ type: "response", success: true, data: { sessionId: "abc" } },
-		);
+		writeEvents({ type: "response", success: true, data: { sessionId: "abc" } });
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage).toBe(null);
 		expect(delta.sawStatsResponseWithoutContextUsage).toBe(true);
@@ -681,9 +678,7 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 
 	it("does not set sawStatsResponseWithoutContextUsage on error response", () => {
 		const state = createSidecarTailState();
-		writeEvents(
-			{ type: "response", success: false, error: "something broke" },
-		);
+		writeEvents({ type: "response", success: false, error: "something broke" });
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage).toBe(null);
 		expect(delta.sawStatsResponseWithoutContextUsage).toBe(false);
@@ -691,9 +686,7 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 
 	it("contextUsage is null when response is an error", () => {
 		const state = createSidecarTailState();
-		writeEvents(
-			{ type: "response", success: false, error: "something broke" },
-		);
+		writeEvents({ type: "response", success: false, error: "something broke" });
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage).toBe(null);
 	});
@@ -703,9 +696,13 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 		// message_end gives manual tokens AND response gives authoritative contextUsage
 		writeEvents(
 			{ type: "message_end", message: { usage: { input: 100, output: 50, totalTokens: 150 } } },
-			{ type: "response", success: true, data: {
-				contextUsage: { percent: 87.3, tokens: 873000, contextWindow: 1000000 },
-			}},
+			{
+				type: "response",
+				success: true,
+				data: {
+					contextUsage: { percent: 87.3, tokens: 873000, contextWindow: 1000000 },
+				},
+			},
 		);
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		// Both should be present — consumer uses authoritative percent

@@ -59,8 +59,11 @@ describe("buildWorkerEnv", () => {
 			model: "gpt-4o",
 			excludeExtensions: ["some-package"],
 		});
-		assert.strictEqual(result.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS, undefined,
-			"buildWorkerEnv should not set exclude extensions — buildWorkerExcludeEnv owns that var");
+		assert.strictEqual(
+			result.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS,
+			undefined,
+			"buildWorkerEnv should not set exclude extensions — buildWorkerExcludeEnv owns that var",
+		);
 	});
 
 	it("handles all fields simultaneously", () => {

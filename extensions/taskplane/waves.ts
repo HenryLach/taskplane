@@ -7,7 +7,23 @@ import { join } from "path";
 import { parseDependencyReference } from "./discovery.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { AllocationError, buildSegmentId, getTaskDurationMinutes } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, TaskSegmentPlan, TaskSegmentPlanMap, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
+import type {
+	AllocatedLane,
+	AllocatedTask,
+	AllocationErrorCode,
+	DependencyGraph,
+	DiscoveryError,
+	GraphValidationResult,
+	LaneAssignment,
+	OrchestratorConfig,
+	ParsedTask,
+	TaskSegmentPlan,
+	TaskSegmentPlanMap,
+	WaveAssignment,
+	WaveComputationResult,
+	WorkspaceConfig,
+	WorktreeInfo,
+} from "./types.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ensureLaneWorktrees, removeAllWorktrees, removeWorktree } from "./worktree.ts";
 
@@ -55,7 +71,6 @@ export function buildDependencyGraph(
 
 	return { dependencies, dependents, nodes };
 }
-
 
 // ── Graph Validation ─────────────────────────────────────────────────
 
@@ -182,7 +197,6 @@ export function validateGraph(
 	};
 }
 
-
 // ── Wave Computation (Topological Sort) ──────────────────────────────
 
 /**
@@ -258,7 +272,6 @@ export function computeWaves(
 
 	return { waves, errors };
 }
-
 
 // ── File Scope Affinity ──────────────────────────────────────────────
 
@@ -403,7 +416,6 @@ export function applyFileScopeAffinity(
 	return result;
 }
 
-
 // ── Repo-Scoped Lane Helpers ─────────────────────────────────────────
 
 /**
@@ -505,13 +517,17 @@ export function generateLaneId(laneLocalNumber: number, repoId?: string): string
  * @param opId            - Operator identifier (sanitized, e.g., "henrylach")
  * @param repoId          - Repo identifier (undefined in repo mode)
  */
-export function generateLaneSessionId(sessionPrefix: string, laneLocalNumber: number, opId: string, repoId?: string): string {
+export function generateLaneSessionId(
+	sessionPrefix: string,
+	laneLocalNumber: number,
+	opId: string,
+	repoId?: string,
+): string {
 	if (repoId) {
 		return `${sessionPrefix}-${opId}-${repoId}-lane-${laneLocalNumber}`;
 	}
 	return `${sessionPrefix}-${opId}-lane-${laneLocalNumber}`;
 }
-
 
 // ── Repo-Scoped Worktree Resolution ─────────────────────────────────
 
@@ -583,7 +599,7 @@ export function resolveBaseBranch(
 			// instead of the orch branch, bypassing batch isolation.
 			console.error(
 				`[taskplane] resolveBaseBranch WARNING: orch branch "${batchBaseBranch}" not found in repo "${repoId}" at ${repoRoot} — falling back to repo HEAD. ` +
-				`This bypasses orch branch isolation. Ensure the orch branch was created in all workspace repos.`,
+					`This bypasses orch branch isolation. Ensure the orch branch was created in all workspace repos.`,
 			);
 		} catch (err) {
 			console.error(
@@ -621,15 +637,14 @@ export function resolveBaseBranch(
 	if (repoId && batchBaseBranch.startsWith("orch/")) {
 		throw new Error(
 			`Cannot resolve base branch for repo "${repoId}" at ${repoRoot}: ` +
-			`HEAD is detached and no defaultBranch is configured. ` +
-			`The batch base branch "${batchBaseBranch}" is an orch branch that does not exist in this repo. ` +
-			`Configure a defaultBranch for this repo in task-orchestrator.yaml workspace settings.`,
+				`HEAD is detached and no defaultBranch is configured. ` +
+				`The batch base branch "${batchBaseBranch}" is an orch branch that does not exist in this repo. ` +
+				`Configure a defaultBranch for this repo in task-orchestrator.yaml workspace settings.`,
 		);
 	}
 
 	return batchBaseBranch;
 }
-
 
 // ── Segment Planning (TP-080) ───────────────────────────────────────
 
@@ -778,7 +793,7 @@ function buildSegmentNodes(taskId: string, repoIds: string[]) {
 		repoId,
 		order,
 	}));
-	return nodes.sort((a, b) => (a.order - b.order) || a.repoId.localeCompare(b.repoId));
+	return nodes.sort((a, b) => a.order - b.order || a.repoId.localeCompare(b.repoId));
 }
 
 export function buildSegmentPlanForTask(
@@ -839,7 +854,6 @@ export function buildTaskSegmentPlans(
 	return plans;
 }
 
-
 // ── Lane Assignment ──────────────────────────────────────────────────
 
 /**
@@ -877,9 +891,7 @@ export function assignTasksToLanes(
 
 	// Step 3: Initialize lane weights (for load-balanced assignment)
 	const laneWeights: number[] = new Array(laneCount).fill(0);
-	const laneAssignments: LaneAssignment[][] = new Array(laneCount)
-		.fill(null)
-		.map(() => []);
+	const laneAssignments: LaneAssignment[][] = new Array(laneCount).fill(null).map(() => []);
 
 	function getWeight(taskId: string): number {
 		const task = pending.get(taskId);
@@ -970,7 +982,6 @@ export function assignTasksToLanes(
 	return result;
 }
 
-
 // ── Global Lane Cap (TP-148) ─────────────────────────────────────────
 
 /**
@@ -1044,8 +1055,8 @@ export function enforceGlobalLaneCap(
 	if (finalTotal > maxLanes) {
 		console.error(
 			`[taskplane] warning: global maxLanes=${maxLanes} could not be enforced — ` +
-			`${byRepo.size} repos each need at least 1 lane (total: ${finalTotal}). ` +
-			`Increase maxLanes to at least ${byRepo.size} to avoid this.`,
+				`${byRepo.size} repos each need at least 1 lane (total: ${finalTotal}). ` +
+				`Increase maxLanes to at least ${byRepo.size} to avoid this.`,
 		);
 	}
 
@@ -1060,7 +1071,6 @@ export function enforceGlobalLaneCap(
 		}
 	}
 }
-
 
 /**
  * Result of `allocateLanes()`.
@@ -1145,16 +1155,13 @@ export function validateAllocationInputs(
 		return new AllocationError(
 			"ALLOC_INVALID_CONFIG",
 			`Unknown assignment strategy: "${config.assignment.strategy}". ` +
-			`Valid strategies: ${validStrategies.join(", ")}`,
+				`Valid strategies: ${validStrategies.join(", ")}`,
 		);
 	}
 
 	// Validate worktree prefix is non-empty
 	if (!config.orchestrator.worktree_prefix?.trim()) {
-		return new AllocationError(
-			"ALLOC_INVALID_CONFIG",
-			`worktree_prefix must be a non-empty string`,
-		);
+		return new AllocationError("ALLOC_INVALID_CONFIG", `worktree_prefix must be a non-empty string`);
 	}
 
 	return null;
@@ -1336,7 +1343,12 @@ export function allocateLanes(
 		const groupLaneNumbers = repoLaneGroups.get(groupKey)!;
 		const groupRepoId = repoIdForGroup.get(groupKey);
 		const groupRepoRoot = resolveRepoRoot(groupRepoId, repoRoot, workspaceConfig);
-		const groupBaseBranch = resolveBaseBranch(groupRepoId, groupRepoRoot, baseBranch, workspaceConfig);
+		const groupBaseBranch = resolveBaseBranch(
+			groupRepoId,
+			groupRepoRoot,
+			baseBranch,
+			workspaceConfig,
+		);
 
 		const worktreeResult = ensureLaneWorktrees(
 			groupLaneNumbers,
@@ -1370,16 +1382,17 @@ export function allocateLanes(
 			const failedLanes = worktreeResult.errors
 				.map((e) => `Lane ${e.laneNumber}: [${e.code}] ${e.message}`)
 				.join("\n");
-			const withinGroupRollbackIssues = worktreeResult.rollbackErrors.length > 0
-				? "\nWithin-group rollback issues:\n" +
-				  worktreeResult.rollbackErrors
-					.map((e) => `  Lane ${e.laneNumber}: [${e.code}] ${e.message}`)
-					.join("\n")
-				: "";
-			const crossRepoRollbackIssues = rollbackErrors.length > 0
-				? "\nCross-repo rollback issues:\n" +
-				  rollbackErrors.map((e) => `  ${e}`).join("\n")
-				: "";
+			const withinGroupRollbackIssues =
+				worktreeResult.rollbackErrors.length > 0
+					? "\nWithin-group rollback issues:\n" +
+						worktreeResult.rollbackErrors
+							.map((e) => `  Lane ${e.laneNumber}: [${e.code}] ${e.message}`)
+							.join("\n")
+					: "";
+			const crossRepoRollbackIssues =
+				rollbackErrors.length > 0
+					? "\nCross-repo rollback issues:\n" + rollbackErrors.map((e) => `  ${e}`).join("\n")
+					: "";
 
 			return {
 				success: false,
@@ -1420,7 +1433,14 @@ export function allocateLanes(
 			for (const groupKey of createdGroupKeys) {
 				const groupRepoId = repoIdForGroup.get(groupKey);
 				const groupRepoRoot = resolveRepoRoot(groupRepoId, repoRoot, workspaceConfig);
-				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot, opId, undefined, batchId, config);
+				removeAllWorktrees(
+					config.orchestrator.worktree_prefix,
+					groupRepoRoot,
+					opId,
+					undefined,
+					batchId,
+					config,
+				);
 			}
 			return {
 				success: false,
@@ -1447,10 +1467,7 @@ export function allocateLanes(
 			(sum, t) => sum + (sizeWeights[t.task.size] || sizeWeights["M"] || 2),
 			0,
 		);
-		const estimatedMinutes = allocatedTasks.reduce(
-			(sum, t) => sum + t.estimatedMinutes,
-			0,
-		);
+		const estimatedMinutes = allocatedTasks.reduce((sum, t) => sum + t.estimatedMinutes, 0);
 
 		const laneSessionId = generateLaneSessionId(sessionPrefix, entry.localLane, opId, entry.repoId);
 		allocatedLanes.push({
@@ -1479,7 +1496,6 @@ export function allocateLanes(
 		batchId,
 	};
 }
-
 
 // ── Full Wave Pipeline ───────────────────────────────────────────────
 

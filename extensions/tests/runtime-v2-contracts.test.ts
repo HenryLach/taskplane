@@ -171,7 +171,15 @@ describe("2.x: validateAgentManifest", () => {
 	});
 
 	it("2.9: accepts all valid statuses", () => {
-		for (const status of ["spawning", "running", "wrapping_up", "exited", "crashed", "timed_out", "killed"] as RuntimeAgentStatus[]) {
+		for (const status of [
+			"spawning",
+			"running",
+			"wrapping_up",
+			"exited",
+			"crashed",
+			"timed_out",
+			"killed",
+		] as RuntimeAgentStatus[]) {
 			const m = validManifest();
 			m.status = status;
 			expect(validateAgentManifest(m)).toEqual([]);

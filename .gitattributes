@@ -1,0 +1,39 @@
+# Enforce LF line endings in the working tree for all platforms.
+#
+# Without this file, Windows developers with `core.autocrlf=true` (the default)
+# get CRLF in their working tree, which conflicts with Biome's
+# `formatter.lineEnding: "lf"` config and causes `npm run format:check` to
+# report spurious errors (the index stores LF correctly; only the local
+# working tree is wrong).
+#
+# `* text=auto eol=lf` tells Git: detect text files automatically, and force
+# LF in the working tree regardless of the platform's autocrlf setting.
+#
+# This file is the canonical override for the platform-default behavior.
+# Added in TP-193 fold (post-merge format-pass cleanup).
+
+* text=auto eol=lf
+
+# Explicit overrides for binary file types (defensive — autodetection usually
+# handles these correctly, but explicit declaration prevents corner cases).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.tgz binary
+
+# Source files: explicit LF (redundant given `* text=auto eol=lf` but improves
+# discoverability when grepping `.gitattributes` for a specific extension).
+*.ts text eol=lf
+*.tsx text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

@@ -17,7 +17,15 @@
 
 import { describe, it, beforeEach, afterEach, mock } from "node:test";
 import { expect } from "./expect.ts";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
@@ -127,10 +135,38 @@ function makePersistedBatchState(overrides?: Partial<PersistedBatchState>): Pers
 		wavePlan: [["T-001", "T-002"], ["T-003"], ["T-004"]],
 		lanes: [],
 		tasks: [
-			{ taskId: "T-001", status: "succeeded", laneNumber: 1, waveIndex: 0, startedAt: 0, endedAt: 0 } as any,
-			{ taskId: "T-002", status: "failed", laneNumber: 2, waveIndex: 0, startedAt: 0, endedAt: 0 } as any,
-			{ taskId: "T-003", status: "running", laneNumber: 1, waveIndex: 1, startedAt: 0, endedAt: null } as any,
-			{ taskId: "T-004", status: "pending", laneNumber: 0, waveIndex: 2, startedAt: 0, endedAt: null } as any,
+			{
+				taskId: "T-001",
+				status: "succeeded",
+				laneNumber: 1,
+				waveIndex: 0,
+				startedAt: 0,
+				endedAt: 0,
+			} as any,
+			{
+				taskId: "T-002",
+				status: "failed",
+				laneNumber: 2,
+				waveIndex: 0,
+				startedAt: 0,
+				endedAt: 0,
+			} as any,
+			{
+				taskId: "T-003",
+				status: "running",
+				laneNumber: 1,
+				waveIndex: 1,
+				startedAt: 0,
+				endedAt: null,
+			} as any,
+			{
+				taskId: "T-004",
+				status: "pending",
+				laneNumber: 0,
+				waveIndex: 2,
+				startedAt: 0,
+				endedAt: null,
+			} as any,
 		],
 		mergeResults: [],
 		totalTasks: 4,
@@ -432,7 +468,11 @@ describe("2.x — Lockfile: write/read/remove + field validation", () => {
 		expect(existsSync(dir)).toBe(false);
 
 		writeLockfile(tmpDir, {
-			pid: 1, sessionId: "s", batchId: "b", startedAt: "t", heartbeat: "t",
+			pid: 1,
+			sessionId: "s",
+			batchId: "b",
+			startedAt: "t",
+			heartbeat: "t",
 		});
 
 		expect(existsSync(dir)).toBe(true);
@@ -552,7 +592,7 @@ describe("3.x — Heartbeat: isLockStale detection", () => {
 			mock.timers.tick(HEARTBEAT_INTERVAL_MS + 5);
 			// TP-070: heartbeat is now async — allow async I/O to settle
 			mock.timers.reset();
-			await new Promise(r => setTimeout(r, 200));
+			await new Promise((r) => setTimeout(r, 200));
 			const after = readLockfile(dir)?.heartbeat;
 			expect(after).toBeDefined();
 			expect(after).not.toBe(before);
@@ -780,8 +820,19 @@ describe("4.x — buildTakeoverSummary", () => {
 
 describe("5.x — Event JSONL parsing: parseJsonlLines", () => {
 	it("5.1: parses complete JSONL lines", () => {
-		const line1 = JSON.stringify({ timestamp: "t1", type: "wave_start", batchId: "b1", waveIndex: 0 });
-		const line2 = JSON.stringify({ timestamp: "t2", type: "task_complete", batchId: "b1", waveIndex: 0, taskId: "T-001" });
+		const line1 = JSON.stringify({
+			timestamp: "t1",
+			type: "wave_start",
+			batchId: "b1",
+			waveIndex: 0,
+		});
+		const line2 = JSON.stringify({
+			timestamp: "t2",
+			type: "task_complete",
+			batchId: "b1",
+			waveIndex: 0,
+			taskId: "T-001",
+		});
 		const data = line1 + "\n" + line2 + "\n";
 
 		const [events, remaining] = parseJsonlLines(data, "");
@@ -792,7 +843,12 @@ describe("5.x — Event JSONL parsing: parseJsonlLines", () => {
 	});
 
 	it("5.2: handles partial lines (no trailing newline)", () => {
-		const line1 = JSON.stringify({ timestamp: "t1", type: "wave_start", batchId: "b1", waveIndex: 0 });
+		const line1 = JSON.stringify({
+			timestamp: "t1",
+			type: "wave_start",
+			batchId: "b1",
+			waveIndex: 0,
+		});
 		const partial = '{"timestamp":"t2","type":"task_com';
 		const data = line1 + "\n" + partial;
 
@@ -838,8 +894,12 @@ describe("5.x — Event JSONL parsing: parseJsonlLines", () => {
 describe("5.x — formatEventNotification", () => {
 	it("5.7: formats wave_start correctly", () => {
 		const event = {
-			timestamp: "t", type: "wave_start" as any, batchId: "b", waveIndex: 1,
-			taskIds: ["T-1", "T-2", "T-3"], laneCount: 3,
+			timestamp: "t",
+			type: "wave_start" as any,
+			batchId: "b",
+			waveIndex: 1,
+			taskIds: ["T-1", "T-2", "T-3"],
+			laneCount: 3,
 		};
 		const text = formatEventNotification(event, "supervised");
 		expect(text).toContain("Wave 2"); // waveIndex 1 = wave 2
@@ -850,8 +910,12 @@ describe("5.x — formatEventNotification", () => {
 
 	it("5.8: formats merge_success correctly", () => {
 		const event = {
-			timestamp: "t", type: "merge_success" as any, batchId: "b", waveIndex: 0,
-			testCount: 42, totalWaves: 3,
+			timestamp: "t",
+			type: "merge_success" as any,
+			batchId: "b",
+			waveIndex: 0,
+			testCount: 42,
+			totalWaves: 3,
 		};
 		const text = formatEventNotification(event, "supervised");
 		expect(text).toContain("✅");
@@ -861,7 +925,10 @@ describe("5.x — formatEventNotification", () => {
 
 	it("5.9: formats merge_failed differently for autonomous vs interactive", () => {
 		const event = {
-			timestamp: "t", type: "merge_failed" as any, batchId: "b", waveIndex: 0,
+			timestamp: "t",
+			type: "merge_failed" as any,
+			batchId: "b",
+			waveIndex: 0,
 			reason: "conflict in src/app.ts",
 		};
 
@@ -874,8 +941,13 @@ describe("5.x — formatEventNotification", () => {
 
 	it("5.10: formats batch_complete with summary", () => {
 		const event = {
-			timestamp: "t", type: "batch_complete" as any, batchId: "b", waveIndex: -1,
-			succeededTasks: 10, failedTasks: 2, skippedTasks: 1,
+			timestamp: "t",
+			type: "batch_complete" as any,
+			batchId: "b",
+			waveIndex: -1,
+			succeededTasks: 10,
+			failedTasks: 2,
+			skippedTasks: 1,
 			batchDurationMs: 3661000, // 1h 1m 1s
 		};
 		const text = formatEventNotification(event, "supervised");
@@ -888,8 +960,12 @@ describe("5.x — formatEventNotification", () => {
 
 	it("5.11: formats tier0_escalation with pattern and suggestion", () => {
 		const event = {
-			timestamp: "t", type: "tier0_escalation" as any, batchId: "b", waveIndex: 0,
-			pattern: "WORKER_CRASH", suggestion: "Check lane 2 logs",
+			timestamp: "t",
+			type: "tier0_escalation" as any,
+			batchId: "b",
+			waveIndex: 0,
+			pattern: "WORKER_CRASH",
+			suggestion: "Check lane 2 logs",
 		};
 
 		const interText = formatEventNotification(event, "interactive");
@@ -904,7 +980,10 @@ describe("5.x — formatEventNotification", () => {
 
 	it("5.12: formats batch_paused differently by autonomy", () => {
 		const event = {
-			timestamp: "t", type: "batch_paused" as any, batchId: "b", waveIndex: 0,
+			timestamp: "t",
+			type: "batch_paused" as any,
+			batchId: "b",
+			waveIndex: 0,
 			reason: "merge conflict",
 		};
 
@@ -919,7 +998,12 @@ describe("5.x — formatEventNotification", () => {
 
 describe("5.x — shouldNotify filtering", () => {
 	it("5.13: always notifies for terminal/failure events regardless of autonomy", () => {
-		const criticalTypes = ["batch_complete", "batch_paused", "merge_failed", "tier0_escalation"] as const;
+		const criticalTypes = [
+			"batch_complete",
+			"batch_paused",
+			"merge_failed",
+			"tier0_escalation",
+		] as const;
 		for (const type of criticalTypes) {
 			expect(shouldNotify(type, "interactive")).toBe(true);
 			expect(shouldNotify(type, "supervised")).toBe(true);
@@ -943,26 +1027,50 @@ describe("5.x — shouldNotify filtering", () => {
 
 describe("5.x — formatTaskDigest", () => {
 	it("5.16: returns null for empty buffer", () => {
-		const buf = { completed: [], failed: [], recoveryAttempts: 0, recoverySuccesses: 0, recoveryExhausted: 0 };
+		const buf = {
+			completed: [],
+			failed: [],
+			recoveryAttempts: 0,
+			recoverySuccesses: 0,
+			recoveryExhausted: 0,
+		};
 		expect(formatTaskDigest(buf, "supervised")).toBeNull();
 	});
 
 	it("5.17: formats completed tasks", () => {
-		const buf = { completed: ["T-1", "T-2"], failed: [], recoveryAttempts: 0, recoverySuccesses: 0, recoveryExhausted: 0 };
+		const buf = {
+			completed: ["T-1", "T-2"],
+			failed: [],
+			recoveryAttempts: 0,
+			recoverySuccesses: 0,
+			recoveryExhausted: 0,
+		};
 		const text = formatTaskDigest(buf, "supervised");
 		expect(text).not.toBeNull();
 		expect(text).toContain("2 task(s) completed");
 	});
 
 	it("5.18: interactive mode shows individual task IDs for completed", () => {
-		const buf = { completed: ["T-1", "T-2"], failed: [], recoveryAttempts: 0, recoverySuccesses: 0, recoveryExhausted: 0 };
+		const buf = {
+			completed: ["T-1", "T-2"],
+			failed: [],
+			recoveryAttempts: 0,
+			recoverySuccesses: 0,
+			recoveryExhausted: 0,
+		};
 		const text = formatTaskDigest(buf, "interactive");
 		expect(text).toContain("T-1");
 		expect(text).toContain("T-2");
 	});
 
 	it("5.19: always shows failed task IDs", () => {
-		const buf = { completed: [], failed: ["T-3"], recoveryAttempts: 0, recoverySuccesses: 0, recoveryExhausted: 0 };
+		const buf = {
+			completed: [],
+			failed: ["T-3"],
+			recoveryAttempts: 0,
+			recoverySuccesses: 0,
+			recoveryExhausted: 0,
+		};
 		const text = formatTaskDigest(buf, "autonomous");
 		expect(text).not.toBeNull();
 		expect(text).toContain("T-3");
@@ -970,7 +1078,13 @@ describe("5.x — formatTaskDigest", () => {
 	});
 
 	it("5.20: formats recovery budget exhausted", () => {
-		const buf = { completed: [], failed: [], recoveryAttempts: 0, recoverySuccesses: 0, recoveryExhausted: 2 };
+		const buf = {
+			completed: [],
+			failed: [],
+			recoveryAttempts: 0,
+			recoverySuccesses: 0,
+			recoveryExhausted: 2,
+		};
 		const text = formatTaskDigest(buf, "supervised");
 		expect(text).not.toBeNull();
 		expect(text).toContain("2 recovery budget(s) exhausted");
@@ -983,8 +1097,20 @@ describe("5.x — processEvents: batch-scoped filtering + routing", () => {
 		tailer.batchId = "batch-A";
 
 		const events = [
-			{ timestamp: "t1", type: "wave_start" as any, batchId: "batch-A", waveIndex: 0, taskIds: ["T-1"] },
-			{ timestamp: "t2", type: "wave_start" as any, batchId: "batch-B", waveIndex: 0, taskIds: ["T-2"] },
+			{
+				timestamp: "t1",
+				type: "wave_start" as any,
+				batchId: "batch-A",
+				waveIndex: 0,
+				taskIds: ["T-1"],
+			},
+			{
+				timestamp: "t2",
+				type: "wave_start" as any,
+				batchId: "batch-B",
+				waveIndex: 0,
+				taskIds: ["T-2"],
+			},
 		];
 
 		const notifications: string[] = [];
@@ -999,7 +1125,13 @@ describe("5.x — processEvents: batch-scoped filtering + routing", () => {
 		tailer.batchId = "";
 
 		const events = [
-			{ timestamp: "t1", type: "wave_start" as any, batchId: "batch-A", waveIndex: 0, taskIds: ["T-1"] },
+			{
+				timestamp: "t1",
+				type: "wave_start" as any,
+				batchId: "batch-A",
+				waveIndex: 0,
+				taskIds: ["T-1"],
+			},
 		];
 
 		const notifications: string[] = [];
@@ -1015,8 +1147,20 @@ describe("5.x — processEvents: batch-scoped filtering + routing", () => {
 		tailer.batchId = "batch-A";
 
 		const events = [
-			{ timestamp: "t1", type: "task_complete" as any, batchId: "batch-A", waveIndex: 0, taskId: "T-1" },
-			{ timestamp: "t2", type: "task_complete" as any, batchId: "batch-A", waveIndex: 0, taskId: "T-2" },
+			{
+				timestamp: "t1",
+				type: "task_complete" as any,
+				batchId: "batch-A",
+				waveIndex: 0,
+				taskId: "T-1",
+			},
+			{
+				timestamp: "t2",
+				type: "task_complete" as any,
+				batchId: "batch-A",
+				waveIndex: 0,
+				taskId: "T-2",
+			},
 		];
 
 		const notifications: string[] = [];
@@ -1062,8 +1206,10 @@ describe("5.x — readNewBytes + event tailer file operations", () => {
 
 	it("5.26: readNewBytes reads from byte offset", () => {
 		const path = join(tmpDir, "events.jsonl");
-		const line1 = JSON.stringify({ timestamp: "t1", type: "wave_start", batchId: "b1", waveIndex: 0 }) + "\n";
-		const line2 = JSON.stringify({ timestamp: "t2", type: "merge_success", batchId: "b1", waveIndex: 0 }) + "\n";
+		const line1 =
+			JSON.stringify({ timestamp: "t1", type: "wave_start", batchId: "b1", waveIndex: 0 }) + "\n";
+		const line2 =
+			JSON.stringify({ timestamp: "t2", type: "merge_success", batchId: "b1", waveIndex: 0 }) + "\n";
 
 		writeFileSync(path, line1 + line2, "utf-8");
 
@@ -1079,7 +1225,8 @@ describe("5.x — readNewBytes + event tailer file operations", () => {
 
 	it("5.27: readNewBytes returns empty when no new data", () => {
 		const path = join(tmpDir, "events.jsonl");
-		const line1 = JSON.stringify({ timestamp: "t1", type: "wave_start", batchId: "b1", waveIndex: 0 }) + "\n";
+		const line1 =
+			JSON.stringify({ timestamp: "t1", type: "wave_start", batchId: "b1", waveIndex: 0 }) + "\n";
 		writeFileSync(path, line1, "utf-8");
 
 		const fileSize = Buffer.byteLength(line1, "utf-8");
@@ -1155,14 +1302,24 @@ describe("6.x — Audit trail: appendAuditEntry + readAuditTrail", () => {
 
 	it("6.2: appendAuditEntry appends multiple entries", () => {
 		appendAuditEntry(tmpDir, {
-			ts: "t1", action: "read_state", classification: "diagnostic",
-			context: "checking batch state", command: "read batch-state.json",
-			result: "success", detail: "ok", batchId: "b1",
+			ts: "t1",
+			action: "read_state",
+			classification: "diagnostic",
+			context: "checking batch state",
+			command: "read batch-state.json",
+			result: "success",
+			detail: "ok",
+			batchId: "b1",
 		});
 		appendAuditEntry(tmpDir, {
-			ts: "t2", action: "kill_session", classification: "destructive",
-			context: "stale session", command: "tmux kill-session -t lane-2",
-			result: "pending", detail: "", batchId: "b1",
+			ts: "t2",
+			action: "kill_session",
+			classification: "destructive",
+			context: "stale session",
+			command: "tmux kill-session -t lane-2",
+			result: "pending",
+			detail: "",
+			batchId: "b1",
 		});
 
 		const entries = readAuditTrail(tmpDir);
@@ -1178,13 +1335,23 @@ describe("6.x — Audit trail: appendAuditEntry + readAuditTrail", () => {
 
 	it("6.4: readAuditTrail filters by batchId", () => {
 		appendAuditEntry(tmpDir, {
-			ts: "t1", action: "a1", classification: "diagnostic",
-			context: "c", command: "cmd", result: "success", detail: "d",
+			ts: "t1",
+			action: "a1",
+			classification: "diagnostic",
+			context: "c",
+			command: "cmd",
+			result: "success",
+			detail: "d",
 			batchId: "batch-A",
 		});
 		appendAuditEntry(tmpDir, {
-			ts: "t2", action: "a2", classification: "diagnostic",
-			context: "c", command: "cmd", result: "success", detail: "d",
+			ts: "t2",
+			action: "a2",
+			classification: "diagnostic",
+			context: "c",
+			command: "cmd",
+			result: "success",
+			detail: "d",
 			batchId: "batch-B",
 		});
 
@@ -1196,8 +1363,13 @@ describe("6.x — Audit trail: appendAuditEntry + readAuditTrail", () => {
 	it("6.5: readAuditTrail respects limit (tail)", () => {
 		for (let i = 0; i < 10; i++) {
 			appendAuditEntry(tmpDir, {
-				ts: `t${i}`, action: `action-${i}`, classification: "diagnostic",
-				context: "c", command: "cmd", result: "success", detail: "d",
+				ts: `t${i}`,
+				action: `action-${i}`,
+				classification: "diagnostic",
+				context: "c",
+				command: "cmd",
+				result: "success",
+				detail: "d",
 				batchId: "b1",
 			});
 		}
@@ -1214,7 +1386,11 @@ describe("6.x — Audit trail: appendAuditEntry + readAuditTrail", () => {
 		const dir = join(tmpDir, ".pi", "supervisor");
 		mkdirSync(dir, { recursive: true });
 		const path = join(dir, "actions.jsonl");
-		writeFileSync(path, '{"ts":"t1","action":"a1","classification":"diagnostic","context":"c","command":"cmd","result":"success","detail":"d","batchId":"b1"}\nnot-json\n{"ts":"t2","action":"a2","classification":"diagnostic","context":"c","command":"cmd","result":"success","detail":"d","batchId":"b1"}\n', "utf-8");
+		writeFileSync(
+			path,
+			'{"ts":"t1","action":"a1","classification":"diagnostic","context":"c","command":"cmd","result":"success","detail":"d","batchId":"b1"}\nnot-json\n{"ts":"t2","action":"a2","classification":"diagnostic","context":"c","command":"cmd","result":"success","detail":"d","batchId":"b1"}\n',
+			"utf-8",
+		);
 
 		const entries = readAuditTrail(tmpDir);
 		expect(entries).toHaveLength(2);
@@ -1260,10 +1436,18 @@ describe("6.x — Audit trail: appendAuditEntry + readAuditTrail", () => {
 
 	it("6.10: audit entry supports optional fields (waveIndex, laneNumber, taskId, durationMs)", () => {
 		appendAuditEntry(tmpDir, {
-			ts: "t1", action: "merge_retry", classification: "tier0_known",
-			context: "wave 2 merge timeout", command: "git merge",
-			result: "success", detail: "ok", batchId: "b1",
-			waveIndex: 1, laneNumber: 3, taskId: "T-005", durationMs: 4500,
+			ts: "t1",
+			action: "merge_retry",
+			classification: "tier0_known",
+			context: "wave 2 merge timeout",
+			command: "git merge",
+			result: "success",
+			detail: "ok",
+			batchId: "b1",
+			waveIndex: 1,
+			laneNumber: 3,
+			taskId: "T-005",
+			durationMs: 4500,
 		});
 
 		const entries = readAuditTrail(tmpDir);
@@ -1462,7 +1646,10 @@ describe("9.x — Config integration", () => {
 	});
 
 	it("9.3: settings-tui includes supervisor section", () => {
-		const settingsSource = readFileSync(join(__dirname, "..", "taskplane", "settings-tui.ts"), "utf-8").replace(/\r\n/g, "\n");
+		const settingsSource = readFileSync(
+			join(__dirname, "..", "taskplane", "settings-tui.ts"),
+			"utf-8",
+		).replace(/\r\n/g, "\n");
 		expect(settingsSource).toContain("supervisor");
 	});
 });

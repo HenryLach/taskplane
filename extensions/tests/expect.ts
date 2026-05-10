@@ -11,6 +11,14 @@ interface ExpectMethods {
 	toBe(expected: unknown): void;
 	toEqual(expected: unknown): void;
 	toContain(needle: unknown): void;
+	/**
+	 * Like `toContain`, but whitespace-insensitive when matching strings.
+	 * Both haystack and needle have any run of whitespace collapsed to a
+	 * single space before checking. Intended for source-grep tests so they
+	 * survive cosmetic formatter changes (line wrapping, indentation,
+	 * inserted parentheses around arrow params, etc.).
+	 */
+	toContainNormalized(needle: string): void;
 	toHaveLength(n: number): void;
 	toBeDefined(): void;
 	toBeUndefined(): void;
@@ -47,13 +55,34 @@ export function expect(actual: unknown): ExpectMethods {
 					`Expected string to contain "${needle}", but got: "${actual}"`,
 				);
 			} else if (Array.isArray(actual)) {
-				assert.ok(
-					actual.includes(needle),
-					`Expected array to contain ${JSON.stringify(needle)}`,
-				);
+				assert.ok(actual.includes(needle), `Expected array to contain ${JSON.stringify(needle)}`);
 			} else {
 				assert.fail(`toContain: actual is neither string nor array`);
 			}
+		},
+		toContainNormalized(needle: string) {
+			assert.ok(
+				typeof actual === "string",
+				`toContainNormalized: actual must be a string, got ${typeof actual}`,
+			);
+			// Collapse runs of whitespace, strip whitespace adjacent to brackets
+			// and commas, and drop trailing commas before close-brackets so
+			// source-grep needles like `foo(a, b, c)` match formatter output
+			// `foo(\n\ta,\n\tb,\n\tc,\n)` after vertical re-wrapping with
+			// trailingCommas: "all".
+			const normalize = (s: string) =>
+				s
+					.replace(/\s+/g, " ")
+					.replace(/([(\[{])\s+/g, "$1")
+					.replace(/\s+([)\]},])/g, "$1")
+					.replace(/,([)\]}])/g, "$1")
+					.trim();
+			const hayN = normalize(actual as string);
+			const needleN = normalize(needle);
+			assert.ok(
+				hayN.includes(needleN),
+				`Expected (whitespace-normalized) string to contain "${needleN}"`,
+			);
 		},
 		toHaveLength(n: number) {
 			assert.strictEqual((actual as any).length, n);
@@ -74,28 +103,16 @@ export function expect(actual: unknown): ExpectMethods {
 			assert.ok(!actual, `Expected falsy value, got: ${actual}`);
 		},
 		toBeGreaterThan(n: number) {
-			assert.ok(
-				(actual as number) > n,
-				`Expected ${actual} > ${n}`,
-			);
+			assert.ok((actual as number) > n, `Expected ${actual} > ${n}`);
 		},
 		toBeGreaterThanOrEqual(n: number) {
-			assert.ok(
-				(actual as number) >= n,
-				`Expected ${actual} >= ${n}`,
-			);
+			assert.ok((actual as number) >= n, `Expected ${actual} >= ${n}`);
 		},
 		toBeLessThan(n: number) {
-			assert.ok(
-				(actual as number) < n,
-				`Expected ${actual} < ${n}`,
-			);
+			assert.ok((actual as number) < n, `Expected ${actual} < ${n}`);
 		},
 		toBeLessThanOrEqual(n: number) {
-			assert.ok(
-				(actual as number) <= n,
-				`Expected ${actual} <= ${n}`,
-			);
+			assert.ok((actual as number) <= n, `Expected ${actual} <= ${n}`);
 		},
 		toBeCloseTo(expected: number, numDigits: number = 2) {
 			const precision = 10 ** -numDigits / 2;
@@ -139,10 +156,7 @@ export function expect(actual: unknown): ExpectMethods {
 		},
 		toHaveBeenCalled() {
 			const fn = actual as any;
-			assert.ok(
-				fn.mock && fn.mock.calls.length > 0,
-				`Expected function to have been called`,
-			);
+			assert.ok(fn.mock && fn.mock.calls.length > 0, `Expected function to have been called`);
 		},
 		toHaveBeenCalledTimes(n: number) {
 			const fn = actual as any;
@@ -182,13 +196,29 @@ export function expect(actual: unknown): ExpectMethods {
 					`Expected string NOT to contain "${needle}", but it does`,
 				);
 			} else if (Array.isArray(actual)) {
-				assert.ok(
-					!actual.includes(needle),
-					`Expected array NOT to contain ${JSON.stringify(needle)}`,
-				);
+				assert.ok(!actual.includes(needle), `Expected array NOT to contain ${JSON.stringify(needle)}`);
 			} else {
 				assert.fail(`not.toContain: actual is neither string nor array`);
 			}
+		},
+		toContainNormalized(needle: string) {
+			assert.ok(
+				typeof actual === "string",
+				`not.toContainNormalized: actual must be a string, got ${typeof actual}`,
+			);
+			const normalize = (s: string) =>
+				s
+					.replace(/\s+/g, " ")
+					.replace(/([(\[{])\s+/g, "$1")
+					.replace(/\s+([)\]},])/g, "$1")
+					.replace(/,([)\]}])/g, "$1")
+					.trim();
+			const hayN = normalize(actual as string);
+			const needleN = normalize(needle);
+			assert.ok(
+				!hayN.includes(needleN),
+				`Expected (whitespace-normalized) string NOT to contain "${needleN}"`,
+			);
 		},
 		toHaveLength(n: number) {
 			assert.notStrictEqual((actual as any).length, n);
@@ -209,28 +239,16 @@ export function expect(actual: unknown): ExpectMethods {
 			assert.ok(actual, `Expected truthy value, got: ${actual}`);
 		},
 		toBeGreaterThan(n: number) {
-			assert.ok(
-				(actual as number) <= n,
-				`Expected ${actual} to NOT be greater than ${n}`,
-			);
+			assert.ok((actual as number) <= n, `Expected ${actual} to NOT be greater than ${n}`);
 		},
 		toBeGreaterThanOrEqual(n: number) {
-			assert.ok(
-				(actual as number) < n,
-				`Expected ${actual} to NOT be >= ${n}`,
-			);
+			assert.ok((actual as number) < n, `Expected ${actual} to NOT be >= ${n}`);
 		},
 		toBeLessThan(n: number) {
-			assert.ok(
-				(actual as number) >= n,
-				`Expected ${actual} to NOT be less than ${n}`,
-			);
+			assert.ok((actual as number) >= n, `Expected ${actual} to NOT be less than ${n}`);
 		},
 		toBeLessThanOrEqual(n: number) {
-			assert.ok(
-				(actual as number) > n,
-				`Expected ${actual} to NOT be <= ${n}`,
-			);
+			assert.ok((actual as number) > n, `Expected ${actual} to NOT be <= ${n}`);
 		},
 		toBeCloseTo(expected: number, numDigits: number = 2) {
 			const precision = 10 ** -numDigits / 2;
@@ -266,10 +284,7 @@ export function expect(actual: unknown): ExpectMethods {
 		},
 		toHaveBeenCalled() {
 			const fn = actual as any;
-			assert.ok(
-				fn.mock && fn.mock.calls.length === 0,
-				`Expected function NOT to have been called`,
-			);
+			assert.ok(fn.mock && fn.mock.calls.length === 0, `Expected function NOT to have been called`);
 		},
 		toHaveBeenCalledTimes(n: number) {
 			const fn = actual as any;

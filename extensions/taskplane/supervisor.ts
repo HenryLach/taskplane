@@ -28,12 +28,37 @@
 
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync, appendFileSync } from "fs";
-import { stat as fsStat, open as fsOpen, readFile as fsReadFile, writeFile as fsWriteFile, rename as fsRename } from "fs/promises";
+import {
+	existsSync,
+	readFileSync,
+	readdirSync,
+	writeFileSync,
+	unlinkSync,
+	mkdirSync,
+	renameSync,
+	statSync,
+	openSync,
+	readSync,
+	closeSync,
+	appendFileSync,
+} from "fs";
+import {
+	stat as fsStat,
+	open as fsOpen,
+	readFile as fsReadFile,
+	writeFile as fsWriteFile,
+	rename as fsRename,
+} from "fs/promises";
 import { execFileSync } from "child_process";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
-import type { OrchBatchRuntimeState, OrchestratorConfig, PersistedBatchState, EngineEvent, EngineEventType } from "./types.ts";
+import type {
+	OrchBatchRuntimeState,
+	OrchestratorConfig,
+	PersistedBatchState,
+	EngineEvent,
+	EngineEventType,
+} from "./types.ts";
 import type { Tier0Event, Tier0EventType } from "./persistence.ts";
 
 // ── Recovery Action Classification (TP-041 Step 4) ───────────────────
@@ -99,7 +124,9 @@ export function requiresConfirmation(
  *
  * @since TP-041
  */
-export const ACTION_CLASSIFICATION_EXAMPLES: Readonly<Record<RecoveryActionClassification, readonly string[]>> = {
+export const ACTION_CLASSIFICATION_EXAMPLES: Readonly<
+	Record<RecoveryActionClassification, readonly string[]>
+> = {
 	diagnostic: [
 		"Reading batch-state.json, STATUS.md, events.jsonl, merge results",
 		"Running git status, git log, git diff",
@@ -125,7 +152,6 @@ export const ACTION_CLASSIFICATION_EXAMPLES: Readonly<Record<RecoveryActionClass
 		"Skipping tasks or waves",
 	],
 };
-
 
 // ── Audit Trail (TP-041 Step 4) ──────────────────────────────────────
 
@@ -295,7 +321,6 @@ export function readAuditTrail(
 	}
 }
 
-
 // ── Branch Protection Detection (TP-043) ─────────────────────────────
 
 /**
@@ -325,30 +350,35 @@ export type BranchProtectionStatus = "protected" | "unprotected" | "unknown";
  *
  * @since TP-043
  */
-export function detectBranchProtection(
-	branch: string,
-	cwd: string,
-): BranchProtectionStatus {
+export function detectBranchProtection(branch: string, cwd: string): BranchProtectionStatus {
 	try {
 		// Get owner/repo from gh (handles SSH, HTTPS, and gh-specific remotes)
-		const repoInfo = execFileSync("gh", ["repo", "view", "--json", "owner,name", "--jq", ".owner.login + \"/\" + .name"], {
-			encoding: "utf-8",
-			timeout: 15_000,
-			cwd,
-			stdio: ["pipe", "pipe", "pipe"],
-		}).trim();
+		const repoInfo = execFileSync(
+			"gh",
+			["repo", "view", "--json", "owner,name", "--jq", '.owner.login + "/" + .name'],
+			{
+				encoding: "utf-8",
+				timeout: 15_000,
+				cwd,
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		).trim();
 
 		if (!repoInfo || !repoInfo.includes("/")) {
 			return "unknown";
 		}
 
 		// Check branch protection via GitHub API
-		const result = execFileSync("gh", ["api", `repos/${repoInfo}/branches/${branch}/protection`, "--silent"], {
-			encoding: "utf-8",
-			timeout: 15_000,
-			cwd,
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		const result = execFileSync(
+			"gh",
+			["api", `repos/${repoInfo}/branches/${branch}/protection`, "--silent"],
+			{
+				encoding: "utf-8",
+				timeout: 15_000,
+				cwd,
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
 
 		// If we get here (no error), the API returned 200 → branch is protected
 		return "protected";
@@ -365,7 +395,6 @@ export function detectBranchProtection(
 		return "unknown";
 	}
 }
-
 
 // ── Supervisor-Managed Integration Flow (TP-043) ─────────────────────
 
@@ -468,8 +497,8 @@ export function buildIntegrationPlan(
 	// - Override: use as-is (test injection path)
 	// - Remotes exist: detect via gh API
 	// - No remotes: treat as unprotected (can't create PRs anyway)
-	const protection = protectionOverride
-		?? (remotes ? detectBranchProtection(baseBranch, cwd) : "unprotected");
+	const protection =
+		protectionOverride ?? (remotes ? detectBranchProtection(baseBranch, cwd) : "unprotected");
 
 	// Step 3: Always try FF first, then merge, then PR (TP-149).
 	// Protected branches may still allow FF/merge via API tokens.
@@ -544,7 +573,9 @@ export function formatIntegrationPlan(plan: IntegrationPlan): string {
 	lines.push(``);
 	lines.push(`- **Mode:** ${modeLabels[plan.mode] || plan.mode}`);
 	lines.push(`- **From:** \`${plan.orchBranch}\` → \`${plan.baseBranch}\``);
-	lines.push(`- **Tasks:** ${plan.succeededTasks} succeeded${plan.failedTasks > 0 ? `, ${plan.failedTasks} failed` : ""}`);
+	lines.push(
+		`- **Tasks:** ${plan.succeededTasks} succeeded${plan.failedTasks > 0 ? `, ${plan.failedTasks} failed` : ""}`,
+	);
 	lines.push(`- **Rationale:** ${plan.rationale}`);
 
 	if (plan.branchProtection === "protected") {
@@ -571,7 +602,8 @@ export function formatIntegrationOutcome(
 	detail: string,
 ): string {
 	if (success) {
-		const modeLabel = plan.mode === "ff" ? "Fast-forwarded" : plan.mode === "merge" ? "Merged" : "Created PR for";
+		const modeLabel =
+			plan.mode === "ff" ? "Fast-forwarded" : plan.mode === "merge" ? "Merged" : "Created PR for";
 		return `✅ **Integration complete!** ${modeLabel} \`${plan.orchBranch}\` → \`${plan.baseBranch}\`.\n${detail}`;
 	}
 	return `❌ **Integration failed** (\`${plan.orchBranch}\` → \`${plan.baseBranch}\`).\n${detail}`;
@@ -587,8 +619,20 @@ export function formatIntegrationOutcome(
  */
 export type IntegrationExecutor = (
 	mode: "ff" | "merge" | "pr",
-	context: { orchBranch: string; baseBranch: string; batchId: string; currentBranch: string; notices: string[] },
-) => { success: boolean; integratedLocally: boolean; commitCount: string; message: string; error?: string };
+	context: {
+		orchBranch: string;
+		baseBranch: string;
+		batchId: string;
+		currentBranch: string;
+		notices: string[];
+	},
+) => {
+	success: boolean;
+	integratedLocally: boolean;
+	commitCount: string;
+	message: string;
+	error?: string;
+};
 
 /**
  * Dependencies for programmatic CI polling and PR merge (R002-2).
@@ -631,11 +675,15 @@ export async function pollPrCiStatus(
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		// Wait before polling (except first attempt — check immediately)
 		if (attempt > 1) {
-			await new Promise(resolve => setTimeout(resolve, delayMs));
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
 		}
 
 		const result = deps.runCommand("gh", [
-			"pr", "checks", orchBranch, "--json", "name,state,conclusion",
+			"pr",
+			"checks",
+			orchBranch,
+			"--json",
+			"name,state,conclusion",
 		]);
 
 		if (!result.ok) {
@@ -661,16 +709,18 @@ export async function pollPrCiStatus(
 		}
 
 		// Check if all checks are complete
-		const allComplete = checks.every(c =>
-			c.state === "COMPLETED" || c.state === "completed",
-		);
+		const allComplete = checks.every((c) => c.state === "COMPLETED" || c.state === "completed");
 		if (!allComplete) continue; // Some still pending — keep polling
 
 		// All complete — check conclusions
-		const allPassing = checks.every(c =>
-			c.conclusion === "SUCCESS" || c.conclusion === "success" ||
-			c.conclusion === "NEUTRAL" || c.conclusion === "neutral" ||
-			c.conclusion === "SKIPPED" || c.conclusion === "skipped",
+		const allPassing = checks.every(
+			(c) =>
+				c.conclusion === "SUCCESS" ||
+				c.conclusion === "success" ||
+				c.conclusion === "NEUTRAL" ||
+				c.conclusion === "neutral" ||
+				c.conclusion === "SKIPPED" ||
+				c.conclusion === "skipped",
 		);
 
 		if (allPassing) {
@@ -678,16 +728,23 @@ export async function pollPrCiStatus(
 		}
 
 		// Some checks failed
-		const failed = checks.filter(c =>
-			c.conclusion !== "SUCCESS" && c.conclusion !== "success" &&
-			c.conclusion !== "NEUTRAL" && c.conclusion !== "neutral" &&
-			c.conclusion !== "SKIPPED" && c.conclusion !== "skipped",
+		const failed = checks.filter(
+			(c) =>
+				c.conclusion !== "SUCCESS" &&
+				c.conclusion !== "success" &&
+				c.conclusion !== "NEUTRAL" &&
+				c.conclusion !== "neutral" &&
+				c.conclusion !== "SKIPPED" &&
+				c.conclusion !== "skipped",
 		);
-		const failedNames = failed.map(c => `${c.name}: ${c.conclusion}`).join(", ");
+		const failedNames = failed.map((c) => `${c.name}: ${c.conclusion}`).join(", ");
 		return { status: "fail", detail: `CI check(s) failed: ${failedNames}` };
 	}
 
-	return { status: "timeout", detail: `CI checks did not complete within ${maxAttempts} polling attempts.` };
+	return {
+		status: "timeout",
+		detail: `CI checks did not complete within ${maxAttempts} polling attempts.`,
+	};
 }
 
 /**
@@ -706,13 +763,14 @@ export async function pollPrCiStatus(
  *
  * @since TP-043
  */
-export function mergePr(
-	orchBranch: string,
-	deps: CiDeps,
-): { success: boolean; detail: string } {
+export function mergePr(orchBranch: string, deps: CiDeps): { success: boolean; detail: string } {
 	// Try regular merge first (preserves per-commit history)
 	const mergeResult = deps.runCommand("gh", [
-		"pr", "merge", orchBranch, "--merge", "--delete-branch",
+		"pr",
+		"merge",
+		orchBranch,
+		"--merge",
+		"--delete-branch",
 	]);
 	if (mergeResult.ok) {
 		return { success: true, detail: "PR merged and remote branch deleted." };
@@ -720,7 +778,11 @@ export function mergePr(
 
 	// Regular merge not allowed — try squash as fallback
 	const squashResult = deps.runCommand("gh", [
-		"pr", "merge", orchBranch, "--squash", "--delete-branch",
+		"pr",
+		"merge",
+		orchBranch,
+		"--squash",
+		"--delete-branch",
 	]);
 	if (squashResult.ok) {
 		return { success: true, detail: "PR merged (squash) and remote branch deleted." };
@@ -744,9 +806,17 @@ export interface SummaryDeps {
 	/** Operator identifier for file naming */
 	opId: string;
 	/** Batch diagnostics (taskExits, batchCost) — null if unavailable */
-	diagnostics: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null;
+	diagnostics: {
+		taskExits: Record<string, { classification: string; cost: number; durationSec: number }>;
+		batchCost: number;
+	} | null;
 	/** Merge results for cost breakdown */
-	mergeResults: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>;
+	mergeResults: Array<{
+		waveIndex: number;
+		status: string;
+		failedLane: number | null;
+		failureReason: string | null;
+	}>;
 }
 
 /**
@@ -787,12 +857,14 @@ async function handlePrLifecycle(
 			pi.sendMessage(
 				{
 					customType: "supervisor-integration-result",
-					content: [{
-						type: "text",
-						text:
-							`✅ **Integration complete!** PR merged into \`${plan.baseBranch}\`.\n` +
-							`${ciResult.detail}\n${mergeOutcome.detail}`,
-					}],
+					content: [
+						{
+							type: "text",
+							text:
+								`✅ **Integration complete!** PR merged into \`${plan.baseBranch}\`.\n` +
+								`${ciResult.detail}\n${mergeOutcome.detail}`,
+						},
+					],
 					display: "Integration complete — PR merged",
 				},
 				{ triggerTurn: false },
@@ -801,12 +873,14 @@ async function handlePrLifecycle(
 			pi.sendMessage(
 				{
 					customType: "supervisor-integration-result",
-					content: [{
-						type: "text",
-						text:
-							`⚠️ **CI passed but merge failed.** ${mergeOutcome.detail}\n` +
-							`The PR is still open — merge manually on GitHub.`,
-					}],
+					content: [
+						{
+							type: "text",
+							text:
+								`⚠️ **CI passed but merge failed.** ${mergeOutcome.detail}\n` +
+								`The PR is still open — merge manually on GitHub.`,
+						},
+					],
 					display: "CI passed but PR merge failed",
 				},
 				{ triggerTurn: false },
@@ -816,12 +890,14 @@ async function handlePrLifecycle(
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration-result",
-				content: [{
-					type: "text",
-					text:
-						`❌ **CI checks failed.** ${ciResult.detail}\n` +
-						`The PR is still open. Fix the issues and merge manually, or close and retry.`,
-				}],
+				content: [
+					{
+						type: "text",
+						text:
+							`❌ **CI checks failed.** ${ciResult.detail}\n` +
+							`The PR is still open. Fix the issues and merge manually, or close and retry.`,
+					},
+				],
 				display: "CI checks failed — manual intervention needed",
 			},
 			{ triggerTurn: false },
@@ -831,12 +907,14 @@ async function handlePrLifecycle(
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration-result",
-				content: [{
-					type: "text",
-					text:
-						`⏰ **CI check timeout.** ${ciResult.detail}\n` +
-						`The PR is still open. Check CI status manually and merge when ready.`,
-				}],
+				content: [
+					{
+						type: "text",
+						text:
+							`⏰ **CI check timeout.** ${ciResult.detail}\n` +
+							`The PR is still open. Check CI status manually and merge when ready.`,
+					},
+				],
 				display: "CI check timeout — check manually",
 			},
 			{ triggerTurn: false },
@@ -845,7 +923,14 @@ async function handlePrLifecycle(
 
 	// TP-043: Generate batch summary before deactivation
 	if (batchState && summaryDeps && state.stateRoot) {
-		presentBatchSummary(pi, batchState, state.stateRoot, summaryDeps.opId, summaryDeps.diagnostics, summaryDeps.mergeResults);
+		presentBatchSummary(
+			pi,
+			batchState,
+			state.stateRoot,
+			summaryDeps.opId,
+			summaryDeps.diagnostics,
+			summaryDeps.mergeResults,
+		);
 	}
 
 	// Always deactivate after PR lifecycle completes (R002 issue #3)
@@ -897,7 +982,14 @@ export function triggerSupervisorIntegration(
 	// TP-043: Helper to generate summary before deactivation
 	const summarizeAndDeactivate = () => {
 		if (summaryDeps && state.stateRoot) {
-			presentBatchSummary(pi, batchState, state.stateRoot, summaryDeps.opId, summaryDeps.diagnostics, summaryDeps.mergeResults);
+			presentBatchSummary(
+				pi,
+				batchState,
+				state.stateRoot,
+				summaryDeps.opId,
+				summaryDeps.diagnostics,
+				summaryDeps.mergeResults,
+			);
 		}
 		deactivateSupervisor(pi, state);
 	};
@@ -910,10 +1002,12 @@ export function triggerSupervisorIntegration(
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration",
-				content: [{
-					type: "text",
-					text: `📋 **Batch complete.** No integration needed (no orch branch or no succeeded tasks). Supervisor deactivating.`,
-				}],
+				content: [
+					{
+						type: "text",
+						text: `📋 **Batch complete.** No integration needed (no orch branch or no succeeded tasks). Supervisor deactivating.`,
+					},
+				],
 				display: "No integration needed — supervisor deactivating",
 			},
 			{ triggerTurn: false },
@@ -932,23 +1026,26 @@ export function triggerSupervisorIntegration(
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration",
-				content: [{
-					type: "text",
-					text:
-						`🏁 **Batch complete!** Ready to integrate.\n\n` +
-						planText + `\n\n` +
-						`**Action required:** Ask the operator for confirmation.\n\n` +
-						`Say something like: "The batch completed successfully. I'd like to integrate ` +
-						`the changes from \`${plan.orchBranch}\` into \`${plan.baseBranch}\` using ` +
-						`${plan.mode === "ff" ? "fast-forward" : plan.mode === "merge" ? "a merge commit" : "a pull request"}. ` +
-						`${plan.rationale} Shall I proceed?"\n\n` +
-						`If the operator confirms, run: \`/orch-integrate${modeFlag}\`\n` +
-						`If the operator declines, acknowledge and deactivate.\n` +
-						`If the operator wants a different mode, adjust the flag:\n` +
-						`  - Fast-forward: \`/orch-integrate\`\n` +
-						`  - Merge commit: \`/orch-integrate --merge\`\n` +
-						`  - Pull request: \`/orch-integrate --pr\``,
-				}],
+				content: [
+					{
+						type: "text",
+						text:
+							`🏁 **Batch complete!** Ready to integrate.\n\n` +
+							planText +
+							`\n\n` +
+							`**Action required:** Ask the operator for confirmation.\n\n` +
+							`Say something like: "The batch completed successfully. I'd like to integrate ` +
+							`the changes from \`${plan.orchBranch}\` into \`${plan.baseBranch}\` using ` +
+							`${plan.mode === "ff" ? "fast-forward" : plan.mode === "merge" ? "a merge commit" : "a pull request"}. ` +
+							`${plan.rationale} Shall I proceed?"\n\n` +
+							`If the operator confirms, run: \`/orch-integrate${modeFlag}\`\n` +
+							`If the operator declines, acknowledge and deactivate.\n` +
+							`If the operator wants a different mode, adjust the flag:\n` +
+							`  - Fast-forward: \`/orch-integrate\`\n` +
+							`  - Merge commit: \`/orch-integrate --merge\`\n` +
+							`  - Pull request: \`/orch-integrate --pr\``,
+					},
+				],
 				display: "Integration plan ready — awaiting operator confirmation",
 			},
 			{ triggerTurn: true },
@@ -972,13 +1069,16 @@ export function triggerSupervisorIntegration(
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration",
-				content: [{
-					type: "text",
-					text:
-						`🏁 **Batch complete!** Integration executor unavailable.\n\n` +
-						planText + `\n\n` +
-						`Run \`/orch-integrate${modeFlag}\` to integrate manually.`,
-				}],
+				content: [
+					{
+						type: "text",
+						text:
+							`🏁 **Batch complete!** Integration executor unavailable.\n\n` +
+							planText +
+							`\n\n` +
+							`Run \`/orch-integrate${modeFlag}\` to integrate manually.`,
+					},
+				],
 				display: "Auto-integration fallback — run /orch-integrate",
 			},
 			{ triggerTurn: false },
@@ -1017,10 +1117,12 @@ export function triggerSupervisorIntegration(
 			pi.sendMessage(
 				{
 					customType: "supervisor-integration-progress",
-					content: [{
-						type: "text",
-						text: `${outcomeText}\n\n⏳ Waiting for CI checks to complete...`,
-					}],
+					content: [
+						{
+							type: "text",
+							text: `${outcomeText}\n\n⏳ Waiting for CI checks to complete...`,
+						},
+					],
 					display: "PR created — polling CI status",
 				},
 				{ triggerTurn: false },
@@ -1034,10 +1136,12 @@ export function triggerSupervisorIntegration(
 					pi.sendMessage(
 						{
 							customType: "supervisor-integration-result",
-							content: [{
-								type: "text",
-								text: `❌ **CI monitoring crashed:** ${msg}\nThe PR is still open — check status and merge manually.`,
-							}],
+							content: [
+								{
+									type: "text",
+									text: `❌ **CI monitoring crashed:** ${msg}\nThe PR is still open — check status and merge manually.`,
+								},
+							],
 							display: "CI monitoring crashed",
 						},
 						{ triggerTurn: false },
@@ -1049,10 +1153,12 @@ export function triggerSupervisorIntegration(
 				pi.sendMessage(
 					{
 						customType: "supervisor-integration-result",
-						content: [{
-							type: "text",
-							text: `PR created. CI polling unavailable — check status and merge manually on GitHub.`,
-						}],
+						content: [
+							{
+								type: "text",
+								text: `PR created. CI polling unavailable — check status and merge manually on GitHub.`,
+							},
+						],
 						display: "PR created — merge manually",
 					},
 					{ triggerTurn: false },
@@ -1066,10 +1172,12 @@ export function triggerSupervisorIntegration(
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration-result",
-				content: [{
-					type: "text",
-					text: outcomeText,
-				}],
+				content: [
+					{
+						type: "text",
+						text: outcomeText,
+					},
+				],
 				display: `Integration complete (${plan.mode})`,
 			},
 			{ triggerTurn: false },
@@ -1083,12 +1191,13 @@ export function triggerSupervisorIntegration(
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration-result",
-				content: [{
-					type: "text",
-					text:
-						outcomeText + `\n\n` +
-						`Run \`/orch-integrate\` manually to retry with a different mode.`,
-				}],
+				content: [
+					{
+						type: "text",
+						text:
+							outcomeText + `\n\n` + `Run \`/orch-integrate\` manually to retry with a different mode.`,
+					},
+				],
 				display: "Integration failed — run /orch-integrate manually",
 			},
 			{ triggerTurn: false },
@@ -1096,7 +1205,6 @@ export function triggerSupervisorIntegration(
 		summarizeAndDeactivate();
 	}
 }
-
 
 // ── Batch Summary Generation (TP-043 Step 2) ────────────────────────
 
@@ -1236,10 +1344,7 @@ const TIER0_SUMMARY_TYPES = new Set([
  *
  * @since TP-043
  */
-export function readTier0EventsForBatch(
-	stateRoot: string,
-	batchId: string,
-): Tier0EventSummary[] {
+export function readTier0EventsForBatch(stateRoot: string, batchId: string): Tier0EventSummary[] {
 	const eventsPath = join(stateRoot, ".pi", "supervisor", "events.jsonl");
 	if (!existsSync(eventsPath)) return [];
 
@@ -1324,24 +1429,36 @@ function computeV2BatchCost(stateRoot: string, batchId: string): number {
 	try {
 		const lanesDir = join(stateRoot, ".pi", "runtime", batchId, "lanes");
 		if (!existsSync(lanesDir)) return 0;
-		const files = readdirSync(lanesDir).filter(f => f.startsWith("lane-") && f.endsWith(".json"));
+		const files = readdirSync(lanesDir).filter((f) => f.startsWith("lane-") && f.endsWith(".json"));
 		let total = 0;
 		for (const f of files) {
 			try {
 				const snap = JSON.parse(readFileSync(join(lanesDir, f), "utf-8"));
 				total += snap.worker?.costUsd || 0;
 				total += snap.reviewer?.costUsd || 0;
-			} catch { /* skip */ }
+			} catch {
+				/* skip */
+			}
 		}
 		return total;
-	} catch { return 0; }
+	} catch {
+		return 0;
+	}
 }
 
 export function collectBatchSummaryData(
 	batchState: OrchBatchRuntimeState,
 	stateRoot: string,
-	diagnostics?: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null,
-	mergeResults?: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>,
+	diagnostics?: {
+		taskExits: Record<string, { classification: string; cost: number; durationSec: number }>;
+		batchCost: number;
+	} | null,
+	mergeResults?: Array<{
+		waveIndex: number;
+		status: string;
+		failedLane: number | null;
+		failureReason: string | null;
+	}>,
 ): BatchSummaryData {
 	// Read audit trail for incidents
 	const auditEntries = readAuditTrail(stateRoot, { batchId: batchState.batchId });
@@ -1350,7 +1467,7 @@ export function collectBatchSummaryData(
 	const tier0Events = readTier0EventsForBatch(stateRoot, batchState.batchId);
 
 	// Extract wave results (may not exist if batch failed during planning)
-	const waveResults = (batchState.waveResults || []).map(wr => ({
+	const waveResults = (batchState.waveResults || []).map((wr) => ({
 		waveIndex: wr.waveIndex,
 		startedAt: wr.startedAt,
 		endedAt: wr.endedAt,
@@ -1370,8 +1487,11 @@ export function collectBatchSummaryData(
 			byTaskId.set(segment.taskId, existing);
 		}
 
-		const multiSegmentTasks: NonNullable<BatchSummaryData["segmentOutcomes"]>["multiSegmentTasks"] = [];
-		for (const [taskId, taskSegments] of [...byTaskId.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+		const multiSegmentTasks: NonNullable<BatchSummaryData["segmentOutcomes"]>["multiSegmentTasks"] =
+			[];
+		for (const [taskId, taskSegments] of [...byTaskId.entries()].sort((a, b) =>
+			a[0].localeCompare(b[0]),
+		)) {
 			if (taskSegments.length <= 1) continue;
 			const succeeded = taskSegments.filter((segment) => segment.status === "succeeded").length;
 			const failed = taskSegments.filter((segment) => segment.status === "failed").length;
@@ -1415,9 +1535,10 @@ export function collectBatchSummaryData(
 		failedTasks: batchState.failedTasks,
 		skippedTasks: batchState.skippedTasks,
 		blockedTasks: batchState.blockedTasks,
-		batchCost: (diagnostics?.batchCost ?? 0) > 0
-			? diagnostics!.batchCost
-			: computeV2BatchCost(stateRoot, batchState.batchId),
+		batchCost:
+			(diagnostics?.batchCost ?? 0) > 0
+				? diagnostics!.batchCost
+				: computeV2BatchCost(stateRoot, batchState.batchId),
 		wavePlan: [], // Not directly available on runtime state — use waveResults
 		waveResults,
 		taskExits: diagnostics?.taskExits ?? {},
@@ -1453,9 +1574,8 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 	lines.push("");
 
 	// Duration
-	const duration = data.endedAt && data.startedAt
-		? formatDurationMs(data.endedAt - data.startedAt)
-		: "In progress";
+	const duration =
+		data.endedAt && data.startedAt ? formatDurationMs(data.endedAt - data.startedAt) : "In progress";
 	lines.push(`**Duration:** ${duration}`);
 
 	// Cost
@@ -1484,11 +1604,12 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 	} else {
 		for (const wave of data.waveResults) {
 			const waveNum = wave.waveIndex + 1;
-			const taskCount = wave.succeededTaskIds.length + wave.failedTaskIds.length + wave.skippedTaskIds.length;
+			const taskCount =
+				wave.succeededTaskIds.length + wave.failedTaskIds.length + wave.skippedTaskIds.length;
 			const waveDuration = formatDurationMs(wave.endedAt - wave.startedAt);
 
 			// Check for merge result for this wave
-			const mergeResult = data.mergeResults.find(mr => mr.waveIndex === wave.waveIndex);
+			const mergeResult = data.mergeResults.find((mr) => mr.waveIndex === wave.waveIndex);
 			let mergeInfo = "";
 			if (mergeResult) {
 				if (mergeResult.status === "succeeded") {
@@ -1500,11 +1621,16 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 				}
 			}
 
-			const statusIcon = wave.overallStatus === "succeeded" ? "✅"
-				: wave.overallStatus === "failed" ? "❌"
-				: wave.overallStatus === "partial" ? "⚠️"
-				: wave.overallStatus === "aborted" ? "🛑"
-				: "❓";
+			const statusIcon =
+				wave.overallStatus === "succeeded"
+					? "✅"
+					: wave.overallStatus === "failed"
+						? "❌"
+						: wave.overallStatus === "partial"
+							? "⚠️"
+							: wave.overallStatus === "aborted"
+								? "🛑"
+								: "❓";
 
 			lines.push(`- Wave ${waveNum} (${taskCount} tasks): ${waveDuration} ${statusIcon}${mergeInfo}`);
 
@@ -1522,7 +1648,9 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 	if (!data.segmentOutcomes) {
 		lines.push("Segment data not available.");
 	} else if (data.segmentOutcomes.multiSegmentTasks.length === 0) {
-		lines.push(`No multi-segment task outcomes recorded (${data.segmentOutcomes.totalSegments} segment record(s) total).`);
+		lines.push(
+			`No multi-segment task outcomes recorded (${data.segmentOutcomes.totalSegments} segment record(s) total).`,
+		);
 	} else {
 		const statusParts = [
 			`${data.segmentOutcomes.succeeded} succeeded`,
@@ -1541,7 +1669,9 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 			if (task.pending > 0) taskParts.push(`${task.pending} pending`);
 			if (task.skipped > 0) taskParts.push(`${task.skipped} skipped`);
 			if (task.stalled > 0) taskParts.push(`${task.stalled} stalled`);
-			lines.push(`  - ${task.taskId}: ${task.terminalSegments}/${task.totalSegments} terminal (${taskParts.join(", ")})`);
+			lines.push(
+				`  - ${task.taskId}: ${task.terminalSegments}/${task.totalSegments} terminal (${taskParts.join(", ")})`,
+			);
 		}
 	}
 	lines.push("");
@@ -1552,7 +1682,7 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 
 	// Extract incidents from audit trail: non-diagnostic actions
 	const incidents = data.auditEntries.filter(
-		e => e.classification !== "diagnostic" && e.result !== "pending",
+		(e) => e.classification !== "diagnostic" && e.result !== "pending",
 	);
 
 	const hasTier0Events = data.tier0Events.length > 0;
@@ -1576,16 +1706,16 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 			}
 
 			for (const [pattern, events] of byPattern) {
-				const attempts = events.filter(e => e.type === "tier0_recovery_attempt").length;
-				const successes = events.filter(e => e.type === "tier0_recovery_success").length;
-				const exhausted = events.filter(e => e.type === "tier0_recovery_exhausted").length;
-				const escalations = events.filter(e => e.type === "tier0_escalation").length;
+				const attempts = events.filter((e) => e.type === "tier0_recovery_attempt").length;
+				const successes = events.filter((e) => e.type === "tier0_recovery_success").length;
+				const exhausted = events.filter((e) => e.type === "tier0_recovery_exhausted").length;
+				const escalations = events.filter((e) => e.type === "tier0_escalation").length;
 
-				const statusIcon = exhausted > 0 || escalations > 0 ? "❌"
-					: successes > 0 ? "✅"
-					: "⏳";
+				const statusIcon = exhausted > 0 || escalations > 0 ? "❌" : successes > 0 ? "✅" : "⏳";
 
-				lines.push(`- **${pattern}** ${statusIcon} — ${attempts} attempt(s), ${successes} success(es), ${exhausted} exhausted`);
+				lines.push(
+					`- **${pattern}** ${statusIcon} — ${attempts} attempt(s), ${successes} success(es), ${exhausted} exhausted`,
+				);
 
 				// Show affected tasks
 				const taskIds = new Set<string>();
@@ -1600,21 +1730,21 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 				}
 
 				// Show escalation details
-				for (const evt of events.filter(e => e.type === "tier0_escalation")) {
+				for (const evt of events.filter((e) => e.type === "tier0_escalation")) {
 					if (evt.suggestion) {
 						lines.push(`  - Escalation: ${evt.suggestion}`);
 					}
 				}
 
 				// Show resolution details
-				for (const evt of events.filter(e => e.type === "tier0_recovery_success")) {
+				for (const evt of events.filter((e) => e.type === "tier0_recovery_success")) {
 					if (evt.resolution) {
 						lines.push(`  - Resolution: ${evt.resolution}`);
 					}
 				}
 
 				// Show error details for exhausted
-				for (const evt of events.filter(e => e.type === "tier0_recovery_exhausted")) {
+				for (const evt of events.filter((e) => e.type === "tier0_recovery_exhausted")) {
 					if (evt.error) {
 						lines.push(`  - Error: ${evt.error}`);
 					}
@@ -1633,10 +1763,14 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 			let incidentNum = 0;
 			for (const entry of incidents) {
 				incidentNum++;
-				const resultIcon = entry.result === "success" ? "✅"
-					: entry.result === "failure" ? "❌"
-					: entry.result === "skipped" ? "⏭️"
-					: "❓";
+				const resultIcon =
+					entry.result === "success"
+						? "✅"
+						: entry.result === "failure"
+							? "❌"
+							: entry.result === "skipped"
+								? "⏭️"
+								: "❓";
 				lines.push(`${incidentNum}. **${entry.action}** (${entry.classification}) ${resultIcon}`);
 				lines.push(`   ${entry.context}`);
 				if (entry.detail && entry.detail !== entry.context) {
@@ -1666,16 +1800,22 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 	const recommendations: string[] = [];
 
 	// Timeout recommendations: look for merge failures in audit trail
-	const mergeFailures = data.mergeResults.filter(mr => mr.status === "failed");
+	const mergeFailures = data.mergeResults.filter((mr) => mr.status === "failed");
 	if (mergeFailures.length > 0) {
-		recommendations.push("- Consider increasing `merge.timeoutMinutes` — merge failures were detected during this batch.");
+		recommendations.push(
+			"- Consider increasing `merge.timeoutMinutes` — merge failures were detected during this batch.",
+		);
 	}
 
 	// Failure rate recommendations
 	if (data.totalTasks > 0 && data.failedTasks > 0) {
 		const failureRate = data.failedTasks / data.totalTasks;
 		if (failureRate > 0.3) {
-			recommendations.push("- High failure rate (" + Math.round(failureRate * 100) + "%) — consider reducing task scope or adding more context to PROMPT.md files.");
+			recommendations.push(
+				"- High failure rate (" +
+					Math.round(failureRate * 100) +
+					"%) — consider reducing task scope or adding more context to PROMPT.md files.",
+			);
 		}
 	}
 
@@ -1683,18 +1823,28 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 	const longTasks = Object.entries(data.taskExits).filter(([, exit]) => exit.durationSec > 3600);
 	if (longTasks.length > 0) {
 		const names = longTasks.map(([id]) => id).join(", ");
-		recommendations.push(`- Long-running tasks detected (${names}): ${longTasks.length} task(s) exceeded 1 hour — consider splitting into smaller tasks.`);
+		recommendations.push(
+			`- Long-running tasks detected (${names}): ${longTasks.length} task(s) exceeded 1 hour — consider splitting into smaller tasks.`,
+		);
 	}
 
 	// Recovery recommendations — check both audit trail and Tier 0 events
-	const recoveryExhaustedAudit = data.auditEntries.filter(e => e.action === "tier0_recovery_exhausted" || (e.classification === "tier0_known" && e.result === "failure"));
-	const recoveryExhaustedTier0 = data.tier0Events.filter(e => e.type === "tier0_recovery_exhausted");
-	const escalationsTier0 = data.tier0Events.filter(e => e.type === "tier0_escalation");
+	const recoveryExhaustedAudit = data.auditEntries.filter(
+		(e) =>
+			e.action === "tier0_recovery_exhausted" ||
+			(e.classification === "tier0_known" && e.result === "failure"),
+	);
+	const recoveryExhaustedTier0 = data.tier0Events.filter(
+		(e) => e.type === "tier0_recovery_exhausted",
+	);
+	const escalationsTier0 = data.tier0Events.filter((e) => e.type === "tier0_escalation");
 	if (recoveryExhaustedAudit.length > 0 || recoveryExhaustedTier0.length > 0) {
-		recommendations.push("- Recovery budget was exhausted for some issues — review recurring failures and consider addressing root causes.");
+		recommendations.push(
+			"- Recovery budget was exhausted for some issues — review recurring failures and consider addressing root causes.",
+		);
 	}
 	if (escalationsTier0.length > 0) {
-		const uniqueSuggestions = [...new Set(escalationsTier0.map(e => e.suggestion).filter(Boolean))];
+		const uniqueSuggestions = [...new Set(escalationsTier0.map((e) => e.suggestion).filter(Boolean))];
 		if (uniqueSuggestions.length > 0) {
 			for (const suggestion of uniqueSuggestions) {
 				recommendations.push(`- Tier 0 escalation: ${suggestion}`);
@@ -1704,7 +1854,9 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 
 	// Blocked tasks recommendations
 	if (data.blockedTasks > 0) {
-		recommendations.push(`- ${data.blockedTasks} task(s) were blocked due to upstream failures — fix failed tasks and re-run with \`/orch-resume\`.`);
+		recommendations.push(
+			`- ${data.blockedTasks} task(s) were blocked due to upstream failures — fix failed tasks and re-run with \`/orch-resume\`.`,
+		);
 	}
 
 	if (recommendations.length === 0) {
@@ -1744,10 +1896,14 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 
 			totalCost += waveCost;
 			const waveDurationStr = formatDurationMs(waveDurationSec * 1000);
-			lines.push(`| ${waveNum} | ${allTaskIds.length} | $${waveCost.toFixed(2)} | ${waveDurationStr} |`);
+			lines.push(
+				`| ${waveNum} | ${allTaskIds.length} | $${waveCost.toFixed(2)} | ${waveDurationStr} |`,
+			);
 		}
 
-		lines.push(`| **Total** | **${data.totalTasks}** | **$${totalCost.toFixed(2)}** | **${duration}** |`);
+		lines.push(
+			`| **Total** | **${data.totalTasks}** | **$${totalCost.toFixed(2)}** | **${duration}** |`,
+		);
 	}
 	lines.push("");
 
@@ -1780,8 +1936,16 @@ export function generateBatchSummary(
 	batchState: OrchBatchRuntimeState,
 	stateRoot: string,
 	opId: string,
-	diagnostics?: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null,
-	mergeResults?: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>,
+	diagnostics?: {
+		taskExits: Record<string, { classification: string; cost: number; durationSec: number }>;
+		batchCost: number;
+	} | null,
+	mergeResults?: Array<{
+		waveIndex: number;
+		status: string;
+		failedLane: number | null;
+		failureReason: string | null;
+	}>,
 ): string {
 	const data = collectBatchSummaryData(batchState, stateRoot, diagnostics, mergeResults);
 	const markdown = formatBatchSummary(data);
@@ -1822,19 +1986,29 @@ export function presentBatchSummary(
 	batchState: OrchBatchRuntimeState,
 	stateRoot: string,
 	opId: string,
-	diagnostics?: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null,
-	mergeResults?: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>,
+	diagnostics?: {
+		taskExits: Record<string, { classification: string; cost: number; durationSec: number }>;
+		batchCost: number;
+	} | null,
+	mergeResults?: Array<{
+		waveIndex: number;
+		status: string;
+		failedLane: number | null;
+		failureReason: string | null;
+	}>,
 ): void {
 	const summary = generateBatchSummary(batchState, stateRoot, opId, diagnostics, mergeResults);
 
 	// Build a concise conversation message (full details in the file)
-	const duration = batchState.endedAt && batchState.startedAt
-		? formatDurationMs(batchState.endedAt - batchState.startedAt)
-		: "in progress";
+	const duration =
+		batchState.endedAt && batchState.startedAt
+			? formatDurationMs(batchState.endedAt - batchState.startedAt)
+			: "in progress";
 	// TP-115: Use V2 lane snapshot cost when diagnostics.batchCost is zero
-	const rawCost = (diagnostics?.batchCost ?? 0) > 0
-		? diagnostics!.batchCost
-		: computeV2BatchCost(stateRoot, batchState.batchId);
+	const rawCost =
+		(diagnostics?.batchCost ?? 0) > 0
+			? diagnostics!.batchCost
+			: computeV2BatchCost(stateRoot, batchState.batchId);
 	const cost = rawCost > 0 ? `$${rawCost.toFixed(2)}` : "not tracked";
 	const filename = `${opId}-${batchState.batchId}-summary.md`;
 
@@ -1855,7 +2029,6 @@ export function presentBatchSummary(
 		{ triggerTurn: false },
 	);
 }
-
 
 // ── Supervisor Config Types ──────────────────────────────────────────
 
@@ -1906,7 +2079,6 @@ function resolvePrimerPath(): string {
 	}
 }
 
-
 // ── Template Loading (TP-058) ────────────────────────────────────────
 
 /**
@@ -1937,7 +2109,9 @@ function resolveBaseTemplatePath(name: string): string {
  *
  * @since TP-058
  */
-function parseSupervisorTemplate(filePath: string): { fm: Record<string, string>; body: string } | null {
+function parseSupervisorTemplate(
+	filePath: string,
+): { fm: Record<string, string>; body: string } | null {
 	if (!existsSync(filePath)) return null;
 	const raw = readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
 	const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
@@ -1947,7 +2121,8 @@ function parseSupervisorTemplate(filePath: string): { fm: Record<string, string>
 		const idx = line.indexOf(":");
 		if (idx > 0) {
 			const key = line.slice(0, idx).trim();
-			if (!key.startsWith("#")) { // Skip commented-out frontmatter
+			if (!key.startsWith("#")) {
+				// Skip commented-out frontmatter
 				fm[key] = line.slice(idx + 1).trim();
 			}
 		}
@@ -1970,7 +2145,11 @@ function parseSupervisorTemplate(filePath: string): { fm: Record<string, string>
  *
  * @since TP-058
  */
-export function loadSupervisorTemplate(name: string, stateRoot: string, localName?: string): string | null {
+export function loadSupervisorTemplate(
+	name: string,
+	stateRoot: string,
+	localName?: string,
+): string | null {
 	const basePath = resolveBaseTemplatePath(name);
 	const baseDef = parseSupervisorTemplate(basePath);
 
@@ -2013,7 +2192,6 @@ function replaceTemplateVars(template: string, vars: Record<string, string>): st
 	});
 }
 
-
 /**
  * Build the guardrails section dynamically based on integration mode (TP-043).
  * Extracted as a helper so both the template path and inline fallback can reuse it.
@@ -2021,9 +2199,10 @@ function replaceTemplateVars(template: string, vars: Record<string, string>): st
  */
 function buildGuardrailsSection(integrationMode: string): string {
 	if (integrationMode === "supervised" || integrationMode === "auto") {
-		const modeNote = integrationMode === "supervised"
-			? `**Supervised mode:** Before executing integration, describe your plan and ask the operator for confirmation.`
-			: `**Auto mode:** Execute integration directly. Report the outcome to the operator. Pause only on errors or conflicts.`;
+		const modeNote =
+			integrationMode === "supervised"
+				? `**Supervised mode:** Before executing integration, describe your plan and ask the operator for confirmation.`
+				: `**Auto mode:** Execute integration directly. Report the outcome to the operator. Pause only on errors or conflicts.`;
 		return `## What You Must NEVER Do
 
 1. Never delete \`.pi/batch-state.json\` without operator approval
@@ -2105,9 +2284,10 @@ export function buildSupervisorSystemPrompt(
 	const autonomyLabel = supervisorConfig.autonomy;
 
 	// Build wave plan summary
-	const waveSummary = batchState.totalWaves > 0
-		? `${batchState.currentWaveIndex + 1}/${batchState.totalWaves} waves`
-		: "planning";
+	const waveSummary =
+		batchState.totalWaves > 0
+			? `${batchState.currentWaveIndex + 1}/${batchState.totalWaves} waves`
+			: "planning";
 
 	const actionsPath = auditTrailPath(stateRoot);
 	const integrationMode = config.orchestrator.integration;
@@ -2310,7 +2490,6 @@ Now that you've activated:
 
 	return prompt;
 }
-
 
 // ── Routing System Prompt (TP-042) ───────────────────────────────────
 
@@ -2615,7 +2794,6 @@ outcomes, and can handle failures.
 	return prompt;
 }
 
-
 // ── Activation ───────────────────────────────────────────────────────
 
 /**
@@ -2868,7 +3046,11 @@ export async function activateSupervisor(
 	// Idempotent — safe even if called from takeover paths that may have
 	// started a tailer previously (stopEventTailer is called in deactivate).
 	startEventTailer(pi, state.eventTailer, state, (key, text) => {
-		try { ctx.ui.setStatus(key, text); } catch { /* non-fatal */ }
+		try {
+			ctx.ui.setStatus(key, text);
+		} catch {
+			/* non-fatal */
+		}
 	});
 
 	// Send activation message to trigger the supervisor's first turn.
@@ -2941,7 +3123,14 @@ export async function deactivateSupervisor(
 	// confirmation), present it now — before we clear state refs.
 	if (state.pendingSummaryDeps && state.batchStateRef && state.stateRoot) {
 		const deps = state.pendingSummaryDeps;
-		presentBatchSummary(pi, state.batchStateRef, state.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
+		presentBatchSummary(
+			pi,
+			state.batchStateRef,
+			state.stateRoot,
+			deps.opId,
+			deps.diagnostics,
+			deps.mergeResults,
+		);
 		state.pendingSummaryDeps = null;
 	}
 
@@ -3012,7 +3201,14 @@ export async function transitionToRoutingMode(
 	// Present deferred batch summary if any
 	if (state.pendingSummaryDeps && state.batchStateRef && state.stateRoot) {
 		const deps = state.pendingSummaryDeps;
-		presentBatchSummary(pi, state.batchStateRef, state.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
+		presentBatchSummary(
+			pi,
+			state.batchStateRef,
+			state.stateRoot,
+			deps.opId,
+			deps.diagnostics,
+			deps.mergeResults,
+		);
 		state.pendingSummaryDeps = null;
 	}
 
@@ -3028,14 +3224,16 @@ export async function transitionToRoutingMode(
 	pi.sendMessage(
 		{
 			customType: "supervisor-routing-transition",
-			content: [{
-				type: "text",
-				text:
-					`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-					`🔀 **Ready for your input.**\n\n` +
-					routingContext.contextMessage +
-					`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-			}],
+			content: [
+				{
+					type: "text",
+					text:
+						`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+						`🔀 **Ready for your input.**\n\n` +
+						routingContext.contextMessage +
+						`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+				},
+			],
 			display: `Supervisor — ${routingContext.routingState}`,
 		},
 		{ triggerTurn: true },
@@ -3058,10 +3256,7 @@ export async function transitionToRoutingMode(
  *
  * @since TP-041
  */
-export function registerSupervisorPromptHook(
-	pi: ExtensionAPI,
-	state: SupervisorState,
-): void {
+export function registerSupervisorPromptHook(pi: ExtensionAPI, state: SupervisorState): void {
 	pi.on("before_agent_start", (_event) => {
 		if (!state.active) {
 			return undefined; // No-op: don't modify system prompt
@@ -3072,10 +3267,7 @@ export function registerSupervisorPromptHook(
 		// batch planning, etc.), not batch monitoring. Use the routing prompt
 		// which includes script guidance from the primer.
 		if (state.routingContext) {
-			const systemPrompt = buildRoutingSystemPrompt(
-				state.routingContext,
-				state.stateRoot,
-			);
+			const systemPrompt = buildRoutingSystemPrompt(state.routingContext, state.stateRoot);
 			return { systemPrompt };
 		}
 
@@ -3126,7 +3318,6 @@ export function resolveSupervisorConfig(
 		autonomy: supervisorSection.autonomy ?? DEFAULT_SUPERVISOR_CONFIG.autonomy,
 	};
 }
-
 
 // ── Lockfile Types + Helpers (TP-041 Step 2) ─────────────────────────
 
@@ -3279,7 +3470,10 @@ export async function readLockfileAsync(stateRoot: string): Promise<SupervisorLo
  *
  * @since TP-070
  */
-export async function writeLockfileAsync(stateRoot: string, lock: SupervisorLockfile): Promise<void> {
+export async function writeLockfileAsync(
+	stateRoot: string,
+	lock: SupervisorLockfile,
+): Promise<void> {
 	const dir = join(stateRoot, ".pi", "supervisor");
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
@@ -3357,9 +3551,7 @@ export function isLockStale(lock: SupervisorLockfile): boolean {
  * If batch-state.json has one of these phases, there's no active batch
  * and no lockfile arbitration is needed.
  */
-const TERMINAL_PHASES = new Set<string>([
-	"idle", "completed", "failed", "stopped",
-]);
+const TERMINAL_PHASES = new Set<string>(["idle", "completed", "failed", "stopped"]);
 
 /**
  * Check whether a batch phase is terminal (no active batch).
@@ -3443,16 +3635,15 @@ export function checkSupervisorLockOnStartup(
  *
  * @since TP-041
  */
-export function buildTakeoverSummary(
-	stateRoot: string,
-	batchState: PersistedBatchState,
-): string {
+export function buildTakeoverSummary(stateRoot: string, batchState: PersistedBatchState): string {
 	const lines: string[] = [];
 
 	lines.push(`📋 **Taking over batch ${batchState.batchId}**`);
 	lines.push("");
 	lines.push(`**Phase:** ${batchState.phase}`);
-	lines.push(`**Wave:** ${batchState.currentWaveIndex + 1}/${batchState.wavePlan?.length ?? batchState.totalWaves ?? "?"}`);
+	lines.push(
+		`**Wave:** ${batchState.currentWaveIndex + 1}/${batchState.wavePlan?.length ?? batchState.totalWaves ?? "?"}`,
+	);
 	lines.push(`**Base branch:** ${batchState.baseBranch}`);
 
 	// Task summary from persisted state
@@ -3461,7 +3652,9 @@ export function buildTakeoverSummary(
 	const failed = tasks.filter((t) => t.status === "failed").length;
 	const running = tasks.filter((t) => t.status === "running").length;
 	const pending = tasks.filter((t) => t.status === "pending").length;
-	lines.push(`**Tasks:** ${succeeded} succeeded, ${failed} failed, ${running} running, ${pending} pending`);
+	lines.push(
+		`**Tasks:** ${succeeded} succeeded, ${failed} failed, ${running} running, ${pending} pending`,
+	);
 
 	// Recent actions from audit trail (using readAuditTrail helper)
 	const recentActions = readAuditTrail(stateRoot, { limit: 5 });
@@ -3543,10 +3736,12 @@ export function startHeartbeat(
 				pi.sendMessage(
 					{
 						customType: "supervisor-yield",
-						content: [{
-							type: "text",
-							text: "⚡ Another session has taken over supervisor duties. Yielding.",
-						}],
+						content: [
+							{
+								type: "text",
+								text: "⚡ Another session has taken over supervisor duties. Yielding.",
+							},
+						],
 						display: "Supervisor yielded to another session",
 					},
 					{ triggerTurn: false },
@@ -3582,7 +3777,6 @@ export function startHeartbeat(
 
 	return timer;
 }
-
 
 // ── Engine Event Consumption + Notifications (TP-041 Step 3) ─────────
 
@@ -3825,7 +4019,11 @@ export function readNewBytes(eventsPath: string, byteOffset: number): [string, n
 		return ["", byteOffset];
 	} finally {
 		if (fd !== null) {
-			try { closeSync(fd); } catch { /* best-effort */ }
+			try {
+				closeSync(fd);
+			} catch {
+				/* best-effort */
+			}
 		}
 	}
 
@@ -3843,7 +4041,10 @@ export function readNewBytes(eventsPath: string, byteOffset: number): [string, n
  *
  * @since TP-070
  */
-export async function readNewBytesAsync(eventsPath: string, byteOffset: number): Promise<[string, number]> {
+export async function readNewBytesAsync(
+	eventsPath: string,
+	byteOffset: number,
+): Promise<[string, number]> {
 	try {
 		const stats = await fsStat(eventsPath);
 		const fileSize = stats.size;
@@ -3879,10 +4080,7 @@ export async function readNewBytesAsync(eventsPath: string, byteOffset: number):
  *
  * @since TP-041
  */
-export function parseJsonlLines(
-	data: string,
-	partialLine: string,
-): [ParsedEvent[], string] {
+export function parseJsonlLines(data: string, partialLine: string): [ParsedEvent[], string] {
 	const combined = partialLine + data;
 	const lines = combined.split("\n");
 
@@ -3939,9 +4137,7 @@ export function formatEventNotification(
 			return `🔀 Wave ${waveNum} merge starting...`;
 		}
 		case "merge_success": {
-			const waveProg = event.totalWaves
-				? ` (${waveNum}/${event.totalWaves})`
-				: "";
+			const waveProg = event.totalWaves ? ` (${waveNum}/${event.totalWaves})` : "";
 			const testInfo = event.testCount ? ` Tests pass (${event.testCount}).` : " Tests pass.";
 			return `✅ **Wave ${waveNum} merged successfully**${waveProg}.${testInfo}`;
 		}
@@ -3951,8 +4147,10 @@ export function formatEventNotification(
 			if (autonomy === "autonomous") {
 				return `⚠️ Wave ${waveNum} merge failed${laneInfo}: ${reason}. Attempting recovery...`;
 			}
-			return `⚠️ **Wave ${waveNum} merge failed**${laneInfo}: ${reason}.\n` +
-				`   Recovery may be needed. Check the merge logs for details.`;
+			return (
+				`⚠️ **Wave ${waveNum} merge failed**${laneInfo}: ${reason}.\n` +
+				`   Recovery may be needed. Check the merge logs for details.`
+			);
 		}
 		case "merge_health_warning": {
 			const lane = event.laneNumber !== undefined ? event.laneNumber : "?";
@@ -3971,20 +4169,23 @@ export function formatEventNotification(
 		case "batch_complete": {
 			const parts: string[] = [];
 			if (event.succeededTasks !== undefined) parts.push(`${event.succeededTasks} succeeded`);
-			if (event.failedTasks !== undefined && event.failedTasks > 0) parts.push(`${event.failedTasks} failed`);
-			if (event.skippedTasks !== undefined && event.skippedTasks > 0) parts.push(`${event.skippedTasks} skipped`);
-			if (event.blockedTasks !== undefined && event.blockedTasks > 0) parts.push(`${event.blockedTasks} blocked`);
+			if (event.failedTasks !== undefined && event.failedTasks > 0)
+				parts.push(`${event.failedTasks} failed`);
+			if (event.skippedTasks !== undefined && event.skippedTasks > 0)
+				parts.push(`${event.skippedTasks} skipped`);
+			if (event.blockedTasks !== undefined && event.blockedTasks > 0)
+				parts.push(`${event.blockedTasks} blocked`);
 			const summary = parts.length > 0 ? parts.join(", ") : "all tasks processed";
-			const duration = event.batchDurationMs
-				? ` in ${formatDuration(event.batchDurationMs)}`
-				: "";
+			const duration = event.batchDurationMs ? ` in ${formatDuration(event.batchDurationMs)}` : "";
 			return `🏁 **Batch complete!** ${summary}${duration}.`;
 		}
 		case "batch_paused": {
 			const reason = event.reason || "unknown reason";
 			if (autonomy === "interactive") {
-				return `⏸️ **Batch paused:** ${reason}\n` +
-					`   What would you like to do? Options: fix the issue, skip the task, or abort.`;
+				return (
+					`⏸️ **Batch paused:** ${reason}\n` +
+					`   What would you like to do? Options: fix the issue, skip the task, or abort.`
+				);
 			}
 			return `⏸️ **Batch paused:** ${reason}`;
 		}
@@ -3995,12 +4196,16 @@ export function formatEventNotification(
 				return `⚡ **Tier 0 escalation** (${pattern}): Investigating automatically. ${suggestion}`;
 			}
 			if (autonomy === "interactive") {
-				return `❌ **Tier 0 escalation** (${pattern}): ${suggestion}\n` +
-					`   Need your input on how to proceed.`;
+				return (
+					`❌ **Tier 0 escalation** (${pattern}): ${suggestion}\n` +
+					`   Need your input on how to proceed.`
+				);
 			}
 			// supervised
-			return `⚡ **Tier 0 escalation** (${pattern}): ${suggestion}\n` +
-				`   Diagnosing — will ask if novel recovery is needed.`;
+			return (
+				`⚡ **Tier 0 escalation** (${pattern}): ${suggestion}\n` +
+				`   Diagnosing — will ask if novel recovery is needed.`
+			);
 		}
 		default:
 			return `📌 Event: ${event.type} (wave ${waveNum})`;
@@ -4039,9 +4244,7 @@ export function formatTaskDigest(
 	}
 
 	if (buf.recoveryAttempts > 0 && autonomy !== "autonomous") {
-		const successRate = buf.recoverySuccesses > 0
-			? ` (${buf.recoverySuccesses} succeeded)`
-			: "";
+		const successRate = buf.recoverySuccesses > 0 ? ` (${buf.recoverySuccesses} succeeded)` : "";
 		parts.push(`🔄 ${buf.recoveryAttempts} recovery attempt(s)${successRate}`);
 	}
 
@@ -4305,7 +4508,11 @@ export function startEventTailer(
 	if (tailer.pollTimer && typeof tailer.pollTimer === "object" && "unref" in tailer.pollTimer) {
 		tailer.pollTimer.unref();
 	}
-	if (tailer.digestTimer && typeof tailer.digestTimer === "object" && "unref" in tailer.digestTimer) {
+	if (
+		tailer.digestTimer &&
+		typeof tailer.digestTimer === "object" &&
+		"unref" in tailer.digestTimer
+	) {
 		tailer.digestTimer.unref();
 	}
 }

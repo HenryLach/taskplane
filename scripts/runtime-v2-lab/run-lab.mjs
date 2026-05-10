@@ -187,11 +187,7 @@ async function runPiAgent(options) {
 						error: event.message?.errorMessage || null,
 					});
 					maybeDeliverMailbox();
-					if (
-						requestSessionStats &&
-						!statsRequested &&
-						event.message?.role === "assistant"
-					) {
+					if (requestSessionStats && !statsRequested && event.message?.role === "assistant") {
 						statsRequested = true;
 						proc.stdin.write(JSON.stringify({ type: "get_session_stats" }) + "\n");
 					}
@@ -242,8 +238,18 @@ async function runPiAgent(options) {
 
 async function experimentCloseStrategies() {
 	const prompt = "Reply with exactly OK and then stop.";
-	const immediate = await runPiAgent({ prompt, closeDelayMs: 0, requestSessionStats: false, timeoutMs: 20_000 });
-	const delayed = await runPiAgent({ prompt, closeDelayMs: 100, requestSessionStats: true, timeoutMs: 20_000 });
+	const immediate = await runPiAgent({
+		prompt,
+		closeDelayMs: 0,
+		requestSessionStats: false,
+		timeoutMs: 20_000,
+	});
+	const delayed = await runPiAgent({
+		prompt,
+		closeDelayMs: 100,
+		requestSessionStats: true,
+		timeoutMs: 20_000,
+	});
 	return {
 		name: "close-strategy",
 		immediate: {
@@ -263,11 +269,22 @@ async function experimentSequentialParallelReliability() {
 	const prompt = "Reply with exactly OK and then stop.";
 	const sequentialRuns = [];
 	for (let i = 0; i < 5; i++) {
-		const result = await runPiAgent({ prompt, closeDelayMs: 100, requestSessionStats: true, timeoutMs: 20_000 });
-		sequentialRuns.push({ exitCode: result.exitCode, contextUsagePresent: !!result.contextUsage, stderrTail: result.stderr.trim().slice(-120) });
+		const result = await runPiAgent({
+			prompt,
+			closeDelayMs: 100,
+			requestSessionStats: true,
+			timeoutMs: 20_000,
+		});
+		sequentialRuns.push({
+			exitCode: result.exitCode,
+			contextUsagePresent: !!result.contextUsage,
+			stderrTail: result.stderr.trim().slice(-120),
+		});
 	}
 	const parallel = await Promise.all(
-		[1, 2, 3].map(() => runPiAgent({ prompt, closeDelayMs: 100, requestSessionStats: true, timeoutMs: 20_000 })),
+		[1, 2, 3].map(() =>
+			runPiAgent({ prompt, closeDelayMs: 100, requestSessionStats: true, timeoutMs: 20_000 }),
+		),
 	);
 	return {
 		name: "reliability",
@@ -279,7 +296,11 @@ async function experimentSequentialParallelReliability() {
 		parallel: {
 			runs: parallel.length,
 			successes: parallel.filter((r) => r.exitCode === 0 && r.contextUsage).length,
-			results: parallel.map((r) => ({ exitCode: r.exitCode, contextUsagePresent: !!r.contextUsage, stderrTail: r.stderr.trim().slice(-120) })),
+			results: parallel.map((r) => ({
+				exitCode: r.exitCode,
+				contextUsagePresent: !!r.contextUsage,
+				stderrTail: r.stderr.trim().slice(-120),
+			})),
 		},
 	};
 }
@@ -289,8 +310,14 @@ async function experimentMailboxSteering() {
 	const batchId = "lab-batch";
 	const agentId = "lab-agent";
 	const mailboxDir = ensureDir(join(tempRoot, ".pi", "mailbox", batchId, agentId));
-	const message = writeMailboxMessage(mailboxDir, batchId, agentId, "Reply with exactly STEER-ACK and then stop.");
-	const prompt = "First reply with exactly READY. If you later receive a steering message, follow it exactly and then stop.";
+	const message = writeMailboxMessage(
+		mailboxDir,
+		batchId,
+		agentId,
+		"Reply with exactly STEER-ACK and then stop.",
+	);
+	const prompt =
+		"First reply with exactly READY. If you later receive a steering message, follow it exactly and then stop.";
 	const result = await runPiAgent({
 		prompt,
 		mailboxDir,
@@ -350,17 +377,24 @@ async function experimentPacketPaths() {
 		name: "packet-paths",
 		attempts,
 		successes: attempts.filter((attempt) => attempt.exitCode === 0 && attempt.doneExists).length,
-		note: "A passing attempt demonstrates explicit packet paths are viable outside cwd assumptions; a failing/hanging attempt indicates tool-heavy multi-step prompts still need robust retry/timeout handling in Runtime V2.",
+		note:
+			"A passing attempt demonstrates explicit packet paths are viable outside cwd assumptions; a failing/hanging attempt indicates tool-heavy multi-step prompts still need robust retry/timeout handling in Runtime V2.",
 	};
 }
 
 async function experimentBridgeFeasibility() {
 	const prompt = "Reply with exactly BRIDGE-DEFERRED and then stop.";
-	const result = await runPiAgent({ prompt, closeDelayMs: 100, requestSessionStats: true, timeoutMs: 20_000 });
+	const result = await runPiAgent({
+		prompt,
+		closeDelayMs: 100,
+		requestSessionStats: true,
+		timeoutMs: 20_000,
+	});
 	return {
 		name: "bridge-feasibility",
 		status: "open",
-		note: "A true synchronous file-bridge callback was not validated in this first lab run. The mailbox and packet-path experiments reduce risk, but bridge semantics still need a dedicated proof task during TP-106/TP-105 work.",
+		note:
+			"A true synchronous file-bridge callback was not validated in this first lab run. The mailbox and packet-path experiments reduce risk, but bridge semantics still need a dedicated proof task during TP-106/TP-105 work.",
 		smokeExitCode: result.exitCode,
 		smokeAssistantTexts: result.messages.filter((m) => m.role === "assistant").map((m) => m.text),
 	};

@@ -1,5 +1,5 @@
 export function truncateToWidth(input: string): string {
-  return input;
+	return input;
 }
 
 // Stub TUI components used by source files

@@ -21,7 +21,11 @@ import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 import { randomBytes } from "crypto";
 import { BATCH_STATE_SCHEMA_VERSION, freshOrchBatchState } from "../taskplane/types.ts";
-import type { PersistedBatchState, PersistedTaskRecord, LaneTaskStatus } from "../taskplane/types.ts";
+import type {
+	PersistedBatchState,
+	PersistedTaskRecord,
+	LaneTaskStatus,
+} from "../taskplane/types.ts";
 import { saveBatchState, loadBatchState } from "../taskplane/persistence.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -53,14 +57,16 @@ function buildTestPersistedState(overrides?: Partial<PersistedBatchState>): Pers
 		currentWaveIndex: 0,
 		totalWaves: 1,
 		wavePlan: [["TP-001", "TP-002", "TP-003"]],
-		lanes: [{
-			laneNumber: 1,
-			laneId: "lane-1",
-			worktreePath: "/tmp/wt-1",
-			branch: "task/lane-1",
-			laneSessionId: "orch-lane-1",
-			taskIds: ["TP-001", "TP-002", "TP-003"],
-		}],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				worktreePath: "/tmp/wt-1",
+				branch: "task/lane-1",
+				laneSessionId: "orch-lane-1",
+				taskIds: ["TP-001", "TP-002", "TP-003"],
+			},
+		],
 		tasks: [
 			buildTaskRecord("TP-001", "succeeded"),
 			buildTaskRecord("TP-002", "failed", "Session died without .DONE"),
@@ -103,7 +109,10 @@ function buildTaskRecord(
 		status,
 		taskFolder: `/tmp/tasks/${taskId}`,
 		startedAt: status !== "pending" ? Date.now() - 30000 : null,
-		endedAt: status === "succeeded" || status === "failed" || status === "stalled" ? Date.now() - 10000 : null,
+		endedAt:
+			status === "succeeded" || status === "failed" || status === "stalled"
+				? Date.now() - 10000
+				: null,
 		doneFileFound: status === "succeeded",
 		exitReason,
 	};
@@ -198,7 +207,7 @@ describe("1.x — orch_skip_task tool registration", () => {
 describe("2.x — orch_retry_task logic (persisted state)", () => {
 	it("2.1 — retry resets failed task to pending", () => {
 		const state = buildTestPersistedState();
-		const task = state.tasks.find(t => t.taskId === "TP-002")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-002")!;
 		expect(task.status).toBe("failed");
 
 		// Simulate what doOrchRetryTask does
@@ -225,7 +234,7 @@ describe("2.x — orch_retry_task logic (persisted state)", () => {
 				buildTaskRecord("TP-003", "pending"),
 			],
 		});
-		const task = state.tasks.find(t => t.taskId === "TP-002")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-002")!;
 		expect(task.status).toBe("stalled");
 
 		task.status = "pending";
@@ -241,21 +250,21 @@ describe("2.x — orch_retry_task logic (persisted state)", () => {
 				buildTaskRecord("TP-003", "pending"),
 			],
 		});
-		const task = state.tasks.find(t => t.taskId === "TP-001")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-001")!;
 		// doOrchRetryTask rejects if status is not "failed" or "stalled"
 		expect(task.status !== "failed" && task.status !== "stalled").toBe(true);
 	});
 
 	it("2.4 — retry rejects succeeded task", () => {
 		const state = buildTestPersistedState();
-		const task = state.tasks.find(t => t.taskId === "TP-001")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-001")!;
 		expect(task.status).toBe("succeeded");
 		expect(task.status !== "failed" && task.status !== "stalled").toBe(true);
 	});
 
 	it("2.5 — retry rejects unknown taskId", () => {
 		const state = buildTestPersistedState();
-		const task = state.tasks.find(t => t.taskId === "TP-999");
+		const task = state.tasks.find((t) => t.taskId === "TP-999");
 		expect(task).toBeUndefined();
 	});
 
@@ -281,7 +290,7 @@ describe("2.x — orch_retry_task logic (persisted state)", () => {
 			// Load, modify (retry), save
 			const loaded = loadBatchState(tempDir)!;
 			expect(loaded).not.toBeNull();
-			const task = loaded.tasks.find(t => t.taskId === "TP-002")!;
+			const task = loaded.tasks.find((t) => t.taskId === "TP-002")!;
 			task.status = "pending";
 			task.exitReason = "";
 			task.doneFileFound = false;
@@ -291,7 +300,7 @@ describe("2.x — orch_retry_task logic (persisted state)", () => {
 
 			// Verify round-trip
 			const reloaded = loadBatchState(tempDir)!;
-			const retriedTask = reloaded.tasks.find(t => t.taskId === "TP-002")!;
+			const retriedTask = reloaded.tasks.find((t) => t.taskId === "TP-002")!;
 			expect(retriedTask.status).toBe("pending");
 			expect(retriedTask.exitReason).toBe("");
 			expect(retriedTask.doneFileFound).toBe(false);
@@ -309,7 +318,7 @@ describe("2.x — orch_retry_task logic (persisted state)", () => {
 describe("3.x — orch_skip_task logic (persisted state)", () => {
 	it("3.1 — skip marks failed task as skipped", () => {
 		const state = buildTestPersistedState();
-		const task = state.tasks.find(t => t.taskId === "TP-002")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-002")!;
 		expect(task.status).toBe("failed");
 
 		task.status = "skipped";
@@ -325,7 +334,7 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 
 	it("3.2 — skip marks pending task as skipped", () => {
 		const state = buildTestPersistedState();
-		const task = state.tasks.find(t => t.taskId === "TP-003")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-003")!;
 		expect(task.status).toBe("pending");
 
 		task.status = "skipped";
@@ -340,23 +349,22 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 
 	it("3.3 — skip rejects running task", () => {
 		const state = buildTestPersistedState({
-			tasks: [
-				buildTaskRecord("TP-001", "running"),
-				buildTaskRecord("TP-002", "failed", "Some error"),
-			],
+			tasks: [buildTaskRecord("TP-001", "running"), buildTaskRecord("TP-002", "failed", "Some error")],
 		});
-		const task = state.tasks.find(t => t.taskId === "TP-001")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-001")!;
 		expect(task.status).toBe("running");
 		// doOrchSkipTask rejects running
-		const isSkippable = task.status === "failed" || task.status === "stalled" || task.status === "pending";
+		const isSkippable =
+			task.status === "failed" || task.status === "stalled" || task.status === "pending";
 		expect(isSkippable).toBe(false);
 	});
 
 	it("3.4 — skip rejects succeeded task", () => {
 		const state = buildTestPersistedState();
-		const task = state.tasks.find(t => t.taskId === "TP-001")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-001")!;
 		expect(task.status).toBe("succeeded");
-		const isSkippable = task.status === "failed" || task.status === "stalled" || task.status === "pending";
+		const isSkippable =
+			task.status === "failed" || task.status === "stalled" || task.status === "pending";
 		expect(isSkippable).toBe(false);
 	});
 
@@ -388,7 +396,7 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 		};
 
 		// Skip TP-002
-		const task = state.tasks.find(t => t.taskId === "TP-002")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-002")!;
 		task.status = "skipped";
 		task.exitReason = "Skipped by supervisor";
 		state.failedTasks = Math.max(0, state.failedTasks - 1);
@@ -402,8 +410,8 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 			if (depBlockedIdx === -1) continue;
 
 			const depDeps = dependencyGraph.dependencies.get(depId) || [];
-			const allResolved = depDeps.every(predId => {
-				const predRecord = state.tasks.find(t => t.taskId === predId);
+			const allResolved = depDeps.every((predId) => {
+				const predRecord = state.tasks.find((t) => t.taskId === predId);
 				if (!predRecord) return true;
 				return predRecord.status === "succeeded" || predRecord.status === "skipped";
 			});
@@ -453,7 +461,7 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 		};
 
 		// Skip TP-002
-		const task = state.tasks.find(t => t.taskId === "TP-002")!;
+		const task = state.tasks.find((t) => t.taskId === "TP-002")!;
 		task.status = "skipped";
 		state.failedTasks = Math.max(0, state.failedTasks - 1);
 		state.skippedTasks = (state.skippedTasks || 0) + 1;
@@ -466,8 +474,8 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 			if (depBlockedIdx === -1) continue;
 
 			const depDeps = dependencyGraph.dependencies.get(depId) || [];
-			const allResolved = depDeps.every(predId => {
-				const predRecord = state.tasks.find(t => t.taskId === predId);
+			const allResolved = depDeps.every((predId) => {
+				const predRecord = state.tasks.find((t) => t.taskId === predId);
 				if (!predRecord) return true;
 				return predRecord.status === "succeeded" || predRecord.status === "skipped";
 			});
@@ -492,7 +500,7 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 			saveBatchState(JSON.stringify(state, null, 2), tempDir);
 
 			const loaded = loadBatchState(tempDir)!;
-			const task = loaded.tasks.find(t => t.taskId === "TP-002")!;
+			const task = loaded.tasks.find((t) => t.taskId === "TP-002")!;
 			task.status = "skipped";
 			task.exitReason = "Skipped by supervisor";
 			task.endedAt = Date.now();
@@ -502,7 +510,7 @@ describe("3.x — orch_skip_task logic (persisted state)", () => {
 			saveBatchState(JSON.stringify(loaded, null, 2), tempDir);
 
 			const reloaded = loadBatchState(tempDir)!;
-			const skippedTask = reloaded.tasks.find(t => t.taskId === "TP-002")!;
+			const skippedTask = reloaded.tasks.find((t) => t.taskId === "TP-002")!;
 			expect(skippedTask.status).toBe("skipped");
 			expect(skippedTask.exitReason).toBe("Skipped by supervisor");
 			expect(reloaded.failedTasks).toBe(0);
@@ -533,7 +541,7 @@ describe("4.x — Counter consistency after retry and skip operations", () => {
 		});
 
 		// Retry TP-002
-		const tp002 = state.tasks.find(t => t.taskId === "TP-002")!;
+		const tp002 = state.tasks.find((t) => t.taskId === "TP-002")!;
 		tp002.status = "pending";
 		tp002.exitReason = "";
 		state.failedTasks = Math.max(0, state.failedTasks - 1);
@@ -541,7 +549,7 @@ describe("4.x — Counter consistency after retry and skip operations", () => {
 		expect(state.failedTasks).toBe(1);
 
 		// Skip TP-003
-		const tp003 = state.tasks.find(t => t.taskId === "TP-003")!;
+		const tp003 = state.tasks.find((t) => t.taskId === "TP-003")!;
 		tp003.status = "skipped";
 		tp003.exitReason = "Skipped by supervisor";
 		state.failedTasks = Math.max(0, state.failedTasks - 1);
@@ -577,9 +585,7 @@ describe("4.x — Counter consistency after retry and skip operations", () => {
 	it("4.3 — skip from stalled status decrements failedTasks", () => {
 		// Stalled tasks are counted in failedTasks
 		const state = buildTestPersistedState({
-			tasks: [
-				buildTaskRecord("TP-001", "stalled", "No progress"),
-			],
+			tasks: [buildTaskRecord("TP-001", "stalled", "No progress")],
 			totalTasks: 1,
 			failedTasks: 1,
 			skippedTasks: 0,
@@ -597,9 +603,7 @@ describe("4.x — Counter consistency after retry and skip operations", () => {
 
 	it("4.4 — skip from pending status does not decrement failedTasks", () => {
 		const state = buildTestPersistedState({
-			tasks: [
-				buildTaskRecord("TP-003", "pending"),
-			],
+			tasks: [buildTaskRecord("TP-003", "pending")],
 			totalTasks: 1,
 			failedTasks: 0,
 			skippedTasks: 0,
@@ -822,7 +826,7 @@ describe("6.x — Phase transition after retry/skip", () => {
 
 			const loaded = loadBatchState(tempDir)!;
 			// Apply skip
-			const task = loaded.tasks.find(t => t.taskId === "TP-002")!;
+			const task = loaded.tasks.find((t) => t.taskId === "TP-002")!;
 			task.status = "skipped";
 			task.exitReason = "Skipped by supervisor";
 			loaded.failedTasks = Math.max(0, loaded.failedTasks - 1);

@@ -23,7 +23,12 @@ import { resolve, basename } from "path";
 // Direct imports from production modules
 import { sanitizeNameComponent, resolveOperatorId, resolveRepoSlug } from "../taskplane/naming.ts";
 import { generateLaneSessionId, generateLaneId } from "../taskplane/waves.ts";
-import { generateBranchName, generateWorktreePath, generateMergeWorktreePath, generateBatchContainerPath } from "../taskplane/worktree.ts";
+import {
+	generateBranchName,
+	generateWorktreePath,
+	generateMergeWorktreePath,
+	generateBatchContainerPath,
+} from "../taskplane/worktree.ts";
 import { parseOrchSessionNames } from "../taskplane/persistence.ts";
 import type { OrchestratorConfig } from "../taskplane/types.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG } from "../taskplane/types.ts";
@@ -52,10 +57,20 @@ function mergeTempBranch(opId: string, batchId: string): string {
 function mergeSessionName(sessionPrefix: string, opId: string, laneNumber: number): string {
 	return `${sessionPrefix}-${opId}-merge-${laneNumber}`;
 }
-function mergeResultFileName(waveIndex: number, laneNumber: number, opId: string, batchId: string): string {
+function mergeResultFileName(
+	waveIndex: number,
+	laneNumber: number,
+	opId: string,
+	batchId: string,
+): string {
 	return `merge-result-w${waveIndex}-lane${laneNumber}-${opId}-${batchId}.json`;
 }
-function mergeRequestFileName(waveIndex: number, laneNumber: number, opId: string, batchId: string): string {
+function mergeRequestFileName(
+	waveIndex: number,
+	laneNumber: number,
+	opId: string,
+	batchId: string,
+): string {
 	return `merge-request-w${waveIndex}-lane${laneNumber}-${opId}-${batchId}.txt`;
 }
 function mergeWorkspaceDir(opId: string): string {
@@ -139,8 +154,22 @@ describe("2a — Collision Matrix", () => {
 
 		it("same operator, different batchIds produce different container paths", () => {
 			const repoRoot = "/home/user/project";
-			const pathA = generateWorktreePath(wtPrefix, lane, repoRoot, "alice", undefined, "20260315T120000");
-			const pathB = generateWorktreePath(wtPrefix, lane, repoRoot, "alice", undefined, "20260315T120001");
+			const pathA = generateWorktreePath(
+				wtPrefix,
+				lane,
+				repoRoot,
+				"alice",
+				undefined,
+				"20260315T120000",
+			);
+			const pathB = generateWorktreePath(
+				wtPrefix,
+				lane,
+				repoRoot,
+				"alice",
+				undefined,
+				"20260315T120001",
+			);
 			expect(pathA).not.toBe(pathB);
 			expect(basename(resolve(pathA, ".."))).toBe("alice-20260315T120000");
 			expect(basename(resolve(pathB, ".."))).toBe("alice-20260315T120001");
@@ -415,7 +444,6 @@ describe("2a — Collision Matrix", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("2b — Shared-Environment Interference", () => {
-
 	describe("parseOrchSessionNames() prefix filtering behavior", () => {
 		const tmuxOutput = [
 			"orch-alice-lane-1",
@@ -474,12 +502,14 @@ describe("2b — Shared-Environment Interference", () => {
 		 * Simulate the regex matching from listWorktrees() for the primary pattern.
 		 */
 		function matchesPrimaryPattern(wtBasename: string, prefix: string, opId: string): boolean {
-			const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-${opId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`);
+			const pattern = new RegExp(
+				`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-${opId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`,
+			);
 			return pattern.test(wtBasename);
 		}
 
 		function matchesLegacyPattern(wtBasename: string, prefix: string): boolean {
-			const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`);
+			const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`);
 			return pattern.test(wtBasename);
 		}
 
@@ -618,7 +648,7 @@ describe("2b — Shared-Environment Interference", () => {
 				"orch-bob-merge-2",
 			];
 
-			const matched = sessions.filter(name => name.startsWith(`${prefix}-`));
+			const matched = sessions.filter((name) => name.startsWith(`${prefix}-`));
 			expect(matched.length).toBe(4);
 		});
 
@@ -630,7 +660,7 @@ describe("2b — Shared-Environment Interference", () => {
 				"orchestrator-lane-1", // does NOT start with "orch-"
 			];
 
-			const matched = sessions.filter(name => name.startsWith(`${prefix}-`));
+			const matched = sessions.filter((name) => name.startsWith(`${prefix}-`));
 			expect(matched.length).toBe(1);
 			expect(matched[0]).toBe("orch-alice-lane-1");
 		});
@@ -642,7 +672,6 @@ describe("2b — Shared-Environment Interference", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("2c — Human-Readability Acceptance", () => {
-
 	describe("TMUX session names stay under 64 characters", () => {
 		it("worst-case repo mode: long prefix + long opId", () => {
 			const session = generateLaneSessionId("taskplane-orch", 99, "ci-runner-01xx");
@@ -680,21 +709,21 @@ describe("2c — Human-Readability Acceptance", () => {
 			const session = generateLaneSessionId(prefix, 1, opId);
 			expect(session).toBe("orch-henrylach-lane-1");
 			const tokens = session.split("-");
-			expect(tokens[0]).toBe("orch");     // prefix
+			expect(tokens[0]).toBe("orch"); // prefix
 			expect(tokens[1]).toBe("henrylach"); // opId
-			expect(tokens[2]).toBe("lane");      // role
-			expect(tokens[3]).toBe("1");         // lane number
+			expect(tokens[2]).toBe("lane"); // role
+			expect(tokens[3]).toBe("1"); // lane number
 		});
 
 		it("TMUX workspace sessions: prefix → opId → repoId → lane-N", () => {
 			const session = generateLaneSessionId(prefix, 2, opId, "api");
 			expect(session).toBe("orch-henrylach-api-lane-2");
 			const tokens = session.split("-");
-			expect(tokens[0]).toBe("orch");      // prefix
-			expect(tokens[1]).toBe("henrylach");  // opId
-			expect(tokens[2]).toBe("api");        // repoId
-			expect(tokens[3]).toBe("lane");       // role
-			expect(tokens[4]).toBe("2");          // lane number
+			expect(tokens[0]).toBe("orch"); // prefix
+			expect(tokens[1]).toBe("henrylach"); // opId
+			expect(tokens[2]).toBe("api"); // repoId
+			expect(tokens[3]).toBe("lane"); // role
+			expect(tokens[4]).toBe("2"); // lane number
 		});
 
 		it("Merge sessions: prefix → opId → merge → N", () => {
@@ -714,13 +743,20 @@ describe("2c — Human-Readability Acceptance", () => {
 			const tokens = wtBasename.split("-");
 			// "taskplane-wt" is the prefix (contains a hyphen)
 			expect(tokens.slice(0, 2).join("-")).toBe("taskplane-wt"); // prefix
-			expect(tokens[2]).toBe("henrylach");                       // opId
-			expect(tokens[3]).toBe("1");                               // lane number
+			expect(tokens[2]).toBe("henrylach"); // opId
+			expect(tokens[3]).toBe("1"); // lane number
 		});
 
 		it("Worktree paths (batch-scoped): container = opId-batchId, basename = lane-N", () => {
 			const batchIdVal = "20260315T120000";
-			const wtPath = generateWorktreePath(wtPrefix, 1, "/home/user/project", opId, undefined, batchIdVal);
+			const wtPath = generateWorktreePath(
+				wtPrefix,
+				1,
+				"/home/user/project",
+				opId,
+				undefined,
+				batchIdVal,
+			);
 			const wtBasename = basename(resolve(wtPath));
 			expect(wtBasename).toBe("lane-1");
 			const containerName = basename(resolve(wtPath, ".."));
@@ -742,9 +778,9 @@ describe("2c — Human-Readability Acceptance", () => {
 			// After "task/" prefix
 			const afterSlash = branch.split("/")[1];
 			const tokens = afterSlash.split("-");
-			expect(tokens[0]).toBe("henrylach");     // opId
-			expect(tokens[1]).toBe("lane");          // role marker
-			expect(tokens[2]).toBe("1");             // lane number
+			expect(tokens[0]).toBe("henrylach"); // opId
+			expect(tokens[1]).toBe("lane"); // role marker
+			expect(tokens[2]).toBe("1"); // lane number
 			expect(tokens[3]).toBe("20260315T120000"); // batchId
 		});
 	});
@@ -845,13 +881,15 @@ describe("2c — Human-Readability Acceptance", () => {
 		});
 
 		it("Branch name example", () => {
-			expect(generateBranchName(1, "20260308T214300", "henrylach"))
-				.toBe("task/henrylach-lane-1-20260308T214300");
+			expect(generateBranchName(1, "20260308T214300", "henrylach")).toBe(
+				"task/henrylach-lane-1-20260308T214300",
+			);
 		});
 
 		it("Merge temp branch example", () => {
-			expect(mergeTempBranch("henrylach", "20260308T214300"))
-				.toBe("_merge-temp-henrylach-20260308T214300");
+			expect(mergeTempBranch("henrylach", "20260308T214300")).toBe(
+				"_merge-temp-henrylach-20260308T214300",
+			);
 		});
 
 		it("Worktree path basename example (legacy)", () => {
@@ -860,13 +898,24 @@ describe("2c — Human-Readability Acceptance", () => {
 		});
 
 		it("Worktree path example (batch-scoped, TP-021)", () => {
-			const wtPath = generateWorktreePath("taskplane-wt", 1, "/home/user/project", "henrylach", undefined, "20260308T214300");
+			const wtPath = generateWorktreePath(
+				"taskplane-wt",
+				1,
+				"/home/user/project",
+				"henrylach",
+				undefined,
+				"20260308T214300",
+			);
 			expect(basename(resolve(wtPath))).toBe("lane-1");
 			expect(basename(resolve(wtPath, ".."))).toBe("henrylach-20260308T214300");
 		});
 
 		it("Merge worktree path example (TP-021)", () => {
-			const mergePath = generateMergeWorktreePath("/home/user/project", "henrylach", "20260308T214300");
+			const mergePath = generateMergeWorktreePath(
+				"/home/user/project",
+				"henrylach",
+				"20260308T214300",
+			);
 			expect(basename(resolve(mergePath))).toBe("merge");
 			expect(basename(resolve(mergePath, ".."))).toBe("henrylach-20260308T214300");
 		});

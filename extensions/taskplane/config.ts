@@ -11,7 +11,12 @@
  * @module orch/config
  */
 
-import { loadProjectConfig, toOrchestratorConfig, toTaskRunnerConfig, hasConfigFiles } from "./config-loader.ts";
+import {
+	loadProjectConfig,
+	toOrchestratorConfig,
+	toTaskRunnerConfig,
+	hasConfigFiles,
+} from "./config-loader.ts";
 export { hasConfigFiles, resolveConfigRoot } from "./config-loader.ts";
 import type { OrchestratorConfig, TaskRunnerConfig } from "./types.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
@@ -31,7 +36,10 @@ import { DEFAULT_SUPERVISOR_CONFIG } from "./supervisor.ts";
  *
  * Returns the legacy `OrchestratorConfig` (snake_case) shape.
  */
-export function loadOrchestratorConfig(cwd: string, pointerConfigRoot?: string): OrchestratorConfig {
+export function loadOrchestratorConfig(
+	cwd: string,
+	pointerConfigRoot?: string,
+): OrchestratorConfig {
 	const unified = loadProjectConfig(cwd, pointerConfigRoot);
 	return toOrchestratorConfig(unified);
 }

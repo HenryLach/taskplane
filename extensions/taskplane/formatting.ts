@@ -6,7 +6,16 @@ import { join } from "path";
 import { truncateToWidth } from "@mariozechner/pi-tui";
 
 import { parseDependencyReference } from "./discovery.ts";
-import type { LaneAssignment, MonitorState, OrchBatchRuntimeState, OrchDashboardViewModel, OrchLaneCardData, OrchSummaryCounts, ParsedTask, WaveComputationResult } from "./types.ts";
+import type {
+	LaneAssignment,
+	MonitorState,
+	OrchBatchRuntimeState,
+	OrchDashboardViewModel,
+	OrchLaneCardData,
+	OrchSummaryCounts,
+	ParsedTask,
+	WaveComputationResult,
+} from "./types.ts";
 import { getTaskDurationMinutes, SIZE_DURATION_MINUTES } from "./types.ts";
 
 // ── Wave Output Formatting ───────────────────────────────────────────
@@ -30,9 +39,7 @@ export function formatDependencyGraph(
 	const lines: string[] = [];
 
 	// Sort tasks deterministically by ID
-	const sortedTasks = [...pending.values()].sort((a, b) =>
-		a.taskId.localeCompare(b.taskId),
-	);
+	const sortedTasks = [...pending.values()].sort((a, b) => a.taskId.localeCompare(b.taskId));
 
 	// Build downstream index: taskID → tasks that depend on it
 	const downstream = new Map<string, string[]>();
@@ -130,14 +137,8 @@ export function formatDependencyGraph(
 		const dependents = (downstream.get(target) || []).sort();
 		if (dependents.length > 0) {
 			hasDownstream = true;
-			const status = completed.has(target)
-				? "✅"
-				: pending.has(target)
-					? "⏳"
-					: "❓";
-			lines.push(
-				`    ${target} ${status} ← ${dependents.join(", ")}`,
-			);
+			const status = completed.has(target) ? "✅" : pending.has(target) ? "⏳" : "❓";
+			lines.push(`    ${target} ${status} ← ${dependents.join(", ")}`);
 		}
 	}
 	if (!hasDownstream) {
@@ -146,9 +147,7 @@ export function formatDependencyGraph(
 
 	// Section 3: Independent tasks (no deps, nothing depends on them)
 	const independentTasks = sortedTasks.filter(
-		(t) =>
-			t.dependencies.length === 0 &&
-			!(downstream.get(t.taskId)?.length),
+		(t) => t.dependencies.length === 0 && !downstream.get(t.taskId)?.length,
 	);
 	if (independentTasks.length > 0) {
 		lines.push("");
@@ -206,7 +205,7 @@ export function formatWavePlan(
 
 	lines.push(
 		`🌊 Execution Plan: ${result.waves.length} wave(s), ` +
-		`${totalTasks} task(s), up to ${maxLanesUsed} lane(s)`,
+			`${totalTasks} task(s), up to ${maxLanesUsed} lane(s)`,
 	);
 	lines.push("");
 
@@ -225,46 +224,31 @@ export function formatWavePlan(
 		const parallel = laneCount > 1 ? "parallel" : "serial";
 
 		lines.push(
-			`  Wave ${wave.waveNumber}: ${taskCount} task(s) across ` +
-			`${laneCount} lane(s) [${parallel}]`,
+			`  Wave ${wave.waveNumber}: ${taskCount} task(s) across ` + `${laneCount} lane(s) [${parallel}]`,
 		);
 
 		// Calculate wave duration: critical path = max lane duration
 		let maxLaneDuration = 0;
 
 		// Sort lanes deterministically by lane number
-		const sortedLanes = [...laneGroups.entries()].sort(
-			(a, b) => a[0] - b[0],
-		);
+		const sortedLanes = [...laneGroups.entries()].sort((a, b) => a[0] - b[0]);
 
 		for (const [lane, assignments] of sortedLanes) {
 			// Sort tasks within lane by task ID for deterministic output
-			const sortedAssignments = [...assignments].sort((a, b) =>
-				a.taskId.localeCompare(b.taskId),
-			);
-			const taskList = sortedAssignments
-				.map((a) => `${a.taskId} [${a.task.size}]`)
-				.join(", ");
+			const sortedAssignments = [...assignments].sort((a, b) => a.taskId.localeCompare(b.taskId));
+			const taskList = sortedAssignments.map((a) => `${a.taskId} [${a.task.size}]`).join(", ");
 			const laneDuration = sortedAssignments.reduce(
-				(sum, a) =>
-					sum + getTaskDurationMinutes(a.task.size, sizeWeights),
+				(sum, a) => sum + getTaskDurationMinutes(a.task.size, sizeWeights),
 				0,
 			);
 			if (laneDuration > maxLaneDuration) maxLaneDuration = laneDuration;
-			const serialNote =
-				sortedAssignments.length > 1 ? " (serial)" : "";
-			lines.push(
-				`    Lane ${lane}: ${taskList}${serialNote}  ` +
-				`[est. ${laneDuration} min]`,
-			);
+			const serialNote = sortedAssignments.length > 1 ? " (serial)" : "";
+			lines.push(`    Lane ${lane}: ${taskList}${serialNote}  ` + `[est. ${laneDuration} min]`);
 		}
 
 		// Critical path for this wave
 		totalEstimate += maxLaneDuration;
-		lines.push(
-			`    ⏱  Wave duration: ${maxLaneDuration} min ` +
-			`(critical path: longest lane)`,
-		);
+		lines.push(`    ⏱  Wave duration: ${maxLaneDuration} min ` + `(critical path: longest lane)`);
 		lines.push("");
 	}
 
@@ -273,16 +257,14 @@ export function formatWavePlan(
 	lines.push(`📊 Total estimated duration: ${totalEstimate} min (~${totalHours} hours)`);
 	lines.push(
 		`   Duration model: S=${SIZE_DURATION_MINUTES["S"]}m, ` +
-		`M=${SIZE_DURATION_MINUTES["M"]}m, L=${SIZE_DURATION_MINUTES["L"]}m`,
+			`M=${SIZE_DURATION_MINUTES["M"]}m, L=${SIZE_DURATION_MINUTES["L"]}m`,
 	);
 	lines.push(
-		"   Critical path: sum of per-wave bottleneck lanes " +
-		"(waves sequential, lanes parallel)",
+		"   Critical path: sum of per-wave bottleneck lanes " + "(waves sequential, lanes parallel)",
 	);
 
 	return lines.join("\n");
 }
-
 
 // ── Summary Helpers ──────────────────────────────────────────────────
 
@@ -315,7 +297,10 @@ export function computeOrchSummaryCounts(
 	const failed = batchState.failedTasks;
 	const blocked = batchState.blockedTasks;
 	const total = batchState.totalTasks;
-	const queued = Math.max(0, total - completed - failed - blocked - stalled - running - batchState.skippedTasks);
+	const queued = Math.max(
+		0,
+		total - completed - failed - blocked - stalled - running - batchState.skippedTasks,
+	);
 
 	return { completed, running, queued, failed, blocked, stalled, total };
 }
@@ -360,9 +345,10 @@ export function buildDashboardViewModel(
 	const summary = computeOrchSummaryCounts(batchState, monitorState);
 	const elapsed = formatElapsedTime(batchState.startedAt, batchState.endedAt);
 
-	const waveProgress = batchState.totalWaves > 0
-		? `${Math.max(0, batchState.currentWaveIndex + 1)}/${batchState.totalWaves}`
-		: "0/0";
+	const waveProgress =
+		batchState.totalWaves > 0
+			? `${Math.max(0, batchState.currentWaveIndex + 1)}/${batchState.totalWaves}`
+			: "0/0";
 
 	// Build lane cards from monitor state (if available) or current lanes
 	const laneCards: OrchLaneCardData[] = [];
@@ -372,15 +358,16 @@ export function buildDashboardViewModel(
 	// lanes, but monitorState may still hold wave N's data until the first
 	// poll of wave N+1's monitor. Detect this mismatch by checking whether
 	// the monitor's lane numbers match the current allocation.
-	const monitorIsFresh = monitorState && monitorState.lanes.length > 0 && (
+	const monitorIsFresh =
+		monitorState &&
+		monitorState.lanes.length > 0 &&
 		// If no current allocation, monitor data is the best we have
 		// (covers terminal phases like completed/failed/stopped)
-		batchState.currentLanes.length === 0 ||
-		// If allocated lanes exist, verify monitor lanes match them
-		monitorState.lanes.some(ml =>
-			batchState.currentLanes.some(cl => cl.laneNumber === ml.laneNumber),
-		)
-	);
+		(batchState.currentLanes.length === 0 ||
+			// If allocated lanes exist, verify monitor lanes match them
+			monitorState.lanes.some((ml) =>
+				batchState.currentLanes.some((cl) => cl.laneNumber === ml.laneNumber),
+			));
 
 	// TP-170: Build a laneNumber → AllocatedLane index for identity reconciliation.
 	// In workspace mode, the monitor’s sessionName (e.g., "orch-henry-api-lane-1")
@@ -438,7 +425,11 @@ export function buildDashboardViewModel(
 				totalChecked: snap?.totalChecked || 0,
 				totalItems: snap?.totalItems || 0,
 				completedTasks: lane.completedTasks.length,
-				totalLaneTasks: lane.completedTasks.length + lane.failedTasks.length + lane.remainingTasks.length + (lane.currentTaskId ? 1 : 0),
+				totalLaneTasks:
+					lane.completedTasks.length +
+					lane.failedTasks.length +
+					lane.remainingTasks.length +
+					(lane.currentTaskId ? 1 : 0),
 				status,
 				stallReason: snap?.stallReason || null,
 			});
@@ -468,7 +459,7 @@ export function buildDashboardViewModel(
 
 	// Determine attach hint
 	let attachHint = "";
-	const aliveLane = laneCards.find(l => l.sessionAlive && l.status === "running");
+	const aliveLane = laneCards.find((l) => l.sessionAlive && l.status === "running");
 	if (aliveLane) {
 		attachHint = `Use /orch-sessions to inspect active lane sessions (${aliveLane.sessionName})`;
 	} else if (laneCards.length > 0) {
@@ -513,19 +504,29 @@ export function buildDashboardViewModel(
  */
 export function renderLaneCard(card: OrchLaneCardData, colWidth: number, theme: any): string[] {
 	const w = colWidth - 2; // inner width (excluding │ borders)
-	const trunc = (s: string, max: number) => s.length > max ? s.slice(0, max - 3) + "..." : s;
+	const trunc = (s: string, max: number) => (s.length > max ? s.slice(0, max - 3) + "..." : s);
 
 	// Status icon and color
-	const statusIcon = card.status === "succeeded" ? "✓"
-		: card.status === "running" ? "●"
-		: card.status === "failed" ? "✗"
-		: card.status === "stalled" ? "⚠"
-		: "○";
-	const statusColor = card.status === "succeeded" ? "success"
-		: card.status === "running" ? "accent"
-		: card.status === "failed" ? "error"
-		: card.status === "stalled" ? "warning"
-		: "dim";
+	const statusIcon =
+		card.status === "succeeded"
+			? "✓"
+			: card.status === "running"
+				? "●"
+				: card.status === "failed"
+					? "✗"
+					: card.status === "stalled"
+						? "⚠"
+						: "○";
+	const statusColor =
+		card.status === "succeeded"
+			? "success"
+			: card.status === "running"
+				? "accent"
+				: card.status === "failed"
+					? "error"
+					: card.status === "stalled"
+						? "warning"
+						: "dim";
 
 	// Line 1: Session name (e.g., "⎡orch-lane-1⎤")
 	const sessionLabel = `⎡${card.sessionName}⎤`;
@@ -535,9 +536,11 @@ export function renderLaneCard(card: OrchLaneCardData, colWidth: number, theme: 
 	// Line 2: Status + current task
 	const taskInfo = card.currentTaskId
 		? `${statusIcon} ${card.currentTaskId}`
-		: card.status === "succeeded" ? `${statusIcon} done`
-		: card.status === "failed" ? `${statusIcon} failed`
-		: `${statusIcon} idle`;
+		: card.status === "succeeded"
+			? `${statusIcon} done`
+			: card.status === "failed"
+				? `${statusIcon} failed`
+				: `${statusIcon} idle`;
 	const taskStr = theme.fg(statusColor, trunc(taskInfo, w));
 	const taskVis = Math.min(taskInfo.length, w);
 
@@ -627,22 +630,35 @@ export function createOrchWidget(
 
 				// ── Phase-specific rendering ──────────────────
 				const phaseIcon =
-					vm.phase === "launching" ? "◌"
-					: vm.phase === "planning" ? "◌"
-					: vm.phase === "executing" ? "●"
-					: vm.phase === "merging" ? "🔀"
-					: vm.phase === "paused" ? "⏸"
-					: vm.phase === "stopped" ? "⛔"
-					: vm.phase === "completed" ? "✓"
-					: vm.phase === "failed" ? "✗"
-					: "○";
+					vm.phase === "launching"
+						? "◌"
+						: vm.phase === "planning"
+							? "◌"
+							: vm.phase === "executing"
+								? "●"
+								: vm.phase === "merging"
+									? "🔀"
+									: vm.phase === "paused"
+										? "⏸"
+										: vm.phase === "stopped"
+											? "⛔"
+											: vm.phase === "completed"
+												? "✓"
+												: vm.phase === "failed"
+													? "✗"
+													: "○";
 				const phaseColor =
-					vm.phase === "executing" ? "accent"
-					: vm.phase === "merging" ? "accent"
-					: vm.phase === "completed" ? "success"
-					: vm.phase === "failed" || vm.phase === "stopped" ? "error"
-					: vm.phase === "paused" ? "warning"
-					: "dim";
+					vm.phase === "executing"
+						? "accent"
+						: vm.phase === "merging"
+							? "accent"
+							: vm.phase === "completed"
+								? "success"
+								: vm.phase === "failed" || vm.phase === "stopped"
+									? "error"
+									: vm.phase === "paused"
+										? "warning"
+										: "dim";
 
 				// Header: phase icon + batch ID + wave + elapsed
 				const header =
@@ -656,10 +672,7 @@ export function createOrchWidget(
 
 				// ── Planning state ────────────────────────────
 				if (vm.phase === "planning") {
-					lines.push(truncateToWidth(
-						theme.fg("dim", "  ◌ Planning batch..."),
-						width,
-					));
+					lines.push(truncateToWidth(theme.fg("dim", "  ◌ Planning batch..."), width));
 					return lines;
 				}
 
@@ -683,18 +696,24 @@ export function createOrchWidget(
 				// ── Summary counts line ───────────────────────
 				const countParts: string[] = [];
 				if (vm.summary.completed > 0) countParts.push(theme.fg("success", `${vm.summary.completed} ✓`));
-				if (vm.summary.running > 0) countParts.push(theme.fg("accent", `${vm.summary.running} running`));
+				if (vm.summary.running > 0)
+					countParts.push(theme.fg("accent", `${vm.summary.running} running`));
 				if (vm.summary.queued > 0) countParts.push(theme.fg("dim", `${vm.summary.queued} queued`));
 				if (vm.summary.failed > 0) countParts.push(theme.fg("error", `${vm.summary.failed} ✗`));
-				if (vm.summary.blocked > 0) countParts.push(theme.fg("warning", `${vm.summary.blocked} blocked`));
-				if (vm.summary.stalled > 0) countParts.push(theme.fg("warning", `${vm.summary.stalled} stalled`));
+				if (vm.summary.blocked > 0)
+					countParts.push(theme.fg("warning", `${vm.summary.blocked} blocked`));
+				if (vm.summary.stalled > 0)
+					countParts.push(theme.fg("warning", `${vm.summary.stalled} stalled`));
 				if (countParts.length > 0) {
 					lines.push(truncateToWidth("  " + countParts.join(theme.fg("dim", " · ")), width));
 				}
 				lines.push("");
 
 				// ── Lane cards ─────────────────────────────────
-				if (vm.laneCards.length > 0 && (vm.phase === "executing" || vm.phase === "merging" || vm.phase === "paused")) {
+				if (
+					vm.laneCards.length > 0 &&
+					(vm.phase === "executing" || vm.phase === "merging" || vm.phase === "paused")
+				) {
 					const arrowWidth = 3;
 					const minCardWidth = 18;
 					const maxCols = Math.max(1, Math.floor((width + arrowWidth) / (minCardWidth + arrowWidth)));
@@ -703,7 +722,7 @@ export function createOrchWidget(
 
 					for (let rowStart = 0; rowStart < vm.laneCards.length; rowStart += cols) {
 						const rowCards = vm.laneCards.slice(rowStart, rowStart + cols);
-						const rendered = rowCards.map(c => renderLaneCard(c, colWidth, theme));
+						const rendered = rowCards.map((c) => renderLaneCard(c, colWidth, theme));
 
 						if (rendered.length > 0) {
 							const cardHeight = rendered[0].length;
@@ -721,47 +740,41 @@ export function createOrchWidget(
 
 				// ── Terminal states (completed/failed/stopped) ──
 				if (vm.phase === "completed") {
-					lines.push(truncateToWidth(
-						theme.fg("success", "  ✅ Batch complete"),
-						width,
-					));
+					lines.push(truncateToWidth(theme.fg("success", "  ✅ Batch complete"), width));
 				} else if (vm.phase === "failed") {
-					lines.push(truncateToWidth(
-						theme.fg("error", "  ❌ Batch failed"),
-						width,
-					));
+					lines.push(truncateToWidth(theme.fg("error", "  ❌ Batch failed"), width));
 					for (const err of vm.errors.slice(0, 3)) {
-						lines.push(truncateToWidth(
-							theme.fg("error", `     ${err.slice(0, 80)}`),
-							width,
-						));
+						lines.push(truncateToWidth(theme.fg("error", `     ${err.slice(0, 80)}`), width));
 					}
 				} else if (vm.phase === "stopped") {
-					lines.push(truncateToWidth(
-						theme.fg("error", `  ⛔ Stopped by ${vm.failurePolicy || "policy"}`),
-						width,
-					));
+					lines.push(
+						truncateToWidth(theme.fg("error", `  ⛔ Stopped by ${vm.failurePolicy || "policy"}`), width),
+					);
 				} else if (vm.phase === "merging") {
 					lines.push("");
-					lines.push(truncateToWidth(
-						theme.fg("accent", `  🔀 Merging lane branches into ${vm.orchBranch || "orch branch"}...`),
-						width,
-					));
+					lines.push(
+						truncateToWidth(
+							theme.fg("accent", `  🔀 Merging lane branches into ${vm.orchBranch || "orch branch"}...`),
+							width,
+						),
+					);
 				} else if (vm.phase === "paused") {
 					lines.push("");
-					lines.push(truncateToWidth(
-						theme.fg("warning", "  ⏸ Batch paused — lanes will stop after current tasks"),
-						width,
-					));
+					lines.push(
+						truncateToWidth(
+							theme.fg("warning", "  ⏸ Batch paused — lanes will stop after current tasks"),
+							width,
+						),
+					);
 				}
 
 				// ── Footer: attach hint ───────────────────────
-				if (vm.attachHint && (vm.phase === "executing" || vm.phase === "merging" || vm.phase === "paused")) {
+				if (
+					vm.attachHint &&
+					(vm.phase === "executing" || vm.phase === "merging" || vm.phase === "paused")
+				) {
 					lines.push("");
-					lines.push(truncateToWidth(
-						theme.fg("dim", `  💡 ${vm.attachHint}`),
-						width,
-					));
+					lines.push(truncateToWidth(theme.fg("dim", `  💡 ${vm.attachHint}`), width));
 				}
 
 				return lines;
@@ -770,4 +783,3 @@ export function createOrchWidget(
 		};
 	};
 }
-

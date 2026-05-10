@@ -28,7 +28,15 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, renameSync, unlinkSync } from "node:fs";
+import {
+	readFileSync,
+	writeFileSync,
+	appendFileSync,
+	mkdirSync,
+	readdirSync,
+	renameSync,
+	unlinkSync,
+} from "node:fs";
 import { dirname, resolve, join, basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
@@ -71,10 +79,16 @@ function parseArgs(argv) {
 			args.promptFile = argv[++i];
 			i++;
 		} else if (arg === "--tools" && i + 1 < argv.length) {
-			args.tools = argv[++i].split(",").map((t) => t.trim()).filter(Boolean);
+			args.tools = argv[++i]
+				.split(",")
+				.map((t) => t.trim())
+				.filter(Boolean);
 			i++;
 		} else if (arg === "--extensions" && i + 1 < argv.length) {
-			args.extensions = argv[++i].split(",").map((e) => e.trim()).filter(Boolean);
+			args.extensions = argv[++i]
+				.split(",")
+				.map((e) => e.trim())
+				.filter(Boolean);
 			i++;
 		} else if (arg === "--mailbox-dir" && i + 1 < argv.length) {
 			args.mailboxDir = argv[++i];
@@ -114,7 +128,7 @@ Optional:
   --mailbox-dir <path>         Mailbox directory for agent steering (TP-089)
   --steering-pending-path <p>  Path to .steering-pending JSONL flag file (TP-090)
   -h, --help                   Show this help
-`
+`,
 	);
 }
 
@@ -177,9 +191,9 @@ function redactValue(val) {
 	if (val === null || val === undefined) return val;
 
 	if (typeof val === "string") {
-		return redactString(val.length > MAX_TOOL_ARG_LENGTH
-			? val.slice(0, MAX_TOOL_ARG_LENGTH) + "…[truncated]"
-			: val);
+		return redactString(
+			val.length > MAX_TOOL_ARG_LENGTH ? val.slice(0, MAX_TOOL_ARG_LENGTH) + "…[truncated]" : val,
+		);
 	}
 
 	if (Array.isArray(val)) {
@@ -237,7 +251,7 @@ function redactSummary(summary) {
 		redacted.lastToolCall = redactString(
 			redacted.lastToolCall.length > MAX_TOOL_ARG_LENGTH
 				? redacted.lastToolCall.slice(0, MAX_TOOL_ARG_LENGTH) + "…[truncated]"
-				: redacted.lastToolCall
+				: redacted.lastToolCall,
 		);
 	}
 
@@ -276,7 +290,8 @@ function writeSidecarEvent(sidecarPath, event) {
 function displayProgress(state) {
 	const parts = [];
 	if (state.currentTool) parts.push(`tool: ${state.currentTool}`);
-	const totalTokens = state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite;
+	const totalTokens =
+		state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite;
 	if (totalTokens > 0) parts.push(`tokens: ${totalTokens.toLocaleString()}`);
 	if (state.cost > 0) parts.push(`cost: $${state.cost.toFixed(4)}`);
 	if (state.toolCalls > 0) parts.push(`tools: ${state.toolCalls}`);
@@ -363,7 +378,12 @@ function applyEvent(state, event) {
 				state.tokens.cacheRead += usage.cacheRead || 0;
 				state.tokens.cacheWrite += usage.cacheWrite || 0;
 				if (usage.cost) {
-					state.cost += typeof usage.cost === "object" ? (usage.cost.total || 0) : (typeof usage.cost === "number" ? usage.cost : 0);
+					state.cost +=
+						typeof usage.cost === "object"
+							? usage.cost.total || 0
+							: typeof usage.cost === "number"
+								? usage.cost
+								: 0;
 				}
 			}
 			break;
@@ -453,16 +473,20 @@ function applyEvent(state, event) {
 function buildExitSummary(state, exitCode, exitSignal, errorOverride, startTime) {
 	const durationSec = Math.round((Date.now() - startTime) / 1000);
 	const finalError = errorOverride || state.error || null;
-	const normalizedExitCode = (typeof exitCode === "number" && Number.isFinite(exitCode) && exitCode >= 0)
-		? exitCode
-		: (exitCode === null || exitCode === undefined ? null : 1);
+	const normalizedExitCode =
+		typeof exitCode === "number" && Number.isFinite(exitCode) && exitCode >= 0
+			? exitCode
+			: exitCode === null || exitCode === undefined
+				? null
+				: 1;
 
 	const rawSummary = {
 		exitCode: normalizedExitCode,
 		exitSignal: exitSignal || null,
-		tokens: (state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite) > 0
-			? { ...state.tokens }
-			: null,
+		tokens:
+			state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite > 0
+				? { ...state.tokens }
+				: null,
 		cost: state.cost > 0 ? state.cost : null,
 		toolCalls: state.toolCalls,
 		retries: state.retries,
@@ -537,7 +561,7 @@ function checkMailboxAndSteer(mailboxDir, proc, steeringPendingPath) {
 	}
 
 	// Filter: only *.msg.json files (excludes .msg.json.tmp temp files)
-	const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp"));
+	const msgFiles = entries.filter((f) => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp"));
 	if (msgFiles.length === 0) return stats;
 
 	// Read and validate all messages
@@ -572,14 +596,18 @@ function checkMailboxAndSteer(mailboxDir, proc, steeringPendingPath) {
 
 		// Validate batchId (derived from path, not message content)
 		if (msg.batchId !== expectedBatchId) {
-			process.stderr.write(`\n[STEERING] WARNING: batchId mismatch in ${filename} (expected ${expectedBatchId}, got ${msg.batchId}), skipping\n`);
+			process.stderr.write(
+				`\n[STEERING] WARNING: batchId mismatch in ${filename} (expected ${expectedBatchId}, got ${msg.batchId}), skipping\n`,
+			);
 			stats.skipped++;
 			continue;
 		}
 
 		// Validate to (no misdelivery)
 		if (msg.to !== expectedSessionName) {
-			process.stderr.write(`\n[STEERING] WARNING: misdelivery in ${filename} (to=${msg.to}, expected ${expectedSessionName}), skipping\n`);
+			process.stderr.write(
+				`\n[STEERING] WARNING: misdelivery in ${filename} (to=${msg.to}, expected ${expectedSessionName}), skipping\n`,
+			);
 			stats.skipped++;
 			continue;
 		}
@@ -609,7 +637,11 @@ function checkMailboxAndSteer(mailboxDir, proc, steeringPendingPath) {
 
 			// Move to ack/ (delivery proof)
 			const ackDir = join(mailboxDir, "ack");
-			try { mkdirSync(ackDir, { recursive: true }); } catch { /* exists */ }
+			try {
+				mkdirSync(ackDir, { recursive: true });
+			} catch {
+				/* exists */
+			}
 			try {
 				renameSync(join(inboxDir, filename), join(ackDir, filename));
 			} catch (err) {
@@ -626,10 +658,13 @@ function checkMailboxAndSteer(mailboxDir, proc, steeringPendingPath) {
 			// Worker-only: steeringPendingPath is only set for worker sessions.
 			if (steeringPendingPath) {
 				try {
-					const entry = JSON.stringify({ ts: message.timestamp, content: message.content, id: message.id }) + "\n";
+					const entry =
+						JSON.stringify({ ts: message.timestamp, content: message.content, id: message.id }) + "\n";
 					appendFileSync(steeringPendingPath, entry, "utf-8");
 				} catch (err) {
-					process.stderr.write(`\n[STEERING] WARNING: failed to write .steering-pending: ${err.message}\n`);
+					process.stderr.write(
+						`\n[STEERING] WARNING: failed to write .steering-pending: ${err.message}\n`,
+					);
 				}
 			}
 		} catch (err) {
@@ -656,8 +691,10 @@ function isValidMailboxMessageShape(obj) {
 		typeof obj.batchId === "string" &&
 		typeof obj.from === "string" &&
 		typeof obj.to === "string" &&
-		typeof obj.timestamp === "number" && Number.isFinite(obj.timestamp) &&
-		typeof obj.type === "string" && MAILBOX_MESSAGE_TYPES.has(obj.type) &&
+		typeof obj.timestamp === "number" &&
+		Number.isFinite(obj.timestamp) &&
+		typeof obj.type === "string" &&
+		MAILBOX_MESSAGE_TYPES.has(obj.type) &&
 		typeof obj.content === "string"
 	);
 }
@@ -689,398 +726,414 @@ export {
 // import.meta.url ends with the script name; process.argv[1] is the entry point.
 // On Windows with shell:true, argv[1] may differ, so also check for --help being
 // processed as a signal that we're the entry point.
-const _isMain = process.argv[1] &&
+const _isMain =
+	process.argv[1] &&
 	(import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/")) ||
-	 import.meta.url.endsWith("/" + process.argv[1].replace(/\\/g, "/").split("/").pop()) ||
-	 process.argv[1].endsWith("rpc-wrapper.mjs"));
+		import.meta.url.endsWith("/" + process.argv[1].replace(/\\/g, "/").split("/").pop()) ||
+		process.argv[1].endsWith("rpc-wrapper.mjs"));
 
 if (_isMain) {
 	_main();
 }
 
 function _main() {
+	const args = parseArgs(process.argv);
 
-const args = parseArgs(process.argv);
+	if (args.help) {
+		printUsage();
+		process.exit(0);
+	}
 
-if (args.help) {
-	printUsage();
-	process.exit(0);
-}
+	// Validate required args
+	if (!args.sidecarPath) {
+		process.stderr.write("[rpc-wrapper] ERROR: --sidecar-path is required\n");
+		process.exit(1);
+	}
+	if (!args.exitSummaryPath) {
+		process.stderr.write("[rpc-wrapper] ERROR: --exit-summary-path is required\n");
+		process.exit(1);
+	}
+	if (!args.promptFile) {
+		process.stderr.write("[rpc-wrapper] ERROR: --prompt-file is required\n");
+		process.exit(1);
+	}
 
-// Validate required args
-if (!args.sidecarPath) {
-	process.stderr.write("[rpc-wrapper] ERROR: --sidecar-path is required\n");
-	process.exit(1);
-}
-if (!args.exitSummaryPath) {
-	process.stderr.write("[rpc-wrapper] ERROR: --exit-summary-path is required\n");
-	process.exit(1);
-}
-if (!args.promptFile) {
-	process.stderr.write("[rpc-wrapper] ERROR: --prompt-file is required\n");
-	process.exit(1);
-}
-
-// Read prompt content
-let promptContent;
-try {
-	promptContent = readFileSync(resolve(args.promptFile), "utf-8");
-} catch (err) {
-	process.stderr.write(`[rpc-wrapper] ERROR: Cannot read prompt file: ${err.message}\n`);
-	process.exit(1);
-}
-
-// Read system prompt content (optional)
-let systemPromptContent = null;
-if (args.systemPromptFile) {
+	// Read prompt content
+	let promptContent;
 	try {
-		systemPromptContent = readFileSync(resolve(args.systemPromptFile), "utf-8");
+		promptContent = readFileSync(resolve(args.promptFile), "utf-8");
 	} catch (err) {
-		process.stderr.write(`[rpc-wrapper] WARNING: Cannot read system prompt file: ${err.message}\n`);
-	}
-}
-
-// Ensure output directories exist
-mkdirSync(dirname(resolve(args.sidecarPath)), { recursive: true });
-mkdirSync(dirname(resolve(args.exitSummaryPath)), { recursive: true });
-
-// ── Session State ────────────────────────────────────────────────────
-
-const startTime = Date.now();
-const state = createSessionState();
-
-// ── Build pi spawn args ──────────────────────────────────────────────
-
-const piArgs = ["--mode", "rpc", "--no-session"];
-
-if (args.model) {
-	piArgs.push("--model", args.model);
-}
-if (systemPromptContent) {
-	piArgs.push("--system-prompt", systemPromptContent);
-}
-if (args.tools.length > 0) {
-	piArgs.push("--tools", args.tools.join(","));
-}
-for (const ext of args.extensions) {
-	piArgs.push("-e", ext);
-}
-piArgs.push(...args.passthrough);
-
-// ── Spawn pi process ─────────────────────────────────────────────────
-
-// ── System prompt: file-based passthrough to avoid command line limits ────
-// Windows CreateProcess has a ~32K command line limit. Orchestrated worker
-// system prompts routinely exceed this (PROMPT.md + context docs + steps).
-// When the system prompt is large, write it to a temp file and use shell
-// expansion `$(cat file)` to pass it. This works in MSYS2/Git Bash shells
-// used by lane sessions without hitting the Win32 limit.
-//
-// For small system prompts (< 8K), pass inline for simplicity.
-const SYSTEM_PROMPT_FILE_THRESHOLD = 8192;
-let systemPromptTempFile = null;
-
-if (systemPromptContent && systemPromptContent.length >= SYSTEM_PROMPT_FILE_THRESHOLD) {
-	// Remove --system-prompt from piArgs (was added above) and use file instead
-	const sysIdx = piArgs.indexOf("--system-prompt");
-	if (sysIdx >= 0) piArgs.splice(sysIdx, 2);
-	// Write to temp file and use --append-system-prompt with @file syntax.
-	// Pi's --append-system-prompt accepts @filepath to read from a file.
-	// We use --system-prompt "" (empty base) + --append-system-prompt @file
-	// to effectively set the system prompt from a file.
-	systemPromptTempFile = join(tmpdir(), `pi-rpc-sysprompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
-	writeFileSync(systemPromptTempFile, systemPromptContent, "utf-8");
-	piArgs.push("--system-prompt", "");
-	piArgs.push("--append-system-prompt", `@${systemPromptTempFile}`);
-	process.stderr.write(`[rpc-wrapper] system prompt written to file (${systemPromptContent.length} chars): ${systemPromptTempFile}\n`);
-}
-
-const proc = spawn("pi", piArgs, {
-	stdio: ["pipe", "pipe", "pipe"],
-	env: { ...process.env },
-	shell: true,
-});
-
-// ── TP-097: Write PID file for orphan cleanup ──────────────────
-// Write both the wrapper PID and the pi child PID alongside the sidecar file.
-// The task-runner reads this on session end to kill orphan processes.
-// Format: JSON with wrapperPid and childPid fields.
-const pidFilePath = args.sidecarPath + ".pid";
-try {
-	const pidData = {
-		wrapperPid: process.pid,
-		childPid: proc.pid ?? null,
-		startedAt: Date.now(),
-	};
-	writeFileSync(pidFilePath, JSON.stringify(pidData) + "\n", "utf-8");
-	process.stderr.write(`[rpc-wrapper] PID file written: ${pidFilePath} (wrapper=${process.pid}, child=${proc.pid})\n`);
-} catch (err) {
-	process.stderr.write(`[rpc-wrapper] WARNING: failed to write PID file: ${err.message}\n`);
-}
-
-// Clean up PID file on process exit (best-effort)
-function cleanupPidFile() {
-	try { unlinkSync(pidFilePath); } catch { /* ignore */ }
-	if (systemPromptTempFile) {
-		try { unlinkSync(systemPromptTempFile); } catch { /* ignore */ }
-	}
-}
-process.on("exit", cleanupPidFile);
-
-// ── Send prompt via JSONL stdin ──────────────────────────────────────
-
-const promptCmd = { type: "prompt", message: promptContent };
-proc.stdin.write(JSON.stringify(promptCmd) + "\n");
-
-// ── Agent Mailbox Steering Setup (TP-089) ────────────────────────────
-// When mailbox-dir is provided, set steering mode to "all" so queued
-// steering messages are delivered together at the next turn boundary.
-// Must be sent after prompt but before any agent processing begins.
-if (args.mailboxDir) {
-	proc.stdin.write(JSON.stringify({ type: "set_steering_mode", mode: "all" }) + "\n");
-	process.stderr.write(`[rpc-wrapper] mailbox enabled: ${args.mailboxDir}\n`);
-}
-
-// ── Stdin Lifecycle ──────────────────────────────────────────────────
-
-/**
- * Close the child process stdin at a deterministic terminal point.
- * RPC mode waits for more commands while stdin is open — without closing it,
- * the pi process can hang indefinitely after `agent_end` or a terminal error.
- *
- * Called from: agent_end handler, terminal response error handler.
- * Safe to call multiple times (checks destroyed flag).
- */
-function closeStdin() {
-	try {
-		if (proc.stdin && !proc.stdin.destroyed) {
-			proc.stdin.end();
-		}
-	} catch {
-		// stdin may already be closed — ignore
-	}
-}
-
-/**
- * Query pi for authoritative session stats including contextUsage.
- * Available in pi ≥ 0.63.0 (RPC get_session_stats exposes contextUsage).
- * Safe to call on older versions — the command is ignored or returns
- * without the field, and state.contextUsage stays null.
- */
-function querySessionStats() {
-	try {
-		if (proc.stdin && !proc.stdin.destroyed) {
-			proc.stdin.write(JSON.stringify({ type: "get_session_stats" }) + "\n");
-		}
-	} catch {
-		// stdin may be closed — ignore
-	}
-}
-
-// ── Route RPC events ─────────────────────────────────────────────────
-
-// Event types worth persisting to the sidecar JSONL.
-// Streaming deltas (content_block_delta, content_block_start/stop, message_start,
-// input_json_delta, etc.) are omitted — they're high-volume, large, and not used
-// by the dashboard or telemetry consumers. A single merge agent can produce 42MB+
-// of sidecar data from streaming deltas alone.
-const SIDECAR_EVENT_TYPES = new Set([
-	"agent_start",
-	"agent_end",
-	"message_end",
-	"tool_execution_start",
-	"tool_execution_end",
-	"tool_execution_update",
-	"auto_retry_start",
-	"auto_retry_end",
-	"auto_compaction_start",
-	"response",
-]);
-
-function handleEvent(event) {
-	if (!event || !event.type) return;
-
-	// Write only telemetry-relevant events to sidecar (redacted)
-	if (SIDECAR_EVENT_TYPES.has(event.type)) {
-		writeSidecarEvent(args.sidecarPath, event);
+		process.stderr.write(`[rpc-wrapper] ERROR: Cannot read prompt file: ${err.message}\n`);
+		process.exit(1);
 	}
 
-	// Delegate state mutation to the extracted (testable) accumulator
-	applyEvent(state, event);
-
-	// Side effects that depend on the event type (IO, stdin lifecycle, display)
-	switch (event.type) {
-		case "message_end":
-			displayProgress(state);
-			// Query pi for authoritative context usage (pi ≥ 0.63.0).
-			// Falls back gracefully: older pi versions ignore the command
-			// or return a response without contextUsage — state.contextUsage stays null.
-			querySessionStats();
-			// Check mailbox for pending steering messages (TP-089).
-			// Only active when --mailbox-dir is provided (backward compatible).
-			if (args.mailboxDir) {
-				try {
-					checkMailboxAndSteer(args.mailboxDir, proc, args.steeringPendingPath || null);
-				} catch (err) {
-					// Never crash on mailbox I/O errors
-					process.stderr.write(`\n[STEERING] ERROR: ${err.message}\n`);
-				}
-			}
-			break;
-
-		case "tool_execution_start":
-			displayProgress(state);
-			break;
-
-		case "agent_end":
-			// Close stdin so pi process can exit cleanly.
-			// RPC mode waits for more commands while stdin is open;
-			// without this, the process can hang indefinitely.
-			closeStdin();
-			break;
-
-		case "response":
-			// Terminal error response — close stdin to let pi exit
-			if (event.success === false && event.error) {
-				closeStdin();
-			}
-			break;
-
-		default:
-			break;
-	}
-}
-
-// Read RPC events from stdout using JSONL line-buffering
-attachJsonlReader(proc.stdout, (line) => {
-	try {
-		const event = JSON.parse(line);
-		handleEvent(event);
-	} catch {
-		// Malformed JSON line — log to stderr but don't crash
-		process.stderr.write(`\n[rpc-wrapper] malformed JSONL: ${line.slice(0, 200)}\n`);
-	}
-});
-
-// Forward stderr from pi to our stderr
-// Capture pi stderr for diagnostics — last 2KB preserved in exit summary.
-// This is critical for diagnosing startup crashes (pi exits code 1 with 0 tokens).
-let piStderrBuffer = "";
-const PI_STDERR_MAX = 2048;
-proc.stderr?.setEncoding("utf-8");
-proc.stderr?.on("data", (chunk) => {
-	process.stderr.write(chunk);
-	piStderrBuffer += chunk;
-	if (piStderrBuffer.length > PI_STDERR_MAX * 2) {
-		piStderrBuffer = piStderrBuffer.slice(-PI_STDERR_MAX);
-	}
-});
-
-// ── Single-Write Exit Summary Finalization ───────────────────────────
-
-/**
- * Single-write guard: ensures exit summary is written exactly once
- * across all termination paths (close, error, signal handlers).
- *
- * Uses the extracted createSingleWriteGuard + buildExitSummary for testability.
- * The first handler to call writeExitSummary() wins; subsequent calls are no-ops.
- */
-const writeExitSummary = createSingleWriteGuard((summary) => {
-	try {
-		writeFileSync(resolve(args.exitSummaryPath), JSON.stringify(summary, null, 2) + "\n", "utf-8");
-		process.stderr.write(`\n[rpc-wrapper] exit summary written to ${args.exitSummaryPath}\n`);
-	} catch (err) {
-		process.stderr.write(`\n[rpc-wrapper] FATAL: failed to write exit summary: ${err.message}\n`);
-	}
-});
-
-// ── Process Lifecycle Handlers ───────────────────────────────────────
-
-// Primary handler: process close event (most authoritative source of exit info)
-proc.on("close", (code, signal) => {
-	// Newline after progress display
-	process.stderr.write("\n");
-
-	if (!state.agentEnded && code !== 0) {
-		// Process crashed without agent_end — capture what we have
-		const stderrTail = piStderrBuffer.trim().slice(-PI_STDERR_MAX);
-		const crashError = state.error || `pi process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}${stderrTail ? `\npi stderr: ${stderrTail}` : ""}`;
-		writeExitSummary(state, code, signal, crashError, startTime);
-	} else {
-		writeExitSummary(state, code, signal, null, startTime);
-	}
-});
-
-// Fallback handler: spawn error (e.g., pi binary not found)
-proc.on("error", (err) => {
-	writeExitSummary(state, null, null, `spawn error: ${err.message}`, startTime);
-});
-
-// ── Signal Forwarding ────────────────────────────────────────────────
-
-/**
- * Forward SIGTERM/SIGINT to the pi process via RPC abort command.
- * This allows graceful shutdown of the agent before the process exits.
- *
- * On Windows, SIGTERM/SIGINT behavior differs — we handle both and
- * attempt graceful abort first, then hard kill after a timeout.
- */
-let signalForwarded = false;
-
-function forwardSignal(signal) {
-	if (signalForwarded) return;
-	signalForwarded = true;
-
-	process.stderr.write(`\n[rpc-wrapper] received ${signal}, sending abort to pi...\n`);
-
-	// Try graceful abort via RPC
-	try {
-		if (proc.stdin && !proc.stdin.destroyed) {
-			proc.stdin.write(JSON.stringify({ type: "abort" }) + "\n");
-		}
-	} catch {
-		// stdin may already be closed
-	}
-
-	// Give pi 5 seconds to shut down gracefully, then hard kill
-	const killTimer = setTimeout(() => {
+	// Read system prompt content (optional)
+	let systemPromptContent = null;
+	if (args.systemPromptFile) {
 		try {
-			proc.kill("SIGTERM");
-		} catch {
-			// Process may already be dead
+			systemPromptContent = readFileSync(resolve(args.systemPromptFile), "utf-8");
+		} catch (err) {
+			process.stderr.write(`[rpc-wrapper] WARNING: Cannot read system prompt file: ${err.message}\n`);
 		}
-	}, 5000);
+	}
 
-	// Don't let the timer keep the process alive
-	if (killTimer.unref) killTimer.unref();
-}
+	// Ensure output directories exist
+	mkdirSync(dirname(resolve(args.sidecarPath)), { recursive: true });
+	mkdirSync(dirname(resolve(args.exitSummaryPath)), { recursive: true });
 
-process.on("SIGTERM", () => forwardSignal("SIGTERM"));
-process.on("SIGINT", () => forwardSignal("SIGINT"));
+	// ── Session State ────────────────────────────────────────────────────
 
-// ── Uncaught Exception / Unhandled Rejection Handler ─────────────────
+	const startTime = Date.now();
+	const state = createSessionState();
 
-process.on("uncaughtException", (err) => {
-	process.stderr.write(`\n[rpc-wrapper] uncaught exception: ${err.message}\n`);
-	writeExitSummary(state, null, null, `wrapper uncaught exception: ${err.message}`, startTime);
-	process.exit(1);
-});
+	// ── Build pi spawn args ──────────────────────────────────────────────
 
-process.on("unhandledRejection", (reason) => {
-	const msg = reason instanceof Error ? reason.message : String(reason);
-	process.stderr.write(`\n[rpc-wrapper] unhandled rejection: ${msg}\n`);
-	writeExitSummary(state, null, null, `wrapper unhandled rejection: ${msg}`, startTime);
-	process.exit(1);
-});
+	const piArgs = ["--mode", "rpc", "--no-session"];
 
-// ── Exit Code Forwarding ─────────────────────────────────────────────
+	if (args.model) {
+		piArgs.push("--model", args.model);
+	}
+	if (systemPromptContent) {
+		piArgs.push("--system-prompt", systemPromptContent);
+	}
+	if (args.tools.length > 0) {
+		piArgs.push("--tools", args.tools.join(","));
+	}
+	for (const ext of args.extensions) {
+		piArgs.push("-e", ext);
+	}
+	piArgs.push(...args.passthrough);
 
-// Forward the pi process exit code as our own (normalized: null/negative/non-finite → 1)
-proc.on("close", (code) => {
-	// Use setImmediate to let other close handlers run first
-	setImmediate(() => {
-		process.exitCode = (typeof code === "number" && Number.isFinite(code) && code >= 0) ? code : 1;
+	// ── Spawn pi process ─────────────────────────────────────────────────
+
+	// ── System prompt: file-based passthrough to avoid command line limits ────
+	// Windows CreateProcess has a ~32K command line limit. Orchestrated worker
+	// system prompts routinely exceed this (PROMPT.md + context docs + steps).
+	// When the system prompt is large, write it to a temp file and use shell
+	// expansion `$(cat file)` to pass it. This works in MSYS2/Git Bash shells
+	// used by lane sessions without hitting the Win32 limit.
+	//
+	// For small system prompts (< 8K), pass inline for simplicity.
+	const SYSTEM_PROMPT_FILE_THRESHOLD = 8192;
+	let systemPromptTempFile = null;
+
+	if (systemPromptContent && systemPromptContent.length >= SYSTEM_PROMPT_FILE_THRESHOLD) {
+		// Remove --system-prompt from piArgs (was added above) and use file instead
+		const sysIdx = piArgs.indexOf("--system-prompt");
+		if (sysIdx >= 0) piArgs.splice(sysIdx, 2);
+		// Write to temp file and use --append-system-prompt with @file syntax.
+		// Pi's --append-system-prompt accepts @filepath to read from a file.
+		// We use --system-prompt "" (empty base) + --append-system-prompt @file
+		// to effectively set the system prompt from a file.
+		systemPromptTempFile = join(
+			tmpdir(),
+			`pi-rpc-sysprompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`,
+		);
+		writeFileSync(systemPromptTempFile, systemPromptContent, "utf-8");
+		piArgs.push("--system-prompt", "");
+		piArgs.push("--append-system-prompt", `@${systemPromptTempFile}`);
+		process.stderr.write(
+			`[rpc-wrapper] system prompt written to file (${systemPromptContent.length} chars): ${systemPromptTempFile}\n`,
+		);
+	}
+
+	const proc = spawn("pi", piArgs, {
+		stdio: ["pipe", "pipe", "pipe"],
+		env: { ...process.env },
+		shell: true,
 	});
-});
 
+	// ── TP-097: Write PID file for orphan cleanup ──────────────────
+	// Write both the wrapper PID and the pi child PID alongside the sidecar file.
+	// The task-runner reads this on session end to kill orphan processes.
+	// Format: JSON with wrapperPid and childPid fields.
+	const pidFilePath = args.sidecarPath + ".pid";
+	try {
+		const pidData = {
+			wrapperPid: process.pid,
+			childPid: proc.pid ?? null,
+			startedAt: Date.now(),
+		};
+		writeFileSync(pidFilePath, JSON.stringify(pidData) + "\n", "utf-8");
+		process.stderr.write(
+			`[rpc-wrapper] PID file written: ${pidFilePath} (wrapper=${process.pid}, child=${proc.pid})\n`,
+		);
+	} catch (err) {
+		process.stderr.write(`[rpc-wrapper] WARNING: failed to write PID file: ${err.message}\n`);
+	}
+
+	// Clean up PID file on process exit (best-effort)
+	function cleanupPidFile() {
+		try {
+			unlinkSync(pidFilePath);
+		} catch {
+			/* ignore */
+		}
+		if (systemPromptTempFile) {
+			try {
+				unlinkSync(systemPromptTempFile);
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+	process.on("exit", cleanupPidFile);
+
+	// ── Send prompt via JSONL stdin ──────────────────────────────────────
+
+	const promptCmd = { type: "prompt", message: promptContent };
+	proc.stdin.write(JSON.stringify(promptCmd) + "\n");
+
+	// ── Agent Mailbox Steering Setup (TP-089) ────────────────────────────
+	// When mailbox-dir is provided, set steering mode to "all" so queued
+	// steering messages are delivered together at the next turn boundary.
+	// Must be sent after prompt but before any agent processing begins.
+	if (args.mailboxDir) {
+		proc.stdin.write(JSON.stringify({ type: "set_steering_mode", mode: "all" }) + "\n");
+		process.stderr.write(`[rpc-wrapper] mailbox enabled: ${args.mailboxDir}\n`);
+	}
+
+	// ── Stdin Lifecycle ──────────────────────────────────────────────────
+
+	/**
+	 * Close the child process stdin at a deterministic terminal point.
+	 * RPC mode waits for more commands while stdin is open — without closing it,
+	 * the pi process can hang indefinitely after `agent_end` or a terminal error.
+	 *
+	 * Called from: agent_end handler, terminal response error handler.
+	 * Safe to call multiple times (checks destroyed flag).
+	 */
+	function closeStdin() {
+		try {
+			if (proc.stdin && !proc.stdin.destroyed) {
+				proc.stdin.end();
+			}
+		} catch {
+			// stdin may already be closed — ignore
+		}
+	}
+
+	/**
+	 * Query pi for authoritative session stats including contextUsage.
+	 * Available in pi ≥ 0.63.0 (RPC get_session_stats exposes contextUsage).
+	 * Safe to call on older versions — the command is ignored or returns
+	 * without the field, and state.contextUsage stays null.
+	 */
+	function querySessionStats() {
+		try {
+			if (proc.stdin && !proc.stdin.destroyed) {
+				proc.stdin.write(JSON.stringify({ type: "get_session_stats" }) + "\n");
+			}
+		} catch {
+			// stdin may be closed — ignore
+		}
+	}
+
+	// ── Route RPC events ─────────────────────────────────────────────────
+
+	// Event types worth persisting to the sidecar JSONL.
+	// Streaming deltas (content_block_delta, content_block_start/stop, message_start,
+	// input_json_delta, etc.) are omitted — they're high-volume, large, and not used
+	// by the dashboard or telemetry consumers. A single merge agent can produce 42MB+
+	// of sidecar data from streaming deltas alone.
+	const SIDECAR_EVENT_TYPES = new Set([
+		"agent_start",
+		"agent_end",
+		"message_end",
+		"tool_execution_start",
+		"tool_execution_end",
+		"tool_execution_update",
+		"auto_retry_start",
+		"auto_retry_end",
+		"auto_compaction_start",
+		"response",
+	]);
+
+	function handleEvent(event) {
+		if (!event || !event.type) return;
+
+		// Write only telemetry-relevant events to sidecar (redacted)
+		if (SIDECAR_EVENT_TYPES.has(event.type)) {
+			writeSidecarEvent(args.sidecarPath, event);
+		}
+
+		// Delegate state mutation to the extracted (testable) accumulator
+		applyEvent(state, event);
+
+		// Side effects that depend on the event type (IO, stdin lifecycle, display)
+		switch (event.type) {
+			case "message_end":
+				displayProgress(state);
+				// Query pi for authoritative context usage (pi ≥ 0.63.0).
+				// Falls back gracefully: older pi versions ignore the command
+				// or return a response without contextUsage — state.contextUsage stays null.
+				querySessionStats();
+				// Check mailbox for pending steering messages (TP-089).
+				// Only active when --mailbox-dir is provided (backward compatible).
+				if (args.mailboxDir) {
+					try {
+						checkMailboxAndSteer(args.mailboxDir, proc, args.steeringPendingPath || null);
+					} catch (err) {
+						// Never crash on mailbox I/O errors
+						process.stderr.write(`\n[STEERING] ERROR: ${err.message}\n`);
+					}
+				}
+				break;
+
+			case "tool_execution_start":
+				displayProgress(state);
+				break;
+
+			case "agent_end":
+				// Close stdin so pi process can exit cleanly.
+				// RPC mode waits for more commands while stdin is open;
+				// without this, the process can hang indefinitely.
+				closeStdin();
+				break;
+
+			case "response":
+				// Terminal error response — close stdin to let pi exit
+				if (event.success === false && event.error) {
+					closeStdin();
+				}
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	// Read RPC events from stdout using JSONL line-buffering
+	attachJsonlReader(proc.stdout, (line) => {
+		try {
+			const event = JSON.parse(line);
+			handleEvent(event);
+		} catch {
+			// Malformed JSON line — log to stderr but don't crash
+			process.stderr.write(`\n[rpc-wrapper] malformed JSONL: ${line.slice(0, 200)}\n`);
+		}
+	});
+
+	// Forward stderr from pi to our stderr
+	// Capture pi stderr for diagnostics — last 2KB preserved in exit summary.
+	// This is critical for diagnosing startup crashes (pi exits code 1 with 0 tokens).
+	let piStderrBuffer = "";
+	const PI_STDERR_MAX = 2048;
+	proc.stderr?.setEncoding("utf-8");
+	proc.stderr?.on("data", (chunk) => {
+		process.stderr.write(chunk);
+		piStderrBuffer += chunk;
+		if (piStderrBuffer.length > PI_STDERR_MAX * 2) {
+			piStderrBuffer = piStderrBuffer.slice(-PI_STDERR_MAX);
+		}
+	});
+
+	// ── Single-Write Exit Summary Finalization ───────────────────────────
+
+	/**
+	 * Single-write guard: ensures exit summary is written exactly once
+	 * across all termination paths (close, error, signal handlers).
+	 *
+	 * Uses the extracted createSingleWriteGuard + buildExitSummary for testability.
+	 * The first handler to call writeExitSummary() wins; subsequent calls are no-ops.
+	 */
+	const writeExitSummary = createSingleWriteGuard((summary) => {
+		try {
+			writeFileSync(resolve(args.exitSummaryPath), JSON.stringify(summary, null, 2) + "\n", "utf-8");
+			process.stderr.write(`\n[rpc-wrapper] exit summary written to ${args.exitSummaryPath}\n`);
+		} catch (err) {
+			process.stderr.write(`\n[rpc-wrapper] FATAL: failed to write exit summary: ${err.message}\n`);
+		}
+	});
+
+	// ── Process Lifecycle Handlers ───────────────────────────────────────
+
+	// Primary handler: process close event (most authoritative source of exit info)
+	proc.on("close", (code, signal) => {
+		// Newline after progress display
+		process.stderr.write("\n");
+
+		if (!state.agentEnded && code !== 0) {
+			// Process crashed without agent_end — capture what we have
+			const stderrTail = piStderrBuffer.trim().slice(-PI_STDERR_MAX);
+			const crashError =
+				state.error ||
+				`pi process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}${stderrTail ? `\npi stderr: ${stderrTail}` : ""}`;
+			writeExitSummary(state, code, signal, crashError, startTime);
+		} else {
+			writeExitSummary(state, code, signal, null, startTime);
+		}
+	});
+
+	// Fallback handler: spawn error (e.g., pi binary not found)
+	proc.on("error", (err) => {
+		writeExitSummary(state, null, null, `spawn error: ${err.message}`, startTime);
+	});
+
+	// ── Signal Forwarding ────────────────────────────────────────────────
+
+	/**
+	 * Forward SIGTERM/SIGINT to the pi process via RPC abort command.
+	 * This allows graceful shutdown of the agent before the process exits.
+	 *
+	 * On Windows, SIGTERM/SIGINT behavior differs — we handle both and
+	 * attempt graceful abort first, then hard kill after a timeout.
+	 */
+	let signalForwarded = false;
+
+	function forwardSignal(signal) {
+		if (signalForwarded) return;
+		signalForwarded = true;
+
+		process.stderr.write(`\n[rpc-wrapper] received ${signal}, sending abort to pi...\n`);
+
+		// Try graceful abort via RPC
+		try {
+			if (proc.stdin && !proc.stdin.destroyed) {
+				proc.stdin.write(JSON.stringify({ type: "abort" }) + "\n");
+			}
+		} catch {
+			// stdin may already be closed
+		}
+
+		// Give pi 5 seconds to shut down gracefully, then hard kill
+		const killTimer = setTimeout(() => {
+			try {
+				proc.kill("SIGTERM");
+			} catch {
+				// Process may already be dead
+			}
+		}, 5000);
+
+		// Don't let the timer keep the process alive
+		if (killTimer.unref) killTimer.unref();
+	}
+
+	process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+	process.on("SIGINT", () => forwardSignal("SIGINT"));
+
+	// ── Uncaught Exception / Unhandled Rejection Handler ─────────────────
+
+	process.on("uncaughtException", (err) => {
+		process.stderr.write(`\n[rpc-wrapper] uncaught exception: ${err.message}\n`);
+		writeExitSummary(state, null, null, `wrapper uncaught exception: ${err.message}`, startTime);
+		process.exit(1);
+	});
+
+	process.on("unhandledRejection", (reason) => {
+		const msg = reason instanceof Error ? reason.message : String(reason);
+		process.stderr.write(`\n[rpc-wrapper] unhandled rejection: ${msg}\n`);
+		writeExitSummary(state, null, null, `wrapper unhandled rejection: ${msg}`, startTime);
+		process.exit(1);
+	});
+
+	// ── Exit Code Forwarding ─────────────────────────────────────────────
+
+	// Forward the pi process exit code as our own (normalized: null/negative/non-finite → 1)
+	proc.on("close", (code) => {
+		// Use setImmediate to let other close handlers run first
+		setImmediate(() => {
+			process.exitCode = typeof code === "number" && Number.isFinite(code) && code >= 0 ? code : 1;
+		});
+	});
 } // end _main()

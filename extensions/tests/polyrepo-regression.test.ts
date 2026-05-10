@@ -138,7 +138,9 @@ function makeAllocatedLane(
 	return {
 		laneNumber,
 		laneId: opts.laneId ?? (opts.repoId ? `${opts.repoId}/lane-${laneNumber}` : `lane-${laneNumber}`),
-		laneSessionId: opts.laneSessionId ?? (opts.repoId ? `orch-op-${opts.repoId}-lane-${laneNumber}` : `orch-op-lane-${laneNumber}`),
+		laneSessionId:
+			opts.laneSessionId ??
+			(opts.repoId ? `orch-op-${opts.repoId}-lane-${laneNumber}` : `orch-op-lane-${laneNumber}`),
 		worktreePath: opts.worktreePath ?? `/worktrees/wt-${laneNumber}`,
 		branch: opts.branch ?? `task/op-lane-${laneNumber}-20260316T120000`,
 		tasks,
@@ -195,7 +197,7 @@ describe("1.x: /task routing — polyrepo discovery", () => {
 		});
 
 		// No fatal errors (allow DEP_SOURCE_FALLBACK)
-		expect(result.errors.filter(e => e.code !== "DEP_SOURCE_FALLBACK")).toHaveLength(0);
+		expect(result.errors.filter((e) => e.code !== "DEP_SOURCE_FALLBACK")).toHaveLength(0);
 		expect(result.pending.size).toBe(6);
 
 		// Every task has resolvedRepoId set
@@ -252,7 +254,6 @@ describe("1.x: /task routing — polyrepo discovery", () => {
 	});
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════
 // 2.x — /orch-plan: wave computation and lane allocation
 // ═══════════════════════════════════════════════════════════════════════
@@ -263,7 +264,7 @@ describe("2.x: /orch-plan — wave computation and lane allocation", () => {
 		const groups = groupTasksByRepo(["SH-001", "AP-001", "UI-001"], pending);
 
 		expect(groups).toHaveLength(3);
-		const repoIds = groups.map(g => g.repoId).sort();
+		const repoIds = groups.map((g) => g.repoId).sort();
 		expect(repoIds).toEqual(["api", "docs", "frontend"]);
 
 		// Each group has exactly 1 task
@@ -277,7 +278,7 @@ describe("2.x: /orch-plan — wave computation and lane allocation", () => {
 		const groups = groupTasksByRepo(["AP-002", "UI-002"], pending);
 
 		expect(groups).toHaveLength(2);
-		const repoIds = groups.map(g => g.repoId).sort();
+		const repoIds = groups.map((g) => g.repoId).sort();
 		expect(repoIds).toEqual(["api", "frontend"]);
 	});
 
@@ -296,13 +297,11 @@ describe("2.x: /orch-plan — wave computation and lane allocation", () => {
 		// Process each repo group independently (matches allocateLanes behavior)
 		const groups = groupTasksByRepo(["SH-001", "AP-001", "UI-001"], pending);
 		for (const group of groups) {
-			const assignments = assignTasksToLanes(
-				group.taskIds,
-				pending,
-				3,
-				"affinity-first",
-				{ S: 1, M: 2, L: 4 },
-			);
+			const assignments = assignTasksToLanes(group.taskIds, pending, 3, "affinity-first", {
+				S: 1,
+				M: 2,
+				L: 4,
+			});
 			// Each repo group has 1 task → 1 lane
 			expect(assignments).toHaveLength(1);
 			expect(assignments[0].lane).toBe(1); // local lane 1 within each group
@@ -333,11 +332,7 @@ describe("2.x: /orch-plan — wave computation and lane allocation", () => {
 		const pending = buildFixtureParsedTasks(fixture);
 		const completed = new Set<string>();
 
-		const result = computeWaveAssignments(
-			pending,
-			completed,
-			DEFAULT_ORCHESTRATOR_CONFIG,
-		);
+		const result = computeWaveAssignments(pending, completed, DEFAULT_ORCHESTRATOR_CONFIG);
 
 		expect(result.errors).toHaveLength(0);
 		expect(result.waves).toHaveLength(3);
@@ -349,7 +344,6 @@ describe("2.x: /orch-plan — wave computation and lane allocation", () => {
 		}
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 3.x — Serialization: repo-aware persisted state
@@ -390,7 +384,7 @@ describe("3.x: Serialization — repo-aware persisted state", () => {
 
 		// Task records for allocated tasks have resolvedRepoId
 		for (const task of parsed.tasks) {
-			if (lanes.some(l => l.tasks.some(t => t.taskId === task.taskId))) {
+			if (lanes.some((l) => l.tasks.some((t) => t.taskId === task.taskId))) {
 				const expectedRepo = fixture.expectedRouting[task.taskId];
 				expect(task.resolvedRepoId).toBe(expectedRepo);
 			}
@@ -450,13 +444,13 @@ describe("3.x: Serialization — repo-aware persisted state", () => {
 		const parsed = JSON.parse(json) as PersistedBatchState;
 
 		// UI-001 has promptRepoId = "frontend"
-		const ui001Record = parsed.tasks.find(t => t.taskId === "UI-001");
+		const ui001Record = parsed.tasks.find((t) => t.taskId === "UI-001");
 		expect(ui001Record).toBeDefined();
-		expect(ui001Record!.repoId).toBe("frontend");  // serialized from promptRepoId
+		expect(ui001Record!.repoId).toBe("frontend"); // serialized from promptRepoId
 		expect(ui001Record!.resolvedRepoId).toBe("frontend");
 
 		// AP-001 has no promptRepoId (uses area fallback)
-		const ap001Record = parsed.tasks.find(t => t.taskId === "AP-001");
+		const ap001Record = parsed.tasks.find((t) => t.taskId === "AP-001");
 		expect(ap001Record).toBeDefined();
 		expect(ap001Record!.resolvedRepoId).toBe("api");
 	});
@@ -484,17 +478,16 @@ describe("3.x: Serialization — repo-aware persisted state", () => {
 
 		// All 6 tasks should be present (from wavePlan), even future wave tasks
 		expect(parsed.tasks).toHaveLength(6);
-		const taskIds = parsed.tasks.map(t => t.taskId).sort();
+		const taskIds = parsed.tasks.map((t) => t.taskId).sort();
 		expect(taskIds).toEqual(["AP-001", "AP-002", "SH-001", "SH-002", "UI-001", "UI-002"]);
 
 		// Future wave tasks are pending with no lane assignment
-		const sh002 = parsed.tasks.find(t => t.taskId === "SH-002");
+		const sh002 = parsed.tasks.find((t) => t.taskId === "SH-002");
 		expect(sh002).toBeDefined();
 		expect(sh002!.status).toBe("pending");
 		expect(sh002!.laneNumber).toBe(0); // no lane assigned yet
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 4.x — Per-repo merge outcomes
@@ -508,7 +501,7 @@ describe("4.x: Per-repo merge outcomes", () => {
 		const groups = groupLanesByRepo(lanes);
 
 		expect(groups).toHaveLength(3);
-		const repoIds = groups.map(g => g.repoId).sort();
+		const repoIds = groups.map((g) => g.repoId).sort();
 		expect(repoIds).toEqual(["api", "docs", "frontend"]);
 
 		// Each group has 1 lane
@@ -525,7 +518,7 @@ describe("4.x: Per-repo merge outcomes", () => {
 		const mergeResult: MergeWaveResult = {
 			waveIndex: 1, // 1-based from merge module
 			status: "succeeded",
-			laneResults: lanes.map(lane => ({
+			laneResults: lanes.map((lane) => ({
 				laneNumber: lane.laneNumber,
 				laneId: lane.laneId,
 				sourceBranch: lane.branch,
@@ -586,7 +579,7 @@ describe("4.x: Per-repo merge outcomes", () => {
 		expect(mr.waveIndex).toBe(0); // normalized: 1-based → 0-based
 		expect(mr.repoResults).toBeDefined();
 		expect(mr.repoResults!).toHaveLength(3);
-		const mrRepoIds = mr.repoResults!.map(r => r.repoId).sort();
+		const mrRepoIds = mr.repoResults!.map((r) => r.repoId).sort();
 		expect(mrRepoIds).toEqual(["api", "docs", "frontend"]);
 	});
 
@@ -658,17 +651,16 @@ describe("4.x: Per-repo merge outcomes", () => {
 		expect(mr.status).toBe("partial");
 		expect(mr.repoResults).toBeDefined();
 
-		const apiResult = mr.repoResults!.find(r => r.repoId === "api");
+		const apiResult = mr.repoResults!.find((r) => r.repoId === "api");
 		expect(apiResult).toBeDefined();
 		expect(apiResult!.status).toBe("failed");
 		expect(apiResult!.failedLane).toBe(2);
 		expect(apiResult!.failureReason).toContain("Conflict");
 
-		const docsResult = mr.repoResults!.find(r => r.repoId === "docs");
+		const docsResult = mr.repoResults!.find((r) => r.repoId === "docs");
 		expect(docsResult!.status).toBe("succeeded");
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 5.x — Resume: reconciliation and resume-point computation
@@ -696,28 +688,28 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		expect(reconciled).toHaveLength(6);
 
 		// Wave 1 tasks: .DONE found → mark-complete
-		const sh001 = reconciled.find(t => t.taskId === "SH-001")!;
+		const sh001 = reconciled.find((t) => t.taskId === "SH-001")!;
 		expect(sh001.action).toBe("mark-complete");
 		expect(sh001.doneFileFound).toBe(true);
 
-		const ap001 = reconciled.find(t => t.taskId === "AP-001")!;
+		const ap001 = reconciled.find((t) => t.taskId === "AP-001")!;
 		expect(ap001.action).toBe("mark-complete");
 
-		const ui001 = reconciled.find(t => t.taskId === "UI-001")!;
+		const ui001 = reconciled.find((t) => t.taskId === "UI-001")!;
 		expect(ui001.action).toBe("mark-complete");
 
 		// Wave 2 tasks: no .DONE, no alive session, was running → mark-failed
-		const ap002 = reconciled.find(t => t.taskId === "AP-002")!;
+		const ap002 = reconciled.find((t) => t.taskId === "AP-002")!;
 		expect(ap002.action).toBe("mark-failed");
 		expect(ap002.persistedStatus).toBe("running");
 
-		const ui002 = reconciled.find(t => t.taskId === "UI-002")!;
+		const ui002 = reconciled.find((t) => t.taskId === "UI-002")!;
 		expect(ui002.action).toBe("mark-failed");
 		expect(ui002.persistedStatus).toBe("running");
 
 		// Wave 3 task: pending, was never started, has session name from seeding
 		// Since it has a sessionName but status is pending, dead session → mark-failed
-		const sh002 = reconciled.find(t => t.taskId === "SH-002")!;
+		const sh002 = reconciled.find((t) => t.taskId === "SH-002")!;
 		// SH-002 has sessionName "orch-op-docs-lane-1" but status pending
 		// With no alive session and no .DONE → mark-failed
 		expect(["mark-failed", "pending"]).toContain(sh002.action);
@@ -749,11 +741,11 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 
 		const reconciled = reconcileTaskStates(fixtureState, aliveSessions, doneTaskIds);
 
-		const ap002 = reconciled.find(t => t.taskId === "AP-002")!;
+		const ap002 = reconciled.find((t) => t.taskId === "AP-002")!;
 		expect(ap002.action).toBe("reconnect");
 		expect(ap002.sessionAlive).toBe(true);
 
-		const ui002 = reconciled.find(t => t.taskId === "UI-002")!;
+		const ui002 = reconciled.find((t) => t.taskId === "UI-002")!;
 		expect(ui002.action).toBe("reconnect");
 		expect(ui002.sessionAlive).toBe(true);
 	});
@@ -776,15 +768,15 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 
 		expect(lanes).toHaveLength(3);
 
-		const docsLane = lanes.find(l => l.repoId === "docs")!;
+		const docsLane = lanes.find((l) => l.repoId === "docs")!;
 		expect(docsLane).toBeDefined();
 		expect(docsLane.laneId).toBe("docs/lane-1");
 
-		const apiLane = lanes.find(l => l.repoId === "api")!;
+		const apiLane = lanes.find((l) => l.repoId === "api")!;
 		expect(apiLane).toBeDefined();
 		expect(apiLane.laneId).toContain("api");
 
-		const frontendLane = lanes.find(l => l.repoId === "frontend")!;
+		const frontendLane = lanes.find((l) => l.repoId === "frontend")!;
 		expect(frontendLane).toBeDefined();
 	});
 
@@ -792,8 +784,8 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		const lanes = reconstructAllocatedLanes(fixtureState.lanes, fixtureState.tasks);
 
 		// Find the lane with UI-001 — should carry resolvedRepoId from persisted task
-		const frontendLane = lanes.find(l => l.repoId === "frontend")!;
-		const ui001Task = frontendLane.tasks.find(t => t.taskId === "UI-001");
+		const frontendLane = lanes.find((l) => l.repoId === "frontend")!;
+		const ui001Task = frontendLane.tasks.find((t) => t.taskId === "UI-001");
 		expect(ui001Task).toBeDefined();
 		expect(ui001Task!.task?.resolvedRepoId).toBe("frontend");
 	});
@@ -829,15 +821,15 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		const resumePoint = computeResumePoint(fixtureState, reconciled);
 
 		// AP-002 completed → mark-complete
-		const ap002 = reconciled.find(t => t.taskId === "AP-002")!;
+		const ap002 = reconciled.find((t) => t.taskId === "AP-002")!;
 		expect(ap002.action).toBe("mark-complete");
 
 		// UI-002 failed → mark-failed
-		const ui002 = reconciled.find(t => t.taskId === "UI-002")!;
+		const ui002 = reconciled.find((t) => t.taskId === "UI-002")!;
 		expect(ui002.action).toBe("mark-failed");
 
 		// TP-037 (Bug #102b): SH-002 had session seeded but never started → stays pending
-		const sh002 = reconciled.find(t => t.taskId === "SH-002")!;
+		const sh002 = reconciled.find((t) => t.taskId === "SH-002")!;
 		expect(sh002.action).toBe("pending");
 
 		// TP-037: Wave 1 has succeeded task (AP-002) but no merge result → flagged for merge retry
@@ -859,7 +851,7 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		const resumePoint = computeResumePoint(fixtureState, reconciled);
 
 		// AP-002 has alive session → reconnect (NOT terminal)
-		const ap002 = reconciled.find(t => t.taskId === "AP-002")!;
+		const ap002 = reconciled.find((t) => t.taskId === "AP-002")!;
 		expect(ap002.action).toBe("reconnect");
 
 		// Wave 1 has a non-terminal task (reconnect) → resume here
@@ -869,7 +861,6 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 	});
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════
 // 6.x — Collision-safe naming
 // ═══════════════════════════════════════════════════════════════════════
@@ -877,9 +868,7 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 	it("6.1: TMUX session names are unique across repos for same operator+lane", () => {
 		const opId = "testop";
-		const sessions = FIXTURE_REPO_IDS.map(repoId =>
-			generateLaneSessionId("orch", 1, opId, repoId),
-		);
+		const sessions = FIXTURE_REPO_IDS.map((repoId) => generateLaneSessionId("orch", 1, opId, repoId));
 
 		// All 3 sessions should be distinct
 		expect(new Set(sessions).size).toBe(3);
@@ -889,9 +878,7 @@ describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 	});
 
 	it("6.2: lane IDs are unique across repos for same lane number", () => {
-		const laneIds = FIXTURE_REPO_IDS.map(repoId =>
-			generateLaneId(1, repoId),
-		);
+		const laneIds = FIXTURE_REPO_IDS.map((repoId) => generateLaneId(1, repoId));
 
 		expect(new Set(laneIds).size).toBe(3);
 		expect(laneIds).toContain("docs/lane-1");
@@ -902,7 +889,7 @@ describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 	it("6.3: branch names are unique across repos for same operator+lane", () => {
 		const opId = "testop";
 		const batchId = "20260316T120000";
-		const branches = FIXTURE_REPO_IDS.map(repoId => {
+		const branches = FIXTURE_REPO_IDS.map((repoId) => {
 			// Branch name uses repoId-scoped laneId
 			const laneId = generateLaneId(1, repoId);
 			// Simulate generateBranchName pattern: task/{opId}-{laneId}-{batchId}
@@ -954,7 +941,6 @@ describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 	});
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════
 // 7.x — Repo-aware persisted state validation and upconversion
 // ═══════════════════════════════════════════════════════════════════════
@@ -968,8 +954,8 @@ describe("7.x: Repo-aware persisted state — validation and upconversion", () =
 
 		expect(validated.schemaVersion).toBe(BATCH_STATE_SCHEMA_VERSION);
 		expect(validated.mode).toBe("workspace");
-		expect(validated.tasks.every(t => t.resolvedRepoId !== undefined)).toBe(true);
-		expect(validated.lanes.every(l => l.repoId !== undefined)).toBe(true);
+		expect(validated.tasks.every((t) => t.resolvedRepoId !== undefined)).toBe(true);
+		expect(validated.lanes.every((l) => l.repoId !== undefined)).toBe(true);
 	});
 
 	it("7.2: v1→v2 upconversion adds mode=repo and preserves fields", () => {
@@ -1105,11 +1091,7 @@ describe("7.x: Repo-aware persisted state — validation and upconversion", () =
 			endedAt: 5000,
 			currentWaveIndex: 2,
 			totalWaves: 3,
-			wavePlan: [
-				["SH-001", "AP-001", "UI-001"],
-				["AP-002", "UI-002"],
-				["SH-002"],
-			],
+			wavePlan: [["SH-001", "AP-001", "UI-001"], ["AP-002", "UI-002"], ["SH-002"]],
 			lanes: [
 				{
 					laneNumber: 1,

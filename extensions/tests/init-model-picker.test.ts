@@ -1,9 +1,6 @@
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
-import {
-	collectInitAgentConfig,
-	generateProjectConfig,
-} from "../../bin/taskplane.mjs";
+import { collectInitAgentConfig, generateProjectConfig } from "../../bin/taskplane.mjs";
 
 const AVAILABLE_MODELS = [
 	{ provider: "anthropic", id: "claude-sonnet-4-6", displayName: "anthropic/claude-sonnet-4-6" },
@@ -102,7 +99,9 @@ describe("init model picker flow", () => {
 		expect(logs.some((line) => line.includes("First-run recommendation"))).toBe(true);
 
 		const workerThinkingPrompt = prompts.find((entry) => entry.question.includes("Worker thinking"));
-		const reviewerProviderPrompt = prompts.find((entry) => entry.question.includes("Reviewer provider"));
+		const reviewerProviderPrompt = prompts.find((entry) =>
+			entry.question.includes("Reviewer provider"),
+		);
 		const mergerProviderPrompt = prompts.find((entry) => entry.question.includes("Merger provider"));
 		expect(workerThinkingPrompt?.defaultValue).toBe("6");
 		expect(reviewerProviderPrompt?.defaultValue).toBe("2");
@@ -111,7 +110,12 @@ describe("init model picker flow", () => {
 
 	it("shows unsupported-thinking note but still allows selecting a thinking level", async () => {
 		const modelsWithoutThinking = [
-			{ provider: "openai", id: "gpt-5.3-codex", displayName: "openai/gpt-5.3-codex", supportsThinking: false },
+			{
+				provider: "openai",
+				id: "gpt-5.3-codex",
+				displayName: "openai/gpt-5.3-codex",
+				supportsThinking: false,
+			},
 		];
 		const logs: string[] = [];
 		const config = await collectInitAgentConfig({

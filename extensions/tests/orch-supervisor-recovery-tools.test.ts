@@ -21,16 +21,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Read extension.ts source for structural verification
-const extensionSource = readFileSync(
-	join(__dirname, "..", "taskplane", "extension.ts"),
-	"utf-8",
-);
+const extensionSource = readFileSync(join(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 
 // Read dashboard server source for telemetry verification
-const serverSource = readFileSync(
-	join(__dirname, "..", "..", "dashboard", "server.cjs"),
-	"utf-8",
-);
+const serverSource = readFileSync(join(__dirname, "..", "..", "dashboard", "server.cjs"), "utf-8");
 
 // Read dashboard client source for UI verification
 const appSource = readFileSync(
@@ -65,7 +59,7 @@ describe("1.x: read_agent_status tool", () => {
 	it("1.2: has optional lane number parameter", () => {
 		const block = getToolBlock("read_agent_status");
 		expect(block).toContain("lane:");
-		expect(block).toContain("Type.Optional(Type.Number(");
+		expect(block).toContainNormalized("Type.Optional(Type.Number(");
 	});
 
 	it("1.3: has description and promptSnippet", () => {
@@ -353,7 +347,12 @@ describe("6.x: Dashboard client merge telemetry rendering", () => {
 
 describe("7.x: All recovery tools are registered", () => {
 	it("7.1: exactly 4 new supervisor recovery tools registered", () => {
-		const toolNames = ["read_agent_status", "trigger_wrap_up", "read_lane_logs", "list_active_agents"];
+		const toolNames = [
+			"read_agent_status",
+			"trigger_wrap_up",
+			"read_lane_logs",
+			"list_active_agents",
+		];
 		for (const name of toolNames) {
 			const regex = new RegExp(`name:\\s*"${name}"`, "g");
 			const matches = extensionSource.match(regex);
@@ -362,7 +361,12 @@ describe("7.x: All recovery tools are registered", () => {
 	});
 
 	it("7.2: all tools have execute handlers with error handling", () => {
-		const toolNames = ["read_agent_status", "trigger_wrap_up", "read_lane_logs", "list_active_agents"];
+		const toolNames = [
+			"read_agent_status",
+			"trigger_wrap_up",
+			"read_lane_logs",
+			"list_active_agents",
+		];
 		for (const name of toolNames) {
 			const block = getToolBlock(name);
 			expect(block, `${name} should have try/catch`).toContain("} catch (err)");

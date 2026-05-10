@@ -17,10 +17,7 @@ import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import {
-	tailSidecarJsonl,
-	createSidecarTailState,
-} from "../taskplane/sidecar-telemetry.ts";
+import { tailSidecarJsonl, createSidecarTailState } from "../taskplane/sidecar-telemetry.ts";
 import type { SidecarTailState, SidecarTelemetryDelta } from "../taskplane/sidecar-telemetry.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -35,7 +32,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	try { rmSync(testRoot, { recursive: true, force: true }); } catch {}
+	try {
+		rmSync(testRoot, { recursive: true, force: true });
+	} catch {}
 });
 
 function sidecarPath(): string {
@@ -45,7 +44,7 @@ function sidecarPath(): string {
 
 /** Write one or more JSONL events to a file. */
 function writeSidecarEvents(path: string, events: object[]): void {
-	const content = events.map(e => JSON.stringify(e)).join("\n") + "\n";
+	const content = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
 	writeFileSync(path, content, "utf-8");
 }
 
@@ -67,12 +66,9 @@ function messageEnd(usage: {
 // ── 1. latestTotalTokens includes cacheRead ──────────────────────────
 
 describe("tailSidecarJsonl — cache-inclusive latestTotalTokens", () => {
-
 	it("1.1 — cacheRead is added to latestTotalTokens (fallback branch: input+output)", () => {
 		const path = sidecarPath();
-		writeSidecarEvents(path, [
-			messageEnd({ input: 10_000, output: 5_000, cacheRead: 180_000 }),
-		]);
+		writeSidecarEvents(path, [messageEnd({ input: 10_000, output: 5_000, cacheRead: 180_000 })]);
 
 		const state = createSidecarTailState();
 		const delta = tailSidecarJsonl(path, state);
@@ -98,9 +94,7 @@ describe("tailSidecarJsonl — cache-inclusive latestTotalTokens", () => {
 
 	it("1.3 — zero cacheRead does not affect calculation", () => {
 		const path = sidecarPath();
-		writeSidecarEvents(path, [
-			messageEnd({ input: 50_000, output: 30_000, cacheRead: 0 }),
-		]);
+		writeSidecarEvents(path, [messageEnd({ input: 50_000, output: 30_000, cacheRead: 0 })]);
 
 		const state = createSidecarTailState();
 		const delta = tailSidecarJsonl(path, state);
@@ -110,9 +104,7 @@ describe("tailSidecarJsonl — cache-inclusive latestTotalTokens", () => {
 
 	it("1.4 — missing cacheRead does not affect calculation", () => {
 		const path = sidecarPath();
-		writeSidecarEvents(path, [
-			messageEnd({ input: 50_000, output: 30_000 }),
-		]);
+		writeSidecarEvents(path, [messageEnd({ input: 50_000, output: 30_000 })]);
 
 		const state = createSidecarTailState();
 		const delta = tailSidecarJsonl(path, state);
@@ -147,9 +139,7 @@ describe("context pressure thresholds — cache-heavy workloads", () => {
 	it("2.1 — cache-heavy workload triggers 85% threshold", () => {
 		const path = sidecarPath();
 		// 170K total = 85% of 200K context window
-		writeSidecarEvents(path, [
-			messageEnd({ input: 5_000, output: 5_000, cacheRead: 160_000 }),
-		]);
+		writeSidecarEvents(path, [messageEnd({ input: 5_000, output: 5_000, cacheRead: 160_000 })]);
 
 		const state = createSidecarTailState();
 		const delta = tailSidecarJsonl(path, state);
@@ -163,9 +153,7 @@ describe("context pressure thresholds — cache-heavy workloads", () => {
 	it("2.2 — cache-heavy workload triggers 95% threshold", () => {
 		const path = sidecarPath();
 		// 190K total = 95% of 200K context window
-		writeSidecarEvents(path, [
-			messageEnd({ input: 5_000, output: 5_000, cacheRead: 180_000 }),
-		]);
+		writeSidecarEvents(path, [messageEnd({ input: 5_000, output: 5_000, cacheRead: 180_000 })]);
 
 		const state = createSidecarTailState();
 		const delta = tailSidecarJsonl(path, state);
@@ -199,9 +187,7 @@ describe("context pressure thresholds — cache-heavy workloads", () => {
 
 	it("2.4 — small workload (no cache) stays under threshold", () => {
 		const path = sidecarPath();
-		writeSidecarEvents(path, [
-			messageEnd({ input: 20_000, output: 10_000 }),
-		]);
+		writeSidecarEvents(path, [messageEnd({ input: 20_000, output: 10_000 })]);
 
 		const state = createSidecarTailState();
 		const delta = tailSidecarJsonl(path, state);

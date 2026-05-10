@@ -1,10 +1,7 @@
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
 
-import {
-	normalizeLaneSessionAlias,
-	readLaneSessionAliases,
-} from "../taskplane/tmux-compat.ts";
+import { normalizeLaneSessionAlias, readLaneSessionAliases } from "../taskplane/tmux-compat.ts";
 
 describe("tmux compatibility shim (migration-only)", () => {
 	describe("lane session alias", () => {

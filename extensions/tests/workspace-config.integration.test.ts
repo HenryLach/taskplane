@@ -19,13 +19,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
-import {
-	mkdirSync,
-	writeFileSync,
-	rmSync,
-	existsSync,
-	readFileSync,
-} from "fs";
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "fs";
 import { join, resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
@@ -52,7 +46,6 @@ import {
 import { saveBatchState, loadBatchState, deleteBatchState } from "../taskplane/persistence.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
-
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let testRoot: string;
@@ -132,7 +125,10 @@ const mockLoadRunnerConfig = (_root: string, _pointerConfigRoot?: string) => moc
 // ── Setup / Teardown ─────────────────────────────────────────────────
 
 beforeEach(() => {
-	testRoot = join(tmpdir(), `tp-workspace-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	testRoot = join(
+		tmpdir(),
+		`tp-workspace-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	);
 	mkdirSync(testRoot, { recursive: true });
 	counter = 0;
 });
@@ -207,7 +203,10 @@ describe("loadWorkspaceConfig", () => {
 
 	it("1.6: throws WORKSPACE_REPO_PATH_MISSING on repo without path", () => {
 		const dir = makeTestDir("no-path");
-		writeWorkspaceConfig(dir, "repos:\n  api:\n    branch: main\nrouting:\n  tasks_root: ./tasks\n  default_repo: api\n");
+		writeWorkspaceConfig(
+			dir,
+			"repos:\n  api:\n    branch: main\nrouting:\n  tasks_root: ./tasks\n  default_repo: api\n",
+		);
 		try {
 			loadWorkspaceConfig(dir);
 			expect.unreachable("should have thrown");
@@ -220,7 +219,10 @@ describe("loadWorkspaceConfig", () => {
 
 	it("1.7: throws WORKSPACE_REPO_PATH_NOT_FOUND on non-existent repo path", () => {
 		const dir = makeTestDir("bad-path");
-		writeWorkspaceConfig(dir, "repos:\n  api:\n    path: ./nonexistent-repo\nrouting:\n  tasks_root: ./tasks\n  default_repo: api\n");
+		writeWorkspaceConfig(
+			dir,
+			"repos:\n  api:\n    path: ./nonexistent-repo\nrouting:\n  tasks_root: ./tasks\n  default_repo: api\n",
+		);
 		try {
 			loadWorkspaceConfig(dir);
 			expect.unreachable("should have thrown");
@@ -235,7 +237,10 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("not-git");
 		const repoDir = join(dir, "not-a-repo");
 		mkdirSync(repoDir, { recursive: true });
-		writeWorkspaceConfig(dir, `repos:\n  api:\n    path: ${repoDir}\nrouting:\n  tasks_root: ./tasks\n  default_repo: api\n`);
+		writeWorkspaceConfig(
+			dir,
+			`repos:\n  api:\n    path: ${repoDir}\nrouting:\n  tasks_root: ./tasks\n  default_repo: api\n`,
+		);
 		try {
 			loadWorkspaceConfig(dir);
 			expect.unreachable("should have thrown");
@@ -252,9 +257,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n  frontend:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`,
 		);
 		try {
 			loadWorkspaceConfig(dir);
@@ -269,7 +275,10 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("no-tasks-root");
 		const repoDir = join(dir, "repo-a");
 		initGitRepo(repoDir);
-		writeWorkspaceConfig(dir, `repos:\n  api:\n    path: ${repoDir}\nrouting:\n  default_repo: api\n`);
+		writeWorkspaceConfig(
+			dir,
+			`repos:\n  api:\n    path: ${repoDir}\nrouting:\n  default_repo: api\n`,
+		);
 		try {
 			loadWorkspaceConfig(dir);
 			expect.unreachable("should have thrown");
@@ -283,9 +292,10 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("bad-tasks-root");
 		const repoDir = join(dir, "repo-a");
 		initGitRepo(repoDir);
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ./nonexistent-tasks\n  default_repo: api\n`
+				`routing:\n  tasks_root: ./nonexistent-tasks\n  default_repo: api\n`,
 		);
 		try {
 			loadWorkspaceConfig(dir);
@@ -302,9 +312,9 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
-			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n`
+		writeWorkspaceConfig(
+			dir,
+			`repos:\n  api:\n    path: ${repoDir}\n` + `routing:\n  tasks_root: ${tasksDir}\n`,
 		);
 		try {
 			loadWorkspaceConfig(dir);
@@ -321,9 +331,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: nonexistent\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: nonexistent\n`,
 		);
 		try {
 			loadWorkspaceConfig(dir);
@@ -340,9 +351,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n    default_branch: develop\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`,
 		);
 
 		const config = loadWorkspaceConfig(dir);
@@ -390,9 +402,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoB);
 		const tasksDir = join(repoA, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoA}\n  frontend:\n    path: ${repoB}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`,
 		);
 
 		const config = loadWorkspaceConfig(dir);
@@ -410,9 +423,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: true\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: true\n`,
 		);
 
 		const config = loadWorkspaceConfig(dir);
@@ -426,9 +440,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: false\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: false\n`,
 		);
 
 		const config = loadWorkspaceConfig(dir);
@@ -442,9 +457,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`,
 		);
 
 		const config = loadWorkspaceConfig(dir);
@@ -458,9 +474,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: "yes"\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: "yes"\n`,
 		);
 
 		expect(() => loadWorkspaceConfig(dir)).toThrow(WorkspaceConfigError);
@@ -479,9 +496,10 @@ describe("loadWorkspaceConfig", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: 1\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: 1\n`,
 		);
 
 		expect(() => loadWorkspaceConfig(dir)).toThrow(WorkspaceConfigError);
@@ -500,9 +518,10 @@ describe("loadWorkspaceConfig", () => {
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		// In YAML, bare `strict:` or `strict: null` produces null
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: null\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: null\n`,
 		);
 
 		expect(() => loadWorkspaceConfig(dir)).toThrow(WorkspaceConfigError);
@@ -535,7 +554,9 @@ describe("buildExecutionContext", () => {
 
 	it("2.1b: non-git cwd + no workspace config throws WORKSPACE_SETUP_REQUIRED", () => {
 		const dir = makeTestDir("repo-mode-non-git");
-		expect(() => buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig)).toThrow(WorkspaceConfigError);
+		expect(() => buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig)).toThrow(
+			WorkspaceConfigError,
+		);
 		try {
 			buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig);
 		} catch (err) {
@@ -551,9 +572,10 @@ describe("buildExecutionContext", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`,
 		);
 
 		const ctx = buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig);
@@ -634,10 +656,7 @@ describe("WorkspaceConfigError", () => {
 	});
 
 	it("4.2: repoId and relatedPath are optional", () => {
-		const err = new WorkspaceConfigError(
-			"WORKSPACE_SCHEMA_INVALID",
-			"Bad schema",
-		);
+		const err = new WorkspaceConfigError("WORKSPACE_SCHEMA_INVALID", "Bad schema");
 		expect(err.code).toBe("WORKSPACE_SCHEMA_INVALID");
 		expect(err.repoId).toBeUndefined();
 		expect(err.relatedPath).toBeUndefined();
@@ -670,18 +689,9 @@ describe("root-consistency regression", () => {
 	// These tests verify source code patterns to ensure the root threading
 	// from TP-001 is correct and consistent across modules.
 
-	const extensionSrc = readFileSync(
-		resolve(__dirname, "..", "taskplane", "extension.ts"),
-		"utf-8",
-	);
-	const engineSrc = readFileSync(
-		resolve(__dirname, "..", "taskplane", "engine.ts"),
-		"utf-8",
-	);
-	const resumeSrc = readFileSync(
-		resolve(__dirname, "..", "taskplane", "resume.ts"),
-		"utf-8",
-	);
+	const extensionSrc = readFileSync(resolve(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
+	const engineSrc = readFileSync(resolve(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+	const resumeSrc = readFileSync(resolve(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 
 	it("5.1: extension.ts has execCtx variable initialized to null", () => {
 		expect(extensionSrc).toContain("let execCtx: ExecutionContext | null = null");
@@ -708,7 +718,7 @@ describe("root-consistency regression", () => {
 		// - doOrchStatus/tool fallback (ctx.cwd passed as fallback parameter)
 		// Verify no ctx.cwd in discovery/state/orphan patterns
 		const lines = extensionSrc.split("\n");
-		const cwdLines = lines.filter(l => l.includes("ctx.cwd") && !l.trim().startsWith("//"));
+		const cwdLines = lines.filter((l) => l.includes("ctx.cwd") && !l.trim().startsWith("//"));
 		for (const line of cwdLines) {
 			const isBuildContext = line.includes("buildExecutionContext");
 			const isAbortFallback = line.includes("execCtx?.repoRoot ?? ctx.cwd");
@@ -734,8 +744,8 @@ describe("root-consistency regression", () => {
 		expect(extensionSrc).toContain("execCtx!.repoRoot");
 		// Should appear in the resume handler context
 		const lines = extensionSrc.split("\n");
-		const resumeLines = lines.filter(l =>
-			l.includes("resumeOrchBatch") || l.includes("execCtx!.repoRoot"),
+		const resumeLines = lines.filter(
+			(l) => l.includes("resumeOrchBatch") || l.includes("execCtx!.repoRoot"),
 		);
 		expect(resumeLines.length).toBeGreaterThan(0);
 	});
@@ -763,9 +773,9 @@ describe("root-consistency regression", () => {
 		const lines = extensionSrc.split("\n");
 
 		// Find the orch-status handler range
-		const statusRegIdx = lines.findIndex(l => l.includes('"orch-status"'));
-		const pauseRegIdx = lines.findIndex(l => l.includes('"orch-pause"'));
-		const sessionsRegIdx = lines.findIndex(l => l.includes('"orch-sessions"'));
+		const statusRegIdx = lines.findIndex((l) => l.includes('"orch-status"'));
+		const pauseRegIdx = lines.findIndex((l) => l.includes('"orch-pause"'));
+		const sessionsRegIdx = lines.findIndex((l) => l.includes('"orch-sessions"'));
 
 		// orch-status handler should not call requireExecCtx
 		expect(statusRegIdx).toBeGreaterThan(-1);
@@ -791,9 +801,7 @@ describe("resolvePointer", () => {
 	 * Helper to build a minimal WorkspaceConfig with the given repos.
 	 * Repo paths should be absolute.
 	 */
-	function makeWorkspaceConfig(
-		repos: Record<string, string>,
-	): WorkspaceConfig {
+	function makeWorkspaceConfig(repos: Record<string, string>): WorkspaceConfig {
 		const repoMap = new Map<string, WorkspaceRepoConfig>();
 		for (const [id, repoPath] of Object.entries(repos)) {
 			repoMap.set(id, {
@@ -1229,7 +1237,10 @@ describe("resolvePointer", () => {
 		const repoDir = join(dir, "config-repo");
 		mkdirSync(repoDir, { recursive: true });
 		const wsConfig = makeWorkspaceConfig("config", repoDir);
-		writePointerFile(dir, JSON.stringify({ config_repo: "config", config_path: "foo/../../../escape" }));
+		writePointerFile(
+			dir,
+			JSON.stringify({ config_repo: "config", config_path: "foo/../../../escape" }),
+		);
 
 		const result = resolvePointer(dir, wsConfig);
 		expect(result!.used).toBe(false);
@@ -1292,7 +1303,10 @@ describe("resolvePointer", () => {
 		const repoDir = join(dir, "config-repo");
 		mkdirSync(repoDir, { recursive: true });
 		const wsConfig = makeWorkspaceConfig("config", repoDir);
-		writePointerFile(dir, JSON.stringify({ config_repo: "config", config_path: "deep/nested/config" }));
+		writePointerFile(
+			dir,
+			JSON.stringify({ config_repo: "config", config_path: "deep/nested/config" }),
+		);
 
 		const result = resolvePointer(dir, wsConfig);
 		expect(result!.used).toBe(true);
@@ -1350,9 +1364,10 @@ describe("orchestrator pointer threading", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`,
 		);
 		// Write a valid pointer file — config_repo points to the same repo for simplicity
 		writePointerFile(dir, JSON.stringify({ config_repo: "myrepo", config_path: ".taskplane" }));
@@ -1413,9 +1428,10 @@ describe("orchestrator pointer threading", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`,
 		);
 		// No pointer file written
 
@@ -1439,10 +1455,7 @@ describe("orchestrator pointer threading", () => {
 
 	it("7.6: spawnMergeAgentV2 signature accepts agentRoot, separate from stateRoot", () => {
 		// Verify the Runtime V2 merge spawner includes both agentRoot and stateRoot
-		const mergeSrc = readFileSync(
-			resolve(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSrc = readFileSync(resolve(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 
 		const funcStart = mergeSrc.indexOf("export async function spawnMergeAgentV2");
 		expect(funcStart).toBeGreaterThan(-1);
@@ -1454,34 +1467,32 @@ describe("orchestrator pointer threading", () => {
 		// The system prompt resolution should use agentRoot for task-merger.md when available.
 		const mergerRefLines = mergeSrc
 			.split("\n")
-			.filter(l => l.includes("task-merger.md") && l.includes("agentRoot"));
+			.filter((l) => l.includes("task-merger.md") && l.includes("agentRoot"));
 		expect(mergerRefLines.length).toBeGreaterThan(0);
 	});
 
 	it("7.7: merge request/result files use stateRoot (piDir), not agentRoot", () => {
 		// Verify merge.ts uses piDir (= stateRoot ?? repoRoot) for merge result files,
 		// NOT agentRoot or configRoot from pointer
-		const mergeSrc = readFileSync(
-			resolve(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSrc = readFileSync(resolve(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 
 		// The piDir variable should be set from stateRoot
-		const piDirLine = mergeSrc.split("\n").find(l => l.includes("const piDir") && l.includes("stateRoot"));
+		const piDirLine = mergeSrc
+			.split("\n")
+			.find((l) => l.includes("const piDir") && l.includes("stateRoot"));
 		expect(piDirLine).toBeDefined();
 
 		// resultFilePath and requestFilePath should use piDir
-		const resultLines = mergeSrc.split("\n").filter(l =>
-			(l.includes("resultFilePath") || l.includes("requestFilePath")) && l.includes("piDir"),
-		);
+		const resultLines = mergeSrc
+			.split("\n")
+			.filter(
+				(l) => (l.includes("resultFilePath") || l.includes("requestFilePath")) && l.includes("piDir"),
+			);
 		expect(resultLines.length).toBeGreaterThan(0);
 	});
 
 	it("7.8: executeOrchBatch accepts and threads agentRoot to mergeWaveByRepo", () => {
-		const engineSrc = readFileSync(
-			resolve(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSrc = readFileSync(resolve(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 
 		// executeOrchBatch should accept agentRoot parameter
 		const funcStart = engineSrc.indexOf("function executeOrchBatch");
@@ -1499,7 +1510,10 @@ describe("orchestrator pointer threading", () => {
 			if (engineSrc[i] === "(") depth++;
 			if (engineSrc[i] === ")") {
 				depth--;
-				if (depth === 0) { endIdx = i; break; }
+				if (depth === 0) {
+					endIdx = i;
+					break;
+				}
 			}
 		}
 		const mergeCallBlock = engineSrc.substring(mergeCallIdx, endIdx + 1);
@@ -1507,10 +1521,7 @@ describe("orchestrator pointer threading", () => {
 	});
 
 	it("7.9: extension.ts passes execCtx.pointer.agentRoot through worker data to engine", () => {
-		const extensionSrc = readFileSync(
-			resolve(__dirname, "..", "taskplane", "extension.ts"),
-			"utf-8",
-		);
+		const extensionSrc = readFileSync(resolve(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 
 		// TP-071: The engine now runs in a worker thread. doOrchStart builds
 		// EngineWorkerData with agentRoot extracted from execCtx.pointer?.agentRoot,
@@ -1536,7 +1547,10 @@ describe("orchestrator pointer threading", () => {
 			if (workerSrc[i] === "(") depth++;
 			if (workerSrc[i] === ")") {
 				depth--;
-				if (depth === 0) { endIdx = i; break; }
+				if (depth === 0) {
+					endIdx = i;
+					break;
+				}
 			}
 		}
 		const orchBatchCall = workerSrc.substring(orchBatchCallIdx, endIdx + 1);
@@ -1549,9 +1563,10 @@ describe("orchestrator pointer threading", () => {
 		initGitRepo(repoDir);
 		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
-		writeWorkspaceConfig(dir,
+		writeWorkspaceConfig(
+			dir,
 			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
-			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`
+				`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`,
 		);
 		// No pointer file — should trigger warning
 
@@ -1565,7 +1580,7 @@ describe("orchestrator pointer threading", () => {
 			buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig);
 
 			// Should have logged exactly one pointer warning
-			const pointerWarnings = consoleErrors.filter(m => m.includes("[taskplane] pointer warning"));
+			const pointerWarnings = consoleErrors.filter((m) => m.includes("[taskplane] pointer warning"));
 			expect(pointerWarnings.length).toBe(1);
 			expect(pointerWarnings[0]).toContain("Pointer file not found");
 		} finally {
@@ -1596,17 +1611,19 @@ describe("orchestrator pointer threading", () => {
 			totalWaves: 1,
 			wavePlan: [["TASK-001"]],
 			lanes: [],
-			tasks: [{
-				taskId: "TASK-001",
-				status: "running",
-				laneNumber: 1,
-				sessionName: "orch-lane-1",
-				taskFolder: "/workspace/tasks/TASK-001",
-				exitReason: "",
-				startedAt: now,
-				endedAt: null,
-				doneFileFound: false,
-			}],
+			tasks: [
+				{
+					taskId: "TASK-001",
+					status: "running",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					taskFolder: "/workspace/tasks/TASK-001",
+					exitReason: "",
+					startedAt: now,
+					endedAt: null,
+					doneFileFound: false,
+				},
+			],
 			mergeResults: [],
 			totalTasks: 1,
 			succeededTasks: 0,

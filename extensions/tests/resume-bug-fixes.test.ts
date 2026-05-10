@@ -46,9 +46,36 @@ function makeState(overrides?: Partial<PersistedBatchState>): PersistedBatchStat
 		wavePlan: [["task-1", "task-2"], ["task-3"]],
 		lanes: [],
 		tasks: [
-			{ taskId: "task-1", status: "succeeded" as LaneTaskStatus, sessionName: "sess-1", laneNumber: 1, taskFolder: "/tasks/task-1", startedAt: null, endedAt: null, exitReason: "" },
-			{ taskId: "task-2", status: "succeeded" as LaneTaskStatus, sessionName: "sess-2", laneNumber: 1, taskFolder: "/tasks/task-2", startedAt: null, endedAt: null, exitReason: "" },
-			{ taskId: "task-3", status: "pending" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/tasks/task-3", startedAt: null, endedAt: null, exitReason: "" },
+			{
+				taskId: "task-1",
+				status: "succeeded" as LaneTaskStatus,
+				sessionName: "sess-1",
+				laneNumber: 1,
+				taskFolder: "/tasks/task-1",
+				startedAt: null,
+				endedAt: null,
+				exitReason: "",
+			},
+			{
+				taskId: "task-2",
+				status: "succeeded" as LaneTaskStatus,
+				sessionName: "sess-2",
+				laneNumber: 1,
+				taskFolder: "/tasks/task-2",
+				startedAt: null,
+				endedAt: null,
+				exitReason: "",
+			},
+			{
+				taskId: "task-3",
+				status: "pending" as LaneTaskStatus,
+				sessionName: "",
+				laneNumber: 0,
+				taskFolder: "/tasks/task-3",
+				startedAt: null,
+				endedAt: null,
+				exitReason: "",
+			},
 		],
 		mergeResults: [],
 		totalTasks: 3,
@@ -94,23 +121,17 @@ describe("1.x: getMergeStatusForWave", () => {
 	});
 
 	it("1.2: returns 'succeeded' when wave merge succeeded", () => {
-		const mergeResults = [
-			{ waveIndex: 0, status: "succeeded" as const },
-		];
+		const mergeResults = [{ waveIndex: 0, status: "succeeded" as const }];
 		expect(getMergeStatusForWave(mergeResults, 0)).toBe("succeeded");
 	});
 
 	it("1.3: returns 'failed' when wave merge failed", () => {
-		const mergeResults = [
-			{ waveIndex: 0, status: "failed" as const },
-		];
+		const mergeResults = [{ waveIndex: 0, status: "failed" as const }];
 		expect(getMergeStatusForWave(mergeResults, 0)).toBe("failed");
 	});
 
 	it("1.4: returns 'partial' when wave merge was partial", () => {
-		const mergeResults = [
-			{ waveIndex: 0, status: "partial" as const },
-		];
+		const mergeResults = [{ waveIndex: 0, status: "partial" as const }];
 		expect(getMergeStatusForWave(mergeResults, 0)).toBe("partial");
 	});
 
@@ -124,9 +145,7 @@ describe("1.x: getMergeStatusForWave", () => {
 	});
 
 	it("1.6: returns null for non-matching wave index", () => {
-		const mergeResults = [
-			{ waveIndex: 0, status: "succeeded" as const },
-		];
+		const mergeResults = [{ waveIndex: 0, status: "succeeded" as const }];
 		expect(getMergeStatusForWave(mergeResults, 1)).toBeNull();
 	});
 
@@ -167,9 +186,7 @@ describe("1.x: computeResumePoint — merge skip detection (Bug #102)", () => {
 	it("1.9: wave with all succeeded tasks + succeeded merge → skipped normally", () => {
 		const state = makeState({
 			wavePlan: [["task-1", "task-2"], ["task-3"]],
-			mergeResults: [
-				{ waveIndex: 0, status: "succeeded" as const },
-			] as any,
+			mergeResults: [{ waveIndex: 0, status: "succeeded" as const }] as any,
 		});
 
 		const reconciled: ReconciledTaskState[] = [
@@ -189,9 +206,7 @@ describe("1.x: computeResumePoint — merge skip detection (Bug #102)", () => {
 	it("1.10: wave with all succeeded tasks + failed merge → flagged for retry", () => {
 		const state = makeState({
 			wavePlan: [["task-1", "task-2"], ["task-3"]],
-			mergeResults: [
-				{ waveIndex: 0, status: "failed" as const },
-			] as any,
+			mergeResults: [{ waveIndex: 0, status: "failed" as const }] as any,
 		});
 
 		const reconciled: ReconciledTaskState[] = [
@@ -231,9 +246,36 @@ describe("1.x: computeResumePoint — merge skip detection (Bug #102)", () => {
 			wavePlan: [["task-1"], ["task-2"], ["task-3"]],
 			totalWaves: 3,
 			tasks: [
-				{ taskId: "task-1", status: "succeeded" as LaneTaskStatus, sessionName: "s1", laneNumber: 1, taskFolder: "/t/1", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-2", status: "succeeded" as LaneTaskStatus, sessionName: "s2", laneNumber: 1, taskFolder: "/t/2", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-3", status: "pending" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/t/3", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-1",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s1",
+					laneNumber: 1,
+					taskFolder: "/t/1",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-2",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s2",
+					laneNumber: 1,
+					taskFolder: "/t/2",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-3",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "",
+					laneNumber: 0,
+					taskFolder: "/t/3",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 			mergeResults: [], // Both wave 0 and wave 1 are missing merges
 		});
@@ -256,9 +298,7 @@ describe("1.x: computeResumePoint — merge skip detection (Bug #102)", () => {
 	it("1.13: partial merge status → flagged for retry", () => {
 		const state = makeState({
 			wavePlan: [["task-1", "task-2"], ["task-3"]],
-			mergeResults: [
-				{ waveIndex: 0, status: "partial" as const },
-			] as any,
+			mergeResults: [{ waveIndex: 0, status: "partial" as const }] as any,
 		});
 
 		const reconciled: ReconciledTaskState[] = [
@@ -336,7 +376,7 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 		});
 
 		const aliveSessions = new Set<string>(); // session is dead
-		const doneTaskIds = new Set<string>();    // no .DONE
+		const doneTaskIds = new Set<string>(); // no .DONE
 		const existingWorktrees = new Set<string>(); // no worktree
 
 		const result = reconcileTaskStates(state, aliveSessions, doneTaskIds, existingWorktrees);
@@ -439,9 +479,36 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 	it("2.6: multiple pending tasks with stale sessions → all remain pending", () => {
 		const state = makeState({
 			tasks: [
-				{ taskId: "task-a", status: "pending" as LaneTaskStatus, sessionName: "stale-1", laneNumber: 1, taskFolder: "/t/a", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-b", status: "pending" as LaneTaskStatus, sessionName: "stale-2", laneNumber: 2, taskFolder: "/t/b", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-c", status: "pending" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/t/c", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-a",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "stale-1",
+					laneNumber: 1,
+					taskFolder: "/t/a",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-b",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "stale-2",
+					laneNumber: 2,
+					taskFolder: "/t/b",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-c",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "",
+					laneNumber: 0,
+					taskFolder: "/t/c",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 		});
 
@@ -456,7 +523,16 @@ describe("2.x: reconcileTaskStates — stale session names (Bug #102b)", () => {
 	it("2.7: pending task with .DONE → mark-complete (Precedence 1 wins)", () => {
 		const state = makeState({
 			tasks: [
-				{ taskId: "task-done", status: "pending" as LaneTaskStatus, sessionName: "stale", laneNumber: 1, taskFolder: "/t/done", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-done",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "stale",
+					laneNumber: 1,
+					taskFolder: "/t/done",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 		});
 
@@ -477,9 +553,36 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 			wavePlan: [["task-1"], ["task-2"], ["task-3"]],
 			totalWaves: 3,
 			tasks: [
-				{ taskId: "task-1", status: "succeeded" as LaneTaskStatus, sessionName: "s1", laneNumber: 1, taskFolder: "/t/1", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-2", status: "succeeded" as LaneTaskStatus, sessionName: "s2", laneNumber: 1, taskFolder: "/t/2", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-3", status: "pending" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/t/3", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-1",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s1",
+					laneNumber: 1,
+					taskFolder: "/t/1",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-2",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s2",
+					laneNumber: 1,
+					taskFolder: "/t/2",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-3",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "",
+					laneNumber: 0,
+					taskFolder: "/t/3",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 			mergeResults: [
 				{ waveIndex: 0, status: "succeeded" as const },
@@ -508,9 +611,36 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 			wavePlan: [["task-1"], ["task-2"], ["task-3"]],
 			totalWaves: 3,
 			tasks: [
-				{ taskId: "task-1", status: "succeeded" as LaneTaskStatus, sessionName: "s1", laneNumber: 1, taskFolder: "/t/1", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-2", status: "succeeded" as LaneTaskStatus, sessionName: "s2", laneNumber: 1, taskFolder: "/t/2", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-3", status: "pending" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/t/3", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-1",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s1",
+					laneNumber: 1,
+					taskFolder: "/t/1",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-2",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s2",
+					laneNumber: 1,
+					taskFolder: "/t/2",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-3",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "",
+					laneNumber: 0,
+					taskFolder: "/t/3",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 			mergeResults: [
 				{ waveIndex: 0, status: "succeeded" as const },
@@ -538,8 +668,26 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 			wavePlan: [["task-1"], ["task-2"]],
 			totalWaves: 2,
 			tasks: [
-				{ taskId: "task-1", status: "succeeded" as LaneTaskStatus, sessionName: "s1", laneNumber: 1, taskFolder: "/t/1", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-2", status: "succeeded" as LaneTaskStatus, sessionName: "s2", laneNumber: 1, taskFolder: "/t/2", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-1",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s1",
+					laneNumber: 1,
+					taskFolder: "/t/1",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-2",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s2",
+					laneNumber: 1,
+					taskFolder: "/t/2",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 			mergeResults: [
 				{ waveIndex: 0, status: "succeeded" as const },
@@ -564,9 +712,36 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 		const state = makeState({
 			wavePlan: [["task-1", "task-2"], ["task-3"]],
 			tasks: [
-				{ taskId: "task-1", status: "skipped" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/t/1", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-2", status: "skipped" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/t/2", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-3", status: "pending" as LaneTaskStatus, sessionName: "", laneNumber: 0, taskFolder: "/t/3", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-1",
+					status: "skipped" as LaneTaskStatus,
+					sessionName: "",
+					laneNumber: 0,
+					taskFolder: "/t/1",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-2",
+					status: "skipped" as LaneTaskStatus,
+					sessionName: "",
+					laneNumber: 0,
+					taskFolder: "/t/2",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-3",
+					status: "pending" as LaneTaskStatus,
+					sessionName: "",
+					laneNumber: 0,
+					taskFolder: "/t/3",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 			mergeResults: [],
 		});
@@ -589,9 +764,36 @@ describe("3.x: State coherence — mergeResults alignment", () => {
 			wavePlan: [["task-1"], ["task-2"], ["task-3"]],
 			totalWaves: 3,
 			tasks: [
-				{ taskId: "task-1", status: "succeeded" as LaneTaskStatus, sessionName: "s1", laneNumber: 1, taskFolder: "/t/1", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-2", status: "succeeded" as LaneTaskStatus, sessionName: "s2", laneNumber: 1, taskFolder: "/t/2", startedAt: null, endedAt: null, exitReason: "" },
-				{ taskId: "task-3", status: "running" as LaneTaskStatus, sessionName: "s3", laneNumber: 2, taskFolder: "/t/3", startedAt: null, endedAt: null, exitReason: "" },
+				{
+					taskId: "task-1",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s1",
+					laneNumber: 1,
+					taskFolder: "/t/1",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-2",
+					status: "succeeded" as LaneTaskStatus,
+					sessionName: "s2",
+					laneNumber: 1,
+					taskFolder: "/t/2",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
+				{
+					taskId: "task-3",
+					status: "running" as LaneTaskStatus,
+					sessionName: "s3",
+					laneNumber: 2,
+					taskFolder: "/t/3",
+					startedAt: null,
+					endedAt: null,
+					exitReason: "",
+				},
 			],
 			mergeResults: [
 				{ waveIndex: 0, status: "failed" as const }, // Wave 0 merge failed

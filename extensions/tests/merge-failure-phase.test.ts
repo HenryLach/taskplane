@@ -21,7 +21,11 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { checkResumeEligibility } from "../taskplane/resume.ts";
 import type { OrchBatchPhase, PersistedBatchState } from "../taskplane/types.ts";
-import { BATCH_STATE_SCHEMA_VERSION, defaultResilienceState, defaultBatchDiagnostics } from "../taskplane/types.ts";
+import {
+	BATCH_STATE_SCHEMA_VERSION,
+	defaultResilienceState,
+	defaultBatchDiagnostics,
+} from "../taskplane/types.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -63,10 +67,7 @@ function makeState(phase: OrchBatchPhase): PersistedBatchState {
 
 describe("merge failure → paused: source verification", () => {
 	it("engine.ts contains failedTasks > 0 → paused transition", () => {
-		const engineSource = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 
 		// Verify the TP-031 pattern: failedTasks > 0 → "paused" (not "failed")
 		expect(engineSource).toContain('batchState.phase = "paused"');
@@ -77,10 +78,7 @@ describe("merge failure → paused: source verification", () => {
 	});
 
 	it("resume.ts contains failedTasks > 0 → paused transition (parity)", () => {
-		const resumeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "resume.ts"),
-			"utf-8",
-		);
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 
 		// Same pattern must exist in resume.ts for parity
 		expect(resumeSource).toContain('batchState.phase = "paused"');
@@ -91,10 +89,7 @@ describe("merge failure → paused: source verification", () => {
 	});
 
 	it("engine.ts preserves worktrees before cleanup when failedTasks > 0", () => {
-		const engineSource = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 
 		// Pre-cleanup preservation must appear BEFORE the cleanup section
 		const preserveIdx = engineSource.indexOf("preserveWorktreesForResume = true");
@@ -106,20 +101,19 @@ describe("merge failure → paused: source verification", () => {
 
 		// Find the FIRST occurrence of the pre-cleanup preservation (the one before cleanup)
 		// The pattern includes failedTasks > 0 check
-		const preCleanupPattern = "pre-cleanup: failedTasks > 0 detected, preserving worktrees for resume";
+		const preCleanupPattern =
+			"pre-cleanup: failedTasks > 0 detected, preserving worktrees for resume";
 		const preCleanupIdx = engineSource.indexOf(preCleanupPattern);
 		expect(preCleanupIdx).toBeGreaterThan(-1);
 		expect(preCleanupIdx).toBeLessThan(cleanupIdx);
 	});
 
 	it("resume.ts preserves worktrees before cleanup when failedTasks > 0 (parity)", () => {
-		const resumeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "resume.ts"),
-			"utf-8",
-		);
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 
 		// Same pre-cleanup preservation must exist in resume.ts
-		const preCleanupPattern = "pre-cleanup: failedTasks > 0 detected, preserving worktrees for resume";
+		const preCleanupPattern =
+			"pre-cleanup: failedTasks > 0 detected, preserving worktrees for resume";
 		const preCleanupIdx = resumeSource.indexOf(preCleanupPattern);
 		expect(preCleanupIdx).toBeGreaterThan(-1);
 
@@ -132,10 +126,7 @@ describe("merge failure → paused: source verification", () => {
 	});
 
 	it("engine.ts transitions to 'completed' when failedTasks === 0 (success path)", () => {
-		const engineSource = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 
 		// Use "Normal completion" as the unique anchor for the finalization block
 		const anchorMarker = "Normal completion (not stopped, paused, or aborted)";
@@ -155,10 +146,7 @@ describe("merge failure → paused: source verification", () => {
 	});
 
 	it("resume.ts transitions to 'completed' when failedTasks === 0 (success path parity)", () => {
-		const resumeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "resume.ts"),
-			"utf-8",
-		);
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 
 		// Use the TP-031 parity comment as unique anchor for the finalization block
 		const anchorMarker = "TP-031: Parity with engine.ts";

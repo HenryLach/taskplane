@@ -121,7 +121,9 @@ describe("TP-188 sub-fix A: reviewer prompt has Quality-check verification secti
 		const sectionStart = reviewerPromptSrc.indexOf("## Quality-check verification");
 		const sectionEnd = reviewerPromptSrc.indexOf("## Verdict Criteria", sectionStart);
 		const section = reviewerPromptSrc.slice(sectionStart, sectionEnd);
-		expect(section.toLowerCase()).toMatch(/do not run[^\n]*test suite|not[^\n]*full[^\n]*test|fast static/);
+		expect(section.toLowerCase()).toMatch(
+			/do not run[^\n]*test suite|not[^\n]*full[^\n]*test|fast static/,
+		);
 	});
 
 	it("1.10: skip-silently rule — missing config + missing scripts must not trigger REVISE on its own", () => {

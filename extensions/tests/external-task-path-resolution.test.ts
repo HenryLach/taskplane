@@ -28,10 +28,7 @@ import {
 	parseWorktreeStatusMd,
 } from "../taskplane/execution.ts";
 
-import {
-	discoverAbortSessionNames,
-	selectAbortTargetSessions,
-} from "../taskplane/abort.ts";
+import { discoverAbortSessionNames, selectAbortTargetSessions } from "../taskplane/abort.ts";
 
 // ── Test Helpers ──────────────────────────────────────────────────────
 
@@ -318,7 +315,7 @@ describe("parseWorktreeStatusMd", () => {
 		expect(parsed).not.toBeNull();
 		// ParsedWorktreeStatus has a steps array — verify step parsing
 		expect(parsed!.steps.length).toBeGreaterThanOrEqual(2);
-		const inProgressStep = parsed!.steps.find(s => s.status === "in-progress");
+		const inProgressStep = parsed!.steps.find((s) => s.status === "in-progress");
 		expect(inProgressStep).toBeDefined();
 		expect(inProgressStep!.name).toContain("Implement feature");
 		// Aggregate checkbox counts across steps
@@ -337,7 +334,7 @@ describe("parseWorktreeStatusMd", () => {
 
 		expect(error).toBeNull();
 		expect(parsed).not.toBeNull();
-		const inProgressStep = parsed!.steps.find(s => s.status === "in-progress");
+		const inProgressStep = parsed!.steps.find((s) => s.status === "in-progress");
 		expect(inProgressStep).toBeDefined();
 		expect(inProgressStep!.name).toContain("Implement feature");
 	});
@@ -377,16 +374,20 @@ describe("selectAbortTargetSessions", () => {
 		const targets = selectAbortTargetSessions(
 			["orch-lane-1"],
 			null, // no persisted state
-			[{
-				laneId: "lane-1",
-				laneNumber: 1,
-				worktreePath,
-				laneSessionId: "orch-lane-1",
-				tasks: [{
-					taskId: "TP-060",
-					task: { taskFolder } as any,
-				}] as any[],
-			} as any],
+			[
+				{
+					laneId: "lane-1",
+					laneNumber: 1,
+					worktreePath,
+					laneSessionId: "orch-lane-1",
+					tasks: [
+						{
+							taskId: "TP-060",
+							task: { taskFolder } as any,
+						},
+					] as any[],
+				} as any,
+			],
 			repoRoot,
 			"orch",
 		);
@@ -397,9 +398,7 @@ describe("selectAbortTargetSessions", () => {
 		expect(target.taskFolderInWorktree).not.toBeNull();
 		// Must be under worktreePath for repo-contained tasks
 		expect(norm(target.taskFolderInWorktree!).startsWith(norm(worktreePath))).toBe(true);
-		expect(norm(target.taskFolderInWorktree!)).toBe(
-			norm(join(worktreePath, "tasks", "TP-060")),
-		);
+		expect(norm(target.taskFolderInWorktree!)).toBe(norm(join(worktreePath, "tasks", "TP-060")));
 	});
 
 	it("resolves external task folder to absolute canonical path (not under worktree)", () => {
@@ -409,16 +408,20 @@ describe("selectAbortTargetSessions", () => {
 		const targets = selectAbortTargetSessions(
 			["orch-lane-1"],
 			null,
-			[{
-				laneId: "lane-1",
-				laneNumber: 1,
-				worktreePath,
-				laneSessionId: "orch-lane-1",
-				tasks: [{
-					taskId: "TP-061-ext",
-					task: { taskFolder } as any,
-				}] as any[],
-			} as any],
+			[
+				{
+					laneId: "lane-1",
+					laneNumber: 1,
+					worktreePath,
+					laneSessionId: "orch-lane-1",
+					tasks: [
+						{
+							taskId: "TP-061-ext",
+							task: { taskFolder } as any,
+						},
+					] as any[],
+				} as any,
+			],
 			repoRoot,
 			"orch",
 		);
@@ -442,16 +445,20 @@ describe("selectAbortTargetSessions", () => {
 		const targets = selectAbortTargetSessions(
 			["orch-lane-1"],
 			null,
-			[{
-				laneId: "lane-1",
-				laneNumber: 1,
-				worktreePath,
-				laneSessionId: "orch-lane-1",
-				tasks: [{
-					taskId: "TP-062-ext-archived",
-					task: { taskFolder } as any,
-				}] as any[],
-			} as any],
+			[
+				{
+					laneId: "lane-1",
+					laneNumber: 1,
+					worktreePath,
+					laneSessionId: "orch-lane-1",
+					tasks: [
+						{
+							taskId: "TP-062-ext-archived",
+							task: { taskFolder } as any,
+						},
+					] as any[],
+				} as any,
+			],
 			repoRoot,
 			"orch",
 		);
@@ -473,16 +480,20 @@ describe("selectAbortTargetSessions", () => {
 		const targets = selectAbortTargetSessions(
 			["orch-lane-1"],
 			null,
-			[{
-				laneId: "lane-1",
-				laneNumber: 1,
-				worktreePath,
-				laneSessionId: "orch-lane-1",
-				tasks: [{
-					taskId: "TP-063-archived",
-					task: { taskFolder } as any,
-				}] as any[],
-			} as any],
+			[
+				{
+					laneId: "lane-1",
+					laneNumber: 1,
+					worktreePath,
+					laneSessionId: "orch-lane-1",
+					tasks: [
+						{
+							taskId: "TP-063-archived",
+							task: { taskFolder } as any,
+						},
+					] as any[],
+				} as any,
+			],
 			repoRoot,
 			"orch",
 		);
@@ -496,13 +507,15 @@ describe("selectAbortTargetSessions", () => {
 		const targets = selectAbortTargetSessions(
 			["orch-lane-1"],
 			null,
-			[{
-				laneId: "lane-1",
-				laneNumber: 1,
-				worktreePath,
-				laneSessionId: "orch-lane-1",
-				tasks: [] as any[],
-			} as any],
+			[
+				{
+					laneId: "lane-1",
+					laneNumber: 1,
+					worktreePath,
+					laneSessionId: "orch-lane-1",
+					tasks: [] as any[],
+				} as any,
+			],
 			repoRoot,
 			"orch",
 		);
@@ -515,13 +528,15 @@ describe("selectAbortTargetSessions", () => {
 		const taskFolder = join(externalTaskRoot, "TP-064-persisted-ext");
 
 		const persistedState = {
-			tasks: [{
-				taskId: "TP-064-persisted-ext",
-				sessionName: "orch-lane-1",
-				laneNumber: 1,
-				taskFolder,
-				status: "running",
-			}],
+			tasks: [
+				{
+					taskId: "TP-064-persisted-ext",
+					sessionName: "orch-lane-1",
+					laneNumber: 1,
+					taskFolder,
+					status: "running",
+				},
+			],
 		};
 
 		// No runtime lanes — only persisted data
@@ -605,17 +620,13 @@ describe("monorepo completion detection regression", () => {
 	});
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════
 // 6. discoverAbortSessionNames — Runtime V2 abort discovery
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("discoverAbortSessionNames", () => {
 	it("collects unique session names from runtime and persisted state", () => {
-		const runtimeLanes = [
-			{ laneSessionId: "orch-lane-1" },
-			{ laneSessionId: "orch-lane-2" },
-		] as any;
+		const runtimeLanes = [{ laneSessionId: "orch-lane-1" }, { laneSessionId: "orch-lane-2" }] as any;
 
 		const persistedState = {
 			lanes: [
@@ -629,36 +640,21 @@ describe("discoverAbortSessionNames", () => {
 		} as any;
 
 		const names = discoverAbortSessionNames("orch", persistedState, runtimeLanes).sort();
-		expect(names).toEqual([
-			"orch-lane-1",
-			"orch-lane-2",
-			"orch-lane-3",
-			"orch-merge-1",
-		]);
+		expect(names).toEqual(["orch-lane-1", "orch-lane-2", "orch-lane-3", "orch-merge-1"]);
 	});
 
 	it("supports persisted-only abort discovery when runtime lanes are empty", () => {
 		const persistedState = {
-			lanes: [
-				{ laneSessionId: "orch-api-lane-1" },
-			],
-			tasks: [
-				{ sessionName: "orch-api-merge-1" },
-			],
+			lanes: [{ laneSessionId: "orch-api-lane-1" }],
+			tasks: [{ sessionName: "orch-api-merge-1" }],
 		} as any;
 
 		const names = discoverAbortSessionNames("orch", persistedState, []).sort();
-		expect(names).toEqual([
-			"orch-api-lane-1",
-			"orch-api-merge-1",
-		]);
+		expect(names).toEqual(["orch-api-lane-1", "orch-api-merge-1"]);
 	});
 
 	it("filters out sessions that do not match the configured prefix", () => {
-		const runtimeLanes = [
-			{ laneSessionId: "other-lane-1" },
-			{ laneSessionId: "orch-lane-1" },
-		] as any;
+		const runtimeLanes = [{ laneSessionId: "other-lane-1" }, { laneSessionId: "orch-lane-1" }] as any;
 		const persistedState = {
 			lanes: [{ laneSessionId: "other-lane-2" }],
 			tasks: [{ sessionName: "orch-merge-1" }],
@@ -668,7 +664,6 @@ describe("discoverAbortSessionNames", () => {
 		expect(names).toEqual(["orch-lane-1", "orch-merge-1"]);
 	});
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════
 // 7. selectAbortTargetSessions — workspace-mode session matching (TP-004)
@@ -683,16 +678,10 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 			"unrelated-session",
 		];
 
-		const targets = selectAbortTargetSessions(
-			sessions,
-			null,
-			[],
-			repoRoot,
-			"orch",
-		);
+		const targets = selectAbortTargetSessions(sessions, null, [], repoRoot, "orch");
 
 		expect(targets.length).toBe(3);
-		expect(targets.map(t => t.sessionName).sort()).toEqual([
+		expect(targets.map((t) => t.sessionName).sort()).toEqual([
 			"orch-api-lane-1",
 			"orch-api-lane-2",
 			"orch-frontend-lane-1",
@@ -701,23 +690,17 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 
 	it("matches both repo-mode and workspace-mode sessions together", () => {
 		const sessions = [
-			"orch-lane-1",         // repo mode
-			"orch-api-lane-1",     // workspace mode
-			"orch-merge-1",        // repo mode merge
-			"orch-api-merge-1",    // workspace mode merge (hypothetical)
-			"other-session",       // unrelated
+			"orch-lane-1", // repo mode
+			"orch-api-lane-1", // workspace mode
+			"orch-merge-1", // repo mode merge
+			"orch-api-merge-1", // workspace mode merge (hypothetical)
+			"other-session", // unrelated
 		];
 
-		const targets = selectAbortTargetSessions(
-			sessions,
-			null,
-			[],
-			repoRoot,
-			"orch",
-		);
+		const targets = selectAbortTargetSessions(sessions, null, [], repoRoot, "orch");
 
 		expect(targets.length).toBe(4);
-		expect(targets.map(t => t.sessionName).sort()).toEqual([
+		expect(targets.map((t) => t.sessionName).sort()).toEqual([
 			"orch-api-lane-1",
 			"orch-api-merge-1",
 			"orch-lane-1",
@@ -729,31 +712,29 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 		const sessions = ["orch-api-lane-1"];
 
 		const persistedState = {
-			tasks: [{
-				taskId: "TP-080",
-				sessionName: "orch-api-lane-1",
-				laneNumber: 1,
-				taskFolder: join(repoRoot, "tasks", "TP-080"),
-				status: "running",
-			}],
-			lanes: [{
-				laneNumber: 1,
-				laneId: "api/lane-1",
-				laneSessionId: "orch-api-lane-1",
-				worktreePath: "/tmp/wt/lane-1",
-				branch: "orch-lane-1",
-				taskIds: ["TP-080"],
-				repoId: "api",
-			}],
+			tasks: [
+				{
+					taskId: "TP-080",
+					sessionName: "orch-api-lane-1",
+					laneNumber: 1,
+					taskFolder: join(repoRoot, "tasks", "TP-080"),
+					status: "running",
+				},
+			],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "api/lane-1",
+					laneSessionId: "orch-api-lane-1",
+					worktreePath: "/tmp/wt/lane-1",
+					branch: "orch-lane-1",
+					taskIds: ["TP-080"],
+					repoId: "api",
+				},
+			],
 		};
 
-		const targets = selectAbortTargetSessions(
-			sessions,
-			persistedState as any,
-			[],
-			repoRoot,
-			"orch",
-		);
+		const targets = selectAbortTargetSessions(sessions, persistedState as any, [], repoRoot, "orch");
 
 		expect(targets.length).toBe(1);
 		expect(targets[0].laneId).toBe("api/lane-1");
@@ -764,23 +745,19 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 		const sessions = ["orch-lane-1"];
 
 		const persistedState = {
-			tasks: [{
-				taskId: "TP-081",
-				sessionName: "orch-lane-1",
-				laneNumber: 1,
-				taskFolder: join(repoRoot, "tasks", "TP-081"),
-				status: "running",
-			}],
+			tasks: [
+				{
+					taskId: "TP-081",
+					sessionName: "orch-lane-1",
+					laneNumber: 1,
+					taskFolder: join(repoRoot, "tasks", "TP-081"),
+					status: "running",
+				},
+			],
 			lanes: [], // no lane records
 		};
 
-		const targets = selectAbortTargetSessions(
-			sessions,
-			persistedState as any,
-			[],
-			repoRoot,
-			"orch",
-		);
+		const targets = selectAbortTargetSessions(sessions, persistedState as any, [], repoRoot, "orch");
 
 		expect(targets.length).toBe(1);
 		// Falls back to `lane-${laneNumber}` when no PersistedLaneRecord
@@ -788,12 +765,7 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 	});
 
 	it("repo-mode behavior unchanged (regression)", () => {
-		const sessions = [
-			"orch-lane-1",
-			"orch-lane-2",
-			"orch-merge-1",
-			"orch-lane-1-worker",
-		];
+		const sessions = ["orch-lane-1", "orch-lane-2", "orch-merge-1", "orch-lane-1-worker"];
 
 		const persistedState = {
 			tasks: [
@@ -832,21 +804,15 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 			],
 		};
 
-		const targets = selectAbortTargetSessions(
-			sessions,
-			persistedState as any,
-			[],
-			repoRoot,
-			"orch",
-		);
+		const targets = selectAbortTargetSessions(sessions, persistedState as any, [], repoRoot, "orch");
 
 		// Should match lane-1, lane-2, merge-1, and lane-1-worker
 		// (worker sessions start with "lane-" so they match)
 		expect(targets.length).toBe(4);
-		
+
 		// Verify repo-mode laneIds are correctly resolved
-		const lane1 = targets.find(t => t.sessionName === "orch-lane-1");
-		const lane2 = targets.find(t => t.sessionName === "orch-lane-2");
+		const lane1 = targets.find((t) => t.sessionName === "orch-lane-1");
+		const lane2 = targets.find((t) => t.sessionName === "orch-lane-2");
 		expect(lane1?.laneId).toBe("lane-1");
 		expect(lane2?.laneId).toBe("lane-2");
 		expect(lane1?.taskId).toBe("TP-082");
@@ -854,37 +820,17 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 	});
 
 	it("does not match sessions with prefix but no lane/merge suffix", () => {
-		const sessions = [
-			"orch-dashboard",
-			"orch-monitor",
-			"orch-cleanup",
-		];
+		const sessions = ["orch-dashboard", "orch-monitor", "orch-cleanup"];
 
-		const targets = selectAbortTargetSessions(
-			sessions,
-			null,
-			[],
-			repoRoot,
-			"orch",
-		);
+		const targets = selectAbortTargetSessions(sessions, null, [], repoRoot, "orch");
 
 		expect(targets.length).toBe(0);
 	});
 
 	it("handles hyphenated prefix in workspace mode", () => {
-		const sessions = [
-			"orch-prod-api-lane-1",
-			"orch-prod-lane-1",
-			"orch-prod-merge-1",
-		];
+		const sessions = ["orch-prod-api-lane-1", "orch-prod-lane-1", "orch-prod-merge-1"];
 
-		const targets = selectAbortTargetSessions(
-			sessions,
-			null,
-			[],
-			repoRoot,
-			"orch-prod",
-		);
+		const targets = selectAbortTargetSessions(sessions, null, [], repoRoot, "orch-prod");
 
 		expect(targets.length).toBe(3);
 	});

@@ -28,10 +28,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Read extension.ts source for structural verification
-const extensionSource = readFileSync(
-	join(__dirname, "..", "taskplane", "extension.ts"),
-	"utf-8",
-);
+const extensionSource = readFileSync(join(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 
 // ══════════════════════════════════════════════════════════════════════
 // 1.x — Tool registration
@@ -64,7 +61,14 @@ describe("1.x: Orchestrator tools are registered", () => {
 	});
 
 	it("1.7: exactly 6 orchestrator tools registered (no duplicates)", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
+		const toolNames = [
+			"orch_status",
+			"orch_pause",
+			"orch_resume",
+			"orch_abort",
+			"orch_integrate",
+			"orch_start",
+		];
 		for (const name of toolNames) {
 			const regex = new RegExp(`name:\\s*"${name}"`, "g");
 			const matches = extensionSource.match(regex);
@@ -73,7 +77,14 @@ describe("1.x: Orchestrator tools are registered", () => {
 	});
 
 	it("1.8: all tools have description, promptSnippet, and promptGuidelines", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
+		const toolNames = [
+			"orch_status",
+			"orch_pause",
+			"orch_resume",
+			"orch_abort",
+			"orch_integrate",
+			"orch_start",
+		];
 		for (const name of toolNames) {
 			// Find the tool registration block
 			const idx = extensionSource.indexOf(`name: "${name}"`);
@@ -131,13 +142,13 @@ describe("2.x: Tool parameter schemas are correct", () => {
 	it("2.3: orch_resume has optional force boolean parameter", () => {
 		const block = getToolBlock("orch_resume");
 		expect(block).toContain("force:");
-		expect(block).toContain("Type.Optional(Type.Boolean(");
+		expect(block).toContainNormalized("Type.Optional(Type.Boolean(");
 	});
 
 	it("2.4: orch_abort has optional hard boolean parameter", () => {
 		const block = getToolBlock("orch_abort");
 		expect(block).toContain("hard:");
-		expect(block).toContain("Type.Optional(Type.Boolean(");
+		expect(block).toContainNormalized("Type.Optional(Type.Boolean(");
 	});
 
 	it("2.5: orch_integrate has mode, force, and branch parameters", () => {
@@ -158,7 +169,14 @@ describe("2.x: Tool parameter schemas are correct", () => {
 	});
 
 	it("2.7: all tool execute handlers catch errors and return text results", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
+		const toolNames = [
+			"orch_status",
+			"orch_pause",
+			"orch_resume",
+			"orch_abort",
+			"orch_integrate",
+			"orch_start",
+		];
 		for (const name of toolNames) {
 			const block = getToolBlock(name);
 			expect(block, `${name} should have try/catch`).toContain("} catch (err)");

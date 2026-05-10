@@ -28,38 +28,31 @@ import {
 describe("buildWorkerToolsAllowlist", () => {
 	it("undefined input → returns DEFAULT_WORKER_USER_TOOLS + bridge tools", () => {
 		const result = buildWorkerToolsAllowlist(undefined);
-		const expected =
-			DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
+		const expected = DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
 		assert.strictEqual(result, expected);
 	});
 
 	it("null input → same as undefined", () => {
 		const result = buildWorkerToolsAllowlist(null);
-		const expected =
-			DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
+		const expected = DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
 		assert.strictEqual(result, expected);
 	});
 
 	it("empty string input → same as undefined", () => {
 		const result = buildWorkerToolsAllowlist("");
-		const expected =
-			DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
+		const expected = DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
 		assert.strictEqual(result, expected);
 	});
 
 	it("whitespace-only string input → same as undefined", () => {
 		const result = buildWorkerToolsAllowlist("   \t  ");
-		const expected =
-			DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
+		const expected = DEFAULT_WORKER_USER_TOOLS + "," + ENGINE_BRIDGE_TOOLS.join(",");
 		assert.strictEqual(result, expected);
 	});
 
 	it("custom user tools → returns user tools + bridge tools (in order)", () => {
 		const result = buildWorkerToolsAllowlist("read,write");
-		assert.strictEqual(
-			result,
-			"read,write," + ENGINE_BRIDGE_TOOLS.join(","),
-		);
+		assert.strictEqual(result, "read,write," + ENGINE_BRIDGE_TOOLS.join(","));
 	});
 
 	it("user tools that already include a bridge tool → no duplication", () => {
@@ -104,8 +97,7 @@ describe("buildWorkerToolsAllowlist", () => {
 		const result = buildWorkerToolsAllowlist("read,write,read,bash");
 		const tokens = result.split(",");
 		const unique = new Set(tokens);
-		assert.strictEqual(tokens.length, unique.size,
-			"each tool should appear exactly once");
+		assert.strictEqual(tokens.length, unique.size, "each tool should appear exactly once");
 	});
 
 	it("delimiter-only input → falls back to default user tools (regression for sage-flagged empty-list bug)", () => {
@@ -147,10 +139,12 @@ describe("ENGINE_BRIDGE_TOOLS", () => {
 	});
 
 	it("entries are exactly review_step, notify_supervisor, escalate_to_supervisor, request_segment_expansion", () => {
-		assert.deepStrictEqual(
-			[...ENGINE_BRIDGE_TOOLS].sort(),
-			["escalate_to_supervisor", "notify_supervisor", "request_segment_expansion", "review_step"],
-		);
+		assert.deepStrictEqual([...ENGINE_BRIDGE_TOOLS].sort(), [
+			"escalate_to_supervisor",
+			"notify_supervisor",
+			"request_segment_expansion",
+			"review_step",
+		]);
 	});
 
 	it("each entry is registered as a tool name in agent-bridge-extension.ts", () => {

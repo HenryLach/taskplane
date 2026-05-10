@@ -11,23 +11,11 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
-import {
-	resolveContextWindow,
-	FALLBACK_CONTEXT_WINDOW,
-} from "../taskplane/context-window.ts";
+import { resolveContextWindow, FALLBACK_CONTEXT_WINDOW } from "../taskplane/context-window.ts";
 import { loadConfig as taskRunnerLoadConfig } from "../taskplane/config-loader.ts";
-import {
-	loadProjectConfig,
-	toTaskConfig,
-} from "../taskplane/config-loader.ts";
-import {
-	DEFAULT_TASK_RUNNER_SECTION,
-} from "../taskplane/config-schema.ts";
-import {
-	mkdirSync,
-	writeFileSync,
-	rmSync,
-} from "fs";
+import { loadProjectConfig, toTaskConfig } from "../taskplane/config-loader.ts";
+import { DEFAULT_TASK_RUNNER_SECTION } from "../taskplane/config-schema.ts";
+import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -70,11 +58,13 @@ function writeJsonConfig(root: string, obj: any): void {
 }
 
 /** Create a minimal TaskConfig with overridable context values. */
-function makeConfig(overrides?: Partial<{
-	worker_context_window: number;
-	warn_percent: number;
-	kill_percent: number;
-}>): any {
+function makeConfig(
+	overrides?: Partial<{
+		worker_context_window: number;
+		warn_percent: number;
+		kill_percent: number;
+	}>,
+): any {
 	return {
 		project: { name: "Test", description: "" },
 		paths: { tasks: "tasks" },
@@ -103,11 +93,7 @@ function makeConfig(overrides?: Partial<{
 }
 
 /** Create a mock ExtensionContext with optional model info. */
-function makeCtx(model?: {
-	contextWindow?: number;
-	provider?: string;
-	id?: string;
-}): any {
+function makeCtx(model?: { contextWindow?: number; provider?: string; id?: string }): any {
 	if (!model) {
 		return { model: undefined };
 	}
@@ -237,11 +223,7 @@ describe("warn_percent and kill_percent defaults", () => {
 
 	it("2.6: explicit YAML overrides for warn/kill are still respected", () => {
 		const dir = makeTestDir("explicit-warn-kill");
-		writeTaskRunnerYaml(dir, [
-			"context:",
-			"  warn_percent: 60",
-			"  kill_percent: 80",
-		].join("\n"));
+		writeTaskRunnerYaml(dir, ["context:", "  warn_percent: 60", "  kill_percent: 80"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.context.warnPercent).toBe(60);
@@ -303,10 +285,7 @@ describe("workerContextWindow default signals auto-detect", () => {
 
 	it("3.5: explicit worker_context_window in YAML config is preserved", () => {
 		const dir = makeTestDir("cw-explicit-yaml");
-		writeTaskRunnerYaml(dir, [
-			"context:",
-			"  worker_context_window: 400000",
-		].join("\n"));
+		writeTaskRunnerYaml(dir, ["context:", "  worker_context_window: 400000"].join("\n"));
 
 		const config = loadProjectConfig(dir);
 		expect(config.taskRunner.context.workerContextWindow).toBe(400_000);

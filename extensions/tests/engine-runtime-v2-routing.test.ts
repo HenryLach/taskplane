@@ -18,19 +18,11 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 const executionSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
-const {
-	selectRuntimeBackend,
-} = await import("../taskplane/engine.ts");
-const {
-	mapLaneTaskStatusToTerminalSnapshotStatus,
-	mapLaneSnapshotStatusToWorkerStatus,
-} = await import("../taskplane/lane-runner.ts");
-const {
-	resolveTaskMonitorState,
-} = await import("../taskplane/execution.ts");
-const {
-	writeLaneSnapshot,
-} = await import("../taskplane/process-registry.ts");
+const { selectRuntimeBackend } = await import("../taskplane/engine.ts");
+const { mapLaneTaskStatusToTerminalSnapshotStatus, mapLaneSnapshotStatusToWorkerStatus } =
+	await import("../taskplane/lane-runner.ts");
+const { resolveTaskMonitorState } = await import("../taskplane/execution.ts");
+const { writeLaneSnapshot } = await import("../taskplane/process-registry.ts");
 
 // ── 1. Backend selection logic in engine ─────────────────────────────
 
@@ -76,8 +68,8 @@ describe("2.x: executeWave backend parameter", () => {
 	});
 
 	it("2.3: executeWave routes lanes directly to executeLaneV2", () => {
-		expect(executionSrc).toContain("const lanePromises = lanes.map(lane =>");
-		expect(executionSrc).toContain("executeLaneV2(lane, config");
+		expect(executionSrc).toContainNormalized("const lanePromises = lanes.map((lane) =>");
+		expect(executionSrc).toContainNormalized("executeLaneV2(lane, config");
 	});
 
 	it("2.4: executeWave forces Runtime V2 even when backend is omitted", () => {
@@ -154,11 +146,16 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 	});
 
 	it("5.3: all makeResult calls pass config, statusPath, reviewerStatePath, and telemetry", () => {
+		// TP-193: Whitespace-normalize source so cosmetic formatter wrapping
+		// (multi-line argument lists) doesn't break literal-string match.
+		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
 		// Every return makeResult(...) should end with config, statusPath, reviewerStatePath[, lastTelemetry[, snapshotSegmentCtx]]
-		const calls = laneRunnerSrc.match(/return makeResult\(/g);
+		const calls = normSrc.match(/return makeResult\(/g);
 		// Worker-result calls pass lastTelemetry; skipped calls don't (no agent ran).
 		// TP-174: Calls may additionally pass snapshotSegmentCtx after lastTelemetry.
-		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, reviewerStatePath, lastTelemetry[^)]*\)/g);
+		const callsWithTelemetry = normSrc.match(
+			/config, statusPath, reviewerStatePath, lastTelemetry[^)]*\)/g,
+		);
 		expect(calls).not.toBe(null);
 		// At least 3 calls pass telemetry (failed, max-iter-failed, succeeded)
 		expect(callsWithTelemetry).not.toBe(null);
@@ -166,9 +163,14 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 	});
 
 	it("5.4: lastTelemetry is scoped across loop and post-loop completion checks", () => {
-		const declIdx = laneRunnerSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
-		const loopIdx = laneRunnerSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
-		const postLoopUseIdx = laneRunnerSrc.lastIndexOf("config, statusPath, reviewerStatePath, lastTelemetry");
+		// TP-193: Whitespace-normalize source so cosmetic formatter wrapping
+		// doesn't break literal-string indexOf lookups for multi-arg call sites.
+		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
+		const declIdx = normSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
+		const loopIdx = normSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
+		const postLoopUseIdx = normSrc.lastIndexOf(
+			"config, statusPath, reviewerStatePath, lastTelemetry",
+		);
 		expect(declIdx).toBeGreaterThan(-1);
 		expect(loopIdx).toBeGreaterThan(-1);
 		expect(postLoopUseIdx).toBeGreaterThan(-1);
@@ -206,12 +208,24 @@ describe("7.x: Behavioral backend and snapshot mapping", () => {
 		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("v2");
 		expect(selectRuntimeBackend("all", [["TP-001"], ["TP-002"]], null).backend).toBe("v2");
 		// Workspace mode also V2 (TP-109: packet-home authority threaded)
-		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
+		const ws = {
+			mode: "workspace",
+			repos: new Map(),
+			routing: {},
+			configPath: "x",
+			workspaceRoot: "x",
+		} as any;
 		expect(selectRuntimeBackend("all", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
 	it("7.2: selectRuntimeBackend returns v2 in workspace mode (TP-109)", () => {
-		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
+		const ws = {
+			mode: "workspace",
+			repos: new Map(),
+			routing: {},
+			configPath: "x",
+			workspaceRoot: "x",
+		} as any;
 		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
@@ -291,9 +305,14 @@ describe("9.x: Merge host V2 migration (TP-108)", () => {
 	});
 
 	it("9.5: mergeWave routes spawn to V2 when backend is v2", () => {
-		// Both retry and first-attempt paths must have V2 routing
+		// Both retry and first-attempt paths must have V2 routing.
+		// TP-193 fold: bumped slice window 16000 → 24000. The original 16000 was
+		// tight against the post-format-pass `merge.ts` length; the second
+		// `spawnMergeAgentV2(` call landed at ~offset 15999 in the merged state,
+		// putting its opening paren just outside the window. 24000 leaves
+		// comfortable headroom for future formatter-induced growth.
 		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
-		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
+		const block = mergeSrc.slice(fnIdx, fnIdx + 24000);
 		const v2SpawnCount = (block.match(/spawnMergeAgentV2\(/g) || []).length;
 		expect(v2SpawnCount).toBeGreaterThanOrEqual(2); // first attempt + retry
 	});
@@ -404,14 +423,17 @@ describe("11.x: Merge V2 liveness + abort correctness", () => {
 	});
 
 	it("11.6: merge path has no TMUX health-monitor registration", () => {
+		// TP-193 fold: bumped slice window 16000 → 24000 (same rationale as 9.5
+		// above — the post-format-pass mergeWave function is ~16k chars and a
+		// 16000 slice is tight against future growth).
 		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
-		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
+		const block = mergeSrc.slice(fnIdx, fnIdx + 24000);
 		expect(block).not.toContain("addSession");
 	});
 
 	it("11.7: abort discovery uses Runtime V2 state sources (no tmux list-sessions)", () => {
 		expect(abortSrc).toContain("discoverAbortSessionNames(");
-		expect(abortSrc).not.toContain('execSync(\'tmux list-sessions');
+		expect(abortSrc).not.toContain("execSync('tmux list-sessions");
 	});
 
 	it("11.8: /orch-abort helper delegates to executeAbort without tmux kill-session", () => {
@@ -432,7 +454,7 @@ describe("12.x: Resume TDZ safety", () => {
 		const declIdx = resumeSrc.indexOf("const resumeBackend: RuntimeBackend");
 		expect(declIdx).toBeGreaterThan(-1);
 		// Check ALL uses — not just mergeWaveByRepo but also section 3 liveness
-		const allUses = [...resumeSrc.matchAll(/resumeBackend/g)].map(m => m.index!);
+		const allUses = [...resumeSrc.matchAll(/resumeBackend/g)].map((m) => m.index!);
 		for (const useIdx of allUses) {
 			if (useIdx === declIdx) continue; // skip the declaration itself
 			expect(declIdx).toBeLessThan(useIdx);
@@ -580,7 +602,7 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		const block = execSrc.slice(fnIdx, nextSectionIdx > fnIdx ? nextSectionIdx : fnIdx + 1200);
 		expect(block).toContain("process.kill");
 		expect(block).toContain("SIGTERM");
-		expect(block).not.toContain("spawn(\"tmux\"");
+		expect(block).not.toContain('spawn("tmux"');
 	});
 
 	it("14.7: executeWave passes batchId and resolved state root to monitorLanes", () => {
@@ -594,11 +616,15 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 	});
 
 	it("14.8: final cleanup kills lingering Runtime V2 agents without TMUX fallbacks", () => {
-		const cleanupIdx = engineSrc.indexOf("Kill lingering Runtime V2 agents BEFORE removing worktrees.");
+		const cleanupIdx = engineSrc.indexOf(
+			"Kill lingering Runtime V2 agents BEFORE removing worktrees.",
+		);
 		expect(cleanupIdx).toBeGreaterThan(-1);
 		const cleanupBlock = engineSrc.slice(cleanupIdx, cleanupIdx + 1600);
 		expect(cleanupBlock).toContain("readRegistrySnapshot(stateRoot, batchState.batchId)");
-		expect(cleanupBlock).toContain("lingeringLaneSessions.add(manifest.agentId.replace(/-(worker|reviewer)$/");
+		expect(cleanupBlock).toContain(
+			"lingeringLaneSessions.add(manifest.agentId.replace(/-(worker|reviewer)$/",
+		);
 		expect(cleanupBlock).toContain("killV2LaneAgents(sessionName");
 		expect(cleanupBlock).toContain("killAllMergeAgentsV2()");
 		expect(cleanupBlock).not.toContain("tmuxHasSession");

@@ -38,21 +38,19 @@ describe("1.x — task-worker.md prompt: TP-186 sections", () => {
 		// Heading uses the warning emoji + "Order of Operations" phrase.
 		expect(WORKER_PROMPT).toContain("Order of Operations for steps with code review");
 		// The MUST NOT prohibition that the entire fix hinges on.
-		expect(WORKER_PROMPT).toContain(
-			"Workers MUST NOT mark a step `Status: ✅ Complete`",
-		);
+		expect(WORKER_PROMPT).toContain("Workers MUST NOT mark a step `Status: ✅ Complete`");
 		// 5–6 step numbered sequence: implement, commit, call review_step,
 		// handle REVISE, mark Complete on APPROVE, move on.
 		expect(WORKER_PROMPT).toContain("1. **Implement**");
 		expect(WORKER_PROMPT).toContain("2. **Commit**");
-		expect(WORKER_PROMPT).toContain("3. **Call** `review_step(step=N, type=\"code\"");
+		expect(WORKER_PROMPT).toContain('3. **Call** `review_step(step=N, type="code"');
 		expect(WORKER_PROMPT).toContain("5. If the verdict is **APPROVE**");
 		expect(WORKER_PROMPT).toContain("6. **Move to step N+1.**");
 	});
 
 	it("1.2 — contains the Recovery Recipe with the keyword 'revert'", () => {
 		expect(WORKER_PROMPT).toContain(
-			"Recovery: \"I marked the step Complete, then the reviewer returned REVISE\"",
+			'Recovery: "I marked the step Complete, then the reviewer returned REVISE"',
 		);
 		// The recipe must explicitly use "revert" — that's the operative verb
 		// the engine guard's refusal message also points at.
@@ -89,9 +87,7 @@ describe("1.x — task-worker.md prompt: TP-186 sections", () => {
 		// where the step is NOT actually done until the code reviewer
 		// returns APPROVE. The fix splits step 6 by Review Level. Guard
 		// against accidental drift back to the pre-TP-189 wording.
-		const stepSixIdx = WORKER_PROMPT.indexOf(
-			"6. When a step's checkbox items are all checked",
-		);
+		const stepSixIdx = WORKER_PROMPT.indexOf("6. When a step's checkbox items are all checked");
 		expect(stepSixIdx).toBeGreaterThan(-1);
 		const stepSixEnd = WORKER_PROMPT.indexOf("\n7. ", stepSixIdx);
 		expect(stepSixEnd).toBeGreaterThan(stepSixIdx);
@@ -227,10 +223,7 @@ describe("2.x — isStepMarkedComplete helper", () => {
 		// Worker queries step 99, which has no `### Step 99:` heading.
 		// Must not refuse on unusual STATUS structures — the prompt-side
 		// recipe is the primary defense.
-		const status = [
-			"### Step 1: Only step",
-			"**Status:** ✅ Complete",
-		].join("\n");
+		const status = ["### Step 1: Only step", "**Status:** ✅ Complete"].join("\n");
 		withTempStatus(status, (statusPath) => {
 			expect(isStepMarkedComplete(statusPath, 99)).toBe(false);
 		});
@@ -454,7 +447,7 @@ describe("3.x — Recovery Recipe / refusal message wording consistency", () => 
 		// 3. Re-call — prompt wraps the line, but the operative phrase
 		// `review_step(step=N, type="code")` again` is uninterrupted.
 		expect(engineSrc).toContain("Re-call review_step");
-		expect(WORKER_PROMPT).toContain("`review_step(step=N, type=\"code\")` again");
+		expect(WORKER_PROMPT).toContain('`review_step(step=N, type="code")` again');
 	});
 
 	it("3.2 — engine refusal carries the literal token REFUSED and references the Order of Operations rule", () => {
@@ -469,6 +462,6 @@ describe("3.x — Recovery Recipe / refusal message wording consistency", () => 
 		// reviews fire pre-implementation, when an empty STATUS is correct.
 		const enginePath = join(REPO_ROOT, "extensions", "taskplane", "agent-bridge-extension.ts");
 		const engineSrc = readFileSync(enginePath, "utf-8");
-		expect(engineSrc).toContain("if (reviewType !== \"plan\" && isStepMarkedComplete(");
+		expect(engineSrc).toContain('if (reviewType !== "plan" && isStepMarkedComplete(');
 	});
 });

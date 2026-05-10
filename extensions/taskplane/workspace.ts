@@ -54,7 +54,6 @@ import {
 	type PointerResolution,
 } from "./types.ts";
 
-
 // ── Path Canonicalization ────────────────────────────────────────────
 
 /**
@@ -107,7 +106,6 @@ function isPathWithinContainer(childPath: string, parentPath: string): boolean {
 	const parent = canonicalizePath(parentPath, "");
 	return child === parent || child.startsWith(`${parent}/`);
 }
-
 
 // ── Pointer Resolution ───────────────────────────────────────────────
 
@@ -287,7 +285,6 @@ export function resolvePointer(
 	};
 }
 
-
 // ── Workspace Config Loading ─────────────────────────────────────────
 
 /**
@@ -453,9 +450,10 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		normalizedPaths.set(normalizedPath, repoId);
 
 		// Build repo config
-		const defaultBranch = typeof repoEntry.default_branch === "string" && repoEntry.default_branch.trim()
-			? repoEntry.default_branch.trim()
-			: undefined;
+		const defaultBranch =
+			typeof repoEntry.default_branch === "string" && repoEntry.default_branch.trim()
+				? repoEntry.default_branch.trim()
+				: undefined;
 
 		repos.set(repoId, {
 			id: repoId,
@@ -587,7 +585,6 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	};
 }
 
-
 // ── Cross-Config Validation ─────────────────────────────────────────
 
 /**
@@ -603,7 +600,7 @@ export function validateTaskAreasWithinTasksRoot(
 ): void {
 	const tasksRoot = workspaceConfig.routing.tasksRoot;
 	const areaEntries = Object.entries(taskRunnerConfig.task_areas ?? {}).sort((a, b) =>
-		a[0].localeCompare(b[0])
+		a[0].localeCompare(b[0]),
 	);
 
 	for (const [areaName, area] of areaEntries) {
@@ -619,7 +616,6 @@ export function validateTaskAreasWithinTasksRoot(
 		}
 	}
 }
-
 
 // ── Execution Context Builder ────────────────────────────────────────
 
@@ -643,8 +639,14 @@ function isInsideGitRepo(cwd: string): boolean {
 
 export function buildExecutionContext(
 	cwd: string,
-	loadOrchConfig: (root: string, pointerConfigRoot?: string) => import("./types.ts").OrchestratorConfig,
-	loadTaskConfig: (root: string, pointerConfigRoot?: string) => import("./types.ts").TaskRunnerConfig,
+	loadOrchConfig: (
+		root: string,
+		pointerConfigRoot?: string,
+	) => import("./types.ts").OrchestratorConfig,
+	loadTaskConfig: (
+		root: string,
+		pointerConfigRoot?: string,
+	) => import("./types.ts").TaskRunnerConfig,
 ): import("./types.ts").ExecutionContext {
 	const workspaceConfig = loadWorkspaceConfig(cwd);
 
@@ -656,7 +658,7 @@ export function buildExecutionContext(
 			throw new WorkspaceConfigError(
 				"WORKSPACE_SETUP_REQUIRED",
 				`No workspace config found at ${wsConfigFile}, and current directory is not a git repository: ${cwd}. ` +
-				`Run Taskplane from a git repository, or create ${wsConfigFile} (taskplane init) to use workspace mode.`,
+					`Run Taskplane from a git repository, or create ${wsConfigFile} (taskplane init) to use workspace mode.`,
 				undefined,
 				cwd,
 			);

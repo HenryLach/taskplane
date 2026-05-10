@@ -66,12 +66,14 @@ function cmdResult(overrides: Partial<CommandResult> & { commandId: string }): C
 describe("R009-1: Parser edge cases — suite-level vitest failures", () => {
 	it("1.1: suite-level failure with no assertionResults emits runtime_error fingerprint", () => {
 		const vitestOutput = JSON.stringify({
-			testResults: [{
-				name: "src/broken.test.ts",
-				status: "failed",
-				message: "Cannot find module './missing'",
-				assertionResults: [],
-			}],
+			testResults: [
+				{
+					name: "src/broken.test.ts",
+					status: "failed",
+					message: "Cannot find module './missing'",
+					assertionResults: [],
+				},
+			],
 		});
 
 		const fps = parseVitestOutput("test", vitestOutput);
@@ -86,11 +88,13 @@ describe("R009-1: Parser edge cases — suite-level vitest failures", () => {
 
 	it("1.2: suite-level failure with undefined assertionResults emits runtime_error", () => {
 		const vitestOutput = JSON.stringify({
-			testResults: [{
-				name: "src/setup-crash.test.ts",
-				status: "failed",
-				message: "SyntaxError: Unexpected token",
-			}],
+			testResults: [
+				{
+					name: "src/setup-crash.test.ts",
+					status: "failed",
+					message: "SyntaxError: Unexpected token",
+				},
+			],
 		});
 
 		const fps = parseVitestOutput("test", vitestOutput);
@@ -104,16 +108,20 @@ describe("R009-1: Parser edge cases — suite-level vitest failures", () => {
 		// Edge case: file-level status = "failed" but all assertions passed
 		// (e.g., afterAll hook failure)
 		const vitestOutput = JSON.stringify({
-			testResults: [{
-				name: "src/hook-crash.test.ts",
-				status: "failed",
-				message: "afterAll hook failed",
-				assertionResults: [{
-					fullName: "should pass",
-					status: "passed",
-					failureMessages: [],
-				}],
-			}],
+			testResults: [
+				{
+					name: "src/hook-crash.test.ts",
+					status: "failed",
+					message: "afterAll hook failed",
+					assertionResults: [
+						{
+							fullName: "should pass",
+							status: "passed",
+							failureMessages: [],
+						},
+					],
+				},
+			],
 		});
 
 		const fps = parseVitestOutput("test", vitestOutput);
@@ -126,16 +134,20 @@ describe("R009-1: Parser edge cases — suite-level vitest failures", () => {
 	it("1.4: suite-level failure with failed assertionResults does NOT emit extra suite fingerprint", () => {
 		// When we already have assertion-level failures, don't add a redundant suite fingerprint
 		const vitestOutput = JSON.stringify({
-			testResults: [{
-				name: "src/mixed.test.ts",
-				status: "failed",
-				message: "Some tests failed",
-				assertionResults: [{
-					fullName: "should add",
+			testResults: [
+				{
+					name: "src/mixed.test.ts",
 					status: "failed",
-					failureMessages: ["AssertionError: expected 2 to be 3"],
-				}],
-			}],
+					message: "Some tests failed",
+					assertionResults: [
+						{
+							fullName: "should add",
+							status: "failed",
+							failureMessages: ["AssertionError: expected 2 to be 3"],
+						},
+					],
+				},
+			],
 		});
 
 		const fps = parseVitestOutput("test", vitestOutput);
@@ -147,12 +159,14 @@ describe("R009-1: Parser edge cases — suite-level vitest failures", () => {
 
 	it("1.5: suite-level failure with no message uses fallback message", () => {
 		const vitestOutput = JSON.stringify({
-			testResults: [{
-				name: "src/mystery.test.ts",
-				status: "failed",
-				// No message field at all
-				assertionResults: [],
-			}],
+			testResults: [
+				{
+					name: "src/mystery.test.ts",
+					status: "failed",
+					// No message field at all
+					assertionResults: [],
+				},
+			],
 		});
 
 		const fps = parseVitestOutput("test", vitestOutput);
@@ -191,15 +205,19 @@ describe("R009-1: Parser edge cases — non-zero exit with empty parsed output �
 	it("1.7: non-zero exit with valid JSON but no failures falls back to command_error", () => {
 		// Vitest JSON is valid but testResults has no failed entries
 		const vitestOutput = JSON.stringify({
-			testResults: [{
-				name: "src/ok.test.ts",
-				status: "passed",
-				assertionResults: [{
-					fullName: "should work",
+			testResults: [
+				{
+					name: "src/ok.test.ts",
 					status: "passed",
-					failureMessages: [],
-				}],
-			}],
+					assertionResults: [
+						{
+							fullName: "should work",
+							status: "passed",
+							failureMessages: [],
+						},
+					],
+				},
+			],
 		});
 
 		const result = cmdResult({
@@ -273,7 +291,15 @@ describe("R009-1: Parser edge cases — non-zero exit with empty parsed output �
 		const result = cmdResult({
 			commandId: "test",
 			exitCode: -1,
-			stdout: JSON.stringify({ testResults: [{ name: "a.ts", status: "failed", assertionResults: [{ fullName: "x", status: "failed", failureMessages: ["fail"] }] }] }),
+			stdout: JSON.stringify({
+				testResults: [
+					{
+						name: "a.ts",
+						status: "failed",
+						assertionResults: [{ fullName: "x", status: "failed", failureMessages: ["fail"] }],
+					},
+				],
+			}),
 			stderr: "",
 			error: "Spawn error: ENOENT",
 		});
@@ -326,7 +352,7 @@ describe("R009-2: Rollback/advancement safety — merge.ts (source verification)
 
 	it("2.5: blockAdvancement prevents anySuccess determination", () => {
 		// anySuccess must check !blockAdvancement first
-		expect(mergeSource).toContain("const anySuccess = !blockAdvancement &&");
+		expect(mergeSource).toContainNormalized("const anySuccess = !blockAdvancement &&");
 	});
 
 	it("2.6: blockAdvancement true logs branch advancement BLOCKED message", () => {
@@ -335,7 +361,7 @@ describe("R009-2: Rollback/advancement safety — merge.ts (source verification)
 
 	it("2.7: verification_new_failure sets laneResult.error", () => {
 		// The lane error must be set so engine.ts/resume.ts can filter it
-		expect(mergeSource).toContain('laneResult.error = `verification_new_failure:');
+		expect(mergeSource).toContain("laneResult.error = `verification_new_failure:");
 	});
 
 	it("2.8: verification_new_failure sets failedLane and failureReason", () => {
@@ -375,8 +401,12 @@ describe("R009-2: Engine.ts counting + cleanup parity (source verification)", ()
 		// Both engine.ts and merge.ts should use the same success determination pattern
 		const mergeSource = readSource("merge.ts");
 		// Both should have: !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")
-		expect(engineSource).toContain('!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")');
-		expect(mergeSource).toContain('!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")');
+		expect(engineSource).toContain(
+			'!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")',
+		);
+		expect(mergeSource).toContain(
+			'!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")',
+		);
 	});
 });
 
@@ -397,8 +427,12 @@ describe("R009-2: Resume.ts counting + cleanup parity (source verification)", ()
 	it("2.15: resume.ts anySuccess pattern matches engine.ts pattern", () => {
 		const engineSource = readSource("engine.ts");
 		// Both should use the same success determination pattern
-		expect(resumeSource).toContain('!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")');
-		expect(engineSource).toContain('!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")');
+		expect(resumeSource).toContain(
+			'!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")',
+		);
+		expect(engineSource).toContain(
+			'!r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")',
+		);
 	});
 });
 
@@ -427,7 +461,9 @@ describe("R009-3: Workspace mode artifact naming — per-repo repoId suffix", ()
 	});
 
 	it("3.4: post-merge file naming pattern includes repoSuffix and laneNumber", () => {
-		expect(mergeSource).toContain("`post-b${batchId}-w${waveIndex}${repoSuffix}-lane${laneNumber}.json`");
+		expect(mergeSource).toContain(
+			"`post-b${batchId}-w${waveIndex}${repoSuffix}-lane${laneNumber}.json`",
+		);
 	});
 
 	it("3.5: repoId parameter is threaded to mergeWave from mergeWaveByRepo", () => {
@@ -447,7 +483,9 @@ describe("R009-3: Workspace mode artifact naming — per-repo repoId suffix", ()
 		const byRepoSection = mergeSource.indexOf("mergeWaveByRepo");
 		expect(byRepoSection).toBeGreaterThan(-1);
 		const afterByRepo = mergeSource.slice(byRepoSection);
-		expect(afterByRepo).toContain("Exclude verification_new_failure lanes from success determination");
+		expect(afterByRepo).toContain(
+			"Exclude verification_new_failure lanes from success determination",
+		);
 	});
 });
 
@@ -473,9 +511,7 @@ describe("Diff algorithm comprehensive tests", () => {
 	});
 
 	it("4.2: new failures correctly detected when mixed with pre-existing", () => {
-		const baseline = [
-			fp("test", "src/old.test.ts", "old failure", "assertion_error", "old msg"),
-		];
+		const baseline = [fp("test", "src/old.test.ts", "old failure", "assertion_error", "old msg")];
 		const postMerge = [
 			fp("test", "src/old.test.ts", "old failure", "assertion_error", "old msg"),
 			fp("test", "src/new.test.ts", "new regression", "assertion_error", "new msg"),
@@ -492,9 +528,7 @@ describe("Diff algorithm comprehensive tests", () => {
 			fp("test", "src/a.test.ts", "was broken", "assertion_error", "fixed now"),
 			fp("test", "src/b.test.ts", "still broken", "assertion_error", "still bad"),
 		];
-		const postMerge = [
-			fp("test", "src/b.test.ts", "still broken", "assertion_error", "still bad"),
-		];
+		const postMerge = [fp("test", "src/b.test.ts", "still broken", "assertion_error", "still bad")];
 
 		const diff = diffFingerprints(baseline, postMerge);
 		expect(diff.newFailures).toHaveLength(0);
@@ -520,9 +554,7 @@ describe("Diff algorithm comprehensive tests", () => {
 	});
 
 	it("4.5: composite key uses all five fields — same file/case but different kind is new", () => {
-		const baseline = [
-			fp("test", "a.ts", "test1", "assertion_error", "msg"),
-		];
+		const baseline = [fp("test", "a.ts", "test1", "assertion_error", "msg")];
 		const postMerge = [
 			fp("test", "a.ts", "test1", "runtime_error", "msg"), // different kind
 		];
@@ -533,9 +565,7 @@ describe("Diff algorithm comprehensive tests", () => {
 	});
 
 	it("4.6: composite key uses all five fields — same file/case but different commandId is new", () => {
-		const baseline = [
-			fp("unit", "a.ts", "test1", "assertion_error", "msg"),
-		];
+		const baseline = [fp("unit", "a.ts", "test1", "assertion_error", "msg")];
 		const postMerge = [
 			fp("e2e", "a.ts", "test1", "assertion_error", "msg"), // different commandId
 		];
@@ -546,9 +576,7 @@ describe("Diff algorithm comprehensive tests", () => {
 	});
 
 	it("4.7: composite key uses all five fields — same except messageNorm is new", () => {
-		const baseline = [
-			fp("test", "a.ts", "test1", "assertion_error", "expected 1 to be 2"),
-		];
+		const baseline = [fp("test", "a.ts", "test1", "assertion_error", "expected 1 to be 2")];
 		const postMerge = [
 			fp("test", "a.ts", "test1", "assertion_error", "expected 1 to be 3"), // different msg
 		];
@@ -614,13 +642,15 @@ describe("Flaky handling: flakyReruns control paths (source verification)", () =
 	it("5.4: flaky re-run only re-runs commands that produced new failures", () => {
 		// Must extract failed commandIds from diff.newFailures
 		expect(mergeSource).toContain("failedCommandIds");
-		expect(mergeSource).toContain("diff.newFailures.map(fp => fp.commandId)");
+		expect(mergeSource).toContainNormalized("diff.newFailures.map((fp) => fp.commandId)");
 	});
 
 	it("5.5: flaky re-run re-diffs against baseline (not full post-merge)", () => {
 		// The re-run diff should compare baseline against re-run, not against original post-merge
 		expect(mergeSource).toContain("baselineForRerun");
-		expect(mergeSource).toContain("baseline.fingerprints.filter(fp => failedCommandIds.has(fp.commandId))");
+		expect(mergeSource).toContainNormalized(
+			"baseline.fingerprints.filter((fp) => failedCommandIds.has(fp.commandId))",
+		);
 	});
 
 	it("5.6: flakyReruns > 1 iterates up to N times with early break", () => {
@@ -662,14 +692,18 @@ describe("Mode behavior: strict/permissive (source verification)", () => {
 
 	it("6.3: strict mode on baseline capture failure → returns merge failure", () => {
 		expect(mergeSource).toContain("Verification baseline capture failed (strict mode):");
-		const captureFailStrict = mergeSource.indexOf("baseline capture failed — strict mode: failing merge");
+		const captureFailStrict = mergeSource.indexOf(
+			"baseline capture failed — strict mode: failing merge",
+		);
 		expect(captureFailStrict).toBeGreaterThan(-1);
 		const afterCaptureFail = mergeSource.slice(captureFailStrict, captureFailStrict + 500);
 		expect(afterCaptureFail).toContain('status: "failed"');
 	});
 
 	it("6.4: permissive mode on baseline capture failure → sets baseline = null, continues", () => {
-		const permCaptureFail = mergeSource.indexOf("permissive mode: continuing without baseline verification");
+		const permCaptureFail = mergeSource.indexOf(
+			"permissive mode: continuing without baseline verification",
+		);
 		expect(permCaptureFail).toBeGreaterThan(-1);
 		const afterPermCapture = mergeSource.slice(permCaptureFail, permCaptureFail + 500);
 		expect(afterPermCapture).toContain("baseline = null");

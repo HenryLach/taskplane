@@ -16,13 +16,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
-import {
-	mkdirSync,
-	writeFileSync,
-	readFileSync,
-	existsSync,
-	rmSync,
-} from "fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir, homedir } from "os";
 
@@ -42,10 +36,7 @@ import {
 	GLOBAL_PREFERENCES_FILENAME,
 	GLOBAL_PREFERENCES_SUBDIR,
 } from "../taskplane/config-schema.ts";
-import type {
-	TaskplaneConfig,
-	GlobalPreferences,
-} from "../taskplane/config-schema.ts";
+import type { TaskplaneConfig, GlobalPreferences } from "../taskplane/config-schema.ts";
 
 // ── Fixture Helpers ──────────────────────────────────────────────────
 
@@ -122,7 +113,13 @@ describe("resolveGlobalPreferencesPath", () => {
 		delete process.env.PI_CODING_AGENT_DIR;
 
 		const result = resolveGlobalPreferencesPath();
-		const expected = join(homedir(), ".pi", "agent", GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
+		const expected = join(
+			homedir(),
+			".pi",
+			"agent",
+			GLOBAL_PREFERENCES_SUBDIR,
+			GLOBAL_PREFERENCES_FILENAME,
+		);
 		expect(result).toBe(expected);
 	});
 
@@ -192,12 +189,15 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("unknown-keys");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			operatorId: "alice",
-			unknownField: "should-be-dropped",
-			anotherUnknown: 42,
-			nested: { deep: true },
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				operatorId: "alice",
+				unknownField: "should-be-dropped",
+				anotherUnknown: 42,
+				nested: { deep: true },
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 
@@ -211,15 +211,18 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("valid-full");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			operatorId: "bob",
-			sessionPrefix: "myprefix",
-			spawnMode: "subprocess",
-			workerModel: "openai/gpt-4",
-			reviewerModel: "anthropic/claude-3",
-			mergeModel: "openai/gpt-4",
-			dashboardPort: 9090,
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				operatorId: "bob",
+				sessionPrefix: "myprefix",
+				spawnMode: "subprocess",
+				workerModel: "openai/gpt-4",
+				reviewerModel: "anthropic/claude-3",
+				mergeModel: "openai/gpt-4",
+				dashboardPort: 9090,
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 
@@ -236,9 +239,12 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("legacy-prefix-alias");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			tmuxPrefix: "legacy-prefix",
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				tmuxPrefix: "legacy-prefix",
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.sessionPrefix).toBe("legacy-prefix");
@@ -248,9 +254,12 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("prefs-spawn-tmux-migrate");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			spawnMode: "tmux",
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				spawnMode: "tmux",
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.spawnMode).toBe("subprocess");
@@ -282,10 +291,13 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("bad-spawn");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			operatorId: "valid",
-			spawnMode: "invalid-mode",
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				operatorId: "valid",
+				spawnMode: "invalid-mode",
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.operatorId).toBe("valid");
@@ -296,9 +308,12 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("bad-port");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			dashboardPort: "not-a-number",
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				dashboardPort: "not-a-number",
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.dashboardPort).toBeUndefined();
@@ -310,9 +325,12 @@ describe("loadGlobalPreferences", () => {
 
 		// JSON.stringify drops Infinity/NaN → null, so test numeric edge case:
 		// NaN can't appear in valid JSON, but Infinity can't either. Test with null:
-		writePrefsFile(agentDir, JSON.stringify({
-			dashboardPort: null,
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				dashboardPort: null,
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.dashboardPort).toBeUndefined();
@@ -322,13 +340,16 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("wrong-types");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			operatorId: 123,
-			sessionPrefix: true,
-			workerModel: { nested: "obj" },
-			reviewerModel: ["array"],
-			mergeModel: null,
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				operatorId: 123,
+				sessionPrefix: true,
+				workerModel: { nested: "obj" },
+				reviewerModel: ["array"],
+				mergeModel: null,
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.operatorId).toBeUndefined();
@@ -342,31 +363,34 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("nested-overrides");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			taskRunner: {
-				worker: { model: "nested-worker", tools: "read,write" },
-				context: { maxWorkerIterations: 44 },
-			},
-			orchestrator: {
-				orchestrator: { maxLanes: 9 },
-				failure: { stallTimeout: 120 },
-			},
-			workspace: {
-				routing: {
-					tasksRoot: "taskplane-tasks",
-					defaultRepo: "default",
-					taskPacketRepo: "default",
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				taskRunner: {
+					worker: { model: "nested-worker", tools: "read,write" },
+					context: { maxWorkerIterations: 44 },
 				},
-				repos: {
-					default: { path: "." },
+				orchestrator: {
+					orchestrator: { maxLanes: 9 },
+					failure: { stallTimeout: 120 },
 				},
-			},
-			dashboardPort: 7070,
-			initAgentDefaults: {
-				workerModel: "seed-worker",
-				workerThinking: "on",
-			},
-		}));
+				workspace: {
+					routing: {
+						tasksRoot: "taskplane-tasks",
+						defaultRepo: "default",
+						taskPacketRepo: "default",
+					},
+					repos: {
+						default: { path: "." },
+					},
+				},
+				dashboardPort: 7070,
+				initAgentDefaults: {
+					workerModel: "seed-worker",
+					workerThinking: "on",
+				},
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.taskRunner?.worker?.model).toBe("nested-worker");
@@ -383,14 +407,17 @@ describe("loadGlobalPreferences", () => {
 		const agentDir = makeTestDir("nested-tmux");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			taskRunner: {
-				worker: { spawnMode: "tmux" },
-			},
-			orchestrator: {
-				orchestrator: { spawnMode: "tmux" },
-			},
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				taskRunner: {
+					worker: { spawnMode: "tmux" },
+				},
+				orchestrator: {
+					orchestrator: { spawnMode: "tmux" },
+				},
+			}),
+		);
 
 		const prefs = loadGlobalPreferences();
 		expect(prefs.taskRunner?.worker?.spawnMode).toBe("subprocess");
@@ -612,24 +639,31 @@ describe("Layer 2 merge integration", () => {
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
 		// Write global preferences
-		writePrefsFile(agentDir, JSON.stringify({
-			operatorId: "e2e-user",
-			workerModel: "e2e-worker-model",
-			dashboardPort: 8888,
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				operatorId: "e2e-user",
+				workerModel: "e2e-worker-model",
+				dashboardPort: 8888,
+			}),
+		);
 
 		// Write JSON project config
 		const projectDir = makeTestDir("e2e-json-project");
-		writePiFile(projectDir, "taskplane-config.json", JSON.stringify({
-			configVersion: 1,
-			taskRunner: {
-				project: { name: "E2EProject" },
-				worker: { model: "project-worker-model" },
-			},
-			orchestrator: {
-				orchestrator: { operatorId: "project-operator", maxLanes: 7 },
-			},
-		}));
+		writePiFile(
+			projectDir,
+			"taskplane-config.json",
+			JSON.stringify({
+				configVersion: 1,
+				taskRunner: {
+					project: { name: "E2EProject" },
+					worker: { model: "project-worker-model" },
+				},
+				orchestrator: {
+					orchestrator: { operatorId: "project-operator", maxLanes: 7 },
+				},
+			}),
+		);
 
 		const config = loadProjectConfig(projectDir);
 
@@ -651,28 +685,37 @@ describe("Layer 2 merge integration", () => {
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
 		// Write global preferences
-		writePrefsFile(agentDir, JSON.stringify({
-			reviewerModel: "e2e-reviewer",
-			sessionPrefix: "e2e-prefix",
-			spawnMode: "subprocess",
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				reviewerModel: "e2e-reviewer",
+				sessionPrefix: "e2e-prefix",
+				spawnMode: "subprocess",
+			}),
+		);
 
 		// Write YAML project config
 		const projectDir = makeTestDir("e2e-yaml-project");
-		writeTaskRunnerYaml(projectDir, [
-			"project:",
-			"  name: YamlE2EProject",
-			"reviewer:",
-			"  model: yaml-reviewer-model",
-			"  tools: read,write",
-			"  thinking: on",
-		].join("\n"));
-		writeOrchestratorYaml(projectDir, [
-			"orchestrator:",
-			"  max_lanes: 4",
-			"  session_prefix: yaml-prefix",
-			"  spawn_mode: subprocess",
-		].join("\n"));
+		writeTaskRunnerYaml(
+			projectDir,
+			[
+				"project:",
+				"  name: YamlE2EProject",
+				"reviewer:",
+				"  model: yaml-reviewer-model",
+				"  tools: read,write",
+				"  thinking: on",
+			].join("\n"),
+		);
+		writeOrchestratorYaml(
+			projectDir,
+			[
+				"orchestrator:",
+				"  max_lanes: 4",
+				"  session_prefix: yaml-prefix",
+				"  spawn_mode: subprocess",
+			].join("\n"),
+		);
 
 		const config = loadProjectConfig(projectDir);
 
@@ -696,13 +739,17 @@ describe("Layer 2 merge integration", () => {
 
 		// Write valid project config
 		const projectDir = makeTestDir("e2e-malformed-project");
-		writePiFile(projectDir, "taskplane-config.json", JSON.stringify({
-			configVersion: 1,
-			taskRunner: {
-				project: { name: "StillWorks" },
-				worker: { model: "project-model" },
-			},
-		}));
+		writePiFile(
+			projectDir,
+			"taskplane-config.json",
+			JSON.stringify({
+				configVersion: 1,
+				taskRunner: {
+					project: { name: "StillWorks" },
+					worker: { model: "project-model" },
+				},
+			}),
+		);
 
 		const config = loadProjectConfig(projectDir);
 
@@ -735,22 +782,29 @@ describe("Layer 2 merge integration", () => {
 		const agentDir = makeTestDir("e2e-empty-str");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			operatorId: "",
-			workerModel: "",
-			reviewerModel: "non-empty-reviewer",
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				operatorId: "",
+				workerModel: "",
+				reviewerModel: "non-empty-reviewer",
+			}),
+		);
 
 		const projectDir = makeTestDir("e2e-empty-str-project");
-		writePiFile(projectDir, "taskplane-config.json", JSON.stringify({
-			configVersion: 1,
-			taskRunner: {
-				worker: { model: "layer1-worker" },
-			},
-			orchestrator: {
-				orchestrator: { operatorId: "layer1-operator" },
-			},
-		}));
+		writePiFile(
+			projectDir,
+			"taskplane-config.json",
+			JSON.stringify({
+				configVersion: 1,
+				taskRunner: {
+					worker: { model: "layer1-worker" },
+				},
+				orchestrator: {
+					orchestrator: { operatorId: "layer1-operator" },
+				},
+			}),
+		);
 
 		const config = loadProjectConfig(projectDir);
 
@@ -766,28 +820,35 @@ describe("Layer 2 merge integration", () => {
 		const agentDir = makeTestDir("e2e-nested-agent");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			taskRunner: {
-				reviewer: { thinking: "off" },
-			},
-			orchestrator: {
-				orchestrator: { maxLanes: 11 },
-				failure: { stallTimeout: 150 },
-			},
-			dashboardPort: 4567,
-			initAgentDefaults: { reviewerModel: "seed-reviewer" },
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				taskRunner: {
+					reviewer: { thinking: "off" },
+				},
+				orchestrator: {
+					orchestrator: { maxLanes: 11 },
+					failure: { stallTimeout: 150 },
+				},
+				dashboardPort: 4567,
+				initAgentDefaults: { reviewerModel: "seed-reviewer" },
+			}),
+		);
 
 		const projectDir = makeTestDir("e2e-nested-project");
-		writePiFile(projectDir, "taskplane-config.json", JSON.stringify({
-			configVersion: 1,
-			taskRunner: {
-				reviewer: { thinking: "on" },
-			},
-			orchestrator: {
-				orchestrator: { maxLanes: 2 },
-			},
-		}));
+		writePiFile(
+			projectDir,
+			"taskplane-config.json",
+			JSON.stringify({
+				configVersion: 1,
+				taskRunner: {
+					reviewer: { thinking: "on" },
+				},
+				orchestrator: {
+					orchestrator: { maxLanes: 2 },
+				},
+			}),
+		);
 
 		const config = loadProjectConfig(projectDir);
 		// Project overrides should win when explicitly set
@@ -805,25 +866,32 @@ describe("Layer 2 merge integration", () => {
 		const agentDir = makeTestDir("e2e-nested-tmux-agent");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		writePrefsFile(agentDir, JSON.stringify({
-			taskRunner: {
-				worker: { spawnMode: "tmux" },
-			},
-			orchestrator: {
-				orchestrator: { spawnMode: "tmux" },
-			},
-		}));
+		writePrefsFile(
+			agentDir,
+			JSON.stringify({
+				taskRunner: {
+					worker: { spawnMode: "tmux" },
+				},
+				orchestrator: {
+					orchestrator: { spawnMode: "tmux" },
+				},
+			}),
+		);
 
 		const projectDir = makeTestDir("e2e-nested-tmux-project");
-		writePiFile(projectDir, "taskplane-config.json", JSON.stringify({
-			configVersion: 1,
-			taskRunner: {
-				worker: { spawnMode: "subprocess" },
-			},
-			orchestrator: {
-				orchestrator: { spawnMode: "subprocess" },
-			},
-		}));
+		writePiFile(
+			projectDir,
+			"taskplane-config.json",
+			JSON.stringify({
+				configVersion: 1,
+				taskRunner: {
+					worker: { spawnMode: "subprocess" },
+				},
+				orchestrator: {
+					orchestrator: { spawnMode: "subprocess" },
+				},
+			}),
+		);
 
 		const config = loadProjectConfig(projectDir);
 		expect(config.taskRunner.worker.spawnMode).toBe("subprocess");

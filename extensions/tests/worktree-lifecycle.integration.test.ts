@@ -22,7 +22,16 @@
  */
 
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync } from "fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	readFileSync,
+	writeFileSync,
+	readdirSync,
+	statSync,
+} from "fs";
 import { join, resolve, basename } from "path";
 import { tmpdir } from "os";
 
@@ -31,13 +40,10 @@ import {
 	type WorktreeInfo,
 	type CreateWorktreeOptions,
 	type ParsedWorktreeEntry,
-
 	// Error class
 	WorktreeError,
-
 	// Git runner
 	runGit,
-
 	// Pure helpers
 	generateBranchName,
 	generateWorktreePath,
@@ -45,21 +51,17 @@ import {
 	isRegisteredWorktree,
 	escapeRegex,
 	isRetriableRemoveError,
-
 	// CRUD operations
 	createWorktree,
 	resetWorktree,
 	removeWorktree,
-
 	// Bulk operations
 	listWorktrees,
 	createLaneWorktrees,
 	removeAllWorktrees,
-
 	// Branch protection
 	hasUnmergedCommits,
 	preserveBranch,
-
 	// Batch container helpers (TP-021)
 	generateMergeWorktreePath,
 	generateBatchContainerPath,
@@ -145,7 +147,11 @@ function initTestRepo(name: string = "test-repo"): string {
 	const repoDir = join(tempBase, name);
 
 	execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
-	execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+	execSync("git config user.email test@test.com", {
+		cwd: repoDir,
+		encoding: "utf-8",
+		stdio: "pipe",
+	});
 	execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
 
 	// Create initial commit
@@ -156,7 +162,9 @@ function initTestRepo(name: string = "test-repo"): string {
 	// Rename default branch to main if needed and create develop
 	try {
 		execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
-	} catch { /* might already be main */ }
+	} catch {
+		/* might already be main */
+	}
 	execSync("git branch develop", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
 
 	return repoDir;
@@ -169,7 +177,9 @@ function initTestRepo(name: string = "test-repo"): string {
 function addCommit(repoDir: string, branch: string, filename: string, content: string): string {
 	// If we're not on the right branch, check it out
 	const currentBranch = execSync("git rev-parse --abbrev-ref HEAD", {
-		cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+		cwd: repoDir,
+		encoding: "utf-8",
+		stdio: "pipe",
 	}).trim();
 
 	if (currentBranch !== branch) {
@@ -180,7 +190,11 @@ function addCommit(repoDir: string, branch: string, filename: string, content: s
 	execSync(`git add "${filename}"`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
 	execSync(`git commit -m "add ${filename}"`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
 
-	const sha = execSync("git rev-parse HEAD", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+	const sha = execSync("git rev-parse HEAD", {
+		cwd: repoDir,
+		encoding: "utf-8",
+		stdio: "pipe",
+	}).trim();
 
 	// Switch back to main/develop to keep worktree paths free
 	if (currentBranch !== branch) {
@@ -199,7 +213,9 @@ function cleanupTestRepo(repoDir: string): void {
 	// First, remove any worktrees registered with this repo
 	try {
 		const worktrees = execSync("git worktree list --porcelain", {
-			cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
 		});
 
 		for (const line of worktrees.split("\n")) {
@@ -207,17 +223,25 @@ function cleanupTestRepo(repoDir: string): void {
 				const wtPath = line.slice("worktree ".length).trim();
 				try {
 					execSync(`git worktree remove --force "${wtPath}"`, {
-						cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+						cwd: repoDir,
+						encoding: "utf-8",
+						stdio: "pipe",
 					});
-				} catch { /* ignore */ }
+				} catch {
+					/* ignore */
+				}
 			}
 		}
-	} catch { /* repo might already be gone */ }
+	} catch {
+		/* repo might already be gone */
+	}
 
 	// Then remove the parent temp directory
 	try {
 		rmSync(parentDir, { recursive: true, force: true });
-	} catch { /* Windows may need a moment */ }
+	} catch {
+		/* Windows may need a moment */
+	}
 }
 
 /**
@@ -225,7 +249,9 @@ function cleanupTestRepo(repoDir: string): void {
  */
 function getCommitSha(repoDir: string, branch: string): string {
 	return execSync(`git rev-parse refs/heads/${branch}`, {
-		cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+		cwd: repoDir,
+		encoding: "utf-8",
+		stdio: "pipe",
 	}).trim();
 }
 
@@ -294,7 +320,12 @@ describe("5.1 isRetriableRemoveError", () => {
 	});
 
 	test("returns true for 'used by another process' (Windows)", () => {
-		assert(isRetriableRemoveError("The process cannot access the file because it is used by another process"), "should be retriable");
+		assert(
+			isRetriableRemoveError(
+				"The process cannot access the file because it is used by another process",
+			),
+			"should be retriable",
+		);
 	});
 
 	test("returns true for 'directory not empty'", () => {
@@ -358,13 +389,16 @@ describe("5.2 createWorktree — happy path", () => {
 	test("creates worktree with correct directory, branch, and .git file", () => {
 		repoDir = initTestRepo("create-happy");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "test001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "test001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Directory exists
 		assert(existsSync(wt.path), `worktree dir should exist: ${wt.path}`);
@@ -381,12 +415,18 @@ describe("5.2 createWorktree — happy path", () => {
 
 		// Correct branch is checked out
 		const headBranch = execSync("git rev-parse --abbrev-ref HEAD", {
-			cwd: wt.path, encoding: "utf-8", stdio: "pipe",
+			cwd: wt.path,
+			encoding: "utf-8",
+			stdio: "pipe",
 		}).trim();
 		assertEqual(headBranch, "task/test-lane-1-test001", "checked out branch");
 
 		// Branch points to develop HEAD
-		const wtHead = execSync("git rev-parse HEAD", { cwd: wt.path, encoding: "utf-8", stdio: "pipe" }).trim();
+		const wtHead = execSync("git rev-parse HEAD", {
+			cwd: wt.path,
+			encoding: "utf-8",
+			stdio: "pipe",
+		}).trim();
 		const devHead = getCommitSha(repoDir, "develop");
 		assertEqual(wtHead, devHead, "worktree HEAD should match develop HEAD");
 
@@ -396,13 +436,16 @@ describe("5.2 createWorktree — happy path", () => {
 	test("handles worktree paths containing spaces", () => {
 		repoDir = initTestRepo("create-space-path");
 
-		const wt = createWorktree({
-			laneNumber: 2,
-			batchId: "space001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: `${basename(repoDir)} with space`,
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 2,
+				batchId: "space001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: `${basename(repoDir)} with space`,
+			},
+			repoDir,
+		);
 
 		assert(existsSync(wt.path), `worktree dir should exist: ${wt.path}`);
 		// New batch-scoped path: {basePath}/test-space001/lane-2
@@ -411,9 +454,15 @@ describe("5.2 createWorktree — happy path", () => {
 
 		// Verify the worktree is fully functional with spaced paths
 		const headBranch = execSync("git rev-parse --abbrev-ref HEAD", {
-			cwd: wt.path, encoding: "utf-8", stdio: "pipe",
+			cwd: wt.path,
+			encoding: "utf-8",
+			stdio: "pipe",
 		}).trim();
-		assertEqual(headBranch, "task/test-lane-2-space001", "checked out branch in spaced path worktree");
+		assertEqual(
+			headBranch,
+			"task/test-lane-2-space001",
+			"checked out branch in spaced path worktree",
+		);
 
 		const removeResult = removeWorktree(wt, repoDir);
 		assertEqual(removeResult.removed, true, "spaced-path worktree should remove cleanly");
@@ -428,13 +477,16 @@ describe("5.2 createWorktree — error paths", () => {
 	test("WORKTREE_INVALID_BASE for nonexistent base branch", () => {
 		repoDir = initTestRepo("create-invalid-base");
 		const err = assertThrows(() => {
-			createWorktree({
-				laneNumber: 1,
-				batchId: "test002",
-				baseBranch: "nonexistent-branch",
-				opId: "test",
-				prefix: basename(repoDir),
-			}, repoDir);
+			createWorktree(
+				{
+					laneNumber: 1,
+					batchId: "test002",
+					baseBranch: "nonexistent-branch",
+					opId: "test",
+					prefix: basename(repoDir),
+				},
+				repoDir,
+			);
 		}, "WORKTREE_INVALID_BASE");
 		assert(err.message.includes("nonexistent-branch"), "error should mention branch name");
 		cleanupTestRepo(repoDir);
@@ -443,13 +495,16 @@ describe("5.2 createWorktree — error paths", () => {
 	test("WORKTREE_PATH_IS_WORKTREE for existing worktree at same path", () => {
 		repoDir = initTestRepo("create-collision");
 		// Create first worktree — this occupies {basePath}/test-test003/lane-1
-		const wt1 = createWorktree({
-			laneNumber: 1,
-			batchId: "test003",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt1 = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "test003",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Try creating at the same path by using the same opId/batchId/laneNumber
 		// but a different branch trick: delete the branch first so pre-check 4
@@ -457,13 +512,16 @@ describe("5.2 createWorktree — error paths", () => {
 		// Actually, same params produce both same path AND same branch name, so
 		// pre-check 2 fires first (path is already a registered worktree).
 		const err = assertThrows(() => {
-			createWorktree({
-				laneNumber: 1,
-				batchId: "test003",
-				baseBranch: "develop",
-				opId: "test",
-				prefix: basename(repoDir),
-			}, repoDir);
+			createWorktree(
+				{
+					laneNumber: 1,
+					batchId: "test003",
+					baseBranch: "develop",
+					opId: "test",
+					prefix: basename(repoDir),
+				},
+				repoDir,
+			);
 		}, "WORKTREE_PATH_IS_WORKTREE");
 		assert(err.message.includes("already registered"), "error should mention registration");
 
@@ -473,25 +531,35 @@ describe("5.2 createWorktree — error paths", () => {
 	test("WORKTREE_BRANCH_EXISTS for duplicate branch name", () => {
 		repoDir = initTestRepo("create-dup-branch");
 		// Create first worktree
-		createWorktree({
-			laneNumber: 1,
-			batchId: "test005",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
-
-		// Try creating at different lane but same batchId (different path, same branch format)
-		// Actually we need same branch name. Create a branch manually that matches lane-2's pattern
-		execSync("git branch task/test-lane-2-test005", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
-		const err = assertThrows(() => {
-			createWorktree({
-				laneNumber: 2,
+		createWorktree(
+			{
+				laneNumber: 1,
 				batchId: "test005",
 				baseBranch: "develop",
 				opId: "test",
 				prefix: basename(repoDir),
-			}, repoDir);
+			},
+			repoDir,
+		);
+
+		// Try creating at different lane but same batchId (different path, same branch format)
+		// Actually we need same branch name. Create a branch manually that matches lane-2's pattern
+		execSync("git branch task/test-lane-2-test005", {
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
+		});
+		const err = assertThrows(() => {
+			createWorktree(
+				{
+					laneNumber: 2,
+					batchId: "test005",
+					baseBranch: "develop",
+					opId: "test",
+					prefix: basename(repoDir),
+				},
+				repoDir,
+			);
 		}, "WORKTREE_BRANCH_EXISTS");
 		assert(err.message.includes("task/test-lane-2-test005"), "error should mention branch");
 
@@ -510,13 +578,16 @@ describe("5.3 resetWorktree — happy path", () => {
 		repoDir = initTestRepo("reset-happy");
 
 		// Create worktree based on develop
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "reset001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "reset001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		const developHead1 = getCommitSha(repoDir, "develop");
 
@@ -534,7 +605,11 @@ describe("5.3 resetWorktree — happy path", () => {
 		assertEqual(updated.laneNumber, 1, "lane number preserved");
 
 		// HEAD matches new develop
-		const wtHead = execSync("git rev-parse HEAD", { cwd: updated.path, encoding: "utf-8", stdio: "pipe" }).trim();
+		const wtHead = execSync("git rev-parse HEAD", {
+			cwd: updated.path,
+			encoding: "utf-8",
+			stdio: "pipe",
+		}).trim();
 		assertEqual(wtHead, developHead2, "worktree HEAD should match new develop HEAD");
 
 		cleanupTestRepo(repoDir);
@@ -543,19 +618,26 @@ describe("5.3 resetWorktree — happy path", () => {
 	test("idempotent: resetting to same commit succeeds", () => {
 		repoDir = initTestRepo("reset-idempotent");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "reset002",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "reset002",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Reset to same branch (same commit)
 		const updated = resetWorktree(wt, "develop", repoDir);
 
 		assertEqual(updated.branch, wt.branch, "branch unchanged");
-		const wtHead = execSync("git rev-parse HEAD", { cwd: updated.path, encoding: "utf-8", stdio: "pipe" }).trim();
+		const wtHead = execSync("git rev-parse HEAD", {
+			cwd: updated.path,
+			encoding: "utf-8",
+			stdio: "pipe",
+		}).trim();
 		const devHead = getCommitSha(repoDir, "develop");
 		assertEqual(wtHead, devHead, "HEAD still matches develop");
 
@@ -569,13 +651,16 @@ describe("5.3 resetWorktree — error paths", () => {
 	test("WORKTREE_DIRTY for uncommitted changes", () => {
 		repoDir = initTestRepo("reset-dirty");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "reset003",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "reset003",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Create a dirty file in worktree
 		writeFileSync(join(wt.path, "dirty.txt"), "uncommitted content");
@@ -591,13 +676,16 @@ describe("5.3 resetWorktree — error paths", () => {
 	test("WORKTREE_INVALID_BASE for nonexistent target branch", () => {
 		repoDir = initTestRepo("reset-invalid");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "reset004",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "reset004",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		const err = assertThrows(() => {
 			resetWorktree(wt, "nonexistent-target", repoDir);
@@ -633,13 +721,16 @@ describe("5.4 removeWorktree — happy path", () => {
 	test("removes worktree directory and deletes branch", () => {
 		repoDir = initTestRepo("remove-happy");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "rem001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "rem001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		assert(existsSync(wt.path), "worktree should exist before removal");
 
@@ -669,13 +760,16 @@ describe("5.4 removeWorktree — idempotent", () => {
 	test("already-removed returns alreadyRemoved=true (path + branch both missing)", () => {
 		repoDir = initTestRepo("remove-idempotent");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "rem002",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "rem002",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Remove once
 		removeWorktree(wt, repoDir);
@@ -692,16 +786,23 @@ describe("5.4 removeWorktree — idempotent", () => {
 	test("stale branch cleanup: path missing but branch exists", () => {
 		repoDir = initTestRepo("remove-stale-branch");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "rem003",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "rem003",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Manually remove path but leave branch
-		execSync(`git worktree remove --force "${wt.path}"`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		execSync(`git worktree remove --force "${wt.path}"`, {
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
+		});
 		// Branch should still exist
 		const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${wt.branch}`], repoDir);
 		assert(branchCheck.ok, "branch should still exist after worktree remove");
@@ -725,18 +826,25 @@ describe("5.4 removeWorktree — unmerged branch", () => {
 	test("force-deletes unmerged branch", () => {
 		repoDir = initTestRepo("remove-unmerged");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "rem004",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "rem004",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Add a commit to the worktree branch (making it diverge/unmerged)
 		writeFileSync(join(wt.path, "wt-only.txt"), "worktree-only content");
 		execSync("git add -A", { cwd: wt.path, encoding: "utf-8", stdio: "pipe" });
-		execSync('git commit -m "worktree-only commit"', { cwd: wt.path, encoding: "utf-8", stdio: "pipe" });
+		execSync('git commit -m "worktree-only commit"', {
+			cwd: wt.path,
+			encoding: "utf-8",
+			stdio: "pipe",
+		});
 
 		// Remove — should still succeed with force-delete
 		const result = removeWorktree(wt, repoDir);
@@ -757,13 +865,16 @@ describe("5.4b removeWorktree — branch protection with targetBranch", () => {
 	test("preserves branch with unmerged commits when targetBranch provided", () => {
 		repoDir = initTestRepo("remove-preserve");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "pres001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "pres001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Add unmerged commit to worktree branch
 		writeFileSync(join(wt.path, "unmerged.txt"), "unmerged content");
@@ -793,13 +904,16 @@ describe("5.4b removeWorktree — branch protection with targetBranch", () => {
 	test("deletes fully-merged branch normally when targetBranch provided", () => {
 		repoDir = initTestRepo("remove-merged");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "merge001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "merge001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// No extra commits on worktree branch — it's fully merged into develop
 
@@ -821,13 +935,16 @@ describe("5.4b removeWorktree — branch protection with targetBranch", () => {
 	test("idempotent: second removeWorktree succeeds after preservation", () => {
 		repoDir = initTestRepo("remove-idempotent-pres");
 
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "idem001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "idem001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Add unmerged commit
 		writeFileSync(join(wt.path, "unmerged.txt"), "unmerged");
@@ -1021,13 +1138,16 @@ describe("5.5 Full lifecycle: create → verify → remove → verify", () => {
 		repoDir = initTestRepo("lifecycle");
 
 		// Create
-		const wt = createWorktree({
-			laneNumber: 1,
-			batchId: "life001",
-			baseBranch: "develop",
-			opId: "test",
-			prefix: basename(repoDir),
-		}, repoDir);
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "life001",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
 
 		// Verify creation artifacts
 		assert(existsSync(wt.path), "worktree dir should exist");
@@ -1067,9 +1187,18 @@ describe("5.6 listWorktrees — prefix filtering", () => {
 		const prefix = basename(repoDir);
 
 		// Create 3 worktrees
-		const wt1 = createWorktree({ laneNumber: 1, batchId: "list001", baseBranch: "develop", opId: "test", prefix }, repoDir);
-		const wt2 = createWorktree({ laneNumber: 2, batchId: "list001", baseBranch: "develop", opId: "test", prefix }, repoDir);
-		const wt3 = createWorktree({ laneNumber: 3, batchId: "list001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		const wt1 = createWorktree(
+			{ laneNumber: 1, batchId: "list001", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
+		const wt2 = createWorktree(
+			{ laneNumber: 2, batchId: "list001", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
+		const wt3 = createWorktree(
+			{ laneNumber: 3, batchId: "list001", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		const found = listWorktrees(prefix, repoDir, "test");
 
@@ -1086,12 +1215,17 @@ describe("5.6 listWorktrees — prefix filtering", () => {
 		const prefix = basename(repoDir);
 
 		// Create one orchestrator worktree
-		createWorktree({ laneNumber: 1, batchId: "list002", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "list002", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// Create a non-orchestrator worktree manually (different naming)
 		const otherPath = resolve(repoDir, "..", "random-worktree");
 		execSync(`git worktree add -b other-branch "${otherPath}" develop`, {
-			cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
 		});
 
 		const found = listWorktrees(prefix, repoDir, "test");
@@ -1099,7 +1233,11 @@ describe("5.6 listWorktrees — prefix filtering", () => {
 		assertEqual(found[0].laneNumber, 1, "should be lane 1");
 
 		// Cleanup non-orchestrator worktree
-		execSync(`git worktree remove --force "${otherPath}"`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		execSync(`git worktree remove --force "${otherPath}"`, {
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
+		});
 		cleanupTestRepo(repoDir);
 	});
 
@@ -1135,7 +1273,13 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 			assignment: { strategy: "affinity-first" as const, size_weights: { S: 1, M: 2, L: 4 } },
 			pre_warm: { auto_detect: true, commands: {}, always: [] },
 			merge: { model: "", tools: "", verify: [], order: "fewest-files-first" as const },
-			failure: { on_task_failure: "skip-dependents" as const, on_merge_failure: "pause" as const, stall_timeout: 30, max_worker_minutes: 30, abort_grace_period: 60 },
+			failure: {
+				on_task_failure: "skip-dependents" as const,
+				on_merge_failure: "pause" as const,
+				stall_timeout: 30,
+				max_worker_minutes: 30,
+				abort_grace_period: 60,
+			},
 			monitoring: { poll_interval: 5 },
 		};
 
@@ -1148,7 +1292,11 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 		// Verify naming
 		for (let i = 0; i < 3; i++) {
 			assertEqual(result.worktrees[i].laneNumber, i + 1, `lane ${i + 1} number`);
-			assertEqual(result.worktrees[i].branch, `task/test-lane-${i + 1}-bulk001`, `lane ${i + 1} branch`);
+			assertEqual(
+				result.worktrees[i].branch,
+				`task/test-lane-${i + 1}-bulk001`,
+				`lane ${i + 1} branch`,
+			);
 			assert(existsSync(result.worktrees[i].path), `lane ${i + 1} dir should exist`);
 		}
 
@@ -1160,7 +1308,11 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 		const prefix = basename(repoDir);
 
 		// Pre-create a branch that will conflict with lane 2
-		execSync("git branch task/test-lane-2-bulkfail", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		execSync("git branch task/test-lane-2-bulkfail", {
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
+		});
 
 		const config = {
 			orchestrator: {
@@ -1176,7 +1328,13 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 			assignment: { strategy: "affinity-first" as const, size_weights: { S: 1, M: 2, L: 4 } },
 			pre_warm: { auto_detect: true, commands: {}, always: [] },
 			merge: { model: "", tools: "", verify: [], order: "fewest-files-first" as const },
-			failure: { on_task_failure: "skip-dependents" as const, on_merge_failure: "pause" as const, stall_timeout: 30, max_worker_minutes: 30, abort_grace_period: 60 },
+			failure: {
+				on_task_failure: "skip-dependents" as const,
+				on_merge_failure: "pause" as const,
+				stall_timeout: 30,
+				max_worker_minutes: 30,
+				abort_grace_period: 60,
+			},
 			monitoring: { poll_interval: 5 },
 		};
 
@@ -1185,7 +1343,11 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 		assertEqual(result.success, false, "should fail");
 		assert(result.errors.length > 0, "should have errors");
 		assertEqual(result.errors[0].laneNumber, 2, "lane 2 should fail");
-		assertEqual(result.errors[0].code, "WORKTREE_BRANCH_EXISTS", "error code should be WORKTREE_BRANCH_EXISTS");
+		assertEqual(
+			result.errors[0].code,
+			"WORKTREE_BRANCH_EXISTS",
+			"error code should be WORKTREE_BRANCH_EXISTS",
+		);
 		assertEqual(result.worktrees.length, 0, "no worktrees after rollback");
 		assertEqual(result.rolledBack, true, "should have rolled back");
 
@@ -1205,9 +1367,18 @@ describe("5.6 removeAllWorktrees — bulk removal", () => {
 		const prefix = basename(repoDir);
 
 		// Create 3 worktrees
-		createWorktree({ laneNumber: 1, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix }, repoDir);
-		createWorktree({ laneNumber: 2, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix }, repoDir);
-		createWorktree({ laneNumber: 3, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
+		createWorktree(
+			{ laneNumber: 2, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
+		createWorktree(
+			{ laneNumber: 3, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// Verify they exist
 		assertEqual(listWorktrees(prefix, repoDir, "test").length, 3, "should have 3 before removal");
@@ -1250,12 +1421,24 @@ describe("5.7 Batch-scoped isolation — same opId, different batchIds", () => {
 		const prefix = basename(repoDir);
 
 		// Create worktrees in batch A
-		createWorktree({ laneNumber: 1, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
-		createWorktree({ laneNumber: 2, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "batchA", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
+		createWorktree(
+			{ laneNumber: 2, batchId: "batchA", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// Create worktrees in batch B (same opId, different batchId)
-		createWorktree({ laneNumber: 1, batchId: "batchB", baseBranch: "develop", opId: "test", prefix }, repoDir);
-		createWorktree({ laneNumber: 3, batchId: "batchB", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "batchB", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
+		createWorktree(
+			{ laneNumber: 3, batchId: "batchB", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// List only batch A — should get exactly 2
 		const batchAWts = listWorktrees(prefix, repoDir, "test", "batchA");
@@ -1281,11 +1464,20 @@ describe("5.7 Batch-scoped isolation — same opId, different batchIds", () => {
 		const prefix = basename(repoDir);
 
 		// Create worktrees in batch A
-		createWorktree({ laneNumber: 1, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
-		createWorktree({ laneNumber: 2, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "batchA", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
+		createWorktree(
+			{ laneNumber: 2, batchId: "batchA", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// Create worktrees in batch B
-		createWorktree({ laneNumber: 1, batchId: "batchB", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "batchB", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// Remove only batch A
 		const result = removeAllWorktrees(prefix, repoDir, "test", undefined, "batchA");
@@ -1309,7 +1501,10 @@ describe("5.7 Batch-scoped isolation — same opId, different batchIds", () => {
 		const prefix = basename(repoDir);
 
 		// Create worktrees in batch A
-		const wt1 = createWorktree({ laneNumber: 1, batchId: "batchClean", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		const wt1 = createWorktree(
+			{ laneNumber: 1, batchId: "batchClean", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// The container dir should exist
 		const containerPath = resolve(wt1.path, "..");
@@ -1319,7 +1514,10 @@ describe("5.7 Batch-scoped isolation — same opId, different batchIds", () => {
 		removeAllWorktrees(prefix, repoDir, "test", undefined, "batchClean");
 
 		// The container directory should be removed (empty after worktree removal)
-		assert(!existsSync(containerPath), "batch container should be removed after all worktrees cleaned up");
+		assert(
+			!existsSync(containerPath),
+			"batch container should be removed after all worktrees cleaned up",
+		);
 
 		cleanupTestRepo(repoDir);
 	});
@@ -1337,12 +1535,17 @@ describe("5.8 Transition compatibility — legacy flat and new nested coexistenc
 		const prefix = basename(repoDir);
 
 		// Create a new nested worktree (batch-scoped)
-		createWorktree({ laneNumber: 1, batchId: "new001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "new001", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// Manually create a legacy flat worktree: {basePath}/{prefix}-{opId}-{N}
 		const legacyPath = resolve(repoDir, ".worktrees", `${prefix}-test-5`);
 		execSync(`git worktree add -b task/test-lane-5-legacybatch "${legacyPath}" develop`, {
-			cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
 		});
 
 		// List without batchId — should find both
@@ -1350,7 +1553,7 @@ describe("5.8 Transition compatibility — legacy flat and new nested coexistenc
 		assertEqual(allWts.length, 2, "should find both legacy and new worktrees");
 
 		// The new one has laneNumber 1, the legacy one has laneNumber 5
-		const lanes = allWts.map(w => w.laneNumber).sort((a, b) => a - b);
+		const lanes = allWts.map((w) => w.laneNumber).sort((a, b) => a - b);
 		assertEqual(lanes[0], 1, "new nested worktree lane 1");
 		assertEqual(lanes[1], 5, "legacy flat worktree lane 5");
 
@@ -1362,12 +1565,17 @@ describe("5.8 Transition compatibility — legacy flat and new nested coexistenc
 		const prefix = basename(repoDir);
 
 		// Create a new nested worktree (batch-scoped)
-		createWorktree({ laneNumber: 1, batchId: "new002", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree(
+			{ laneNumber: 1, batchId: "new002", baseBranch: "develop", opId: "test", prefix },
+			repoDir,
+		);
 
 		// Manually create a legacy flat worktree
 		const legacyPath = resolve(repoDir, ".worktrees", `${prefix}-test-7`);
 		execSync(`git worktree add -b task/test-lane-7-legacybatch2 "${legacyPath}" develop`, {
-			cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+			cwd: repoDir,
+			encoding: "utf-8",
+			stdio: "pipe",
 		});
 
 		// List with specific batchId — should only find the new one
@@ -1457,13 +1665,16 @@ describe("5.9 createWorktree — no empty container on pre-check failure", () =>
 
 		// Attempt to create worktree with nonexistent base branch — should fail at pre-check 1
 		try {
-			createWorktree({
-				laneNumber: 1,
-				batchId: "failbatch",
-				baseBranch: "nonexistent-branch",
-				opId: "test",
-				prefix,
-			}, repoDir);
+			createWorktree(
+				{
+					laneNumber: 1,
+					batchId: "failbatch",
+					baseBranch: "nonexistent-branch",
+					opId: "test",
+					prefix,
+				},
+				repoDir,
+			);
 			assert(false, "should have thrown");
 		} catch (err) {
 			assert(err instanceof WorktreeError, "should throw WorktreeError");
@@ -1487,7 +1698,14 @@ describe("5.9 generateWorktreePath — subdirectory vs sibling with batch-scoped
 
 	test("sibling mode: {repoRoot}/../{opId}-{batchId}/lane-{N}", () => {
 		const siblingConfig = { orchestrator: { worktree_location: "sibling" as const } } as any;
-		const result = generateWorktreePath("unused", 2, "/some/path/repo", "bob", siblingConfig, "batch42");
+		const result = generateWorktreePath(
+			"unused",
+			2,
+			"/some/path/repo",
+			"bob",
+			siblingConfig,
+			"batch42",
+		);
 		const expected = resolve("/some/path/repo", "..", "bob-batch42", "lane-2");
 		assertEqual(result, expected, "sibling batch-scoped path");
 	});

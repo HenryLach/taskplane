@@ -1,9 +1,6 @@
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
-import {
-	parsePiListModelsOutput,
-	queryAvailableModelsFromPi,
-} from "../../bin/taskplane.mjs";
+import { parsePiListModelsOutput, queryAvailableModelsFromPi } from "../../bin/taskplane.mjs";
 
 describe("init model discovery helpers", () => {
 	it("parses pi --list-models output into structured model rows", () => {
@@ -59,10 +56,7 @@ describe("init model discovery helpers", () => {
 	it("returns available models when list command succeeds", () => {
 		const result = queryAvailableModelsFromPi({
 			commandExistsImpl: () => true,
-			execFileSyncImpl: () => [
-				"provider   model   context",
-				"openai gpt-5.3-codex 400K",
-			].join("\n"),
+			execFileSyncImpl: () => ["provider   model   context", "openai gpt-5.3-codex 400K"].join("\n"),
 		});
 
 		expect(result.available).toBe(true);
@@ -77,10 +71,7 @@ describe("init model discovery helpers", () => {
 	});
 
 	it("parses supportsThinking=false when thinking column says no", () => {
-		const raw = [
-			"provider model thinking context",
-			"openai gpt-5.3-codex no 400K",
-		].join("\n");
+		const raw = ["provider model thinking context", "openai gpt-5.3-codex no 400K"].join("\n");
 
 		const parsed = parsePiListModelsOutput(raw);
 		expect(parsed).toEqual([

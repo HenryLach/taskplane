@@ -7,8 +7,10 @@
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-export const TASKPLANE_GITIGNORE_HEADER = "# Taskplane runtime artifacts (machine-specific, do not commit)";
-export const TASKPLANE_GITIGNORE_NPM_HEADER = "# Pi project-local packages (if using pi install -l)";
+export const TASKPLANE_GITIGNORE_HEADER =
+	"# Taskplane runtime artifacts (machine-specific, do not commit)";
+export const TASKPLANE_GITIGNORE_NPM_HEADER =
+	"# Pi project-local packages (if using pi install -l)";
 
 /**
  * Required gitignore entries for Taskplane projects.
@@ -30,14 +32,15 @@ export const TASKPLANE_GITIGNORE_ENTRIES = [
 	".taskplane-tasks/",
 ];
 
-export const TASKPLANE_GITIGNORE_NPM_ENTRIES = [
-	".pi/npm/",
-];
+export const TASKPLANE_GITIGNORE_NPM_ENTRIES = [".pi/npm/"];
 
 /**
  * All patterns that should be gitignored, used for tracked-artifact detection.
  */
-export const ALL_GITIGNORE_PATTERNS = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
+export const ALL_GITIGNORE_PATTERNS = [
+	...TASKPLANE_GITIGNORE_ENTRIES,
+	...TASKPLANE_GITIGNORE_NPM_ENTRIES,
+];
 
 // ─── Pattern Matching ───────────────────────────────────────────────────────
 
@@ -74,6 +77,6 @@ export function patternToRegex(pattern) {
  * @returns {boolean} True if the file matches any pattern
  */
 export function matchesAnyGitignorePattern(filePath, patterns = ALL_GITIGNORE_PATTERNS) {
-	const regexes = patterns.map(p => patternToRegex(p));
-	return regexes.some(regex => regex.test(filePath));
+	const regexes = patterns.map((p) => patternToRegex(p));
+	return regexes.some((regex) => regex.test(filePath));
 }

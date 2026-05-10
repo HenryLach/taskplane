@@ -52,7 +52,11 @@ function resolveOutboxDir(): string {
 /**
  * Write a message to the agent's outbox.
  */
-function writeOutbox(type: "reply" | "escalate", content: string, replyTo?: string): { id: string } {
+function writeOutbox(
+	type: "reply" | "escalate",
+	content: string,
+	replyTo?: string,
+): { id: string } {
 	const outboxDir = resolveOutboxDir();
 	mkdirSync(outboxDir, { recursive: true });
 
@@ -89,7 +93,11 @@ const REPO_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const AUTONOMY_PATTERN = /^(interactive|supervised|autonomous)$/;
 
 function resolveActiveSegmentId(): string | null {
-	const raw = (process.env.TASKPLANE_ACTIVE_SEGMENT_ID || process.env.TASKPLANE_SEGMENT_ID || "").trim();
+	const raw = (
+		process.env.TASKPLANE_ACTIVE_SEGMENT_ID ||
+		process.env.TASKPLANE_SEGMENT_ID ||
+		""
+	).trim();
 	if (!raw || raw === "null" || raw === "(none / whole-task execution)") return null;
 	return raw;
 }
@@ -125,8 +133,14 @@ function writeSegmentExpansionRequest(request: SegmentExpansionRequest): string 
 		writeFileSync(tempPath, JSON.stringify(request, null, 2) + "\n", "utf-8");
 		renameSync(tempPath, finalPath);
 	} catch (err) {
-		try { if (existsSync(tempPath)) unlinkSync(tempPath); } catch { /* cleanup */ }
-		throw new Error(`Failed to write segment expansion request: ${err instanceof Error ? err.message : String(err)}`);
+		try {
+			if (existsSync(tempPath)) unlinkSync(tempPath);
+		} catch {
+			/* cleanup */
+		}
+		throw new Error(
+			`Failed to write segment expansion request: ${err instanceof Error ? err.message : String(err)}`,
+		);
 	}
 
 	return finalPath;
@@ -215,11 +229,7 @@ export function isStepMarkedComplete(statusPath: string, stepNum: number): boole
 			//   2. delimiter length >= opener length,
 			//   3. nothing follows the delimiter except whitespace.
 			const trailingIsWhitespace = /^\s*$/.test(trailing);
-			if (
-				char === fenceOpener.char &&
-				length >= fenceOpener.length &&
-				trailingIsWhitespace
-			) {
+			if (char === fenceOpener.char && length >= fenceOpener.length && trailingIsWhitespace) {
 				fenceOpener = null;
 				continue;
 			}
@@ -258,26 +268,32 @@ export default function (pi: ExtensionAPI) {
 			content: Type.String({
 				description: "Reply content (max 4KB)",
 			}),
-			replyTo: Type.Optional(Type.String({
-				description: "Message ID being replied to (from a steering message)",
-			})),
+			replyTo: Type.Optional(
+				Type.String({
+					description: "Message ID being replied to (from a steering message)",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params) {
 			try {
 				const result = writeOutbox("reply", params.content, params.replyTo);
 				return {
-					content: [{
-						type: "text" as const,
-						text: `✅ Reply sent to supervisor (ID: ${result.id})`,
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: `✅ Reply sent to supervisor (ID: ${result.id})`,
+						},
+					],
 					details: undefined,
 				};
 			} catch (err) {
 				return {
-					content: [{
-						type: "text" as const,
-						text: `❌ Failed to send reply: ${err instanceof Error ? err.message : String(err)}`,
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: `❌ Failed to send reply: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -305,18 +321,22 @@ export default function (pi: ExtensionAPI) {
 			try {
 				const result = writeOutbox("escalate", params.content);
 				return {
-					content: [{
-						type: "text" as const,
-						text: `⚠️ Escalation sent to supervisor (ID: ${result.id}). Continue working on other items while waiting for guidance.`,
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: `⚠️ Escalation sent to supervisor (ID: ${result.id}). Continue working on other items while waiting for guidance.`,
+						},
+					],
 					details: undefined,
 				};
 			} catch (err) {
 				return {
-					content: [{
-						type: "text" as const,
-						text: `❌ Failed to escalate: ${err instanceof Error ? err.message : String(err)}`,
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: `❌ Failed to escalate: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -340,8 +360,7 @@ export default function (pi: ExtensionAPI) {
 			description:
 				"Request additional repository segments for the current task at runtime. " +
 				"Writes a request file to the worker outbox for engine processing.",
-			promptSnippet:
-				"request_segment_expansion(requestedRepoIds, rationale, placement?, edges?)",
+			promptSnippet: "request_segment_expansion(requestedRepoIds, rationale, placement?, edges?)",
 			promptGuidelines: [
 				"Use this when runtime discovery reveals additional repos are needed.",
 				"Do not wait for approval; continue current segment work after requesting.",
@@ -355,18 +374,22 @@ export default function (pi: ExtensionAPI) {
 				rationale: Type.String({
 					description: "Why these repos are needed",
 				}),
-				placement: Type.Optional(Type.Union([
-					Type.Literal("after-current"),
-					Type.Literal("end"),
-				], {
-					description: "Where to place new segments: after-current (default) or end",
-				})),
-				edges: Type.Optional(Type.Array(Type.Object({
-					from: Type.String({ description: "Source repo ID" }),
-					to: Type.String({ description: "Destination repo ID" }),
-				}), {
-					description: "Optional ordering edges between requested repos",
-				})),
+				placement: Type.Optional(
+					Type.Union([Type.Literal("after-current"), Type.Literal("end")], {
+						description: "Where to place new segments: after-current (default) or end",
+					}),
+				),
+				edges: Type.Optional(
+					Type.Array(
+						Type.Object({
+							from: Type.String({ description: "Source repo ID" }),
+							to: Type.String({ description: "Destination repo ID" }),
+						}),
+						{
+							description: "Optional ordering edges between requested repos",
+						},
+					),
+				),
 			}),
 			async execute(_toolCallId, params) {
 				const autonomy = resolveSupervisorAutonomy();
@@ -428,9 +451,11 @@ export default function (pi: ExtensionAPI) {
 					placement: params.placement === "end" ? "end" : "after-current",
 					edges: Array.isArray(params.edges)
 						? params.edges
-							.filter((edge): edge is { from: string; to: string } => Boolean(edge && typeof edge.from === "string" && typeof edge.to === "string"))
-							.map((edge) => ({ from: edge.from.trim(), to: edge.to.trim() }))
-							.filter((edge) => edge.from.length > 0 && edge.to.length > 0)
+								.filter((edge): edge is { from: string; to: string } =>
+									Boolean(edge && typeof edge.from === "string" && typeof edge.to === "string"),
+								)
+								.map((edge) => ({ from: edge.from.trim(), to: edge.to.trim() }))
+								.filter((edge) => edge.from.length > 0 && edge.to.length > 0)
 						: [],
 					timestamp: now,
 				};
@@ -466,14 +491,13 @@ export default function (pi: ExtensionAPI) {
 	// The reviewer runs as a separate Pi process, writes feedback to
 	// .reviews/, and this tool returns the verdict to the worker.
 
-
-
 	/**
 	 * Load the reviewer system prompt from base template + local override.
 	 * Uses resolveTaskplaneAgentTemplate (path-resolver.ts) for all platform support (TP-157).
 	 */
 	function loadReviewerPrompt(): string {
-		let basePrompt = "You are a code reviewer. Read the request and write your review to the specified output file.";
+		let basePrompt =
+			"You are a code reviewer. Read the request and write your review to the specified output file.";
 		try {
 			const templatePath = resolveTaskplaneAgentTemplate("task-reviewer");
 			if (existsSync(templatePath)) {
@@ -481,9 +505,14 @@ export default function (pi: ExtensionAPI) {
 				const fmEnd = raw.indexOf("---", 4);
 				if (fmEnd > 0) basePrompt = raw.slice(fmEnd + 3).trim();
 			}
-		} catch { /* fall through to default */ }
+		} catch {
+			/* fall through to default */
+		}
 		// Local override
-		const localPaths = [join(process.cwd(), ".pi", "agents", "task-reviewer.md"), join(process.cwd(), "agents", "task-reviewer.md")];
+		const localPaths = [
+			join(process.cwd(), ".pi", "agents", "task-reviewer.md"),
+			join(process.cwd(), "agents", "task-reviewer.md"),
+		];
 		for (const p of localPaths) {
 			try {
 				if (!existsSync(p)) continue;
@@ -494,7 +523,9 @@ export default function (pi: ExtensionAPI) {
 					if (localBody) basePrompt += "\n\n---\n\n## Project-Specific Guidance\n\n" + localBody;
 				}
 				break;
-			} catch { continue; }
+			} catch {
+				continue;
+			}
 		}
 		return basePrompt;
 	}
@@ -503,21 +534,24 @@ export default function (pi: ExtensionAPI) {
 		return process.env.TASKPLANE_REVIEWER_STATE_PATH || join(taskFolder, ".reviewer-state.json");
 	}
 
-	function writeReviewerState(taskFolder: string, state: {
-		status: "running" | "done" | "error";
-		elapsedMs: number;
-		toolCalls: number;
-		contextPct: number;
-		costUsd: number;
-		lastTool: string;
-		inputTokens: number;
-		outputTokens: number;
-		cacheReadTokens: number;
-		cacheWriteTokens: number;
-		updatedAt: number;
-		reviewType?: string;
-		reviewStep?: number;
-	}): void {
+	function writeReviewerState(
+		taskFolder: string,
+		state: {
+			status: "running" | "done" | "error";
+			elapsedMs: number;
+			toolCalls: number;
+			contextPct: number;
+			costUsd: number;
+			lastTool: string;
+			inputTokens: number;
+			outputTokens: number;
+			cacheReadTokens: number;
+			cacheWriteTokens: number;
+			updatedAt: number;
+			reviewType?: string;
+			reviewStep?: number;
+		},
+	): void {
 		const filePath = reviewerStatePath(taskFolder);
 		const tmpPath = filePath + ".tmp";
 		writeFileSync(tmpPath, JSON.stringify(state, null, 2) + "\n", "utf-8");
@@ -527,14 +561,25 @@ export default function (pi: ExtensionAPI) {
 	function removeReviewerState(taskFolder: string): void {
 		const filePath = reviewerStatePath(taskFolder);
 		if (!existsSync(filePath)) return;
-		try { unlinkSync(filePath); } catch { /* best effort */ }
+		try {
+			unlinkSync(filePath);
+		} catch {
+			/* best effort */
+		}
 	}
 
 	/**
 	 * Spawn a reviewer Pi subprocess and wait for it to complete.
 	 * Returns the process exit code.
 	 */
-	function spawnReviewer(prompt: string, systemPrompt: string, cwd: string, taskFolder: string, reviewType?: string, reviewStep?: number): Promise<number> {
+	function spawnReviewer(
+		prompt: string,
+		systemPrompt: string,
+		cwd: string,
+		taskFolder: string,
+		reviewType?: string,
+		reviewStep?: number,
+	): Promise<number> {
 		// Pre-clean stale reviewer state from prior interrupted review
 		removeReviewerState(taskFolder);
 		return new Promise((resolve) => {
@@ -548,9 +593,16 @@ export default function (pi: ExtensionAPI) {
 
 			const cliPath = resolvePiCliPath();
 			const args = [
-				cliPath, "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills",
-				"--tools", reviewerTools,
-				"--system-prompt", systemPrompt,
+				cliPath,
+				"--mode",
+				"rpc",
+				"--no-session",
+				"--no-extensions",
+				"--no-skills",
+				"--tools",
+				reviewerTools,
+				"--system-prompt",
+				systemPrompt,
 			];
 			if (reviewerModel) args.push("--model", reviewerModel);
 			if (reviewerThinking) args.push("--thinking", reviewerThinking);
@@ -570,7 +622,9 @@ export default function (pi: ExtensionAPI) {
 						reviewerExclusions = parsed.filter((v: unknown): v is string => typeof v === "string");
 					}
 				}
-			} catch { /* ignore malformed */ }
+			} catch {
+				/* ignore malformed */
+			}
 			const filteredReviewerPackages = filterExcludedExtensions(reviewerPackages, reviewerExclusions);
 			for (const pkg of filteredReviewerPackages) {
 				args.push("-e", pkg);
@@ -611,7 +665,9 @@ export default function (pi: ExtensionAPI) {
 						reviewType,
 						reviewStep,
 					});
-				} catch { /* best effort */ }
+				} catch {
+					/* best effort */
+				}
 			};
 
 			// Write initial "running" state immediately so dashboard shows
@@ -620,7 +676,11 @@ export default function (pi: ExtensionAPI) {
 
 			const closeStdin = () => {
 				setTimeout(() => {
-					try { proc.stdin?.end(); } catch { /* ignore */ }
+					try {
+						proc.stdin?.end();
+					} catch {
+						/* ignore */
+					}
 				}, 100);
 			};
 
@@ -642,9 +702,12 @@ export default function (pi: ExtensionAPI) {
 							cacheReadTokens += usage.cacheRead || 0;
 							cacheWriteTokens += usage.cacheWrite || 0;
 							if (usage.cost) {
-								costUsd += typeof usage.cost === "object"
-									? (usage.cost.total || 0)
-									: (typeof usage.cost === "number" ? usage.cost : 0);
+								costUsd +=
+									typeof usage.cost === "object"
+										? usage.cost.total || 0
+										: typeof usage.cost === "number"
+											? usage.cost
+											: 0;
 							}
 						}
 						emitState("running");
@@ -653,11 +716,12 @@ export default function (pi: ExtensionAPI) {
 					case "tool_execution_start": {
 						toolCalls++;
 						const toolName = event.toolName || "tool";
-						const argPreview = typeof event.args === "string"
-							? event.args.slice(0, 80)
-							: (event.args && typeof Object.values(event.args)[0] === "string"
-								? String(Object.values(event.args)[0]).slice(0, 80)
-								: "");
+						const argPreview =
+							typeof event.args === "string"
+								? event.args.slice(0, 80)
+								: event.args && typeof Object.values(event.args)[0] === "string"
+									? String(Object.values(event.args)[0]).slice(0, 80)
+									: "";
 						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
 						emitState("running");
 						break;
@@ -688,7 +752,11 @@ export default function (pi: ExtensionAPI) {
 					if (line.endsWith("\r")) line = line.slice(0, -1);
 					if (!line.trim()) continue;
 					let event: any;
-					try { event = JSON.parse(line); } catch { continue; }
+					try {
+						event = JSON.parse(line);
+					} catch {
+						continue;
+					}
 					handleEvent(event);
 				}
 			});
@@ -697,9 +765,16 @@ export default function (pi: ExtensionAPI) {
 			proc.on("error", () => finalize(1));
 
 			// Timeout: 10 minutes
-			setTimeout(() => {
-				try { proc.kill("SIGTERM"); } catch { /* ignore */ }
-			}, 10 * 60 * 1000);
+			setTimeout(
+				() => {
+					try {
+						proc.kill("SIGTERM");
+					} catch {
+						/* ignore */
+					}
+				},
+				10 * 60 * 1000,
+			);
 		});
 	}
 
@@ -721,13 +796,14 @@ export default function (pi: ExtensionAPI) {
 		],
 		parameters: Type.Object({
 			step: Type.Number({ description: "Step number to review" }),
-			type: Type.Union(
-				[Type.Literal("plan"), Type.Literal("code")],
-				{ description: 'Review type: "plan" or "code"' },
+			type: Type.Union([Type.Literal("plan"), Type.Literal("code")], {
+				description: 'Review type: "plan" or "code"',
+			}),
+			baseline: Type.Optional(
+				Type.String({
+					description: "Git commit SHA for code review diff baseline",
+				}),
 			),
-			baseline: Type.Optional(Type.String({
-				description: "Git commit SHA for code review diff baseline",
-			})),
 		}),
 		async execute(_toolCallId, params) {
 			const { step: stepNum, type: reviewType, baseline } = params;
@@ -766,7 +842,9 @@ export default function (pi: ExtensionAPI) {
 				const statusContent = readFileSync(statusPath, "utf-8");
 				const rcMatch = statusContent.match(/\*\*Review Counter:\*\*\s*(\d+)/);
 				if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
-			} catch { /* default 0 */ }
+			} catch {
+				/* default 0 */
+			}
 
 			reviewCounter++;
 			const num = String(reviewCounter).padStart(3, "0");
@@ -780,14 +858,21 @@ export default function (pi: ExtensionAPI) {
 					if (!existsSync(pf)) continue;
 					const content = readFileSync(pf, "utf-8");
 					const stepMatch = content.match(new RegExp(`###\\s+Step\\s+${stepNum}[:\\s]+(.+)`));
-					if (stepMatch) { stepName = stepMatch[1].trim(); break; }
+					if (stepMatch) {
+						stepName = stepMatch[1].trim();
+						break;
+					}
 				}
-			} catch { /* use default */ }
+			} catch {
+				/* use default */
+			}
 
 			// Generate review request prompt
 			const projectName = process.env.TASKPLANE_PROJECT_NAME || "project";
 			const diffCmd = baseline ? `git diff ${baseline}..HEAD` : `git diff`;
-			const diffNamesCmd = baseline ? `git diff ${baseline}..HEAD --name-only` : `git diff --name-only`;
+			const diffNamesCmd = baseline
+				? `git diff ${baseline}..HEAD --name-only`
+				: `git diff --name-only`;
 
 			let reviewPrompt: string;
 			if (reviewType === "plan") {
@@ -835,14 +920,26 @@ export default function (pi: ExtensionAPI) {
 
 			try {
 				const systemPrompt = loadReviewerPrompt();
-				const exitCode = await spawnReviewer(reviewPrompt, systemPrompt, cwd, taskFolder, reviewType, stepNum);
+				const exitCode = await spawnReviewer(
+					reviewPrompt,
+					systemPrompt,
+					cwd,
+					taskFolder,
+					reviewType,
+					stepNum,
+				);
 
 				// Update review counter in STATUS.md
 				try {
 					const status = readFileSync(statusPath, "utf-8");
-					const updated = status.replace(/\*\*Review Counter:\*\*\s*\d+/, `**Review Counter:** ${reviewCounter}`);
+					const updated = status.replace(
+						/\*\*Review Counter:\*\*\s*\d+/,
+						`**Review Counter:** ${reviewCounter}`,
+					);
 					writeFileSync(statusPath, updated);
-				} catch { /* best effort */ }
+				} catch {
+					/* best effort */
+				}
 
 				// Read review output and extract verdict
 				if (existsSync(outputPath)) {
@@ -861,7 +958,9 @@ export default function (pi: ExtensionAPI) {
 						const status = readFileSync(statusPath, "utf-8");
 						const logEntry = `| ${new Date().toISOString().slice(0, 16).replace("T", " ")} | Review R${num} | ${reviewType} Step ${stepNum}: ${verdict} |\n`;
 						writeFileSync(statusPath, status.trimEnd() + "\n" + logEntry);
-					} catch { /* best effort */ }
+					} catch {
+						/* best effort */
+					}
 
 					removeReviewerState(taskFolder);
 
@@ -871,20 +970,48 @@ export default function (pi: ExtensionAPI) {
 					} else if (verdict === "REVISE") {
 						const summaryMatch = reviewContent.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
 						const details = summaryMatch ? summaryMatch[1].trim().slice(0, 500) : "See review file.";
-						return { content: [{ type: "text" as const, text: `REVISE: ${details}\n\nFull review: ${reviewFile}` }], details: undefined };
+						return {
+							content: [
+								{ type: "text" as const, text: `REVISE: ${details}\n\nFull review: ${reviewFile}` },
+							],
+							details: undefined,
+						};
 					} else if (verdict === "RETHINK") {
-						return { content: [{ type: "text" as const, text: `RETHINK — reconsider approach. See ${reviewFile}` }], details: undefined };
+						return {
+							content: [
+								{ type: "text" as const, text: `RETHINK — reconsider approach. See ${reviewFile}` },
+							],
+							details: undefined,
+						};
 					} else {
-						return { content: [{ type: "text" as const, text: `Review complete (verdict unclear). See ${reviewFile}` }], details: undefined };
+						return {
+							content: [
+								{ type: "text" as const, text: `Review complete (verdict unclear). See ${reviewFile}` },
+							],
+							details: undefined,
+						};
 					}
 				} else {
 					removeReviewerState(taskFolder);
-					return { content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer exited (code ${exitCode}) but produced no output.` }], details: undefined };
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `UNAVAILABLE — reviewer exited (code ${exitCode}) but produced no output.`,
+							},
+						],
+						details: undefined,
+					};
 				}
 			} catch (err) {
 				removeReviewerState(taskFolder);
 				return {
-					content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer failed: ${err instanceof Error ? err.message : String(err)}` }],
+					content: [
+						{
+							type: "text" as const,
+							text: `UNAVAILABLE — reviewer failed: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
 					details: undefined,
 				};
 			}

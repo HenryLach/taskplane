@@ -30,7 +30,9 @@ describe("send_agent_message guards", () => {
 
 describe("workspace-root cleanup wiring", () => {
 	it("buildIntegrationExecutor uses stateRoot override for cleanupPostIntegrate", () => {
-		expect(extensionSource).toContain("buildIntegrationExecutor(repoRoot: string, opId?: string, stateRoot?: string)");
+		expect(extensionSource).toContainNormalized(
+			"buildIntegrationExecutor(repoRoot: string, opId?: string, stateRoot?: string)",
+		);
 		expect(extensionSource).toContain("cleanupPostIntegrate(stateRoot ?? repoRoot, context.batchId)");
 		expect(extensionSource).toContain("withPreservedBatchHistory(effectiveStateRoot");
 	});

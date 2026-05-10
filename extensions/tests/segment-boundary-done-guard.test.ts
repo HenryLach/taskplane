@@ -14,7 +14,14 @@
  *   to derive the canonical worker agent ID.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -35,7 +42,9 @@ function rmrf(dir: string): void {
 	try {
 		const { rmSync } = require("fs");
 		rmSync(dir, { recursive: true, force: true });
-	} catch { /* best effort */ }
+	} catch {
+		/* best effort */
+	}
 }
 
 // ── Bug #1: Premature .DONE guard with pending expansion requests ───
@@ -56,13 +65,16 @@ describe("TP-165 regression: .DONE suppressed when expansion requests pending", 
 	it("detects pending expansion request files in outbox", () => {
 		const outboxDir = join(stateRoot, ".pi", "mailbox", batchId, agentId, "outbox");
 		mkdirSync(outboxDir, { recursive: true });
-		writeFileSync(join(outboxDir, "segment-expansion-exp-001.json"), JSON.stringify({
-			requestId: "exp-001",
-			taskId: "TP-100",
-			fromSegmentId: "TP-100::default",
-			requestedRepoIds: ["api"],
-			placement: "after-current",
-		}));
+		writeFileSync(
+			join(outboxDir, "segment-expansion-exp-001.json"),
+			JSON.stringify({
+				requestId: "exp-001",
+				taskId: "TP-100",
+				fromSegmentId: "TP-100::default",
+				requestedRepoIds: ["api"],
+				placement: "after-current",
+			}),
+		);
 
 		const result = hasPendingExpansionRequestFiles(stateRoot, batchId, agentId);
 		expect(result).toBe(true);
@@ -95,9 +107,12 @@ describe("TP-165 regression: .DONE suppressed when expansion requests pending", 
 		const outboxDir = join(stateRoot, ".pi", "mailbox", batchId, agentId, "outbox");
 		mkdirSync(outboxDir, { recursive: true });
 		writeFileSync(join(outboxDir, "segment-expansion-exp-001.json.processed"), "{}");
-		writeFileSync(join(outboxDir, "segment-expansion-exp-002.json"), JSON.stringify({
-			requestId: "exp-002",
-		}));
+		writeFileSync(
+			join(outboxDir, "segment-expansion-exp-002.json"),
+			JSON.stringify({
+				requestId: "exp-002",
+			}),
+		);
 
 		const result = hasPendingExpansionRequestFiles(stateRoot, batchId, agentId);
 		expect(result).toBe(true);
@@ -130,7 +145,9 @@ describe("TP-165 regression: resolveTaskWorkerAgentId workspace-mode fix", () =>
 	});
 
 	it("prefers outcome.sessionName when available (no fallback needed)", () => {
-		const outcomes: any[] = [{ taskId: "TP-100", sessionName: "orch-henry-lane-1-worker", status: "succeeded" }];
+		const outcomes: any[] = [
+			{ taskId: "TP-100", sessionName: "orch-henry-lane-1-worker", status: "succeeded" },
+		];
 		const result = resolveTaskWorkerAgentId("TP-100", outcomes, new Map());
 		expect(result).toBe("orch-henry-lane-1-worker");
 	});

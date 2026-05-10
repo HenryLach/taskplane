@@ -25,14 +25,9 @@ import {
 	MERGE_HEALTH_POLL_INTERVAL_MS,
 	MERGE_HEALTH_CAPTURE_LINES,
 } from "../taskplane/types.ts";
-import type {
-	MergeSessionHealthState,
-	MergeHealthStatus,
-} from "../taskplane/types.ts";
-
+import type { MergeSessionHealthState, MergeHealthStatus } from "../taskplane/types.ts";
 
 // ── Helper: create a default MergeSessionHealthState ─────────────────
-
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 function makeHealthState(overrides?: Partial<MergeSessionHealthState>): MergeSessionHealthState {
@@ -49,7 +44,6 @@ function makeHealthState(overrides?: Partial<MergeSessionHealthState>): MergeSes
 		...overrides,
 	};
 }
-
 
 // ── 1. Health Classification Tests ───────────────────────────────────
 
@@ -100,7 +94,6 @@ describe("classifyMergeHealth", () => {
 	});
 });
 
-
 // ── 2. Elapsed-Time Classification Tests ─────────────────────────────
 
 describe("elapsed-time classification", () => {
@@ -123,7 +116,6 @@ describe("elapsed-time classification", () => {
 		expect(result).toBe("warning");
 	});
 });
-
 
 // ── 3. Constants Verification ────────────────────────────────────────
 
@@ -148,7 +140,6 @@ describe("monitoring constants", () => {
 		expect(MERGE_HEALTH_STUCK_THRESHOLD_MS).toBeGreaterThan(MERGE_HEALTH_WARNING_THRESHOLD_MS);
 	});
 });
-
 
 // ── 4. Supervisor Event Formatting Tests ─────────────────────────────
 
@@ -212,7 +203,6 @@ describe("supervisor merge health event formatting", () => {
 	});
 });
 
-
 // ── 5. Supervisor shouldNotify Tests ─────────────────────────────────
 
 describe("shouldNotify for merge health events", () => {
@@ -240,15 +230,11 @@ describe("shouldNotify for merge health events", () => {
 	});
 });
 
-
 // ── 6. Source-Level Integration Verification ─────────────────────────
 
 describe("source-level integration verification", () => {
 	it("6.1: engine.ts imports and uses MergeHealthMonitor", () => {
-		const engineSource = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 		// Verify import
 		expect(engineSource).toContain("MergeHealthMonitor");
 		// Verify it creates a monitor during merge
@@ -259,10 +245,7 @@ describe("source-level integration verification", () => {
 	});
 
 	it("6.2: merge.ts mergeWave accepts healthMonitor parameter", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		// mergeWave signature includes healthMonitor
 		expect(mergeSource).toContain("healthMonitor?: MergeHealthMonitor");
 		// Runtime V2 merge flow still performs deregistration on completion/error.
@@ -280,10 +263,7 @@ describe("source-level integration verification", () => {
 	});
 
 	it("6.4: types.ts exports merge health constants", () => {
-		const typesSource = readFileSync(
-			join(__dirname, "..", "taskplane", "types.ts"),
-			"utf-8",
-		);
+		const typesSource = readFileSync(join(__dirname, "..", "taskplane", "types.ts"), "utf-8");
 		expect(typesSource).toContain("MERGE_HEALTH_POLL_INTERVAL_MS");
 		expect(typesSource).toContain("MERGE_HEALTH_WARNING_THRESHOLD_MS");
 		expect(typesSource).toContain("MERGE_HEALTH_STUCK_THRESHOLD_MS");
@@ -292,10 +272,7 @@ describe("source-level integration verification", () => {
 	});
 
 	it("6.5: EngineEventType includes merge health event types", () => {
-		const typesSource = readFileSync(
-			join(__dirname, "..", "taskplane", "types.ts"),
-			"utf-8",
-		);
+		const typesSource = readFileSync(join(__dirname, "..", "taskplane", "types.ts"), "utf-8");
 		// Find the EngineEventType union
 		const engineEventMatch = typesSource.match(/export type EngineEventType\s*=[\s\S]*?;/);
 		expect(engineEventMatch).not.toBeNull();
@@ -306,16 +283,12 @@ describe("source-level integration verification", () => {
 	});
 
 	it("6.6: EngineEvent interface includes merge health fields", () => {
-		const typesSource = readFileSync(
-			join(__dirname, "..", "taskplane", "types.ts"),
-			"utf-8",
-		);
+		const typesSource = readFileSync(join(__dirname, "..", "taskplane", "types.ts"), "utf-8");
 		expect(typesSource).toContain("sessionName?: string");
 		expect(typesSource).toContain("healthStatus?: MergeHealthStatus");
 		expect(typesSource).toContain("stalledMinutes?: number");
 	});
 });
-
 
 // ── 7. MergeHealthMonitor Unit Tests ─────────────────────────────────
 
@@ -404,23 +377,21 @@ describe("MergeHealthMonitor", () => {
 	});
 });
 
-
 // ── 8. MergeHealthMonitor.poll() Behavior Tests ──────────────────────
 
 describe("MergeHealthMonitor.poll() behavior", () => {
 	it("8.1: poll() source verifies V2 liveness cache wiring + classifyMergeHealth", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		// Find the poll() method body
 		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		expect(pollIdx).toBeGreaterThan(-1);
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
 		// Verify poll seeds/clears V2 liveness cache and checks V2 liveness
-		expect(pollBody).toContain("setV2LivenessRegistryCache(readRegistrySnapshot(this.stateRoot, this.batchId))");
-		expect(pollBody).toContain("isV2AgentAlive(sessionName, \"v2\")");
+		expect(pollBody).toContain(
+			"setV2LivenessRegistryCache(readRegistrySnapshot(this.stateRoot, this.batchId))",
+		);
+		expect(pollBody).toContain('isV2AgentAlive(sessionName, "v2")');
 		expect(pollBody).toContain("setV2LivenessRegistryCache(null)");
 		// Verify poll checks result file
 		expect(pollBody).toContain("existsSync(resultPath)");
@@ -431,10 +402,7 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 	});
 
 	it("8.2: poll() no longer updates snapshots from pane output", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
@@ -443,10 +411,7 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 	});
 
 	it("8.3: poll() calls _emitHealthEvents for each session", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
@@ -454,10 +419,7 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 	});
 
 	it("8.4: poll() fires onDeadSession callback when dead session detected", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
@@ -468,15 +430,11 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 	});
 });
 
-
 // ── 9. Event Emission and De-duplication Tests ───────────────────────
 
 describe("event emission and de-duplication", () => {
 	it("9.1: _emitHealthEvents source emits warning event only when warningEmitted is false", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
 		expect(emitIdx).toBeGreaterThan(-1);
 		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
@@ -488,10 +446,7 @@ describe("event emission and de-duplication", () => {
 	});
 
 	it("9.2: _emitHealthEvents source emits dead event only when deadEmitted is false", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
 		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
 
@@ -500,10 +455,7 @@ describe("event emission and de-duplication", () => {
 	});
 
 	it("9.3: _emitHealthEvents source emits stuck event only when stuckEmitted is false", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
 		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2500);
 
@@ -513,10 +465,7 @@ describe("event emission and de-duplication", () => {
 	});
 
 	it("9.4: events include laneNumber, sessionName, healthStatus, and stalledMinutes fields", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
 		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
 
@@ -527,10 +476,7 @@ describe("event emission and de-duplication", () => {
 	});
 
 	it("9.5: events are written via emitEngineEvent (to unified events.jsonl)", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
 		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
 
@@ -538,10 +484,7 @@ describe("event emission and de-duplication", () => {
 	});
 
 	it("9.6: event uses buildEngineEventBase for consistent event structure", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
 		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
 
@@ -549,15 +492,11 @@ describe("event emission and de-duplication", () => {
 	});
 });
 
-
 // ── 10. Dead-Session Early Exit Signaling Tests ──────────────────────
 
 describe("dead-session early exit signaling", () => {
 	it("10.1: MergeHealthMonitor accepts onDeadSession callback in constructor", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		// Constructor accepts onDeadSession parameter
 		expect(mergeSource).toContain("onDeadSession?:");
 		// Stored as private field
@@ -565,10 +504,7 @@ describe("dead-session early exit signaling", () => {
 	});
 
 	it("10.2: onDeadSession callback is invoked with sessionName and laneNumber", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
@@ -577,20 +513,14 @@ describe("dead-session early exit signaling", () => {
 	});
 
 	it("10.3: engine.ts wires onDeadSession callback when creating monitor", () => {
-		const engineSource = readFileSync(
-			join(__dirname, "..", "taskplane", "engine.ts"),
-			"utf-8",
-		);
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 		expect(engineSource).toContain("onDeadSession:");
 		// The callback logs the event for now — demonstrates the contract
 		expect(engineSource).toContain("merge health monitor detected dead session");
 	});
 
 	it("10.4: dead session detection in poll() only fires once per session (deadEmitted guard)", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
@@ -608,10 +538,7 @@ describe("dead-session early exit signaling", () => {
 		// and the _dead session callback_ (for engine-level awareness), not a parallel
 		// abort signal — the existing session-liveness check in waitForMergeResult handles
 		// the actual early exit within its 2-second poll loop.
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 
 		// waitForMergeResult already checks session liveness each poll
 		const waitFn = mergeSource.substring(
@@ -629,26 +556,19 @@ describe("dead-session early exit signaling", () => {
 	});
 });
 
-
 // ── 11. Merge TMUX capture removal tests ─────────────────────────────
 
 describe("merge TMUX capture removal", () => {
 	it("11.1: merge source no longer includes TMUX capture helper functions", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 		expect(mergeSource).not.toContain("captureMergePaneOutput");
 		expect(mergeSource).not.toContain("runMergeTmuxCommandAsync");
 	});
 
 	it("11.2: merge source no longer invokes tmux capture-pane commands", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
-		expect(mergeSource).not.toContain("spawnSync(\"tmux\"");
-		expect(mergeSource).not.toContain("spawn(\"tmux\"");
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+		expect(mergeSource).not.toContain('spawnSync("tmux"');
+		expect(mergeSource).not.toContain('spawn("tmux"');
 		expect(mergeSource).not.toContain("capture-pane");
 	});
 });
