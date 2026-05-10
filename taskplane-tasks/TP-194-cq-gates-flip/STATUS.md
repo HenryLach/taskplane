@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -74,7 +74,9 @@
 ---
 
 ### Step 4: Implement Parts 3-4 — documentation
-**Status:** 🟨 In Progress
+**Status:** 🟨 In Progress (R005 fix applied)
+
+**R005 revision:** reviewer flagged that `npm run lint:fix` was referenced in the new development-setup section but the script did not exist in `package.json`. The same `lint:fix` reference also exists in the pre-existing Biome section of the same file (line 161). Cleanest fix is to add the missing script (`"lint:fix": "biome lint --write --no-errors-on-unmatched ."`), which matches Biome's documented autofix command. Verified gates still pass after the package.json edit (`typecheck`, `lint`, `format:check` all exit 0). Note: actually invoking `npm run lint:fix` rewrites files — those rewrites were reverted; the script is documented for contributors but not run during this task.
 
 > ⚠️ Code-review fires after this step.
 
@@ -217,3 +219,4 @@ This is Discoveries-only documentation, not a new automated test. The TP-188 sou
 | 2026-05-10 21:54 | Review R002 | plan Step 1: APPROVE |
 | 2026-05-10 21:55 | Review R003 | code Step 2: APPROVE |
 | 2026-05-10 21:57 | Review R004 | code Step 3: APPROVE |
+| 2026-05-10 21:59 | Review R005 | code Step 4: REVISE |
