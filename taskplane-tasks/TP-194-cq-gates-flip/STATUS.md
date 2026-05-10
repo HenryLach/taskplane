@@ -88,15 +88,15 @@
 ---
 
 ### Step 5: Branch protection (operator handoff)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 > **Revised after R001:** branch protection is job-level, not step-level. The
 > existing required `ci` context already covers all gates once
 > `continue-on-error` is removed. Operator action is verification-only.
 
-- [ ] Required-status-check context documented in Discoveries (verified: `ci` already required; no new contexts needed)
-- [ ] PR-time verification: run `gh pr checks <num>` to confirm context names match expectation
-- [ ] PR body references the operator verification step so it isn't forgotten
+- [x] Required-status-check context documented in Discoveries D5 (verified via `gh api`: `required_status_checks.contexts: ["ci"]` already required; no new contexts needed)
+- [x] PR-time verification recipe documented in Discoveries D6 (run `gh pr checks <num>` and confirm context name is `ci`)
+- [x] PR body operator-handoff stub captured in Discoveries D7 — PR author copies this into the PR body when opening the release PR for TP-194
 
 ---
 
@@ -147,6 +147,7 @@
 | D4: Documentation updates | AGENTS.md "Run validations locally" gains the 3 gate commands; release-process.md adds them to the pre-release checklist + step 2; development-setup.md gets a new "Code-quality gates" section under "Running tests". | AGENTS.md, release-process.md, development-setup.md |
 | D5: Branch protection required status checks | **Corrected per R001:** branch protection consumes job-level check contexts, not step names. The current main-branch protection already requires the `ci` job (verified via `gh api`: `required_status_checks.contexts: ["ci"]`). Because all gates run as **steps inside the single `ci` job**, removing `continue-on-error: true` on those steps causes the whole `ci` job to fail when any gate fails, which the existing required check already blocks. **Operator action after this PR merges:** verify (no change required) that branch protection on `main` still requires the `ci` context. No new contexts need adding. | GitHub branch protection (operator verification only) |
 | D6: GitHub check-context verification action | After Step 2's workflow edit lands on this branch, the actual rendered check name should still be `ci`. The PR's CI run will display each step under the `ci` job; failure of any individual step fails the whole job. Verify by reading the PR's status check rollup (`gh pr checks <num>`) once the PR is up. | PR-time verification |
+| D7: PR body operator-handoff stub | Suggested text below; PR author copies into the TP-194 PR body. | Pasted into PR body at PR-creation time |
 
 ### Plan drafts
 
@@ -185,6 +186,30 @@ Because this task keeps the single-`ci`-job structure (rationale: separate jobs 
 **Fallback note (per reviewer suggestion):** If, after this PR merges, the actual check-context names emitted on a PR differ from `ci` (e.g., if GitHub starts exposing step names as contexts — historically it has not), use the observed context strings verbatim in any future branch-protection update.
 
 **D6 — PR-time check-context verification.** After the PR with this task's CI workflow edit is opened, run `gh pr checks <num>` and confirm the rendered context name(s) match the current required-checks list (i.e., still `ci`). This is captured in the PR body to make the operator handoff explicit.
+
+**D7 — PR body operator-handoff stub.** Suggested text to include in the TP-194 release PR body:
+
+```markdown
+## Branch-protection operator handoff
+
+This PR flips three CI gates from advisory to required by removing
+`continue-on-error: true` and adding two new steps to the existing
+`ci` job. **No branch-protection changes are required** — the existing
+required `ci` status check (verified via `gh api repos/HenryLach/taskplane/branches/main/protection`)
+already blocks merge when any step in the `ci` job fails.
+
+**Operator action (verification-only):**
+- After this PR's CI run completes, run `gh pr checks <this PR #>` and
+  confirm the rendered check-context name is still `ci`.
+- (Optional) Open repo Settings → Branches → main branch protection rule
+  and confirm `Require status checks to pass` still lists `ci`.
+
+If at some future point you want per-gate visibility in branch
+protection (e.g., to require `Typecheck` independently of `Lint`),
+the follow-up is to split the gates into separate jobs in
+`.github/workflows/ci.yml` — out of scope for TP-194 per the spec's
+Tier-1.5 follow-up list.
+```
 
 ---
 
