@@ -99,7 +99,9 @@ function makeMockCallbacks(options: { performMergeResults?: MergeWaveResult[] } 
 		log: (message) => logs.push(message),
 		notify: (message, level) => notifications.push({ message, level }),
 		updateMergeResult: () => {},
-		sleep: (ms) => { sleepCalls.push(ms); },
+		sleep: (ms) => {
+			sleepCalls.push(ms);
+		},
 	};
 
 	return {

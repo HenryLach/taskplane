@@ -1462,8 +1462,7 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		batchState.phase = "launching";
 
 		const p = widePhase(batchState);
-		const hasActiveBatch =
-			p !== "idle" && p !== "completed" && p !== "failed" && p !== "stopped";
+		const hasActiveBatch = p !== "idle" && p !== "completed" && p !== "failed" && p !== "stopped";
 
 		expect(hasActiveBatch).toBe(true);
 	});
@@ -1473,8 +1472,7 @@ describe("9.x — Behavioral: launch-window command logic with 'launching' phase
 		batchState.phase = "launching";
 
 		const p = widePhase(batchState);
-		const isRunning =
-			p === "launching" || p === "executing" || p === "merging" || p === "planning";
+		const isRunning = p === "launching" || p === "executing" || p === "merging" || p === "planning";
 
 		expect(isRunning).toBe(true);
 	});

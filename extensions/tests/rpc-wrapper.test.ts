@@ -1127,7 +1127,9 @@ describe("createSingleWriteGuard — exactly-once semantics", () => {
 // ── 11. Integration: Mock pi process end-to-end ─────────────────────
 
 describe("integration — mock pi process end-to-end", () => {
-	it("produces correct sidecar JSONL and exit summary from scripted events", { timeout: 30000 }, async () => {
+	it("produces correct sidecar JSONL and exit summary from scripted events", {
+		timeout: 30000,
+	}, async () => {
 		const { execFile } = await import("child_process");
 		const { promisify } = await import("util");
 		const { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } = await import("fs");
@@ -1297,7 +1299,9 @@ process.stdin.on('end', () => {
 		}
 	});
 
-	it("handles mock pi crash (non-zero exit, no agent_end) — writes summary with error", { timeout: 30000 }, async () => {
+	it("handles mock pi crash (non-zero exit, no agent_end) — writes summary with error", {
+		timeout: 30000,
+	}, async () => {
 		const { execFile } = await import("child_process");
 		const { promisify } = await import("util");
 		const { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } = await import("fs");
@@ -1640,7 +1644,9 @@ describe("checkMailboxAndSteer — mailbox delivery", () => {
 // ── 16. mailbox-dir runtime behavior (startup + no-mailbox) ─────────
 
 describe("mailbox-dir runtime behavior", () => {
-	it("sends set_steering_mode at startup and injects steer on message_end", { timeout: 30000 }, async () => {
+	it("sends set_steering_mode at startup and injects steer on message_end", {
+		timeout: 30000,
+	}, async () => {
 		const { execFile } = await import("child_process");
 		const { promisify } = await import("util");
 		const { readFileSync, writeFileSync, mkdirSync, rmSync } = await import("fs");
@@ -1764,7 +1770,9 @@ process.stdin.on('end', () => {
 		}
 	});
 
-	it("does not send steer or set_steering_mode when --mailbox-dir is absent", { timeout: 30000 }, async () => {
+	it("does not send steer or set_steering_mode when --mailbox-dir is absent", {
+		timeout: 30000,
+	}, async () => {
 		const { execFile } = await import("child_process");
 		const { promisify } = await import("util");
 		const { readFileSync, writeFileSync, mkdirSync, rmSync } = await import("fs");

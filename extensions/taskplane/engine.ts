@@ -121,6 +121,10 @@ import {
 import {
 	runPreflightCleanup,
 	formatPreflightCleanup,
+	sweepStaleArtifacts,
+	formatPreflightSweep,
+	rotateSupervisorLogs,
+	formatLogRotation,
 	enforceTelemetrySizeCap,
 	formatSizeCap,
 	cleanupPriorBatchArtifacts,
@@ -2599,20 +2603,12 @@ export async function executeOrchBatch(
 	// and clean prior batch artifacts before batch starts.
 	// Always non-fatal — failures warn but never block batch execution.
 	//
-	// TP-195: GATED on E4 escalation. `sweepStaleArtifacts`,
-	// `formatPreflightSweep`, `rotateSupervisorLogs`, and `formatLogRotation`
-	// are not imported (they live in `./cleanup.ts`). At runtime each call
-	// throws a ReferenceError on first reference, the enclosing try/catch
-	// swallows it, and Layers 2–5 have been silently a no-op since TP-065
-	// (~2024-09). To preserve historic behavior pending operator decision
-	// (would-fix adds the 4 missing imports and the feature starts working
-	// as advertised), local `undefined` stubs are declared here so the
-	// references typecheck while still throwing at runtime — keeping the
-	// Layers 2–5 path a no-op until the operator approves the imports.
-	const sweepStaleArtifacts = undefined as unknown as (...args: unknown[]) => never;
-	const formatPreflightSweep = undefined as unknown as (...args: unknown[]) => never;
-	const rotateSupervisorLogs = undefined as unknown as (...args: unknown[]) => never;
-	const formatLogRotation = undefined as unknown as (...args: unknown[]) => never;
+	// TP-195: imported `sweepStaleArtifacts`, `formatPreflightSweep`,
+	// `rotateSupervisorLogs`, and `formatLogRotation` from `./cleanup.ts`
+	// (they were referenced here but never imported, so the try/catch was
+	// swallowing a ReferenceError on every batch and Layers 2–5 had been
+	// silently a no-op since TP-065 ~2024-09). With the imports added,
+	// the preflight cleanup feature now works as advertised.
 	try {
 		// Layer 2: Age-based sweep of stale telemetry/merge/verification/conversation artifacts (>3 days)
 		const sweepResult = sweepStaleArtifacts(stateRoot, {

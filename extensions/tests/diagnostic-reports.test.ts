@@ -366,7 +366,12 @@ describe("buildMarkdownReport", () => {
 			diagnostics: {
 				taskExits: {
 					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60, retries: 0 },
-					"TP-002": { classification: "crash" as ExitClassification, cost: 0.05, durationSec: 30, retries: 1 },
+					"TP-002": {
+						classification: "crash" as ExitClassification,
+						cost: 0.05,
+						durationSec: 30,
+						retries: 1,
+					},
 				},
 				batchCost: 0.15,
 			},
@@ -528,7 +533,12 @@ describe("emitDiagnosticReports — robustness", () => {
 			diagnostics: {
 				taskExits: {
 					"TP-001": { classification: "completed", cost: 0.1, durationSec: 60, retries: 0 },
-					"TP-002": { classification: "crash" as ExitClassification, cost: 0.05, durationSec: 30, retries: 1 },
+					"TP-002": {
+						classification: "crash" as ExitClassification,
+						cost: 0.05,
+						durationSec: 30,
+						retries: 1,
+					},
 				},
 				batchCost: 0.15,
 			},

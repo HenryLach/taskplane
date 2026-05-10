@@ -175,9 +175,7 @@ let _v2LivenessRegistryCache: RuntimeRegistry | null = null;
  * Called at the start of each monitor poll to avoid re-reading the file per-task.
  * @since TP-112
  */
-export function setV2LivenessRegistryCache(
-	registry: RuntimeRegistry | null,
-): void {
+export function setV2LivenessRegistryCache(registry: RuntimeRegistry | null): void {
 	_v2LivenessRegistryCache = registry;
 }
 
@@ -2914,16 +2912,13 @@ export async function executeLaneV2(
 			projectName: extraEnvVars?.TASKPLANE_PROJECT_NAME || "project",
 			maxIterations: 20,
 			noProgressLimit: 3,
-			// TP-195: `config.failure?.maxWorkerMinutes` is a typo (real key is
-			// `max_worker_minutes`). Operator escalation E1 pending — preserve
-			// historical behavior (always falls through to 120) via a typed
-			// 2-step cast until the operator decides whether to honor the
-			// config field. Cast is structurally legitimate (failure is the
-			// snake_case type at runtime; we read a non-existent camel-case
-			// alias which yields `undefined`).
-			maxWorkerMinutes:
-				(config.failure as unknown as { maxWorkerMinutes?: number } | undefined)
-					?.maxWorkerMinutes || 120,
+			// TP-195: read the canonical `max_worker_minutes` field (snake_case
+			// per `OrchestratorConfig.failure` in types.ts). The previous code
+			// read a non-existent `maxWorkerMinutes` camelCase alias — always
+			// undefined — silently ignoring any operator-set value. Honoring
+			// the config is the intended behavior; default of 120 preserved
+			// when the field is unset.
+			maxWorkerMinutes: config.failure?.max_worker_minutes || 120,
 			warnPercent: 85,
 			killPercent: 95,
 			onSupervisorAlert,

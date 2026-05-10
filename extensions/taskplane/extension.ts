@@ -2419,9 +2419,7 @@ export default function (pi: ExtensionAPI) {
 				// changes — but the source typechecks cleanly.
 				const changed =
 					!latestMonitorState ||
-					latestMonitorState.lanes.some(
-						(l, i) => l.currentTaskId !== monState.lanes[i]?.currentTaskId,
-					);
+					latestMonitorState.lanes.some((l, i) => l.currentTaskId !== monState.lanes[i]?.currentTaskId);
 				latestMonitorState = monState;
 				if (changed) updateOrchWidget();
 			},

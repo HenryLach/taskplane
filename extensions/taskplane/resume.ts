@@ -91,7 +91,6 @@ import type {
 	PersistedBatchState,
 	PersistedLaneRecord,
 	PersistedSegmentRecord,
-	PersistedTaskRecord,
 	ReconciledTaskState,
 	ResumeEligibility,
 	ResumePoint,
@@ -2367,22 +2366,14 @@ export async function resumeOrchBatch(
 		for (const taskId of waveResult.failedTaskIds) {
 			const outcome = allTaskOutcomes.find((o) => o.taskId === taskId);
 			const laneForTask = latestAllocatedLanes.find((l) => l.tasks.some((t) => t.taskId === taskId));
-			// TP-195: GATED on E3 escalation. `batchState.tasks` is not a
-			// field on `OrchBatchRuntimeState` (it lives on `PersistedBatchState`
-			// instead). Calling `.find(...)` on the missing field would throw
-			// `undefined.find is not a function` at runtime — a latent crash
-			// that has never been hit by tests because the failed-task code
-			// path during resume isn’t covered. To preserve historic behavior
-			// pending operator decision (would fix replaces with the
-			// `laneForTask?.tasks.find(…)?.task` lookup, which surfaces real
-			// segmentIds/activeSegmentId data), the read is wrapped in a
-			// safe-access cast so the field stays `undefined` and downstream
-			// optional chaining returns `undefined` for every access. No
-			// observable behavior change — just no longer a runtime crash on
-			// the edge case that never had test coverage.
-			const taskRecord = (batchState as { tasks?: PersistedTaskRecord[] }).tasks?.find(
-				(task) => task.taskId === taskId,
-			);
+			// TP-195: corrected the lookup to the real source of segment
+			// metadata. `batchState.tasks` does not exist on
+			// `OrchBatchRuntimeState` (it's on `PersistedBatchState`); the
+			// previous read would have thrown `undefined.find is not a
+			// function` if hit at runtime. The allocated lane carries the
+			// `ParsedTask` payload via `AllocatedTask.task`, which has
+			// `segmentIds`/`activeSegmentId` already populated by discovery.
+			const taskRecord = laneForTask?.tasks.find((t) => t.taskId === taskId)?.task;
 			const exitReason = outcome?.exitReason || "unknown";
 			const hasPartialProgress = (outcome?.partialProgressCommits ?? 0) > 0;
 			const segmentFrontier = buildSupervisorSegmentFrontierSnapshot(

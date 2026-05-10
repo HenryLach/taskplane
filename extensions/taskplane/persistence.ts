@@ -2338,7 +2338,13 @@ export function loadBatchMetaRuntimeArtifact(
 // member of the union to share the discriminating fields. Runtime semantics
 // unchanged — the success branch never carries an error.
 export type ReconstructResult =
-	| { ok: true; state: PersistedBatchState; batchId: string; selectionNote: string; error?: undefined }
+	| {
+			ok: true;
+			state: PersistedBatchState;
+			batchId: string;
+			selectionNote: string;
+			error?: undefined;
+	  }
 	| { ok: false; error: string };
 
 /**
