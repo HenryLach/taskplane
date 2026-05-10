@@ -1282,6 +1282,20 @@ async function attemptWorkerCrashRetry(
 			continue;
 		}
 
+		// TP-190 (#561): Defense-in-depth — spawn-stage failures (Pi CLI not
+		// findable, worktree provisioning failure, branch collision) are NEVER
+		// transient. Retrying without operator intervention only burns the
+		// retry budget and delays the supervisor alert. The generic
+		// `TIER0_RETRYABLE_CLASSIFICATIONS.has()` gate below also catches this
+		// (spawn_failure is not in the set), but the explicit early-return
+		// here gives operators a clearer log message at the gate site.
+		if (classification === "spawn_failure") {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} spawn_failure — operator action required, NOT auto-retrying (TP-190)`,
+			);
+			continue;
+		}
+
 		// Check if retryable
 		if (!TIER0_RETRYABLE_CLASSIFICATIONS.has(classification)) {
 			execLog("batch", batchState.batchId,

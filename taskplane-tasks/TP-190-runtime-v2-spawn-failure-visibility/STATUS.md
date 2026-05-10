@@ -62,9 +62,9 @@
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] Retry classification site located (likely `TIER0_RETRY_BUDGETS` in `types.ts`)
-- [ ] `"spawn-failure"` added to non-retryable set with inline rationale comment
-- [ ] Targeted tests pass
+- [x] Retry classification sites audited — four exist: (a) `attemptWorkerCrashRetry` (engine.ts:1276) gates on `TIER0_RETRYABLE_CLASSIFICATIONS.has(classification)`; (b) `attemptModelFallbackRetry` (engine.ts:1564) only triggers on `classification === "model_access_error"`; (c) `attemptStaleWorktreeRecovery` (engine.ts:1797) only triggers on `ALLOC_WORKTREE_FAILED` (not on lane outcomes); (d) `cleanup_gate` retry (engine.ts:3915) only triggers on stale worktrees detected at the merge gate. All four correctly exclude `spawn_failure` because it is NOT in the retryable set.
+- [x] `spawn_failure` is intentionally NOT added to `TIER0_RETRYABLE_CLASSIFICATIONS` (Step 2 added the inline doc note explaining why). Defense-in-depth: added an explicit early-return for `classification === "spawn_failure"` at the top of `attemptWorkerCrashRetry`'s per-task gate (engine.ts:1276) with operator-friendly log message `tier0: task <id> spawn_failure — operator action required, NOT auto-retrying (TP-190)`.
+- [x] Targeted tests pass: 144/144 across `tier0-watchdog.test.ts`, `runtime-model-fallback.test.ts`. (Bumped pre-existing `EXIT_CLASSIFICATIONS` length assertion from 10 → 11 to account for `spawn_failure`.)
 
 ---
 
