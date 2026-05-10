@@ -296,10 +296,39 @@ export function collectAllRepoRoots(
 // ── Resume Pure Functions ────────────────────────────────────────────
 
 /**
+ * Determine whether a multi-segment task's persisted segment frontier is
+ * complete — i.e., every segment for the task reached a terminal-success
+ * status ("succeeded" or "skipped").
+ *
+ * Returns:
+ *  - `true` when the task has segments AND all of them are terminal-success.
+ *  - `true` when the task has no segments recorded (single-segment / legacy
+ *    tasks — the guard does not apply and `.DONE` is authoritative).
+ *  - `false` when at least one segment is pending/running/failed/stalled.
+ *
+ * Used by `collectDoneTaskIdsForResume` (TP-196 / #462) to refuse a stale or
+ * premature `.DONE` from suppressing re-execution of remaining segments.
+ */
+function isSegmentFrontierCompleteForResume(
+	persistedState: PersistedBatchState,
+	taskId: string,
+): boolean {
+	const segments = (persistedState.segments ?? []).filter((s) => s.taskId === taskId);
+	if (segments.length === 0) return true; // No segments recorded — guard does not apply.
+	return segments.every((s) => s.status === "succeeded" || s.status === "skipped");
+}
+
+/**
  * Collect task IDs with authoritative .DONE markers.
  *
- * Segment frontier state does not suppress .DONE authority. If a marker exists,
- * resume reconciliation will mark the task complete regardless of segment state.
+ * Segment frontier state does not suppress .DONE authority for tasks WITHOUT
+ * persisted segment records (single-segment / legacy). For tasks WITH segment
+ * records (multi-segment), TP-196 / #462 adds a resume guard: when `.DONE`
+ * exists but the segment frontier is incomplete (at least one segment is not
+ * yet succeeded/skipped), we DO NOT add the taskId to the done set — the
+ * task will be re-reconciled instead of silently marked complete. A WARN is
+ * logged so operators can spot the inconsistency. The on-disk `.DONE` marker
+ * is left alone; the engine will re-establish authoritative state.
  */
 export function collectDoneTaskIdsForResume(
 	persistedState: PersistedBatchState,
@@ -308,22 +337,38 @@ export function collectDoneTaskIdsForResume(
 ): Set<string> {
 	const doneTaskIds = new Set<string>();
 	for (const task of persistedState.tasks) {
+		let markerFound = false;
+		let markerLocation: string | null = null;
 		if (task.taskFolder && hasTaskDoneMarker(task.taskFolder)) {
-			doneTaskIds.add(task.taskId);
-			continue;
+			markerFound = true;
+			markerLocation = task.taskFolder;
 		}
-		const laneRec = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
-		if (laneRec?.worktreePath && task.taskFolder) {
-			const resolved = resolveCanonicalTaskPaths(
-				task.taskFolder,
-				laneRec.worktreePath,
-				repoRoot,
-				!!workspaceConfig,
-			);
-			if (existsSync(resolved.donePath)) {
-				doneTaskIds.add(task.taskId);
+		if (!markerFound) {
+			const laneRec = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
+			if (laneRec?.worktreePath && task.taskFolder) {
+				const resolved = resolveCanonicalTaskPaths(
+					task.taskFolder,
+					laneRec.worktreePath,
+					repoRoot,
+					!!workspaceConfig,
+				);
+				if (existsSync(resolved.donePath)) {
+					markerFound = true;
+					markerLocation = resolved.donePath;
+				}
 			}
 		}
+		if (!markerFound) continue;
+
+		// TP-196 / #462: Resume guard — refuse `.DONE` authority for multi-segment
+		// tasks with an incomplete segment frontier.
+		if (!isSegmentFrontierCompleteForResume(persistedState, task.taskId)) {
+			console.warn(
+				`[resume] WARN: .DONE present for task ${task.taskId} at ${markerLocation} but segment frontier is incomplete — not marking complete (#462 guard). Task will re-reconcile.`,
+			);
+			continue;
+		}
+		doneTaskIds.add(task.taskId);
 	}
 	return doneTaskIds;
 }

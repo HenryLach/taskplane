@@ -88,11 +88,22 @@ function makeSegment(overrides: Partial<PersistedSegmentRecord>): PersistedSegme
 }
 
 describe("TP-135 resume segment fallback behavior", () => {
-	it("keeps .DONE authoritative even when segment frontier is incomplete", () => {
+	it("REFUSES .DONE authority on incomplete segment frontier (TP-196 / #462 guard)", () => {
+		// History: TP-135 originally asserted that `.DONE` was authoritative
+		// regardless of segment frontier state. TP-196 / #462 hardens this
+		// contract: when a multi-segment task has an incomplete frontier,
+		// `.DONE` is NO LONGER accepted by `collectDoneTaskIdsForResume`.
+		// The task will re-reconcile instead of being silently marked complete.
 		const root = join(tmpdir(), `tp135-done-${Date.now()}`);
 		const taskFolder = join(root, "taskplane-tasks", "TP-001");
 		mkdirSync(taskFolder, { recursive: true });
 		writeFileSync(join(taskFolder, ".DONE"), "", "utf8");
+
+		const originalWarn = console.warn;
+		const capturedWarnings: string[] = [];
+		console.warn = (msg: string) => {
+			capturedWarnings.push(typeof msg === "string" ? msg : String(msg));
+		};
 
 		try {
 			const state = makeState({
@@ -126,11 +137,17 @@ describe("TP-135 resume segment fallback behavior", () => {
 			expect(frontier.get("TP-001")!.allSucceeded).toBe(false);
 
 			const doneTaskIds = collectDoneTaskIdsForResume(state, root, null);
-			expect([...doneTaskIds]).toContain("TP-001");
+			// TP-196 / #462: the guard refuses `.DONE` authority here.
+			expect([...doneTaskIds]).not.toContain("TP-001");
+			expect(capturedWarnings.some((w) => w.includes("TP-001") && w.includes("#462 guard"))).toBe(
+				true,
+			);
 
+			// And reconciliation correspondingly does NOT mark the task complete.
 			const reconciled = reconcileTaskStates(state, new Set(), doneTaskIds, new Set(["TP-001"]));
-			expect(reconciled[0].action).toBe("mark-complete");
+			expect(reconciled[0].action).not.toBe("mark-complete");
 		} finally {
+			console.warn = originalWarn;
 			rmSync(root, { recursive: true, force: true });
 		}
 	});

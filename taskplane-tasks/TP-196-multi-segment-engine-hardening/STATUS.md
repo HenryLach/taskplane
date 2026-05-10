@@ -69,11 +69,13 @@
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] Monitor guard in `resolveTaskMonitorState`
-- [ ] Resume guard in `collectDoneTaskIdsForResume`
-- [ ] Discovery safeguard
-- [ ] 3-4 behavioral tests for edge cases
-- [ ] Full fast suite passes
+- [x] Monitor guard in `resolveTaskMonitorState` — added optional `multiSegmentContext: { isFinalSegment, segmentId }` parameter; when `isFinalSegment === false` and `.DONE` is present, the function logs a WARN via `execLog` and SKIPS Priority 1, falling through to the lower priorities. `monitorLanes` populates this context from `task.task.segmentIds` + `task.task.activeSegmentId` (comparing the active segment to the last segment in the deterministic ID list).
+- [x] Resume guard in `collectDoneTaskIdsForResume` — added internal `isSegmentFrontierCompleteForResume` helper. When a task has persisted segment records AND the frontier is incomplete (any segment not in `"succeeded"`/`"skipped"`), the `.DONE` marker is NOT honored: the task is excluded from the done set and a `console.warn` carrying `#462 guard` is emitted. The on-disk marker is left alone; resume will re-reconcile.
+- [x] Discovery safeguard — added exported `checkDoneAuthoritySafeguard(taskFolder, logger?)` helper that emits a `[discovery] WARN ...#462 safeguard` warning when `.DONE` coexists with unchecked checkboxes in STATUS.md. Wired into `scanAreaForTasks` so every `.DONE` skip runs the check; behaviour of the scan itself is unchanged.
+- [x] 3-4 behavioral tests for edge cases — added `extensions/tests/done-authority-multi-segment.test.ts` (14 tests across 3 describe blocks). Also updated the legacy `resume-segment-frontier.test.ts::keeps .DONE authoritative...` test to assert the NEW (#462-hardened) contract.
+- [x] Full fast suite passes (3657 pass / 0 fail / 1 skip after Step 3; added net +14 tests vs. Step 2 baseline). Typecheck / lint / format:check all clean.
+
+**Files touched:** `extensions/taskplane/execution.ts` (monitor guard signature + Priority 1 demotion + monitorLanes caller wiring); `extensions/taskplane/resume.ts` (resume guard + frontier helper); `extensions/taskplane/discovery.ts` (safeguard helper + scanAreaForTasks wiring); `extensions/tests/done-authority-multi-segment.test.ts` (new); `extensions/tests/resume-segment-frontier.test.ts` (updated TP-135 assertion to TP-196 contract); `extensions/tests/engine-runtime-v2-routing.test.ts` (widened slice window in 14.5 to accommodate the new monitor-guard prelude).
 
 ---
 
