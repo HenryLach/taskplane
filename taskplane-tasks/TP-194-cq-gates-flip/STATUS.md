@@ -35,16 +35,16 @@
 ---
 
 ### Step 1: Plan the gate flip
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Plan-review checkpoint.
 
-- [ ] Part 1 design (CI workflow structure: separate steps vs matrix)
-- [ ] Part 2 design (workflow ordering: typecheck → lint → format:check → tests)
-- [ ] Part 3 design (reviewer prompt diff to remove TP-191 activation note)
-- [ ] Part 4 design (documentation updates per file)
-- [ ] Part 5 design (branch protection list for operator handoff)
-- [ ] Drafts in Discoveries
+- [x] Part 1 design (CI workflow structure: separate steps vs matrix) — see Discoveries D1
+- [x] Part 2 design (workflow ordering: typecheck → lint → format:check → tests) — see Discoveries D2
+- [x] Part 3 design (reviewer prompt diff to remove TP-191 activation note) — see Discoveries D3
+- [x] Part 4 design (documentation updates per file) — see Discoveries D4
+- [x] Part 5 design (branch protection list for operator handoff) — see Discoveries D5
+- [x] Drafts in Discoveries
 
 ---
 
@@ -127,6 +127,43 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| D1: CI workflow structure | Separate steps (one per gate) | `.github/workflows/ci.yml` |
+| D2: Workflow ordering | Typecheck → Lint → Format check → Run tests → CLI smoke → Verify docs | `.github/workflows/ci.yml` |
+| D3: Reviewer prompt diff | Remove the blockquote starting `> **Activation status (post-TP-191):**` and ending `> *This note is removed in TP-194...*` from the "Quality-check verification" section. The Verdict downgrade rule remains as-is (already says REVISE on quality-check failure). | `templates/agents/task-reviewer.md` |
+| D4: Documentation updates | AGENTS.md "Run validations locally" gains the 3 gate commands; release-process.md adds them to the pre-release checklist + step 2; development-setup.md gets a new "Code-quality gates" section under "Running tests". | AGENTS.md, release-process.md, development-setup.md |
+| D5: Branch protection required status checks | After PR merges, operator adds these required checks on main: `Typecheck`, `Lint (Biome)`, `Format check (Biome)` (new); plus existing `Run tests`, `CLI smoke checks`, `Verify docs relative links`. All run in the same `ci` job, so the check names are the step names exposed via GitHub's status API. | GitHub branch protection (operator action) |
+
+### Plan drafts
+
+**D1 — CI workflow structure (separate steps).** Each gate (typecheck, lint, format:check) is a distinct GitHub Actions step within the existing `ci` job. Rationale: failure messages name which gate broke (matching the spec section 6.4 preference for "diagnostic clarity"). A matrix would duplicate `actions/checkout` + Node setup + `npm ci` for each gate (~30s each × 3 = ~90s overhead), and a single consolidated job would obscure which gate failed. Separate steps share the install cache and surface as separate entries in GitHub's status-check rollup, which is what branch protection consumes.
+
+**D2 — Order of operations.** Within the job, the order is:
+1. Checkout / Setup Node / Install deps (existing)
+2. **Typecheck** (`npm run typecheck`) — new, cheapest, catches type errors before any other gate runs
+3. **Lint (Biome)** (`npm run lint`) — already present, `continue-on-error: true` removed
+4. **Format check (Biome)** (`npm run format:check`) — new
+5. Run tests (existing) — most expensive, runs only after static gates pass
+6. CLI smoke checks (existing)
+7. Verify docs relative links (existing)
+
+GitHub Actions defaults to halt-on-failure within a job, so a typecheck failure short-circuits the rest — fast feedback. Status-check rollup still reports each step's outcome independently.
+
+**D3 — Reviewer prompt diff.** The TP-191 activation note is a single blockquote injected at the top of the "Quality-check verification" section. Removing it returns the section to its TP-188 as-shipped form. The Verdict downgrade rule already says "If quality checks fail, the verdict is **REVISE**" — no edit needed there; the note above it merely overrode this rule temporarily. Exact removal: lines starting with `> **Activation status (post-TP-191):**` through `> *This note is removed in TP-194 once the baseline is clean and the downgrade rule is fully active.*`, plus the trailing blank line.
+
+**D4 — Documentation updates.**
+- `AGENTS.md` § "Run validations locally (minimum)": add three commands (typecheck/lint/format:check) before the existing test command bullet.
+- `docs/maintainers/release-process.md` § 2 "Validate package contents and run pre-release checks": insert a `npm run typecheck && npm run lint && npm run format:check` block before the test suite. Also add three checkboxes to the Pre-release checklist near the end.
+- `docs/maintainers/development-setup.md` § "Code style and `git blame.ignoreRevsFile`" already documents the lint/format commands. Add a new short subsection (or paragraph) calling out that all three commands are **required CI gates** and must pass before pushing for PR — referencing the spec for rationale.
+
+**D5 — Branch protection list (operator handoff).** The exact required-status-check names the operator should add via `Settings → Branches → main branch protection rule → Require status checks to pass`:
+- `Typecheck` (new — added in this task's CI workflow change)
+- `Lint (Biome)` (existing, now required)
+- `Format check (Biome)` (new)
+- `Run tests` (existing, already required)
+- `CLI smoke checks` (existing, already required)
+- `Verify docs relative links` (existing, already required)
+
+This matches the GitHub step names in `.github/workflows/ci.yml` after this task's edits.
 
 ---
 
