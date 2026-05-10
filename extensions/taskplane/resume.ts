@@ -7,7 +7,7 @@ import { join } from "path";
 
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
-import { executeOrchBatch, resolveDisplayWaveNumber } from "./engine.ts";
+import { executeOrchBatch, resolveDisplayWaveNumber, buildSpawnFailureAlertExtras } from "./engine.ts";
 import { buildReviewerEnv, buildWorkerEnv, buildWorkerExcludeEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths } from "./execution.ts";
 import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
 import { selectRuntimeBackend } from "./engine.ts";
@@ -2160,11 +2160,17 @@ export async function resumeOrchBatch(
 			const frontierSummary = segmentFrontier
 				? `  Segment frontier: ${segmentFrontier.terminalSegments}/${segmentFrontier.totalSegments} terminal\n`
 				: "";
+			// TP-190 (#561): Mirror engine.ts emission — propagate the structured
+			// exit category so /orch-resume task-failure alerts route through the
+			// same supervisor playbook branches as /orch. Shared helper enforces
+			// payload parity between the two emission sites.
+			const { exitCategory, summaryLine: spawnFailureLine } = buildSpawnFailureAlertExtras(outcome);
 			emitAlert({
 				category: "task-failure",
 				summary:
 					`⚠️ Task failure: ${taskId}\n` +
 					`  Exit reason: ${exitReason}\n` +
+					spawnFailureLine +
 					segmentSummary +
 					frontierSummary +
 					`  Lane: ${laneForTask?.laneId ?? "unknown"} (lane ${laneForTask?.laneNumber ?? "?"})\n` +
@@ -2184,6 +2190,7 @@ export async function resumeOrchBatch(
 					laneNumber: laneForTask?.laneNumber,
 					waveIndex: waveIdx,
 					exitReason,
+					exitCategory,
 					partialProgress: hasPartialProgress,
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},

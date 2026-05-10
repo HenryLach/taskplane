@@ -68,6 +68,114 @@ function emitTier0Escalation(
 /** Zero-token sentinel used for task/wave/batch aggregation. */
 const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
 
+/**
+ * TP-190 (#561): Determine whether a wave's failures are entirely
+ * Runtime V2 spawn-stage failures.
+ *
+ * Returns `true` only when:
+ *   - At least one task failed (`failedTaskIds.length > 0`)
+ *   - No task succeeded — checked via BOTH the wave's projected
+ *     `succeededTaskIds` (terminal task-level completion) AND a scan of
+ *     `laneResults[].tasks[]` for any per-task outcome with
+ *     `status === "succeeded"` (catches non-terminal segment successes
+ *     on multi-segment tasks that schedule a continuation round and
+ *     therefore don't appear in `succeededTaskIds`)
+ *   - Every failed outcome carries
+ *     `exitDiagnostic.classification === "spawn_failure"`
+ *
+ * The engine uses the result to transition `batchState.phase` to
+ * `"failed"` (not `"executing"` and not `"paused"`) so `orch_status()`
+ * and the dashboard surface an actionable answer for the operator.
+ * Spawn-stage errors (Pi CLI not findable, worktree provisioning
+ * failure, branch collision) are never transient — they require an
+ * external fix before re-running, so `"paused"` would be misleading.
+ *
+ * **Sage post-mortem note (multi-segment edge case, post-PR-#566):** the
+ * earlier version of this function checked only `succeededTaskIds.length
+ * !== 0` to gate the all-failed verdict. That field is the *projected*
+ * terminal-completion set: it's populated only when a task reaches its
+ * final segment. A wave that has a multi-segment task succeed on segment
+ * 1 (with a continuation segment in a later round) would have an empty
+ * `succeededTaskIds` even though work demonstrably succeeded. Combined
+ * with a single-segment spawn-failure on a different task, the wave
+ * would falsely trip the all-spawn-failed verdict. The added
+ * `laneResults` scan closes this gap by inspecting raw per-task outcome
+ * status before terminal projection.
+ *
+ * Pure function — exported for unit testing alongside the engine's
+ * post-wave handling logic.
+ *
+ * @since TP-190 (#561)
+ */
+export function isAllLanesSpawnFailedWave(
+	waveResult: {
+		failedTaskIds: string[];
+		succeededTaskIds: string[];
+		/**
+		 * Optional per-lane outcomes. When provided, the function additionally
+		 * checks whether ANY task outcome carried `status === "succeeded"`,
+		 * which covers non-terminal segment successes that don't appear in the
+		 * projected `succeededTaskIds`. Optional for backward compatibility
+		 * with the v0.29.0 callers and the existing TP-190 unit tests; the
+		 * production call site (engine.ts post-wave) always passes the full
+		 * `WaveExecutionResult` and gets the stricter check.
+		 */
+		laneResults?: ReadonlyArray<{ tasks: ReadonlyArray<{ status: string }> }>;
+	},
+	allTaskOutcomes: LaneTaskOutcome[],
+): boolean {
+	if (waveResult.failedTaskIds.length === 0) return false;
+	if (waveResult.succeededTaskIds.length !== 0) return false;
+	// TP-190 (#561) sage post-mortem: scan per-lane outcomes for any
+	// `status === "succeeded"`. This catches non-terminal segment successes
+	// that don't appear in `succeededTaskIds` (the latter is the terminal
+	// projection populated only when a multi-segment task reaches its final
+	// segment).
+	if (waveResult.laneResults) {
+		for (const laneResult of waveResult.laneResults) {
+			for (const taskOutcome of laneResult.tasks) {
+				if (taskOutcome.status === "succeeded") return false;
+			}
+		}
+	}
+	return waveResult.failedTaskIds.every((failedId) => {
+		const outcome = allTaskOutcomes.find((o) => o.taskId === failedId);
+		return outcome?.exitDiagnostic?.classification === "spawn_failure";
+	});
+}
+
+/**
+ * TP-190 (#561): Build the spawn-failure-specific extras layered onto a
+ * `task-failure` supervisor alert when the underlying outcome was a
+ * spawn-stage failure.
+ *
+ * Returns:
+ *   - `exitCategory`: the structured `ExitClassification` that the
+ *     supervisor playbook can branch on (e.g.,
+ *     `"spawn_failure"` → escalate immediately rather than retry).
+ *   - `summaryLine`: an extra `  Spawn failure: … escalate immediately…`
+ *     line for human-readable display, blank string when the outcome
+ *     is not a spawn failure (so the existing summary template renders
+ *     unchanged for non-spawn cases).
+ *
+ * Pure function — exported for unit testing alongside the alert-emission
+ * logic in `executeOrchBatch` and `resumeOrchBatch`. Both call sites
+ * read from `outcome.exitDiagnostic?.classification` so the helper takes
+ * the optional classification directly.
+ *
+ * @since TP-190 (#561)
+ */
+export function buildSpawnFailureAlertExtras(
+	outcome: { exitDiagnostic?: { classification?: string } | undefined } | undefined,
+): { exitCategory: import("./diagnostics.ts").ExitClassification | undefined; summaryLine: string } {
+	const raw = outcome?.exitDiagnostic?.classification;
+	const exitCategory = raw as import("./diagnostics.ts").ExitClassification | undefined;
+	const summaryLine = raw === "spawn_failure"
+		? `  Spawn failure: worker process never started — escalate immediately (do not retry)\n`
+		: "";
+	return { exitCategory, summaryLine };
+}
+
 /** Map embedded outcome telemetry to the batch-history TokenCounts shape. */
 export function taskTokensFromOutcomeTelemetry(outcome: LaneTaskOutcome): TokenCounts {
 	const telemetry = outcome.telemetry;
@@ -1278,6 +1386,20 @@ async function attemptWorkerCrashRetry(
 		if (!classification) {
 			execLog("batch", batchState.batchId,
 				`tier0: task ${taskId} has no exit diagnostic classification — skipping auto-retry (conservative)`,
+			);
+			continue;
+		}
+
+		// TP-190 (#561): Defense-in-depth — spawn-stage failures (Pi CLI not
+		// findable, worktree provisioning failure, branch collision) are NEVER
+		// transient. Retrying without operator intervention only burns the
+		// retry budget and delays the supervisor alert. The generic
+		// `TIER0_RETRYABLE_CLASSIFICATIONS.has()` gate below also catches this
+		// (spawn_failure is not in the set), but the explicit early-return
+		// here gives operators a clearer log message at the gate site.
+		if (classification === "spawn_failure") {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} spawn_failure — operator action required, NOT auto-retrying (TP-190)`,
 			);
 			continue;
 		}
@@ -3084,11 +3206,17 @@ export async function executeOrchBatch(
 			const frontierSummary = segmentFrontier
 				? `  Segment frontier: ${segmentFrontier.terminalSegments}/${segmentFrontier.totalSegments} terminal\n`
 				: "";
+			// TP-190 (#561): Surface the structured exit category so the supervisor
+			// playbook can branch deterministically. In particular,
+			// `exitCategory === "spawn_failure"` signals an immediate-escalation
+			// failure (not a retry candidate) — the worker process never spawned.
+			const { exitCategory, summaryLine: spawnFailureLine } = buildSpawnFailureAlertExtras(outcome);
 			emitAlert({
 				category: "task-failure",
 				summary:
 					`⚠️ Task failure: ${taskId}\n` +
 					`  Exit reason: ${exitReason}\n` +
+					spawnFailureLine +
 					segmentSummary +
 					frontierSummary +
 					`  Lane: ${laneForTask?.laneId ?? "unknown"} (lane ${laneForTask?.laneNumber ?? "?"})\n` +
@@ -3108,6 +3236,7 @@ export async function executeOrchBatch(
 					laneNumber: laneForTask?.laneNumber,
 					waveIndex: waveIdx,
 					exitReason,
+					exitCategory,
 					partialProgress: hasPartialProgress,
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},
@@ -3135,6 +3264,34 @@ export async function executeOrchBatch(
 					reason: "hard-fail",
 				});
 			}
+		}
+
+		// ── TP-190 (#561): All-lane spawn-failure phase transition ──
+		// When every task in this wave failed AND every failure is a
+		// `spawn_failure` (worker process never started), the operator cannot
+		// recover without changing something external (Pi CLI install, file
+		// permissions, branch state). Transition `phase` to `"failed"` so
+		// `orch_status()` and the dashboard surface an actionable answer
+		// (`failed`) instead of leaving the operator with `executing` while
+		// every lane is dead. We use `"failed"` rather than `"paused"` (per
+		// PROMPT design): `paused` implies an operator-flippable resume,
+		// which is wrong here — spawn failures require an external fix first.
+		// `isAllLanesSpawnFailedWave` is exported as a pure helper for unit
+		// testing.
+		const allFailedAreSpawnFailures = isAllLanesSpawnFailedWave(waveResult, allTaskOutcomes);
+		if (allFailedAreSpawnFailures) {
+			batchState.phase = "failed";
+			execLog("batch", batchState.batchId,
+				`phase → failed: every lane in wave ${waveIdx + 1} hit spawn_failure (TP-190 #561)`,
+				{ failedTasks: waveResult.failedTaskIds.join(",") },
+			);
+			onNotify(
+				ORCH_MESSAGES.orchBatchFailed(batchState.batchId, `all lanes in wave ${waveIdx + 1} failed to spawn (Runtime V2 spawn-failure — see task-failure alerts above)`),
+				"error",
+			);
+			persistRuntimeState("wave-spawn-failure", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+			emitTerminalEvent(`All-lane spawn failure at wave ${waveIdx + 1}`);
+			break;
 		}
 
 		// ── TS-009: Persist state after wave execution ──
