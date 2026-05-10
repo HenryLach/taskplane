@@ -68,6 +68,7 @@ import {
 	type LaneTaskStatus,
 	type SupervisorAlertCallback,
 	type StepSegmentMapping,
+	type SegmentScopeMode,
 } from "./types.ts";
 
 const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -176,6 +177,44 @@ export function isSegmentComplete(
 	if (!result) return false;
 	if (result.total === 0) return false;
 	return result.unchecked === 0;
+}
+
+/**
+ * Compute the authoritative `SegmentScopeMode` for one worker iteration.
+ *
+ * This is the single source of truth for the FULL_TASK vs SEGMENT_SCOPED
+ * decision (TP-196 / #502). All segment-related side-effects (env vars,
+ * system-prompt overlay, prompt content, tool registration) should derive
+ * their behaviour from this mode rather than re-evaluating the underlying
+ * boolean conditions in isolation, which is what created the drift risk
+ * documented in #502.
+ *
+ * Returns `SEGMENT_SCOPED` iff ALL of the following hold:
+ *  - The task has a non-empty `stepSegmentMap` (parsed from PROMPT.md markers).
+ *  - The lane has an associated `currentRepoId` (segmentId set, so we know
+ *    which repo this lane is iterating).
+ *  - The (legacy-fallback-filtered) `repoStepNumbers` set is non-null (the
+ *    repo has at least one step with explicit segment markers).
+ *  - A `currentStepNumber` is provided (there is a step to evaluate).
+ *  - The current step's segment mapping contains an entry for `currentRepoId`
+ *    (the worker actually has segment-scoped work in the current step).
+ *
+ * In any other case the mode is `FULL_TASK`.
+ *
+ * @since TP-196
+ */
+export function computeSegmentScopeMode(
+	stepSegmentMap: StepSegmentMapping[] | undefined | null,
+	repoStepNumbers: Set<number> | null,
+	currentRepoId: string | null,
+	currentStepNumber: number | null,
+): SegmentScopeMode {
+	if (!stepSegmentMap || !currentRepoId || !repoStepNumbers) return "FULL_TASK";
+	if (currentStepNumber === null) return "FULL_TASK";
+	const currentStepMapping = stepSegmentMap.find((s) => s.stepNumber === currentStepNumber);
+	if (!currentStepMapping) return "FULL_TASK";
+	const mySegment = currentStepMapping.segments.find((seg) => seg.repoId === currentRepoId);
+	return mySegment ? "SEGMENT_SCOPED" : "FULL_TASK";
 }
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -454,16 +493,16 @@ export async function executeTaskV2(
 				/* ignore */
 			}
 
-		// TP-174/TP-501: Compute segment scope mode BEFORE building prompt.
-		const isSegmentScoped = !!(
-			stepSegmentMap &&
-			currentRepoId &&
-			repoStepNumbers &&
-			remainingSteps.length > 0 &&
-			stepSegmentMap
-				.find((s) => s.stepNumber === remainingSteps[0].number)
-				?.segments.find((seg) => seg.repoId === currentRepoId)
+		// TP-174/TP-501/TP-196: Compute segment scope mode BEFORE building prompt.
+		// `segmentScopeMode` is the authoritative TP-196 flag; `isSegmentScoped` is
+		// preserved as a boolean alias for ergonomics at the many existing call sites.
+		const segmentScopeMode: SegmentScopeMode = computeSegmentScopeMode(
+			stepSegmentMap,
+			repoStepNumbers,
+			currentRepoId,
+			remainingSteps.length > 0 ? remainingSteps[0].number : null,
 		);
+		const isSegmentScoped = segmentScopeMode === "SEGMENT_SCOPED";
 
 		const promptLines = [
 			`Read your task instructions at: ${promptPath}`,

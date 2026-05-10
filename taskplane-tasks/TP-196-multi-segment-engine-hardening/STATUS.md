@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -31,7 +31,7 @@
 ---
 
 ### Step 1: Plan all four fixes
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint.
 
@@ -45,15 +45,17 @@
 ---
 
 ### Step 2: Implement #502 first (foundational refactor)
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] `SegmentScopeMode` promoted to first-class type
-- [ ] `lane-runner.ts` threads via lane config
-- [ ] `execution.ts` env var + tool registration gated
-- [ ] Scattered `stepSegmentMap && currentRepoId` checks unified
-- [ ] Targeted + full fast suite pass
+- [x] `SegmentScopeMode` promoted to first-class type (added `export type SegmentScopeMode = "FULL_TASK" | "SEGMENT_SCOPED"` to `types.ts`)
+- [x] `lane-runner.ts` threads via `computeSegmentScopeMode()` helper exported alongside the other segment helpers; iteration loop now derives both `segmentScopeMode` and the legacy `isSegmentScoped` alias from a single computation
+- [x] `execution.ts` env var + tool registration gated — already gated via `isSegmentScoped` on `TASKPLANE_ACTIVE_SEGMENT_ID` (lane-runner.ts:672) and `TASKPLANE_SEGMENT_ID` (line 673); the `request_segment_expansion` tool registration in `agent-bridge-extension.ts:97` keys off that env var so it inherits the gating. After TP-196 the env var is gated on a value derived from the authoritative mode, closing #502's drift concern.
+- [x] Scattered `stepSegmentMap && currentRepoId` checks unified — the *runtime* mode decision now flows through one `computeSegmentScopeMode` call. The remaining structural `stepSegmentMap && currentRepoId` conditional patterns (e.g., snapshotSegmentCtx at line 357, post-loop block at 1270+, emitSnapshot signature at 1482/1606) encode the *shape* of available data, not the mode decision, and are intentionally preserved.
+- [x] Targeted (62/62 in segment-scoped-lane-runner.test.ts) + full fast suite (3643 pass / 0 fail) pass
+
+**Files touched:** `extensions/taskplane/types.ts`, `extensions/taskplane/lane-runner.ts`, `extensions/tests/segment-scoped-lane-runner.test.ts`. New tests: 16 (sections 9.x — 11 unit tests for `computeSegmentScopeMode` + 5 source-analysis contracts for the unification).
 
 ---
 
@@ -123,6 +125,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| 1 | plan | 1 | APPROVE | `.reviews/` (step-1 plan) |
 
 ---
 
@@ -173,3 +176,4 @@ If plan-review reveals a clear architectural split during Step 1, splitting is a
 **Hard-gate compliance:**
 
 Post-TP-194, the reviewer agent downgrades APPROVE → REVISE on any failing `typecheck` / `lint` / `format:check`. This is the first task to run entirely under hard gates; the worker should expect that gate failures will be surfaced in code reviews and cannot be ignored. Plan accordingly: don't break gates anywhere mid-step.
+| 2026-05-10 23:39 | Review R001 | plan Step 1: APPROVE |

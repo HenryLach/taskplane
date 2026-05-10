@@ -18,6 +18,7 @@ import {
 	getStepsForRepoId,
 	getSegmentCheckboxes,
 	isSegmentComplete,
+	computeSegmentScopeMode,
 } from "../taskplane/lane-runner.ts";
 
 import type { StepSegmentMapping } from "../taskplane/types.ts";
@@ -421,6 +422,103 @@ describe("7.x: Legacy fallback — no behavior change for tasks without markers"
 		expect(laneRunnerSrc).toContain(
 			"snapshotSegmentCtx: { stepSegmentMap: StepSegmentMapping[]; repoId: string } | null",
 		);
+	});
+});
+
+// ── 9. computeSegmentScopeMode (TP-196 / #502) ─────────────────────
+
+describe("9.x: computeSegmentScopeMode (TP-196 / #502)", () => {
+	it("9.1: returns FULL_TASK when stepSegmentMap is null", () => {
+		const result = computeSegmentScopeMode(null, new Set([1]), "shared-libs", 1);
+		expect(result).toBe("FULL_TASK");
+	});
+
+	it("9.2: returns FULL_TASK when stepSegmentMap is undefined", () => {
+		const result = computeSegmentScopeMode(undefined, new Set([1]), "shared-libs", 1);
+		expect(result).toBe("FULL_TASK");
+	});
+
+	it("9.3: returns FULL_TASK when currentRepoId is null", () => {
+		const result = computeSegmentScopeMode(MULTI_SEGMENT_MAP, new Set([1]), null, 1);
+		expect(result).toBe("FULL_TASK");
+	});
+
+	it("9.4: returns FULL_TASK when repoStepNumbers is null (legacy fallback)", () => {
+		const result = computeSegmentScopeMode(MULTI_SEGMENT_MAP, null, "shared-libs", 1);
+		expect(result).toBe("FULL_TASK");
+	});
+
+	it("9.5: returns FULL_TASK when currentStepNumber is null (no remaining steps)", () => {
+		const result = computeSegmentScopeMode(MULTI_SEGMENT_MAP, new Set([1]), "shared-libs", null);
+		expect(result).toBe("FULL_TASK");
+	});
+
+	it("9.6: returns FULL_TASK when current step has no segment for repoId", () => {
+		// web-client is NOT in Step 2 of MULTI_SEGMENT_MAP
+		const result = computeSegmentScopeMode(MULTI_SEGMENT_MAP, new Set([0, 1, 2]), "web-client", 2);
+		expect(result).toBe("FULL_TASK");
+	});
+
+	it("9.7: returns SEGMENT_SCOPED when all conditions hold for shared-libs in Step 1", () => {
+		const result = computeSegmentScopeMode(MULTI_SEGMENT_MAP, new Set([0, 1, 2]), "shared-libs", 1);
+		expect(result).toBe("SEGMENT_SCOPED");
+	});
+
+	it("9.8: returns SEGMENT_SCOPED for web-client in Step 0", () => {
+		const result = computeSegmentScopeMode(MULTI_SEGMENT_MAP, new Set([0, 1]), "web-client", 0);
+		expect(result).toBe("SEGMENT_SCOPED");
+	});
+
+	it("9.9: returns SEGMENT_SCOPED for single-segment map matching repoId", () => {
+		const result = computeSegmentScopeMode(SINGLE_SEGMENT_MAP, new Set([0, 1]), "default", 1);
+		expect(result).toBe("SEGMENT_SCOPED");
+	});
+
+	it("9.10: returns FULL_TASK when stepSegmentMap is empty array", () => {
+		// Empty array is truthy but has no entries — the find() returns undefined.
+		const result = computeSegmentScopeMode([], new Set([1]), "shared-libs", 1);
+		expect(result).toBe("FULL_TASK");
+	});
+
+	it("9.11: returns FULL_TASK when step number does not exist in map", () => {
+		const result = computeSegmentScopeMode(MULTI_SEGMENT_MAP, new Set([1]), "shared-libs", 99);
+		expect(result).toBe("FULL_TASK");
+	});
+});
+
+describe("9.x: SegmentScopeMode source-analysis contracts (TP-196 / #502)", () => {
+	let laneRunnerSrc: string;
+
+	it("9.20: load lane-runner source", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { join, dirname } = await import("node:path");
+		const { fileURLToPath } = await import("node:url");
+		const testDir = dirname(fileURLToPath(import.meta.url));
+		laneRunnerSrc = readFileSync(join(testDir, "..", "taskplane", "lane-runner.ts"), "utf-8");
+	});
+
+	it("9.21: iteration loop derives isSegmentScoped from segmentScopeMode (single source of truth)", () => {
+		// The boolean must now be derived from the mode, not recomputed inline.
+		expect(laneRunnerSrc).toContain('const isSegmentScoped = segmentScopeMode === "SEGMENT_SCOPED"');
+	});
+
+	it("9.22: iteration loop calls computeSegmentScopeMode helper", () => {
+		// The new computation goes through the helper.
+		const pattern = /const segmentScopeMode: SegmentScopeMode = computeSegmentScopeMode\(/;
+		expect(pattern.test(laneRunnerSrc)).toBe(true);
+	});
+
+	it("9.23: TASKPLANE_ACTIVE_SEGMENT_ID env var is gated on isSegmentScoped", () => {
+		// FULL_TASK mode must hard-clear the env var to prevent inheritance leaks.
+		expect(laneRunnerSrc).toContain(
+			'TASKPLANE_ACTIVE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : ""',
+		);
+		expect(laneRunnerSrc).toContain('TASKPLANE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : ""');
+	});
+
+	it("9.24: segment system-prompt overlay is gated on isSegmentScoped", () => {
+		// FULL_TASK mode must NOT append the segment system-prompt overlay.
+		expect(laneRunnerSrc).toContain("isSegmentScoped && config.workerSegmentPrompt");
 	});
 });
 
