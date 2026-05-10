@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-05-10
+
+### Internal
+
+- **Migrate `peerDependencies` from `@mariozechner/*` to `@earendil-works/*` and mark them optional:** every `pi update` was printing four `npm warn deprecated` lines (one for each `@mariozechner/pi-*` package the new pi packages tell npm they are deprecating). Pi v0.74.0+ ships under the `@earendil-works` scope; the legacy `@mariozechner` peer-dep entries in taskplane's `package.json` made npm resolve the deprecated packages and surface the warnings on every install. Fix: switch the four pi-related entries in `peerDependencies` to `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `@earendil-works/pi-ai` (kept `@sinclair/typebox` unchanged — not pi-managed); add a `peerDependenciesMeta` block marking all three pi packages `optional: true` so npm doesn't generate unmet-peer warnings for users in transitional setups, and so we don't tell users they MUST have pi globally installed at npm-install time (pi is the runtime, not a strict install-time peer).
+
+  **No source-code changes.** The `import` statements in `extensions/*.ts` continue to reference `@mariozechner/*` because Pi's runtime extension loader (`<pi>/dist/core/extensions/loader.js`) bundles aliases for BOTH scopes — imports resolve identically regardless of which scope name is used. Changing the import statements would break compat for users still on Pi < v0.74.0 (the alias map was added in v0.74.0). The `peerDependencies` declaration is informational only; the runtime resolution is unaffected by either approach.
+
+  **No tests changed; no behavior changed.** Tests pass at the v0.29.1 baseline (3624 passing / 1 skipped / 0 failed).
+
 ## [0.29.1] - 2026-05-10
 
 ### Fixed
