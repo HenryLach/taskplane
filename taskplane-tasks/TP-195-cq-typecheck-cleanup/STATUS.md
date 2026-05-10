@@ -1,11 +1,11 @@
 # TP-195: Code-quality typecheck cleanup — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Plan the cleanup strategy
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -22,15 +22,15 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] On `main` (lane worktree, fresh from TP-191 merge)
-- [ ] TP-191 confirmed merged (`npm run typecheck` script exists, `extensions/tsconfig.ci.json` exists)
-- [ ] TP-191 STATUS.md Discoveries read for the typecheck error inventory baseline
-- [ ] Live `npm run typecheck` error count captured (target: ~267)
-- [ ] Live category breakdown captured (top 10)
-- [ ] Baseline test count recorded (target: 3624 passing post-TP-190)
-- [ ] Decision recorded: order of attack (recommendation: source first, then tests)
+- [x] On `main` (lane worktree, fresh from TP-191 merge) — verified with `git log --oneline -5` (HEAD = 19954aee, TP-193 merged via PR #572)
+- [x] TP-191 confirmed merged (`npm run typecheck` script exists in `package.json`, `extensions/tsconfig.ci.json` exists)
+- [x] TP-191 STATUS.md Discoveries read for the typecheck error inventory baseline
+- [x] Live `npm run typecheck` error count captured: **264 errors** (vs sage's ~267 estimate; close enough)
+- [x] Live category breakdown captured (see Discoveries → 'Live error inventory')
+- [x] Baseline test count recorded: 3625 tests, **3624 passing / 1 skipped / 0 failed** (matches TP-191 baseline)
+- [x] Decision recorded: **runtime source first** (~68 errors across 8 files), then tests (~196 errors). Source-first lets type signatures settle before fixing test mocks against them.
 
 ---
 
@@ -129,6 +129,69 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Live error count: 264 (vs sage's ~267 estimate) | Authoritative target for this task | Step 0 |
+| Runtime-source errors: 68 across 8 files | Tackle first (Step 3) | execution.ts(20), engine.ts(11), resume.ts(8), persistence.ts(8), extension.ts(8), config-loader.ts(5), settings-tui.ts(4), merge.ts(4) |
+| Test-side errors: 196 across ~38 files | Tackle second (Step 4) | top: workspace-config.integration.test.ts(26), resume-bug-fixes.test.ts(26), non-blocking-engine.test.ts(18), orch-state-persistence.test.ts(10), auto-integration.integration.test.ts(10) |
+| Test baseline: 3624 / 1 skipped / 0 failed | Target to preserve | `npm run test:fast` |
+
+### Live error inventory (Step 0 baseline)
+
+Total: **264 errors** in 45 files (8 source + 37 test files).
+
+**Top categories:**
+
+| Category | Count | Meaning |
+|---|---|---|
+| TS2339 | 63 | Property does not exist on type — investigate per-occurrence (real bug or missing type field) |
+| TS2741 | 52 | Property X missing in type — mock object incomplete vs schema |
+| TS2345 | 30 | Argument not assignable — caller's shape wrong |
+| TS2554 | 23 | Wrong number of arguments — API signature drift |
+| TS2367 | 21 | Comparison appears unintentional — often catches real bugs |
+| TS2322 | 19 | Type assignment mismatch |
+| TS2739 | 12 | Type missing properties from another type |
+| TS2769 | 7 | No overload matches call |
+| TS2353 | 7 | Object literal may only specify known properties |
+| TS2352 | 7 | Conversion of type may be a mistake (between/cast) |
+| TS2559 | 4 | Type has no properties in common |
+| TS2347 | 4 | Untyped function calls may not accept type arguments |
+| TS2578 | 3 | Unused @ts-expect-error directive |
+| TS2304 | 3 | Cannot find name |
+| TS2871 | 2 | Expression is always nullish |
+| TS2694 | 2 | Namespace has no exported member |
+| TS2305 / TS2552 / TS2551 / TS2355 / TS2561 | 1 each | Various |
+
+**Per-file breakdown (top runtime-source files — Step 3 targets):**
+
+| File | Count |
+|---|---|
+| extensions/taskplane/execution.ts | 20 |
+| extensions/taskplane/engine.ts | 11 |
+| extensions/taskplane/resume.ts | 8 |
+| extensions/taskplane/persistence.ts | 8 |
+| extensions/taskplane/extension.ts | 8 |
+| extensions/taskplane/config-loader.ts | 5 |
+| extensions/taskplane/settings-tui.ts | 4 |
+| extensions/taskplane/merge.ts | 4 |
+
+**Per-file breakdown (top test files — Step 4 targets):**
+
+| File | Count |
+|---|---|
+| extensions/tests/workspace-config.integration.test.ts | 26 |
+| extensions/tests/resume-bug-fixes.test.ts | 26 |
+| extensions/tests/non-blocking-engine.test.ts | 18 |
+| extensions/tests/orch-state-persistence.test.ts | 10 |
+| extensions/tests/auto-integration.integration.test.ts | 10 |
+| extensions/tests/supervisor-recovery-flows.test.ts | 8 |
+| extensions/tests/supervisor-onboarding.test.ts | 8 |
+| extensions/tests/retry-matrix.test.ts | 8 |
+| extensions/tests/partial-progress.integration.test.ts | 8 |
+| extensions/tests/orch-supervisor-tools.test.ts | 7 |
+| extensions/tests/monorepo-compat-regression.test.ts | 6 |
+| extensions/tests/path-resolver-pi-scope.test.ts | 5 |
+| extensions/tests/discovery-routing.test.ts | 5 |
+| ... 24 more files | 1–4 each |
+
 
 ---
 
@@ -137,6 +200,9 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-05-10 17:56 | Task started | Runtime V2 lane-runner execution |
+| 2026-05-10 17:56 | Step 0 started | Preflight |
+| 2026-05-10 | Step 0 complete | 264 errors in 45 files; baseline tests 3624/1/0 |
 
 ---
 
