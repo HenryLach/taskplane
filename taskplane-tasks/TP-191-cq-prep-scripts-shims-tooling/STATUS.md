@@ -1,7 +1,7 @@
 # TP-191: Code-quality prep — Status
 
-**Current Step:** Step 7: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Current Step:** Step 7: Documentation & Delivery (Complete)
+**Status:** ✅ Complete
 **Last Updated:** 2026-05-10
 **Review Level:** 2
 **Review Counter:** 6
@@ -118,11 +118,11 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] CHANGELOG entry under [Unreleased] → Internal added
-- [ ] Discoveries logged below
-- [ ] All commits include `TP-191` prefix
+- [x] CHANGELOG entry under `[Unreleased]` → `Internal` added (titled `Code-quality prep — scripts, tool pinning, pi-shims (TP-191)`, references the spec, summarizes 7 sub-changes, captures the typecheck/lint baselines)
+- [x] Discoveries logged below (10 entries: baselines, version pin notes, scope decisions, schema fixes, JSDoc gotchas, lint inventory, format:check disabled-formatter behavior)
+- [x] All commits include `TP-191` prefix (verified via `git log --oneline | grep TP-191`)
 
 ---
 

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **Code-quality prep — scripts, tool pinning, pi-shims (TP-191):** First of
+  four sequenced packets implementing the code-quality-gates spec
+  ([`docs/specifications/taskplane/code-quality-gates.md`](docs/specifications/taskplane/code-quality-gates.md)).
+  This packet is **prep only** — no gating changes, no behavior changes,
+  no lint cleanup. (1) **Scripts** — added a root `package.json` `scripts`
+  block with `typecheck` (`tsc --project extensions/tsconfig.ci.json --noEmit`),
+  `lint` (`biome lint .`), `format` (`biome format --write .`), and
+  `format:check` (`biome format .`). Names match the reviewer-agent's
+  TP-188 discovery list verbatim. (2) **Tool pinning** — added
+  `@biomejs/biome@2.4.15`, `typescript@5.6.3`, and `@types/node@22` to
+  root `devDependencies`, removing the `npx ...@latest` drift from CI.
+  (3) **Pi-shims** — new `extensions/types/pi-shims.d.ts` declares minimal
+  type stubs for both `@earendil-works/*` AND `@mariozechner/*` Pi packages
+  (pi-coding-agent, pi-ai, pi-tui) so headless `tsc --noEmit` resolves
+  imports without the actual pi packages installed locally. (4) **CI
+  tsconfig** — new `extensions/tsconfig.ci.json` extends the editor-facing
+  `tsconfig.json` (untouched) with comprehensive `include`, `paths`
+  mapping pi specifiers to the shim, and `typeRoots` pointing to root
+  `@types/node`. `tsconfig.test.json` updated to add `@earendil-works/*`
+  mappings alongside legacy `@mariozechner/*` (back-compat preserved).
+  (5) **Biome modernized** — `biome.json` `$schema` URL updated to
+  `2.4.15`, deprecated `experimentalScannerIgnores` migrated to negation
+  patterns inside `includes` (Biome 2.2+ canonical syntax), scope
+  expanded to cover `bin/**/*.mjs`, `scripts/**/*.mjs`, and
+  `extensions/**/*.tsx`; tests now in scope (sage's recommendation per
+  spec section 7.2); `dashboard/public`, `extensions/types`, `.pi`,
+  `.worktrees` excluded; formatter still disabled (TP-193 enables).
+  (6) **Reviewer discoverability** — `.pi/taskplane-config.json`
+  `taskRunner.testing.commands` now declares `typecheck`, `lint`,
+  `format:check` (and the existing `test`); `templates/agents/task-reviewer.md`
+  carries a temporary activation note explaining that typecheck/lint/format:check
+  failures surface as Issues Found but do NOT downgrade APPROVE→REVISE
+  until TP-194 lands (note removed in TP-194). (7) **CI workflow** —
+  `.github/workflows/ci.yml` lint step now runs `npm run lint` (still
+  `continue-on-error: true` until TP-194); added `Install root dev
+  dependencies` step before lint and updated the Node setup-action
+  cache-dependency-path to include both root and extensions lockfiles.
+  Captured baselines for TP-194's gating decision: **267 typecheck
+  errors** and **9 lint errors / 277 warnings / 660 infos across 175 files**.
+  All 3624 tests still pass (1 skipped, 0 failed) — zero behavior changes.
+
 ## [0.29.2] - 2026-05-10
 
 ### Internal
