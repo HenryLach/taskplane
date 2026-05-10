@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Plan the API + visual design
-**Status:** ✅ Complete (APPROVE on R002 after R001 REVISE)
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint.
 
@@ -227,6 +227,8 @@ Hydrated implementation breakdown (per APPROVE'd plan):
 | 2026-05-10 | Step 4 gates | typecheck 0, lint 0, format:check 0, tests 3638/0/1 (was 3627; +11) |
 | 2026-05-10 | Step 5 docs | CHANGELOG + use-the-dashboard.md updated; issue-close draft prepared |
 | 2026-05-10 | All steps complete | Ready for merge |
+| 2026-05-10 23:52 | Worker iter 1 | done in 1098s, tools: 130 |
+| 2026-05-10 23:52 | Task complete | .DONE created |
 
 ---
 
