@@ -1,10 +1,10 @@
 # TP-197: Dashboard segment-level progress indicators — Status
 
-**Current Step:** Step 1: Plan the API + visual design
+**Current Step:** Step 3: Implement visual rendering
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S-M
 
@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Plan the API + visual design
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint.
 
@@ -134,26 +134,33 @@ Implementation specifics:
 ---
 
 ### Step 2: Verify (no API change needed) + consume existing segment fields
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 > Per Step 0 verification: `dashboard/server.cjs:1257` already exposes `segments[]`,
 > tasks already carry `segmentIds[]`, and V2 lane snapshots carry `segmentId`.
 > No server.cjs change. This step is a verification + frontend-typing pass.
 
-- [ ] Verify `batch.segments`, `task.segmentIds`, `runtimeLaneSnapshots[*].segmentId` are present in the live API response (sanity check using the current `.pi/batch-state.json` via the dashboard server)
-- [ ] Document the consumed shape inline in `dashboard/public/app.js` (JSDoc on new helper)
-- [ ] No `dashboard/server.cjs` change required (confirmed)
+- [x] Verified `batch.segments`, `task.segmentIds` are present in the live `.pi/batch-state.json` via `loadBatchState()`. Confirmed shape: `segments[]` carries `{segmentId, taskId, repoId, status, laneId, sessionName, worktreePath, branch, startedAt, endedAt, retries, exitReason, dependsOnSegmentIds}`. Each task has `segmentIds: string[]`. `runtimeLaneSnapshots[*].segmentId` already consumed by `laneActiveSegmentInfo` (app.js:385).
+- [x] Will document the consumed shape inline in `dashboard/public/app.js` (JSDoc on the new `taskSegmentPillRow` helper) during Step 3.
+- [x] `dashboard/server.cjs` change required: **none** (confirmed).
 
 ---
 
 ### Step 3: Implement the visual rendering
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Segment indicator pill row
-- [ ] CSS styling for ✅ / ⏳ / ⬚ states
-- [ ] Progress-bar segment-aware logic
-- [ ] Single-segment fallback visual regression-checked
-- [ ] Browser-side smoke on real batch
+Hydrated implementation breakdown (per APPROVE'd plan):
+
+- [ ] Add `taskSegmentPillRow(task, segmentStatusMap, activeSegmentId)` helper in `dashboard/public/app.js`
+- [ ] Integrate pill row into `renderLanesTasks()` as grid row 3 sub-element; remove the now-redundant `task-segment-progress` text from the in-cell detail bits for multi-segment tasks (keep for single-segment? -- single-segment returns null today so no change)
+- [ ] Extend `.task-row` grid-template-rows in `style.css` from `auto auto` to `auto auto auto`
+- [ ] Add `.task-segment-row` container CSS (grid-row: 3, cols 3/7, flex-wrap)
+- [ ] Add `.seg-pill` + variant CSS (`.seg-succeeded`, `.seg-running`, `.seg-pending`, `.seg-failed`, `.seg-stalled`, `.seg-skipped`)
+- [ ] Add `.seg-pill-current` emphasis style
+- [ ] Verify responsive: pill row remains visible at ≤900px (NOT inside `.task-step`)
+- [ ] Progress-bar segment-aware logic: NO CHANGE per plan (TP-174 already segment-scoped the bar via `v2Progress`)
+- [ ] Single-segment fallback: confirm helper returns `""` for `segmentIds.length <= 1` so DOM is byte-identical to today
+- [ ] Browser-side smoke: load synthetic multi-segment fixture into `.pi/batch-state.json` and visually verify
 
 ---
 
@@ -186,6 +193,7 @@ Implementation specifics:
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
 | R001 | plan | 1 | REVISE | `.reviews/R001-plan-step1.md` |
+| R002 | plan | 1 | APPROVE | (in-tool verdict; R001 issues addressed) |
 
 ---
 
@@ -209,6 +217,9 @@ Implementation specifics:
 | 2026-05-10 23:34 | Step 0 started | Preflight |
 | 2026-05-10 | Step 0 complete | API already complete; rendering work is purely client-side |
 | 2026-05-10 | Step 1 started | Plan API + visual design |
+| 2026-05-10 | R001 returned REVISE | `.task-step` hidden at <=900px; pill placement revised |
+| 2026-05-10 | R002 returned APPROVE | Plan approved; ready for implementation |
+| 2026-05-10 | Step 2 started | Verify segment data plumbing |
 
 ---
 
@@ -232,3 +243,4 @@ Unlike most tasks, the success criterion for TP-197 is partially visual — does
 
 Per the code-quality-gates spec (section 3, non-goals), `dashboard/public/` is intentionally vanilla JS, out of lint scope. This task touches those files but does NOT add them to lint scope. The `.biome.json` exclusion for `dashboard/public/**` stays in place. A separate future task could opt-in to dashboard linting if/when there's demand.
 | 2026-05-10 23:41 | Review R001 | plan Step 1: REVISE |
+| 2026-05-10 23:43 | Review R002 | plan Step 1: APPROVE |
