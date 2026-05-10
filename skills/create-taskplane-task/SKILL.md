@@ -153,6 +153,43 @@ Individual steps can override the task-level review:
 > **Review override: code review** — This step touches authorization.
 ```
 
+### Per-Step Reviews vs. Consolidated Reviews (Checkpoint Markers)
+
+A second axis sits alongside the Review Level: **how many** reviews fire
+for a given level. PROMPT authors should make this choice deliberately.
+
+**Default — per-step reviews:** at Review Level ≥ 1, the worker fires a
+plan review BEFORE each implementation step and (at Level ≥ 2) a code
+review AFTER. A 5-implementation-step Level 2 task therefore fires
+~5 plan + ~5 code = ~10 reviews. This is the right default for tasks
+where each step is an independent piece of work (e.g., a multi-cluster
+polish bundle, a multi-feature sprint).
+
+**Opt-in — consolidated via checkpoint markers:** a PROMPT can include
+`**Plan-review checkpoint**` or `**Code review checkpoint**` markers in
+specific steps. The worker treats those markers as instructions to fire
+the corresponding review at *that* step only, instead of per-step. A
+single-deliverable task that decomposes into 1 design step + 3 mechanical
+implementation steps + 1 verify-everything step might mark the design
+step as the plan checkpoint and the verify step as the code checkpoint,
+for a total of 2 reviews instead of ~8.
+
+**When to use which:**
+
+- **Per-step (default):** independent multi-feature work, polish bundles,
+  refactor sweeps. Per-cluster review feedback is more useful than a
+  consolidated review across unrelated changes.
+- **Consolidated (checkpoint markers):** single-deliverable tasks where
+  the steps are mechanical applications of one design decision. TP-186
+  (the `review_step` death-spiral fix) is a real example: 1 prompt-design
+  deliverable + 3 mechanical implementation steps + 1 code-review-
+  everything step → 2 reviews total instead of ~8.
+
+**How to choose at PROMPT-authoring time:** ask "would the reviewer
+benefit from seeing each step in isolation, or only the whole picture?"
+If each step touches a different concern, per-step. If every step is
+the same change applied to a different file, consolidate.
+
 ---
 
 ## Task Sizing

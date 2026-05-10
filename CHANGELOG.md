@@ -7,6 +7,224 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New
+
+- **`supervisor_takeover(reason)` tool (TP-187, #538):** Non-destructive
+  escape hatch for misbehaving batches. Pauses the running wave, drains
+  every per-agent on-disk outbox for the current batch, and marks all
+  active lanes as terminated so any in-transit zombie alerts are dropped
+  before they reach the supervisor's user-message queue. Worktrees,
+  branches, batch state, and sessions are all preserved — distinct from
+  `orch_abort`, which kills sessions and deletes state. Use this when
+  the batch is producing alert spam or has hit a death-spiral pattern
+  but you may still want to resume the same batch. After takeover, call
+  `orch_status()` to inspect, then either `orch_resume(force=true)` to
+  continue (alert suppression is lifted automatically on resume) or
+  `orch_abort()` to escalate to destructive shutdown. Documented in
+  `templates/agents/supervisor.md` alongside the existing orch_* tool
+  surface, plus a new section codifying the lane-runner's text-reply
+  parser semantics (close keywords `skip` / `let it fail` / `close` /
+  `abort` / `stop` are only treated as session-close directives when
+  they appear in a reply under 30 characters; longer messages are
+  always treated as instructional re-prompts).
+
+### Fixed
+
+- **Zombie supervisor alerts after lane termination (TP-187, #538):**
+  Previously, when a worker lane was killed (no-progress threshold or
+  hard-fail), 3–5 "wants to exit" alerts that the worker emitted before
+  termination remained in the supervisor's user-message queue and the
+  agent's on-disk outbox, where they could be re-discovered later.
+  None of the documented operator responses (`steer`, `skip`, `let it
+  fail`, `orch_abort`, `orch_skip_task`) reliably drained either path.
+  Fix has three parts: (1) at every lane-termination decision point
+  (no-progress kill in `lane-runner.ts`, hard-fail in `engine.ts`), the
+  agent's outbox is now synchronously drained — pending `*.msg.json`
+  files are moved to `outbox/processed/` and other pending files (e.g.,
+  `segment-expansion-*.json`) are renamed to `.drained` so they are
+  invisible to subsequent discovery scans; (2) the engine emits a new
+  `lane-terminated` IPC message to the supervisor process, which keys
+  a per-batch suppression filter (`terminatedLanes` /
+  `terminatedAgents` Maps) that drops any subsequent supervisor-alert
+  whose `context.laneNumber` or `context.agentId` matches before it
+  reaches `pi.sendUserMessage`; (3) the engine emits a complementary
+  `lane-respawned` IPC at the start of each `executeLaneV2` invocation
+  so a fresh task on a re-allocated lane number lifts the suppression.
+  The filter is also cleared on `orch_resume()`, on a new batch start,
+  and on `supervisor_takeover()`-then-resume. Implementation: new
+  `drainAgentOutbox` helper in `mailbox.ts`, `LaneTerminatedInfo` /
+  `LaneTerminatedCallback` types in `types.ts`, callback threading
+  through `engine.ts` / `execution.ts` / `resume.ts` / `engine-worker.ts`,
+  and IPC + filter wiring in `extension.ts`.
+
+- **`orch_resume(force=true)` cannot reattach after `orch_abort()`
+  (TP-187, #539):** `executeAbort()` deletes `.pi/batch-state.json` to
+  enforce its destructive contract, but the runtime registry, per-agent
+  manifests, lane snapshots, worktrees, and branches all survive. With
+  no batch-state.json, `loadBatchState()` returned null and force-resume
+  returned the generic "no batch found" error, forcing operators into
+  ~15 minutes of manual git surgery (fast-forward feature branches,
+  push, remove worktrees, edit STATUS, re-`orch_start`) just to do what
+  force-resume should have done. Fix adds a small `batch-meta.json`
+  runtime artifact written at batch-start to
+  `.pi/runtime/<batchId>/batch-meta.json` capturing the wave plan and
+  the few non-recoverable scalars (baseBranch, orchBranch, mode,
+  startedAt, totalWaves). On force-resume after abort, when
+  `loadBatchState()` returns null, the new
+  `reconstructBatchStateFromRuntime()` helper deterministically rebuilds
+  a validator-compliant `PersistedBatchState` from the surviving
+  artifacts: most-recent batch dir wins by mtime (lex tiebreak),
+  `batch-meta.json` provides wave topology and orchBranch, worker
+  manifests provide per-lane allocation, and the existing reconciliation
+  pass re-detects succeeded tasks via `.DONE` markers and STATUS.md.
+  When required artifacts are missing or validation fails, force-resume
+  fails loud with a new `resumeNoStateAfterAbort` message that names
+  the missing artifact and recommends `orch_start <PROMPT.md>` as the
+  recovery path. The non-force `orch_resume()` path is unchanged.
+  `orch_abort` itself remains semantically destructive — only
+  force-resume reads from the surviving runtime artifacts.
+
+- **`Worker said:` is empty in early no-progress alerts (TP-187, #540):**
+  When a worker exits an iteration without producing a visible assistant
+  message (a known failure mode in the death-spiral pattern), the
+  worker-exit-intercept alert sent to the supervisor showed
+  `Worker said: ""` — leaving the supervisor with no signal about why
+  the worker is stuck on the iterations where intervention could still
+  help. By the time the field has content, the worker is already at
+  no-progress count 3 (kill threshold). Fix has two parts: (1)
+  `templates/agents/task-worker.md` now requires a one-sentence reason
+  before any silent exit-with-no-progress, with concrete examples; (2)
+  `lane-runner.ts` falls back to walking the worker's `events.jsonl`
+  backward to find the most recent non-empty `assistant_message`
+  payload when the current turn produced no visible output, and tags
+  the alert with which source (`current-turn`,
+  `events-jsonl-fallback`, or `empty-sentinel`) produced the
+  `Worker said:` field. The 500-character truncation invariant is
+  preserved.
+
+- **`taskplane doctor` no longer shows empty parens for `pi installed ()`
+  (TP-189-C / TP-185 follow-up):** pi prints its `--version` output to
+  **stderr**, but `bin/taskplane.mjs`'s `getVersion()` only captured
+  stdout via `execSync(... { stdio: 'pipe' })`, so the doctor display was
+  `✅ pi installed ()` with empty parens. The fix extracts `getVersion`
+  to `bin/get-version.mjs` (testable ESM helper) and switches it to
+  `spawnSync` with `stdio: ['ignore', 'pipe', 'pipe']`. The new logic
+  prefers stdout but falls back to stderr when stdout is empty, and
+  preserves the prior fail-safe contract (returns `null` on subprocess
+  failure or non-zero exit — critical so shell error text isn't surfaced
+  as a fake version string). Manual verification: `taskplane doctor` now
+  shows `✅ pi installed (0.73.0)`. 7 new behavioral tests in
+  `extensions/tests/cli-doctor-version-capture.test.ts` cover the
+  stdout-precedence, stderr-fallback, trim, and null-on-failure cases.
+- **`isStepMarkedComplete` death-spiral guard now skips fenced code
+  blocks (TP-189-A3 / TP-186 follow-up):** the helper that powers the
+  `review_step` REFUSED guard scanned STATUS.md line-by-line for the
+  literal `**Status:** ✅ Complete` pattern. If a step's body documented
+  that pattern inside a fenced code block (legitimate authoring of the
+  format itself), the guard would false-positive and refuse a legitimate
+  code review. The helper now uses CommonMark-aware fence tracking:
+  recognizes both ``` and ~~~ fences, tracks the opener char + length,
+  and only closes on a matching delimiter (same char, length ≥ opener
+  length, no trailing non-whitespace text). Mixed-delimiter examples and
+  `````info-string lines inside an outer fence no longer prematurely
+  close it. Step-heading detection is gated on being outside a fence so
+  a `### Step N:` line inside a code-block sample is treated as content
+  rather than a step boundary. 6 new unit tests cover the edge cases.
+
+### Docs
+
+- **`templates/agents/task-worker.md` reconciled with TP-186's Order of
+  Operations rule (TP-189-E):** two older sections were ambiguous when
+  read alongside the new review-gated step-completion contract from
+  TP-186. (1) Resume Algorithm step 6 ("all items checked → proceed to
+  next step") now splits behavior by Review Level: 0/1 may proceed,
+  but 2/3 must commit the implementation, call
+  `review_step(type="code")`, and only flip the per-step `**Status:**`
+  heading after APPROVE — with a cross-reference to the Order of
+  Operations section. (2) The Checkpoint Discipline / Git commits
+  example commit message changed from `feat(TASK-ID): complete Step N
+  — description` to `feat(TASK-ID): step N implementation`, plus
+  explicit Level 0/1 vs Level 2/3 paragraphs and a separate
+  `chore(TASK-ID): step N complete (code review APPROVE)` example for
+  the post-APPROVE status-flip commit. Both edits reuse canonical
+  wording from the Order of Operations + Recovery Recipe sections so
+  the existing source-pattern tests in
+  `extensions/tests/worker-step-completion-protocol.test.ts` continue to
+  pass; a new test 1.4b regression-guards the Resume Algorithm wording.
+- **`skills/create-taskplane-task/SKILL.md` Complexity Assessment
+  augmented with **Per-Step Reviews vs. Consolidated Reviews
+  (Checkpoint Markers)** sub-section (TP-189-E):** the existing rubric
+  documents Review Levels 0–3 but not the second axis — *how many*
+  reviews fire for a given level. PROMPT authors had been discovering
+  this empirically (e.g., TP-186 fired only 2 reviews via checkpoint
+  markers vs the default ~8 it would have fired without them). The new
+  sub-section makes the choice explicit: per-step is the default and
+  right for independent multi-feature work; consolidation via
+  `**Plan-review checkpoint**` / `**Code review checkpoint**` markers
+  is appropriate for single-deliverable tasks where the steps are
+  mechanical applications of one design. TP-186 is referenced as the
+  canonical consolidation example.
+
+### Internal
+
+- **`DEFAULT_WORKER_USER_TOOLS` migrated to a shared lightweight
+  constants module (TP-189-B / TP-184 follow-up):** the literal
+  `"read,write,edit,bash,grep,find,ls"` was duplicated across
+  `extensions/taskplane/agent-host.ts` (canonical), `config-schema.ts`
+  (×2), and `types.ts` (×1), with `NOTE (TP-184)` comments pointing at
+  the canonical source. The duplication existed because `agent-host.ts`
+  imports `child_process`/`fs`, and pulling those into the schema/types
+  layer would either be circular (types.ts is the import root for
+  agent-host.ts) or pollute pure-data files with subprocess plumbing.
+  Sage flagged this as a future cleanup target. Fix: new
+  `extensions/taskplane/tool-allowlist-constants.ts` is a deliberately
+  import-free leaf module that owns the literal. `agent-host.ts` now
+  re-exports `DEFAULT_WORKER_USER_TOOLS` from the new module so
+  existing internal callers (`execution.ts`,
+  `worker-tools-allowlist.test.ts`) continue to work unchanged.
+  `config-schema.ts` and `types.ts` now import directly from the new
+  module. Verified no circular imports via a Node import probe; existing
+  16-test `worker-tools-allowlist.test.ts` suite still passes (constant
+  value is unchanged, only its source module moved). `ENGINE_BRIDGE_TOOLS`
+  and `buildWorkerToolsAllowlist()` deliberately stay in `agent-host.ts`
+  — they have no duplication problem and live next to their consumers.
+- **Architectural regression guard for the worker tool allowlist
+  spawn-site wiring (TP-189-A1 / TP-184 follow-up):** new
+  `extensions/tests/lane-runner-spawn-wiring.test.ts` (4 source-pattern
+  tests) asserts that `lane-runner.ts` imports `buildWorkerToolsAllowlist`
+  from `agent-host` and calls it as
+  `tools: buildWorkerToolsAllowlist(config.workerTools)` at the worker
+  spawn site, with explicit guards against passing `config.workerTools`
+  directly (which would silently drop engine bridge tools and
+  re-introduce issue #530). The call site is also bounded to within
+  ~80 lines of the surrounding `agentId:` field, sanity-checking the
+  call lives inside the AgentHostOptions object literal.
+- **Runtime test of the `review_step` death-spiral guard's REFUSED path
+  (TP-189-A2 / TP-186 follow-up):** new
+  `extensions/tests/review-step-guard-runtime.test.ts` (5 tests)
+  exercises the actual `review_step` tool handler end-to-end via the
+  bridge-extension's tool registration. Confirms `type='code'` (and
+  `type='test'`) on a step marked `**Status:** ✅ Complete` returns
+  the documented REFUSED prose without spawning a reviewer subprocess
+  and without incrementing the Review Counter; `type='plan'` is exempt
+  even on a Complete step; `type='code'` on an In-Progress step
+  proceeds normally. Mocking strategy uses the bare `child_process`
+  specifier for portability across Node 22 and Node 24 (matches the
+  `windows-worktree-cleanup-fallback.test.ts` rationale).
+- **Behavioral tests for `removeWorktree()` Windows MAX_PATH fallback
+  (TP-189-A4 / TP-188 follow-up):** new
+  `extensions/tests/windows-worktree-cleanup-behavioral.test.ts` (3
+  tests) augments the existing source-pattern suite with end-to-end
+  decision-branch coverage. Uses a single `child_process` mock that
+  dispatches on the spawned command (git vs cmd) plus real on-disk temp
+  directories so the post-removal `existsSync` verification passes for
+  real. Covers: win32 + "Filename too long" stderr → `cmd /c rd /s /q`
+  fallback fires, prune-after-rd ordering verified, removed:true; win32
+  + non-MAX_PATH error → fallback skipped, `WORKTREE_REMOVE_FAILED`
+  thrown with the original stderr; non-win32 + MAX_PATH text →
+  platform guard in `isWindowsMaxPathError` correctly skips the
+  fallback.
+
 ## [0.28.8] - 2026-05-07
 
 ### Enhanced

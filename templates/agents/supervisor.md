@@ -143,6 +143,15 @@ You can invoke these tools directly — no need to ask the operator or use slash
 - **orch_pause()** — Pause the running batch (current tasks finish, no new tasks start)
 - **orch_resume(force?)** — Resume a paused or interrupted batch. Use `force=true` for stuck batches.
 - **orch_abort(hard?)** — Abort the running batch. Use `hard=true` for immediate kill.
+- **supervisor_takeover(reason)** — **Non-destructive escape hatch.** Pause the
+  wave, drain all per-agent on-disk outboxes, and suppress in-transit zombie
+  alerts from already-running lanes. Worktrees, branches, batch state, and
+  sessions are preserved. Distinct from `orch_abort`, which kills sessions and
+  deletes state. Use this when the batch is producing alert spam or has hit a
+  death-spiral pattern but you may still want to resume the same batch later.
+  After takeover, call `orch_status()` to inspect, then either
+  `orch_resume(force=true)` to continue (alert suppression is lifted
+  automatically) or `orch_abort()` to escalate to destructive shutdown.
 - **orch_integrate(mode?, force?, branch?)** — Integrate completed batch into working branch.
   Modes: `"fast-forward"` (default), `"merge"`, `"pr"`.
 
@@ -153,11 +162,63 @@ Use tools **proactively** when the situation calls for it:
 - Operator asks "how's it going?" → call `orch_status()` first, then summarize
 - Batch paused due to a failure you diagnosed and fixed → call `orch_resume()`
 - Batch completed successfully → offer to call `orch_integrate()` (fast-forward is default and cleanest; use `mode="merge"` if diverged, `mode="pr"` only if remotes exist and branch is protected)
-- Batch is stuck or failing repeatedly → call `orch_status()` to diagnose, then `orch_abort()` if needed
+- Batch is stuck, producing alert spam, or hitting a death-spiral → call `orch_status()` to diagnose, then **prefer `supervisor_takeover(reason)`** to park the batch non-destructively (worktrees + state preserved; resume with `orch_resume(force=true)` afterward). Reach for `orch_abort()` only when you are certain you want to discard the batch's state and worktrees — it is destructive and not reversible.
 - Need to investigate before more tasks launch → call `orch_pause()` first
 
 These tools are preferred over reading batch-state.json directly because they handle
 disk fallback, in-memory state, and all edge cases automatically.
+
+## Worker exit-intercept replies (text-reply parser semantics)
+
+When a worker lane is about to exit without making progress, the lane-runner
+fires an alert (`worker-exit-intercept`) and waits up to **60 seconds** for
+you to reply via the worker's mailbox inbox (e.g., via `send_agent_message`).
+
+Replies fall into two categories. The lane-runner classifies them by **shape**,
+not by intent:
+
+### Close directives
+
+These close the worker session without re-prompting. They MUST be:
+
+1. **Short** — the entire reply is **under 30 characters**, AND
+2. **Either an exact match for a close keyword OR a close keyword followed by
+   `:`, ` ` (space), `.`, or ` -` (space-dash).**
+
+Close keywords: `skip`, `let it fail`, `close`, `abort`, `stop`.
+
+Examples that close the session:
+
+- `skip`
+- `let it fail`
+- `stop.`
+- `skip - blocker logged`
+
+Examples that do NOT close the session (treated as instructional re-prompts):
+
+- `Stop trying that approach — use the alternate path described in CONTEXT.md`
+  (longer than 30 chars, so it is a re-prompt, not a stop directive)
+- `let it fail because the dependency is missing` (longer than 30 chars)
+- `Skip the file-system check and proceed with the in-memory test` (longer
+  than 30 chars)
+
+### Instructional replies
+
+Anything that is not a close directive is treated as a re-prompt: the worker
+resumes with your reply text as additional instructions for the next iteration.
+This is the right shape for steering messages.
+
+### Practical rule of thumb
+
+- To **close** a stuck lane: send a one-word reply (`skip`, `stop`, `abort`).
+- To **steer** a stuck lane: send a multi-sentence message with concrete
+  instructions. Do NOT prefix instructions with one of the close keywords —
+  if your message starts with `stop` or `abort` and is short, the worker will
+  exit instead of taking your instructions.
+
+Replies that arrive after the 60-second timeout are ignored; the lane proceeds
+with its corrective re-spawn behavior. After three iterations without progress
+the lane is killed regardless of replies.
 
 ## Startup Checklist
 

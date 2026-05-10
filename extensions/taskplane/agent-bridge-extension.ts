@@ -146,6 +146,12 @@ function writeSegmentExpansionRequest(request: SegmentExpansionRequest): string 
  * section. All-checkboxes-checked is also NOT a trigger — it is the normal
  * pre-code-review state.
  *
+ * Fenced code blocks (delimited by ``` or ~~~) inside a step's body are
+ * skipped during the scan (TP-189-A3). This avoids a false-positive
+ * refusal when a step documents the literal `**Status:** ✅ Complete`
+ * pattern as part of its own instructions — a legitimate authoring case
+ * that doesn't represent an actual completion claim.
+ *
  * Designed to fail-open: any I/O error or a missing step heading returns
  * `false` (the review proceeds). The prompt-side Recovery Recipe is the
  * primary defense; this guard is a hard backstop, not a gatekeeper.
@@ -165,15 +171,64 @@ export function isStepMarkedComplete(statusPath: string, stepNum: number): boole
 	const lines = content.split(/\r?\n/);
 	const stepHeadingRe = new RegExp(`^###\\s+Step\\s+${stepNum}\\b`);
 	const nextStepHeadingRe = /^###\s+Step\s+\d+\b/;
-
+	// TP-189-A3: track fenced-code-block state per CommonMark semantics.
+	// A fence opens with 3+ backticks OR 3+ tildes optionally followed by
+	// an info string (e.g., ```javascript). A fence CLOSES only when a
+	// matching delimiter (same char, length >= opener length) is seen on
+	// a line by itself — the closer line MUST NOT contain trailing
+	// non-whitespace text. This distinction matters: ```javascript
+	// inside an open fence is content, not a closer; mistreating it as a
+	// closer would let `**Status:** ✅ Complete` later in the same code
+	// block trip the guard. Tracking opener char + length also avoids
+	// premature close on `~~~` inside a backtick fence (or vice versa).
+	const openerRe = /^\s*(`{3,}|~{3,})(.*)$/;
 	let inSection = false;
+	let fenceOpener: { char: string; length: number } | null = null;
 	for (const line of lines) {
 		if (!inSection) {
 			if (stepHeadingRe.test(line)) inSection = true;
 			continue;
 		}
-		// Stop scanning at the next step heading.
-		if (nextStepHeadingRe.test(line)) break;
+		// Step boundaries are recognized only OUTSIDE a fenced block.
+		// (A `### Step N:` line inside a code-fence sample is content,
+		// not a real heading.)
+		if (fenceOpener === null && nextStepHeadingRe.test(line)) break;
+		// Detect fence delimiter lines.
+		const fenceMatch = line.match(openerRe);
+		if (fenceMatch) {
+			const delim = fenceMatch[1];
+			const trailing = fenceMatch[2] ?? "";
+			const char = delim[0]; // "`" or "~"
+			const length = delim.length;
+			if (fenceOpener === null) {
+				// Opening: any trailing text is the info string — allowed.
+				// CommonMark forbids backticks in a backtick info string,
+				// but rejecting that case here only risks false negatives
+				// (i.e., not opening a fence we should have); the worst-
+				// case impact is a real Status line being inspected as if
+				// outside a fence — which is the safe default.
+				fenceOpener = { char, length };
+				continue;
+			}
+			// Already inside a fence — a line counts as a closer ONLY if:
+			//   1. delimiter char matches the opener,
+			//   2. delimiter length >= opener length,
+			//   3. nothing follows the delimiter except whitespace.
+			const trailingIsWhitespace = /^\s*$/.test(trailing);
+			if (
+				char === fenceOpener.char &&
+				length >= fenceOpener.length &&
+				trailingIsWhitespace
+			) {
+				fenceOpener = null;
+				continue;
+			}
+			// Else: this line is content INSIDE the open fence (e.g.,
+			// ```javascript inside a 4-backtick fence, or a non-matching
+			// tilde delimiter). Fall through to the inFence skip below.
+		}
+		// Skip lines inside an open fenced code block.
+		if (fenceOpener !== null) continue;
 		// Match a literal status line within this step's section.
 		// Examples that should match:
 		//   **Status:** ✅ Complete

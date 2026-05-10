@@ -42,6 +42,7 @@ import {
 	checkRateLimit,
 	recordSend,
 	appendMailboxAuditEvent,
+	drainAgentOutbox,
 } from "./mailbox.ts";
 import {
 	readRegistrySnapshot,
@@ -1016,6 +1017,13 @@ export function startBatchInWorker(
 	onMonitorUpdate?: (state: import("./types.ts").MonitorState) => void,
 	onTerminal?: () => void,
 	onSupervisorAlert?: (alert: import("./types.ts").SupervisorAlert) => void,
+	/**
+	 * TP-187 (#538): Lane-terminated and lane-respawned IPC events. The
+	 * supervisor process tracks terminated lanes/agents and uses this to
+	 * suppress zombie alerts from already-dead lanes.
+	 */
+	onLaneTerminated?: (info: import("./types.ts").LaneTerminatedInfo) => void,
+	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
 ): ChildProcess | null {
 	const workerPath = resolveEngineWorkerPath();
 
@@ -1053,6 +1061,8 @@ export function startBatchInWorker(
 				wkData.force ?? false,
 				onSupervisorAlert ?? null,
 				wkData.supervisorAutonomy ?? "autonomous",
+				null, // onLaneTerminated — main-thread fallback path; alerts are local-only
+				null, // onLaneRespawned — main-thread fallback path; suppression maps stay clear
 			)
 			: () => executeOrchBatch(
 				wkData.args ?? "",
@@ -1068,6 +1078,8 @@ export function startBatchInWorker(
 				null, // onEngineEvent
 				onSupervisorAlert ?? null,
 				wkData.supervisorAutonomy ?? "autonomous",
+				null, // onLaneTerminated — main-thread fallback path
+				null, // onLaneRespawned — main-thread fallback path
 			);
 		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
 		return null;
@@ -1168,6 +1180,15 @@ export function startBatchInWorker(
 			// ── TP-076: Supervisor alert handling ────────────────
 			case "supervisor-alert":
 				onSupervisorAlert?.(msg.alert);
+				break;
+
+			// TP-187 (#538): Lane termination handling
+			case "lane-terminated":
+				onLaneTerminated?.(msg.info);
+				break;
+
+			case "lane-respawned":
+				onLaneRespawned?.(msg.laneNumber, msg.agentId, msg.batchId);
 				break;
 
 			case "state-sync":
@@ -1659,6 +1680,82 @@ export default function (pi: ExtensionAPI) {
 	let supervisorState = freshSupervisorState();
 	let supervisorConfig: SupervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
 
+	// TP-187 (#538): Zombie-alert filter state
+	// Lane numbers and agent IDs that have reached a terminal state (no-progress
+	// kill, hard-fail, or supervisor-takeover). Supervisor-alert IPC messages
+	// whose context targets a terminated lane/agent are dropped before they
+	// reach pi.sendUserMessage so the operator does not see zombie alerts.
+	//
+	// Lifecycle (Step 1 design):
+	//   - Lane reaches terminal state -> add to maps (value = epoch ms)
+	//   - Lane re-spawned for fresh task -> remove from maps
+	//   - orch_resume() called -> clear both maps
+	//   - New batchId observed -> clear both maps
+	//   - supervisor_takeover() invoked -> mark all known active lanes/agents
+	const terminatedLanes = new Map<number, number>();
+	const terminatedAgents = new Map<string, number>();
+
+	const clearTerminationFilter = (reason: string): void => {
+		if (terminatedLanes.size === 0 && terminatedAgents.size === 0) return;
+		process.stderr.write(
+			`[taskplane:zombie-filter] cleared termination filter (reason: ${reason}, ` +
+			`lanes=${terminatedLanes.size}, agents=${terminatedAgents.size})\n`,
+		);
+		terminatedLanes.clear();
+		terminatedAgents.clear();
+	};
+
+	/**
+	 * TP-187 (#538) — sage post-integration follow-up: gate lane-terminated /
+	 * lane-respawned IPC on the current batchId so a stale message from a prior
+	 * batch (engine-worker process not yet shut down, or out-of-order delivery)
+	 * cannot taint the supervisor's terminated-lane filter for the live batch.
+	 * Returns true when the IPC's batchId matches the current batch (or when
+	 * the supervisor has not yet seen any state-sync, in which case we accept
+	 * the IPC — first batch, no risk of staleness).
+	 */
+	const ipcBatchIdMatches = (incomingBatchId: string | undefined): boolean => {
+		// FIX (#559) + sage post-mortem: use `orchBatchState.batchId`, NOT
+		// `batchState.batchId` and NOT `supervisorState.batchId`.
+		//
+		// `batchState` was the original (crashing) reference — NOT bound in
+		// this closure. Other regions of extension.ts legitimately bind a
+		// different `batchState` via destructuring inside their own functions,
+		// but those bindings are not visible here.
+		//
+		// `supervisorState.batchId` (the first attempted fix) is bound but is
+		// only populated when `activateSupervisor()` runs — supervisor activation
+		// is a separate event triggered by alerts/intercepts, not by every batch.
+		// For batches where the supervisor never activates, that field stays
+		// empty for the entire batch and the gate never fires (everything passes
+		// the empty-string accept-all branch), defeating the zombie-alert filter.
+		//
+		// `orchBatchState.batchId` is the canonical live runtime batch ID for
+		// the extension closure: declared on line 1669, populated by the same
+		// state-sync IPC that the supervisor reads from, and reliably present
+		// from the moment the engine-worker emits its first state-sync frame
+		// onward. The only window where it is `""` is the legitimate gap
+		// between batch launch and first state-sync — pre-planning, before any
+		// terminated-lane IPC could fire.
+		const currentBatchId = orchBatchState.batchId;
+		if (!currentBatchId) return true; // no live batch yet — accept
+		if (!incomingBatchId) return true; // legacy IPC without batchId — accept (back-compat)
+		return incomingBatchId === currentBatchId;
+	};
+
+	/**
+	 * TP-187 (#538): True iff this alert targets a lane or agent that has
+	 * already been marked terminal. Used by the supervisor-alert IPC handler
+	 * to drop zombie alerts before they reach pi.sendUserMessage.
+	 */
+	const isAlertSuppressed = (alert: import("./types.ts").SupervisorAlert): boolean => {
+		const ctx = alert.context;
+		if (!ctx) return false;
+		if (typeof ctx.laneNumber === "number" && terminatedLanes.has(ctx.laneNumber)) return true;
+		if (typeof ctx.agentId === "string" && ctx.agentId && terminatedAgents.has(ctx.agentId)) return true;
+		return false;
+	};
+
 	// Register supervisor prompt hook: while active, injects supervisor
 	// system prompt on every LLM turn. No-op when supervisor is inactive.
 	registerSupervisorPromptHook(pi, supervisorState);
@@ -2095,6 +2192,9 @@ export default function (pi: ExtensionAPI) {
 		orchBatchState = freshOrchBatchState();
 		latestMonitorState = null;
 
+		// TP-187 (#538): Clear zombie-alert filter for the new batch.
+		clearTerminationFilter("new_batch_started");
+
 		orchBatchState.phase = "launching";
 		orchBatchState.startedAt = Date.now();
 		updateOrchWidget();
@@ -2205,7 +2305,43 @@ export default function (pi: ExtensionAPI) {
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
 			(alert) => {
 				if (!supervisorState.active) return; // Don't send orphaned messages
+				// TP-187 (#538): Drop zombie alerts for already-terminated lanes/agents.
+				if (isAlertSuppressed(alert)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] dropped alert (category=${alert.category}, ` +
+						`lane=${alert.context?.laneNumber ?? "?"}, agent=${alert.context?.agentId ?? "?"})\n`,
+					);
+					return;
+				}
 				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+			},
+			// TP-187 (#538): Lane-terminated handler.
+			(info) => {
+				if (!ipcBatchIdMatches(info.batchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
+						`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
+					);
+					return;
+				}
+				terminatedLanes.set(info.laneNumber, info.terminatedAt);
+				if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
+				process.stderr.write(
+					`[taskplane:zombie-filter] lane ${info.laneNumber} (${info.agentId}) terminated ` +
+					`(reason: ${info.reason}); ${terminatedLanes.size} lane(s) suppressed\n`,
+				);
+			},
+			// TP-187 (#538): Lane-respawned handler.
+			(laneNumber, agentId, incomingBatchId) => {
+				if (!ipcBatchIdMatches(incomingBatchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
+						`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
+					);
+					return;
+				}
+				terminatedLanes.delete(laneNumber);
+				if (agentId) terminatedAgents.delete(agentId);
 			},
 		);
 
@@ -2439,6 +2575,9 @@ export default function (pi: ExtensionAPI) {
 		orchBatchState = freshOrchBatchState();
 		latestMonitorState = null;
 
+		// TP-187 (#538): Clear zombie-alert filter so post-resume alerts pass through.
+		clearTerminationFilter("orch_resume_called");
+
 		orchBatchState.phase = "launching";
 		orchBatchState.startedAt = Date.now();
 		updateOrchWidget();
@@ -2542,7 +2681,43 @@ export default function (pi: ExtensionAPI) {
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
 			(alert) => {
 				if (!supervisorState.active) return; // Don't send orphaned messages
+				// TP-187 (#538): Drop zombie alerts for already-terminated lanes/agents.
+				if (isAlertSuppressed(alert)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] dropped alert (category=${alert.category}, ` +
+						`lane=${alert.context?.laneNumber ?? "?"}, agent=${alert.context?.agentId ?? "?"})\n`,
+					);
+					return;
+				}
 				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+			},
+			// TP-187 (#538): Lane-terminated handler.
+			(info) => {
+				if (!ipcBatchIdMatches(info.batchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-terminated IPC ` +
+						`(incoming batchId=${info.batchId}, current=${orchBatchState.batchId})\n`,
+					);
+					return;
+				}
+				terminatedLanes.set(info.laneNumber, info.terminatedAt);
+				if (info.agentId) terminatedAgents.set(info.agentId, info.terminatedAt);
+				process.stderr.write(
+					`[taskplane:zombie-filter] lane ${info.laneNumber} (${info.agentId}) terminated ` +
+					`(reason: ${info.reason}); ${terminatedLanes.size} lane(s) suppressed\n`,
+				);
+			},
+			// TP-187 (#538): Lane-respawned handler.
+			(laneNumber, agentId, incomingBatchId) => {
+				if (!ipcBatchIdMatches(incomingBatchId)) {
+					process.stderr.write(
+						`[taskplane:zombie-filter] ignored stale lane-respawned IPC ` +
+						`(incoming batchId=${incomingBatchId}, current=${orchBatchState.batchId})\n`,
+					);
+					return;
+				}
+				terminatedLanes.delete(laneNumber);
+				if (agentId) terminatedAgents.delete(agentId);
 			},
 		);
 
@@ -2675,6 +2850,91 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// ── TP-077: Supervisor Recovery Tools ────────────────────────────
+
+	/**
+	 * Core logic for `supervisor_takeover(reason)`. Pauses the running wave,
+	 * drains all per-agent on-disk outboxes for the current batch, and marks
+	 * every active lane as terminated so any in-transit zombie alerts are
+	 * suppressed. Distinct from `orch_abort`:
+	 *   - `orch_abort` kills sessions and deletes batch state (destructive).
+	 *   - `supervisor_takeover` pauses + drains + parks; worktrees, branches,
+	 *     state, and sessions all remain so the operator can recover manually.
+	 *
+	 * @since TP-187 (#538)
+	 */
+	function doSupervisorTakeover(reason: string): string {
+		const messages: string[] = [];
+		const trimmedReason = (reason ?? "").trim() || "(no reason provided)";
+		messages.push(`🛡️ Supervisor takeover requested: ${trimmedReason}`);
+
+		// 1. Pause the wave (mirror orch_pause logic but tolerate non-active phases).
+		const pausablePhases = new Set(["launching", "executing", "merging", "planning"]);
+		if (pausablePhases.has(orchBatchState.phase)) {
+			orchBatchState.pauseSignal.paused = true;
+			activeWorker?.send({ type: "pause" });
+			messages.push(`  ✓ Wave paused (batch ${orchBatchState.batchId})`);
+		} else {
+			messages.push(`  — Batch phase is \`${orchBatchState.phase}\`; no active wave to pause`);
+		}
+
+		// 2. Drain on-disk outboxes for every known agent in the current batch.
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot;
+		let drainedAgents = 0;
+		let drainedMessages = 0;
+		if (stateRoot && orchBatchState.batchId) {
+			try {
+				const agentIds = discoverMailboxAgentIds(stateRoot, orchBatchState.batchId);
+				for (const agentId of agentIds) {
+					try {
+						const n = drainAgentOutbox(stateRoot, orchBatchState.batchId, agentId);
+						if (n > 0) {
+							drainedAgents++;
+							drainedMessages += n;
+						}
+					} catch { /* per-agent drain best-effort */ }
+				}
+				messages.push(
+					`  ✓ Drained on-disk outboxes (${drainedMessages} message(s) across ${drainedAgents} agent(s))`,
+				);
+			} catch (err) {
+				messages.push(
+					`  ⚠ Drain failed: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+		} else {
+			messages.push("  — No active batch state; outbox drain skipped");
+		}
+
+		// 3. Mark all currently-known active lanes/agents as terminated so any
+		// in-transit zombie alerts get filtered. The maps are kept until the next
+		// `orch_resume` (or new batch) per the Step 1 lifecycle.
+		const takeoverTs = Date.now();
+		let markedLanes = 0;
+		for (const lane of orchBatchState.currentLanes ?? []) {
+			terminatedLanes.set(lane.laneNumber, takeoverTs);
+			if (lane.laneSessionId) {
+				terminatedAgents.set(lane.laneSessionId, takeoverTs);
+				terminatedAgents.set(`${lane.laneSessionId}-worker`, takeoverTs);
+				terminatedAgents.set(`${lane.laneSessionId}-reviewer`, takeoverTs);
+			}
+			markedLanes++;
+		}
+		messages.push(
+			`  ✓ Suppressed alerts for ${markedLanes} lane(s) (lifted on next \`orch_resume\`)`,
+		);
+
+		// 4. Worktrees, branches, state, sessions are intentionally NOT touched.
+		messages.push("  ✓ Worktrees, branches, batch state, and sessions preserved");
+
+		messages.push("");
+		messages.push("Recommended next steps:");
+		messages.push("  • `orch_status()` to inspect current state");
+		messages.push("  • `orch_resume(force=true)` to re-engage the batch (clears alert suppression)");
+		messages.push("  • `orch_abort()` if escalation to destructive shutdown is required");
+
+		updateOrchWidget();
+		return messages.join("\n");
+	}
 
 	/**
 	 * Core logic for orch_retry_task. Resets a failed task to pending for re-execution.
@@ -3795,6 +4055,49 @@ export default function (pi: ExtensionAPI) {
 			} catch (err) {
 				return {
 					content: [{ type: "text" as const, text: `Error aborting batch: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// TP-187 (#538): supervisor_takeover — pause + drain + park (non-destructive).
+	pi.registerTool({
+		name: "supervisor_takeover",
+		label: "Supervisor Takeover",
+		description:
+			"Take manual control of a misbehaving batch without destroying state. " +
+			"Pauses the running wave, drains all per-agent on-disk outboxes, and " +
+			"suppresses any in-transit alerts from already-running lanes so they " +
+			"do not land in your queue as zombie alerts. Worktrees, branches, " +
+			"batch state, and sessions are all preserved — distinct from " +
+			"`orch_abort` which kills sessions and deletes state. Use " +
+			"`orch_resume(force=true)` afterward to re-engage the batch (the " +
+			"alert suppression is lifted automatically on resume).",
+		promptSnippet: "supervisor_takeover(reason) — pause + drain + park for manual recovery",
+		promptGuidelines: [
+			"Call supervisor_takeover when the batch is producing alert spam, " +
+				"hitting a death-spiral pattern, or you need to investigate without " +
+				"continuing execution.",
+			"This is the non-destructive escape hatch. Prefer this over orch_abort " +
+				"when you may want to resume the same batch later.",
+			"Always include a clear `reason` describing what triggered the takeover " +
+				"— it is logged for audit.",
+			"After takeover, call orch_status() to inspect, then either " +
+				"orch_resume(force=true) to continue or orch_abort() to escalate.",
+		],
+		parameters: Type.Object({
+			reason: Type.String({
+				description: "Why takeover is being requested (logged for audit; required).",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+			try {
+				const result = doSupervisorTakeover(params.reason ?? "");
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error during supervisor takeover: ${err instanceof Error ? err.message : String(err)}` }],
 					details: undefined,
 				};
 			}

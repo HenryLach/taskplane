@@ -244,7 +244,10 @@ describe("5.x: End-to-end interception flow contracts (TP-172)", () => {
 	});
 
 	it("5.2: lane-runner composes alert with truncated assistant message (500 chars)", () => {
-		expect(laneRunnerSrc).toContain("assistantMessage.slice(0, 500)");
+		// TP-187 (#540): the slice now operates on `workerSaid` (which is
+		// `assistantMessage` falling back to the most-recent assistant_message
+		// from events.jsonl). The truncation invariant is preserved.
+		expect(laneRunnerSrc).toContain("workerSaid.slice(0, 500)");
 	});
 
 	it("5.3: lane-runner collects up to 5 unchecked items", () => {

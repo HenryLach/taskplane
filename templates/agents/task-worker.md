@@ -33,9 +33,22 @@ visibility into your progress. If you batch updates, the dashboard shows
 3. **Hydrate if needed** (see STATUS.md Hydration below)
 4. Within that step, find the **first unchecked checkbox** (`- [ ]`)
 5. Resume from there — do NOT redo checked items (`- [x]`)
-6. When a step's items are all checked, proceed to the next incomplete step
-7. If all steps are complete, update STATUS.md **Status** field to `✅ Complete`
-   and **Current Step** to the last step name — this is your final action
+6. When a step's checkbox items are all checked, the next move depends on
+   the task's Review Level:
+   - **Review Level 0 or 1** (no code review): the step is done. Commit
+     the implementation and proceed to the next incomplete step.
+   - **Review Level 2 or 3** (code review required): the step is NOT
+     done yet. Commit the implementation, call
+     `review_step(step=N, type="code")`, and only flip the step's
+     `**Status:**` heading to `✅ Complete` AFTER the reviewer returns
+     APPROVE. See **Order of Operations for steps with code review**
+     below for the full sequence and the recovery recipe if the order
+     gets violated.
+7. If all steps are complete, update the top-of-file STATUS.md **Status**
+   field to `✅ Complete` and **Current Step** to the last step name —
+   this is your final action. (The top-of-file Status is the task-level
+   field; per-step `**Status:** ✅ Complete` headings are governed by
+   the Order of Operations rule.)
 
 ## CRITICAL: Do NOT Create .DONE Files
 
@@ -60,6 +73,29 @@ STATUS.md shows `✅ Complete`.
 There is NO other reason to exit. Do not exit after completing a step to
 "hand off" to the next iteration. Do not exit to report progress. Do not
 exit because you've been working for a while. Just keep going.
+
+### ⚠️ MANDATORY: If you DO exit-with-no-progress, state the reason
+
+If you genuinely must exit an iteration without checking any new boxes (no
+blocker logged, no soft progress), the lane-runner will intercept and ask
+the supervisor for guidance. The alert sent to the supervisor includes a
+`Worker said:` field populated from your most recent assistant message.
+
+**You MUST emit a one-sentence assistant message stating the specific reason
+before exiting.** Examples of acceptable reasons:
+
+- "Stuck on TS error in lane-runner.ts:691 — emitAlert types mismatched, need
+  to check SupervisorAlertContext shape."
+- "Tests for the new helper need fixtures that don't exist; cannot proceed
+  without the supervisor pointing me at the right pattern."
+- "The reviewer's REVISE feedback contradicts the TP-187 design; need
+  clarification on whether wave-plan reconstruction is in scope."
+
+Empty/silent exits are still intercepted, but the supervisor sees `Worker
+said: ""` (or a fallback to your most-recent visible assistant message)
+which is much harder to act on. Always articulate the blocker before
+exiting — it is the difference between getting useful steering and burning
+an iteration on a generic re-prompt.
 
 ## CRITICAL: Never Narrate What You Plan To Do — Just Do It
 
@@ -126,14 +162,30 @@ orchestrator and you will be re-spawned to do it again.
 ### Git commits (after completing a STEP)
 
 Git commits happen at **step boundaries**, not after every checkbox. When all
-checkboxes in a step are checked off:
+checkboxes in a step are checked off, commit the implementation:
 
 ```bash
-git add -A && git commit -m "feat(TASK-ID): complete Step N — description"
+git add -A && git commit -m "feat(TASK-ID): step N implementation"
 ```
 
+For **Review Level 0 or 1** tasks, this commit completes the step — the next
+thing you do is move to step N+1.
+
+For **Review Level 2 or 3** tasks, this commit is the *implementation* commit;
+the step is not done yet. After committing, call `review_step(type="code")`,
+then — once the reviewer returns APPROVE — flip the step's `**Status:**`
+heading to `✅ Complete` and commit that status update separately:
+
+```bash
+git commit -am "chore(TASK-ID): step N complete (code review APPROVE)"
+```
+
+See **Order of Operations for steps with code review** below for the full
+sequence and the recovery recipe if the order is violated.
+
 This keeps the git history meaningful — one coherent commit per step instead of
-dozens of micro-commits that nobody reads.
+dozens of micro-commits that nobody reads, with an explicit review-gating
+commit when applicable.
 
 **Exceptions** — commit immediately (before step completion) in these cases:
 - **Hydration:** After expanding STATUS.md with new checkboxes, commit before

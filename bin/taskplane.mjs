@@ -36,6 +36,7 @@ import {
 	ALL_GITIGNORE_PATTERNS,
 	patternToRegex,
 } from "./gitignore-patterns.mjs";
+import { getVersion } from "./get-version.mjs";
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 
@@ -127,14 +128,10 @@ function commandExists(cmd) {
 	}
 }
 
-/** Get command version string. */
-function getVersion(cmd, flag = "--version") {
-	try {
-		return execSync(`${cmd} ${flag}`, { stdio: "pipe" }).toString().trim();
-	} catch {
-		return null;
-	}
-}
+// `getVersion` lives in `./get-version.mjs` so it can be unit-tested
+// without subprocessing the full CLI. Imported above. (TP-189-C / TP-185
+// follow-up: capture both stdout and stderr because `pi --version`
+// prints to stderr; null on failure preserves the original contract.)
 
 /**
  * Parse the tabular output from `pi --list-models` into structured model rows.
