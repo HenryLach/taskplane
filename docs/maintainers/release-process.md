@@ -102,6 +102,42 @@ node bin/taskplane.mjs help
 node bin/taskplane.mjs doctor
 ```
 
+#### Optional but strongly recommended: end-to-end smoke via local-build
+
+For releases that touch runtime behavior unit tests can't fully exercise
+— IPC handlers, path resolution, dashboard rendering, lane state machine,
+spawn-time error paths, mailbox / outbox semantics — deploy the merged
+`main` branch into your global npm install and exercise the changes in a
+real consumer project before tagging.
+
+From the project root:
+
+```bash
+node scripts/local-build.mjs
+```
+
+Options: `--force` (full copy ignoring mtime), `--dry` (preview only).
+After running, restart pi to load the new code.
+
+Then exercise the changes in a real consumer project. For polyrepo work,
+the 3-repo test workspace at `C:/dev/tp-test-workspace` (set up via the
+`polyrepo-smoke-test` skill) is the canonical pre-release verification
+— it shakes out cross-repo merge orchestration, lane allocation, and the
+full recovery-flow surface in a way that single-repo unit tests cannot.
+
+**Why this step is recommended even when the test suite is green:** it
+caught #559 (orchestrator IPC crash on first frame) and #560 (Pi
+`@earendil-works` rename break) before they shipped in v0.29.0. Both
+bugs passed every CI gate (3587 tests + Biome + smoke checks) but failed
+deterministically in real polyrepo workspaces. The classes of regression
+that slip past unit tests — module resolution, IPC closure scope,
+spawn-time errors, dashboard render keyed off live runtime state — are
+the exact classes that local-build + polyrepo smoke will catch.
+
+Skip this step only when the release is documentation-only or touches
+surfaces that are fully exercised by automated tests (e.g., pure
+refactors with no behavioral change). When in doubt, run it.
+
 ### 3) Create the release branch and update CHANGELOG
 
 ```bash
@@ -274,6 +310,9 @@ a `-` qualifier).
 - [ ] CLI smoke: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
 - [ ] `npm pack --dry-run` reviewed (only intended files ship)
 - [ ] Hotfix scan: any commits on `main` since last `[Unreleased]` write that need entries?
+- [ ] **Local-build + polyrepo smoke run** (strongly recommended for any release
+      that touches runtime behavior — IPC, path resolution, dashboard,
+      lane state machine, spawn paths, mailbox semantics)
 
 ## Post-release checklist
 

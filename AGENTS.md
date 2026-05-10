@@ -219,6 +219,25 @@ consecutive releases).
    - `npm pack --dry-run` (confirm only intended files ship)
    - `cd extensions && npm run test:fast` (full fast suite passes; record count for CHANGELOG)
    - `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor` (CLI smoke)
+   - **Optional but strongly recommended: end-to-end smoke via local-build.**
+     For releases that touch runtime behavior unit tests can't fully exercise
+     (IPC handlers, path resolution, dashboard rendering, lane state machine,
+     spawn-time error paths, mailbox / outbox semantics), run
+     `node scripts/local-build.mjs` from the project root to deploy the
+     merged `main` branch into your global npm install. Then exercise the
+     changes in a real consumer project — for polyrepo work, the 3-repo
+     test workspace at `C:/dev/tp-test-workspace` (set up via the
+     `polyrepo-smoke-test` skill) is the canonical pre-release verification.
+     The `local-build` skill at `.pi/skills/local-build/SKILL.md` documents
+     the script's behavior (incremental copy by default, `--force` for
+     full copy, `--dry` for preview).
+
+     **Why this matters:** this step caught #559 (orchestrator IPC crash on
+     first frame) and #560 (Pi `@earendil-works` rename break) before they
+     shipped public in v0.29.0. Both passed every CI gate (3587 tests +
+     Biome + smoke checks) but failed deterministically in real polyrepo
+     workspaces. Skipping local-build for runtime-affecting changes risks
+     silent regressions that pass automation and fail in production.
 
 3. **Create the release branch and update `CHANGELOG.md` (MANDATORY).**
    - `git switch -c release/v<version>`
