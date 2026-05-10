@@ -33,9 +33,14 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extensions
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Lint (Biome)
-        continue-on-error: true   # NOTE: kept until TP-194 (gate flip)
         run: npm run lint
+
+      - name: Format check (Biome)
+        run: npm run format:check
 
       - name: Run tests
         run: |
