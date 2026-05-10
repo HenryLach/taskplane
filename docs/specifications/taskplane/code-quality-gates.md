@@ -5,7 +5,9 @@
 **Author:** Supervisor session (with sage design consultation)
 **Triggers:** Issue #559 (TP-187 `ReferenceError: batchState is not defined`) + the broader observation that Taskplane has grown beyond its original "small extension" scope without ever adopting standard static-analysis gates.
 
-> **TL;DR:** Taskplane has 50+ TypeScript source files, 700+ test suites, 3624 tests, and zero static-analysis gates at PR time. Biome lint runs in CI but `continue-on-error: true` makes it decoration. There is no `tsc --noEmit`. There is no `format:check`. The TP-188 reviewer-agent capability that runs `npm run typecheck` / `lint` / `format:check` is dormant because those scripts don't exist. This spec proposes a sequenced rollout across **four task packets**: TP-191 (prep) → TP-192 (lint cleanup) → TP-193 (format adoption) → TP-194 (the gate flip), with Tier-1.5 follow-ups (TS strictness ratchet, CHANGELOG fragments) staged as their own task packets after TP-194 stabilizes.
+> **TL;DR:** Taskplane has 50+ TypeScript source files, 700+ test suites, 3624 tests, and zero static-analysis gates at PR time. Biome lint runs in CI but `continue-on-error: true` makes it decoration. There is no `tsc --noEmit`. There is no `format:check`. The TP-188 reviewer-agent capability that runs `npm run typecheck` / `lint` / `format:check` is dormant because those scripts don't exist. This spec proposes a sequenced rollout: **TP-191 (prep) → TP-192 (lint cleanup) → TP-193 (format adoption) → TP-195 (typecheck cleanup, inserted post-TP-191) → TP-194 (the gate flip)**, with Tier-1.5 follow-ups (TS strictness ratchet, CHANGELOG fragments) staged as their own task packets after TP-194 stabilizes.
+>
+> **Spec amendment 2026-05-10 (post-TP-191 merge):** TP-195 was inserted between TP-193 and TP-194 because TP-191's first `npm run typecheck` run surfaced 267 errors at non-strict level. Sage's post-TP-191 review confirmed these are real contract drift (~198 in tests, ~69 in source), not pi-shim under-declaration, and recommended a dedicated cleanup packet rather than expanding TP-194's scope. TP-194's CRITICAL pre-condition (typecheck-exit-0 on main) requires TP-195 to merge first.
 
 ---
 
@@ -192,6 +194,17 @@ The rollout is **five PRs** in strict order. Each PR is small enough to ship cle
 ```
 
 The order matters. Detail in Section 6.
+
+**Spec amendment 2026-05-10:** TP-195 (typecheck cleanup) was inserted between PRs C and D after TP-191 surfaced 267 typecheck errors. The diagram above predates the amendment; the actual sequence is:
+
+- A. TP-191 Prep
+- B. TP-192 Lint cleanup
+- C. TP-193 Format pass
+- **D. TP-195 Typecheck cleanup (inserted; sage post-TP-191 recommendation)**
+- E. TP-194 Gate flip
+- F. Tier-1.5 follow-ups (TS strictness ratchet, CHANGELOG fragments)
+
+TP-194's CRITICAL pre-condition (typecheck-exit-0 on main) requires TP-195 to merge first. The TP-195 packet is in `taskplane-tasks/TP-195-cq-typecheck-cleanup/`.
 
 ---
 
