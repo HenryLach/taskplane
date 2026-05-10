@@ -24,6 +24,17 @@ export interface OrchestratorConfig {
 		operator_id: string;
 		/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
 		integration: "manual" | "supervised" | "auto";
+		/**
+		 * Optional pre-resolved batch ID injected by callers that already
+		 * know the batch identity (e.g., resumed orchestrations). When
+		 * absent, callers fall back to the `ORCH_BATCH_ID` env var or a
+		 * timestamp. Read by `executeLaneV2` (execution.ts).
+		 *
+		 * @since TP-195 (#TBD) — documented field that was already being
+		 * read at runtime via `config.orchestrator?.batchId` and asserted
+		 * by the source-grep invariant in `runtime-model-fallback.test.ts`.
+		 */
+		batchId?: string;
 	};
 	dependencies: {
 		source: "prompt" | "agent";
@@ -925,7 +936,8 @@ export type ExecutionErrorCode =
 	| "EXEC_TASK_STAGE_FAILED"
 	| "EXEC_TASK_COMMIT_FAILED"
 	| "EXEC_TMUX_NOT_AVAILABLE"
-	| "EXEC_WORKTREE_MISSING";
+	| "EXEC_WORKTREE_MISSING"
+	| "EXEC_MISSING_TASK_FOLDER";
 
 /** Typed error for lane execution failures. */
 export class ExecutionError extends Error {

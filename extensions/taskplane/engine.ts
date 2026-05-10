@@ -636,7 +636,13 @@ export function processSegmentExpansionRequestAtBoundary(
 	segmentState: SegmentFrontierTaskState,
 	workspaceConfig: WorkspaceConfig | null | undefined,
 	knownRequestIds: Set<string>,
-): { ok: true } | { ok: false; reason: string } {
+	// TP-195: `reason?: undefined` on the success branch makes this a
+	// well-formed discriminated union under `strict: false`. Without it,
+	// `if (!result.ok)` does not narrow `reason` because non-strict
+	// narrowing requires every member of the union to share the
+	// discriminating field. Runtime semantics are unchanged — the
+	// success branch never carries a reason.
+): { ok: true; reason?: undefined } | { ok: false; reason: string } {
 	const validationFailure = validateSegmentExpansionRequestAtBoundary(
 		requestFile,
 		taskId,

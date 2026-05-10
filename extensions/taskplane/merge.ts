@@ -219,14 +219,21 @@ export function parseMergeResult(resultPath: string): MergeResult {
 			}
 
 			// Normalize status to uppercase (merge agents may write lowercase)
-			parsed.status = String(parsed.status).toUpperCase();
+			// TP-195: hoist normalized value to a local string so the
+			// `VALID_MERGE_STATUSES.has()` call typechecks. `parsed.status`
+			// is `unknown` after JSON parse; assigning `String(...)` to a
+			// property of an `any` doesn't propagate `string` type back
+			// through `parsed.status`. Runtime evaluation order is
+			// unchanged.
+			const normalizedStatus = String(parsed.status).toUpperCase();
+			parsed.status = normalizedStatus;
 
 			// Validate status value
-			if (!VALID_MERGE_STATUSES.has(parsed.status)) {
+			if (!VALID_MERGE_STATUSES.has(normalizedStatus)) {
 				execLog(
 					"merge",
 					"parse",
-					`unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`,
+					`unknown merge status "${normalizedStatus}" — treating as BUILD_FAILURE`,
 					{
 						resultPath,
 					},
@@ -410,13 +417,16 @@ export async function parseMergeResultAsync(resultPath: string): Promise<MergeRe
 			}
 
 			// Normalize status to uppercase
-			parsed.status = String(parsed.status).toUpperCase();
+			// TP-195: hoist normalized value to a local string (same rationale
+			// as the parallel block at line ~225 above).
+			const normalizedStatus = String(parsed.status).toUpperCase();
+			parsed.status = normalizedStatus;
 
-			if (!VALID_MERGE_STATUSES.has(parsed.status)) {
+			if (!VALID_MERGE_STATUSES.has(normalizedStatus)) {
 				execLog(
 					"merge",
 					"parse",
-					`unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`,
+					`unknown merge status "${normalizedStatus}" — treating as BUILD_FAILURE`,
 					{
 						resultPath,
 					},
@@ -749,6 +759,12 @@ export function buildMergeRequest(
  *
  * @since TP-108
  */
+// TP-195: return type changed from `Promise<AgentHostResult>` to
+// `Promise<void>` to match actual semantics. The function never returns a
+// value — it spawns the merge agent, attaches `.then`/`.catch` handlers
+// for fire-and-forget exit logging (line ~912 marker: "Fire-and-forget"),
+// and exits. Both call sites (lines ~1929, ~1942) `await` the returned
+// promise but do not consume its value.
 export async function spawnMergeAgentV2(
 	sessionName: string,
 	repoRoot: string,
@@ -759,7 +775,7 @@ export async function spawnMergeAgentV2(
 	agentRoot?: string,
 	batchId?: string,
 	waveIndex?: number,
-): Promise<AgentHostResult> {
+): Promise<void> {
 	execLog("merge", sessionName, "spawning merge agent via Runtime V2 (direct agent-host)", {
 		mergeWorkDir,
 		mergeRequestPath,

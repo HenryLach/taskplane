@@ -41,6 +41,7 @@ import type {
 	RuntimeAgentId,
 	RuntimeAgentRole,
 	RuntimeLaneSnapshot,
+	RuntimeRegistry,
 	SupervisorAlertCallback,
 } from "./types.ts";
 import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
@@ -95,7 +96,15 @@ export function execLog(
 	laneId: string,
 	taskId: string,
 	message: string,
-	extra?: Record<string, string | number | boolean>,
+	// TP-195: widened from `Record<string, string|number|boolean>` to
+	// `Record<string, unknown>` so callers can pass structured values
+	// (string[] arrays, repo objects, etc.) without TS errors. Runtime
+	// stringification via `${v}` is unchanged: primitives render as today,
+	// arrays render with comma separators (existing behavior), objects
+	// render as `[object Object]` (already today's behavior — see
+	// historic execLog calls in engine.ts/resume.ts that have always been
+	// passing structured payloads). No runtime change.
+	extra?: Record<string, unknown>,
 ): void {
 	const prefix = `[orch] ${laneId}/${taskId}`;
 	if (extra) {
@@ -159,7 +168,7 @@ export function isV2AgentAlive(
 }
 
 /** Cached registry for V2 liveness checks within a monitor cycle. @since TP-112 */
-let _v2LivenessRegistryCache: import("./process-registry.ts").RuntimeRegistry | null = null;
+let _v2LivenessRegistryCache: RuntimeRegistry | null = null;
 
 /**
  * Set the V2 liveness registry cache for the current monitor cycle.
@@ -167,7 +176,7 @@ let _v2LivenessRegistryCache: import("./process-registry.ts").RuntimeRegistry | 
  * @since TP-112
  */
 export function setV2LivenessRegistryCache(
-	registry: import("./process-registry.ts").RuntimeRegistry | null,
+	registry: RuntimeRegistry | null,
 ): void {
 	_v2LivenessRegistryCache = registry;
 }
@@ -2896,10 +2905,25 @@ export async function executeLaneV2(
 				extraEnvVars?.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS,
 			),
 			supervisorAutonomy,
-			projectName: config.project?.name || "project",
+			// TP-195: replaced `config.project?.name` (no `project` field on
+			// `OrchestratorConfig`; always undefined) with the env-var read
+			// already used elsewhere in the codebase (lane-runner.ts:668 sets
+			// `TASKPLANE_PROJECT_NAME` from the same source). When the env
+			// var is unset, falls through to the same `"project"` literal as
+			// before — behavior-neutral.
+			projectName: extraEnvVars?.TASKPLANE_PROJECT_NAME || "project",
 			maxIterations: 20,
 			noProgressLimit: 3,
-			maxWorkerMinutes: config.failure?.maxWorkerMinutes || 120,
+			// TP-195: `config.failure?.maxWorkerMinutes` is a typo (real key is
+			// `max_worker_minutes`). Operator escalation E1 pending — preserve
+			// historical behavior (always falls through to 120) via a typed
+			// 2-step cast until the operator decides whether to honor the
+			// config field. Cast is structurally legitimate (failure is the
+			// snake_case type at runtime; we read a non-existent camel-case
+			// alias which yields `undefined`).
+			maxWorkerMinutes:
+				(config.failure as unknown as { maxWorkerMinutes?: number } | undefined)
+					?.maxWorkerMinutes || 120,
 			warnPercent: 85,
 			killPercent: 95,
 			onSupervisorAlert,

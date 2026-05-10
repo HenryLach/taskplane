@@ -3296,7 +3296,17 @@ export async function resumeOrchBatch(
 	// supervisor agent. Legacy engine fast-forward is removed — supervisor
 	// handles all non-manual integration after batch_complete event.
 	const mergedTaskCount = batchState.succeededTasks;
-	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
+	// TP-195: hoist `batchState.phase` to a fresh local with the wide
+	// `OrchBatchPhase` type. TypeScript's narrowing-on-property semantics
+	// under `strict: false` carries assignments forward through the
+	// function (visible in the `(batchState.phase as OrchBatchPhase) === ...`
+	// pattern already used at lines ~3366/~3476 above), which here narrows
+	// `batchState.phase` to a subtype that excludes `"completed"` and
+	// `"failed"`. Hoisting to a typed local breaks the narrowing chain so
+	// the comparisons typecheck without a per-call cast. Runtime
+	// evaluation is identical.
+	const phaseAtTerminal = batchState.phase as OrchBatchPhase;
+	const isTerminalPhase = phaseAtTerminal === "completed" || phaseAtTerminal === "failed";
 	if (
 		isTerminalPhase &&
 		!preserveWorktreesForResume &&
@@ -3337,7 +3347,9 @@ export async function resumeOrchBatch(
 	);
 
 	// ── TP-076: Emit supervisor alert for batch completion ──────
-	if (batchState.phase === "completed" || batchState.phase === "failed") {
+	// TP-195: reuse the hoisted-typed phase to avoid the same narrowing
+	// artifact as the `isTerminalPhase` check above.
+	if (phaseAtTerminal === "completed" || phaseAtTerminal === "failed") {
 		const batchDurationMs = batchState.endedAt ? batchState.endedAt - batchState.startedAt : 0;
 		const durationStr =
 			batchDurationMs > 0

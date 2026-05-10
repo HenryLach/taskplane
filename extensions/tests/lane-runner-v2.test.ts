@@ -173,8 +173,10 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
 		// TP-181: window widened from 5000 to 6000 to accommodate worker env
 		// var reads. TP-187: widened to 7000 to accommodate the lane-respawned
-		// emit added at the top of the function body.
-		const bodySection = executionSrc.slice(start, start + 7000);
+		// emit added at the top of the function body. TP-195: widened to 7500
+		// to accommodate the typecheck-cleanup TP-195 comments documenting the
+		// `maxWorkerMinutes`/`projectName` field-name decisions.
+		const bodySection = executionSrc.slice(start, start + 7500);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});

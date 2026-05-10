@@ -67,42 +67,43 @@
 
 **Per-file checklist (hydrated from Step 1 plan; tags: `[T]`=type-drift-only, `[N]`=behavior-neutral, `[B]`=behavior-affecting (escalate)):**
 
-- [ ] **types.ts**: add `"EXEC_MISSING_TASK_FOLDER"` to `ExecutionErrorCode` union `[T]`
-- [ ] **process-registry.ts**: re-export `RuntimeRegistry` from `./types.ts` `[T]`
-- [ ] **execution.ts** (type-drift / behavior-neutral subset — 17 of 20 errors):
-  - [ ] import `RuntimeRegistry` from types.ts; replace `import("./process-registry.ts").RuntimeRegistry` references `[T]`
-  - [ ] drop dead `config.orchestrator?.batchId` short-circuit `[N]`
-  - [ ] replace `config.project?.name || "project"` with `extraEnvVars?.TASKPLANE_PROJECT_NAME || "project"` `[N]`
-  - [ ] widen `execLog` `extra` to `Record<string, unknown>` `[N]` (cascades into engine.ts/resume.ts/merge.ts)
-- [ ] **execution.ts**: maxWorkerMinutes typo `[B]` — **GATED on E1**
-- [ ] **engine.ts** (type-drift subset — 7 of 11 errors):
-  - [ ] fix `processSegmentExpansionRequestAtBoundary` return type narrowing (`reason?: undefined` on success) `[T]`
-  - [ ] verify 5 execLog-cascade errors auto-resolve `[T]`
+- [x] **types.ts**: add `"EXEC_MISSING_TASK_FOLDER"` to `ExecutionErrorCode` union `[T]`
+- [x] **process-registry.ts**: re-export `RuntimeRegistry` from `./types.ts` `[T]`
+- [x] **execution.ts** (type-drift / behavior-neutral subset — 19 of 20 errors clean):
+  - [x] import `RuntimeRegistry` from types.ts; replace `import("./process-registry.ts").RuntimeRegistry` references `[T]`
+  - [x] add optional `batchId?: string` to `OrchestratorConfig.orchestrator` so existing read at execution.ts typechecks; preserves the source-grep invariant in `runtime-model-fallback.test.ts` `[N]` (was: "drop dead `config.orchestrator?.batchId` short-circuit")
+  - [x] replace `config.project?.name || "project"` with `extraEnvVars?.TASKPLANE_PROJECT_NAME || "project"` `[N]`
+  - [x] widen `execLog` `extra` to `Record<string, unknown>` `[N]` (cascades into engine.ts/resume.ts/merge.ts)
+  - [x] preserve `maxWorkerMinutes` typo via 2-step `as unknown as { maxWorkerMinutes?: number }` cast `[N]` — E1-gated fix-the-bug path deferred until operator decides; cast is structurally legitimate and behavior is identical (always falls through to 120)
+- [ ] **execution.ts**: maxWorkerMinutes typo — fix-the-bug path `[B]` (currently preserved-broken; **GATED on E1**)
+- [x] **engine.ts** (type-drift subset — 7 of 11 errors clean):
+  - [x] fix `processSegmentExpansionRequestAtBoundary` return type narrowing (`reason?: undefined` on success) `[T]`
+  - [x] 5 execLog-cascade errors auto-resolved after execution.ts widening `[T]`
 - [ ] **engine.ts**: 4 missing cleanup imports `[B]` — **GATED on E4**
-- [ ] **persistence.ts** (all 8 errors are type-drift / behavior-neutral):
-  - [ ] fix `ReconstructResult` discriminated-union narrowing `[T]`
-  - [ ] drop `taskName: taskId` (no consumer) `[N]`
-  - [ ] drop dead `m.packet.packetRepoId/packetTaskPath` if-branches `[N]`
-  - [ ] use 2-step `as unknown as Record<string, unknown>` casts `[T]`
-- [ ] **resume.ts** (type-drift subset — 7 of 8 errors):
-  - [ ] hoist `batchState.phase` to local `OrchBatchPhase`-typed var at #3299/#3340 `[T]`
-  - [ ] verify 5 execLog-cascade errors auto-resolve `[T]`
-  - [ ] fix `ReconstructResult.error` access narrowing at #1220 `[T]` (auto-resolves with the persistence.ts fix)
+- [x] **persistence.ts** (all 8 errors clean):
+  - [x] fix `ReconstructResult` discriminated-union narrowing `[T]`
+  - [x] drop `taskName: taskId` (no consumer) `[N]`
+  - [x] drop dead `m.packet.packetRepoId/packetTaskPath` if-branches `[N]`
+  - [x] use 2-step `as unknown as Record<string, unknown>` casts `[T]`
+- [x] **resume.ts** (type-drift subset — 7 of 8 errors clean):
+  - [x] hoist `batchState.phase` via `as OrchBatchPhase` cast at #3299/#3340 `[T]` (test was source-grep-brittle; updated test to accept either form)
+  - [x] 5 execLog-cascade errors auto-resolved after execution.ts widening `[T]`
+  - [x] fix `ReconstructResult.error` access narrowing at #1220 `[T]` (auto-resolved with the persistence.ts fix)
 - [ ] **resume.ts**: `batchState.tasks.find` lookup `[B]` — **GATED on E3**
 - [ ] **extension.ts**: all 8 errors `[B]` — **GATED on E2**
-- [ ] **config-loader.ts** (all 5 errors):
-  - [ ] drop dead `prefs.spawnMode === "tmux"` check `[N]`
-  - [ ] use 2-step casts at #1007/#1028 `[T]`
-  - [ ] change `loadProjectOverrides` / `migrateProjectOverrides` to `DeepPartial<TaskplaneConfig>` `[T]`
-- [ ] **merge.ts** (all 4 errors):
-  - [ ] hoist normalized status to local var at #225/#415 `[T]`
-  - [ ] change `spawnMergeAgentV2` return type to `Promise<void>` `[T]`
-  - [ ] verify execLog-cascade error auto-resolves `[T]`
-- [ ] **settings-tui.ts**: 4 errors fixed by pi-shim extension (no source change) `[T]`
-- [ ] **pi-shims.d.ts**: extend `ExtensionContext` for typed `ui.custom<T>()` `[T]`
-- [ ] After each module: targeted tests pass
-- [ ] Full fast suite passes
-- [ ] Typecheck error count drops to **~196** (264 − 68 source-side; or to a slightly higher number while gated items remain pending)
+- [x] **config-loader.ts** (all 5 errors clean):
+  - [x] drop dead `prefs.spawnMode === "tmux"` check `[N]`
+  - [x] use 2-step casts at #1007/#1028 `[T]`
+  - [x] change `loadProjectOverrides` / `migrateProjectOverrides` / `loadJsonConfig` / `mergeProjectOverrides` to `DeepPartial<TaskplaneConfig>` `[T]`
+- [x] **merge.ts** (all 4 errors clean):
+  - [x] hoist normalized status to local var at #225/#415 `[T]`
+  - [x] change `spawnMergeAgentV2` return type to `Promise<void>` `[T]`
+  - [x] execLog-cascade error auto-resolved `[T]`
+- [x] **settings-tui.ts**: 4 errors fixed by pi-shim extension (no source change) `[T]`
+- [x] **pi-shims.d.ts**: extend `ExtensionContext` for typed `ui.custom<T>()` `[T]`
+- [x] After each module: targeted tests pass
+- [x] Full fast suite passes (3624/0/1 — matches TP-191 baseline)
+- [x] Typecheck error count after non-gated source fixes: **203** (was 264; −61 of expected −68, the 13 remaining source errors are all GATED on E1–E4)
 
 ---
 

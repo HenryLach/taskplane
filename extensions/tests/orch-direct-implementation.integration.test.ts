@@ -1554,14 +1554,22 @@ function runAllTests(): void {
 		);
 
 		// resume.ts: same isTerminalPhase gate
+		// TP-195: resume.ts hoists `batchState.phase` to a typed local
+		// (`phaseAtTerminal`) to break TypeScript narrowing-on-property under
+		// non-strict mode (see `extensions/taskplane/resume.ts` near the
+		// isTerminalPhase declaration for rationale). Accept either the
+		// hoisted-local form or the original direct-property form so this
+		// invariant is not coupled to the exact accessor expression.
 		const resumeAutoBlock =
 			resumeSource.match(/Auto-Integration[\s\S]*?orchIntegrationManual/)?.[0] ?? "";
 		assert(
-			resumeAutoBlock.includes('batchState.phase === "completed"'),
+			resumeAutoBlock.includes('batchState.phase === "completed"') ||
+				resumeAutoBlock.includes('phaseAtTerminal === "completed"'),
 			"resume.ts auto-integration checks for completed phase",
 		);
 		assert(
-			resumeAutoBlock.includes('batchState.phase === "failed"'),
+			resumeAutoBlock.includes('batchState.phase === "failed"') ||
+				resumeAutoBlock.includes('phaseAtTerminal === "failed"'),
 			"resume.ts auto-integration checks for failed phase",
 		);
 		assert(
