@@ -33,17 +33,17 @@
 ---
 
 ### Step 1: Plan all six implementation parts
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
-- [ ] Part 1 design (scripts in package.json — names match TP-188 reviewer expectations)
-- [ ] Part 2 design (pi-shims — minimum surface from grep of taskplane source)
-- [ ] Part 3 design (tsconfig.ci.json structure + path mappings)
-- [ ] Part 4 design (biome.json migration: experimentalScannerIgnores → ignore + scope expansion + $schema)
-- [ ] Part 5 design (.pi/taskplane-config.json discoverability + reviewer activation note wording)
-- [ ] Part 6 design (CI workflow lint step using npm run lint)
-- [ ] Drafts in Discoveries
+- [x] Part 1 design (scripts in package.json — names match TP-188 reviewer expectations) — see Plan section below
+- [x] Part 2 design (pi-shims — minimum surface from grep of taskplane source) — see Plan section below
+- [x] Part 3 design (tsconfig.ci.json structure + path mappings) — see Plan section below
+- [x] Part 4 design (biome.json migration: experimentalScannerIgnores → ignore + scope expansion + $schema) — see Plan section below
+- [x] Part 5 design (.pi/taskplane-config.json discoverability + reviewer activation note wording) — see Plan section below
+- [x] Part 6 design (CI workflow lint step using npm run lint) — see Plan section below
+- [x] Plan drafts written below (this file) — ready for plan-review
 
 ---
 
@@ -156,6 +156,162 @@
 ## Blockers
 
 *None*
+
+---
+
+## Plan (Step 1 drafts)
+
+### Part 1 — `package.json` scripts and pinned dev deps
+
+**Scripts block** (root `package.json`):
+```json
+"scripts": {
+  "typecheck": "tsc --project extensions/tsconfig.ci.json --noEmit",
+  "lint": "biome lint .",
+  "format": "biome format --write .",
+  "format:check": "biome format ."
+}
+```
+Verbatim from spec section 6.1.1. Names (`typecheck`, `lint`, `format`, `format:check`) match the reviewer's TP-188 discovery list (template `task-reviewer.md` lines 70-83).
+
+**devDependencies**:
+```json
+"devDependencies": {
+  "@biomejs/biome": "2.4.15",
+  "typescript": "5.6.3"
+}
+```
+Exact pins (no `^` prefix). Both verified on npm in Step 0. Local `node_modules/.bin/{biome,tsc}` resolves the bare commands; no `npx` needed.
+
+**Why these script names invoke bare tools (not `npx`):** `npm run` adds `node_modules/.bin` to PATH, so `biome` and `tsc` resolve to the pinned local versions. This is how the reviewer agent's discovery loop expects them (it shells out via `npm run <name>`).
+
+**Side effect:** `npm install` will create a root-level `node_modules/` and refresh `package-lock.json`. The repo currently has only `extensions/node_modules` (per `extensions/package-lock.json`). Adding root deps is necessary but kept minimal (only Biome + TypeScript).
+
+### Part 2 — `extensions/types/pi-shims.d.ts`
+
+Hand-written minimal stubs covering both pi scopes (`@earendil-works/*` AND `@mariozechner/*`). Surface seeded by grep of `extensions/**/*.ts` (consumed exports per Discoveries table):
+
+- **`pi-coding-agent`**: type `ExtensionAPI`, type `ExtensionContext`, value class `DynamicBorder`, value function `getSettingsListTheme()`
+- **`pi-ai`**: value `Type` (TypeBox-like — declared as `any` value to satisfy `Type.Object(...)`, `Type.String(...)` calls), type `Model<Api>`, type `Api`
+- **`pi-tui`**: value classes `Container`, `Text`, `SelectList`, `SettingsList`; value function `truncateToWidth(input: string): string`; types `SelectItem`, `SettingItem`
+
+**Both scopes get identical shapes** in two `declare module` blocks each (one per scope) per spec section 6.1.3. No re-export tricks; just literal duplication so resolution from either scope is identical.
+
+**Type strictness:** intentionally permissive (`any` for class internals, no method bodies) — these only need to satisfy `tsc --noEmit` resolution. The IDE picks up real types from installed pi packages; the shim only matters for headless CI typecheck.
+
+**Maintenance note** (in file header): "when taskplane starts using a new pi export, add its shape here. The first `tsc` failure after such a change is the canary — extend this file rather than disabling typecheck."
+
+### Part 3 — `extensions/tsconfig.ci.json` + `tsconfig.test.json` update
+
+**New file `extensions/tsconfig.ci.json`** (verbatim from spec section 6.1.3):
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@earendil-works/*": ["types/pi-shims.d.ts"],
+      "@mariozechner/*": ["types/pi-shims.d.ts"]
+    }
+  },
+  "include": [
+    "task-orchestrator.ts",
+    "reviewer-extension.ts",
+    "taskplane/**/*.ts",
+    "tests/**/*.ts",
+    "types/**/*.d.ts"
+  ],
+  "exclude": []
+}
+```
+Note: spec section 6.1.3's snippet doesn't show the `paths` mapping explicitly under `compilerOptions`, but the rationale ("shims that only matter to headless tsc") requires path mappings to point both pi scopes at the shim. Confirmed by checking that `tsconfig.test.json` uses the same pattern for test mocks.
+
+**Why a separate file** (not modifying `tsconfig.json`): preserve existing editor experience (per spec rationale + PROMPT "Don't change tsconfig.json").
+
+**Update `extensions/tsconfig.test.json`**: add `@earendil-works/*` mappings alongside existing `@mariozechner/*`:
+```json
+"paths": {
+  "@mariozechner/pi-coding-agent": ["tests/mocks/pi-coding-agent.ts"],
+  "@mariozechner/pi-tui": ["tests/mocks/pi-tui.ts"],
+  "@earendil-works/pi-coding-agent": ["tests/mocks/pi-coding-agent.ts"],
+  "@earendil-works/pi-tui": ["tests/mocks/pi-tui.ts"]
+}
+```
+Back-compat: existing `@mariozechner/*` keys preserved.
+
+### Part 4 — `biome.json` modernization
+
+Verbatim shape from spec section 6.1.5, applied as a diff against current `biome.json`:
+
+- **`$schema`**: `https://biomejs.dev/schemas/2.0.6/schema.json` → `https://biomejs.dev/schemas/2.4.15/schema.json`
+- **`files.includes`**: expand from `["extensions/**/*.ts"]` to `["extensions/**/*.ts", "extensions/**/*.tsx", "bin/**/*.mjs", "scripts/**/*.mjs"]`
+- **`files.experimentalScannerIgnores`** → **`files.ignore`** (deprecated key migrated). New ignore list: `["node_modules/**", "dashboard/public/**", "extensions/types/**", ".pi/**", ".worktrees/**"]`
+- **Tests now in scope** (sage's recommendation per spec 7.2). Tests are matched by `extensions/**/*.ts`. If lint reveals high noise from tests, add per-rule overrides under `overrides` rather than re-excluding (this is what Step 4's checklist captures).
+- **`linter.rules`**: unchanged (preserve current overrides).
+- **`formatter.enabled`**: stays `false` (TP-193's job).
+
+### Part 5 — `.pi/taskplane-config.json` + `templates/agents/task-reviewer.md`
+
+**`.pi/taskplane-config.json`** — expand `taskRunner.testing.commands` from current single `test` key to:
+```json
+"commands": {
+  "test": "<existing>",
+  "typecheck": "npm run typecheck",
+  "lint": "npm run lint",
+  "format:check": "npm run format:check"
+}
+```
+Spec section 6.1.4 verbatim. Reviewer's discovery loop reads this first (template lines 64-72).
+
+**Note on `.pi/` gitignore:** `.pi/` is gitignored (verified Step 0). The lane worktree has no `.pi/` today — I'll create `.pi/taskplane-config.json` in the lane worktree by copying the current main repo's config + adding the three new keys. The change is local to the worktree and won't merge via git, but the PROMPT explicitly lists the file in scope so the orchestrator/operator handles propagation. No code path breaks if the file is absent on a fresh clone (the reviewer falls back to `package.json#scripts`).
+
+**`templates/agents/task-reviewer.md`** — add a one-block activation note immediately under the `## Quality-check verification (code reviews only)` heading (line 53), per spec 6.1.6 wording verbatim:
+
+```markdown
+> **Activation status (post-PR-A):** The typecheck/lint/format:check
+> scripts referenced in this section are now defined in the project's
+> `package.json`. The Quality-check verification logic IS active, but
+> until the gating PR (TP-194) lands, lint failures are surfaced as
+> Issues Found but NOT downgraded to REVISE (because pre-existing
+> errors in `main` are not the worker's fault). After TP-194, the
+> downgrade rule fires normally.
+```
+
+This is a **temporary** block — TP-194 removes it.
+
+### Part 6 — `.github/workflows/ci.yml` lint step
+
+Replace lines 32-33:
+```yaml
+      - name: Lint (Biome)
+        continue-on-error: true
+        run: npx @biomejs/biome@2 lint --max-diagnostics=50 --reporter=github .
+```
+with:
+```yaml
+      - name: Lint (Biome)
+        continue-on-error: true   # NOTE: kept until TP-194
+        run: npm run lint
+```
+
+**Pre-condition for CI to find the script:** `npm install` must run at the repo root before the lint step. Currently the workflow runs `npm ci --prefix extensions` only. Need to add a root-level install step OR use `npx biome lint .` directly.
+
+**Decision:** add a root install step before the lint step. The new root `package.json` declares Biome + TypeScript as devDependencies, so we need `npm install` (or `npm ci` if a root `package-lock.json` exists — it will after Step 2). Add:
+```yaml
+      - name: Install root dev dependencies
+        run: npm ci
+```
+(positioned BEFORE the lint step, AFTER `npm ci --prefix extensions`).
+
+**Cache key update:** the existing `actions/setup-node@v6` step caches via `cache-dependency-path: extensions/package-lock.json`. Adding a root lockfile means cache should also include it. Update to a multi-line list:
+```yaml
+          cache-dependency-path: |
+            extensions/package-lock.json
+            package-lock.json
+```
+
+**`continue-on-error: true` STAYS** (TP-194 removes it).
 
 ---
 
