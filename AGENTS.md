@@ -193,38 +193,111 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
   - `npm publish` ships installable package bits.
   - GitHub release publishes human-facing release metadata for a tag.
 - Keep them aligned: **one version → one tag → one npm publish → one GitHub release**.
+- **Both are now automated** via `.github/workflows/release.yml` (npm Trusted
+  Publishing). Pushing a `v*` tag triggers the workflow, which:
+  1. Checks out the tagged commit
+  2. Validates the tag name matches `package.json#version` (no drift allowed)
+  3. Re-runs tests as belt-and-suspenders
+  4. Publishes to npm with `--provenance` attestation (OIDC, no `NPM_TOKEN` secret)
+  5. Creates the GitHub release with notes extracted from `CHANGELOG.md`
+- Authentication is via [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers).
+  Do NOT add `NPM_TOKEN` to repository secrets; the workflow uses OIDC. The
+  trusted publisher is configured at <https://www.npmjs.com/package/taskplane/access>.
 
 ### Default release sequence (only when explicitly requested)
 
-1. Ensure `main` is clean and synced; tests/smokes pass.
-2. **Update `CHANGELOG.md` (MANDATORY — do NOT skip).**
-   - Add a section for the new version with date.
-   - List all user-facing changes since the last changelog entry.
-   - Group by: Breaking, New, Fixed, Docs, Internal.
-   - Read `git log` since the last release tag to find all changes.
-   - This is the permanent record of what shipped. GitHub release notes
-     are derived from this, not the other way around.
-3. Validate package contents:
-   - `npm pack --dry-run`
-4. Bump version and create tag:
-   - `npm version patch` (or `minor`/`major`)
-5. Publish package:
-   - `npm publish` (or `npm publish --tag beta`)
-6. Push commit + tags:
-   - `git push && git push --tags`
-7. Create GitHub release for the same version tag.
-   - Release notes should match or summarize `CHANGELOG.md`.
-8. Verify:
-   - `npm view taskplane version`
-   - `gh release view v<version>`
+This is the actual flow used for v0.28.5 → v0.29.0 (verified across 5
+consecutive releases).
+
+1. **Ensure `main` is clean and synced; all content PRs already merged.**
+   - `git switch main && git pull --ff-only`
+   - All bug-fix / feature PRs that should ship in this release must already
+     be in `main`. The release PR is a thin wrapper around the version bump,
+     not a content PR.
+
+2. **Validate package contents and run pre-release checks.**
+   - `npm pack --dry-run` (confirm only intended files ship)
+   - `cd extensions && npm run test:fast` (full fast suite passes; record count for CHANGELOG)
+   - `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor` (CLI smoke)
+
+3. **Create the release branch and update `CHANGELOG.md` (MANDATORY).**
+   - `git switch -c release/v<version>`
+   - Rename the existing `## [Unreleased]` section to `## [<version>] - <YYYY-MM-DD>`
+   - Insert a fresh empty `## [Unreleased]` placeholder above it
+   - Add any `Fixed` entries for hotfixes that landed on `main` after the
+     last `[Unreleased]` write but before the version bump (these are easy
+     to miss if you only look at `[Unreleased]`)
+   - Group by: Breaking, New, Enhanced, Fixed, Docs, Internal
+   - This is the permanent record of what shipped. The release workflow
+     extracts release notes from this section verbatim.
+
+4. **Bump version and create the local tag.**
+   - `npm version patch` (or `minor` / `major`)
+   - This updates `package.json`, `package-lock.json`, creates a git commit
+     (`<version>`), AND creates a local tag (`v<version>`). Don't push the
+     tag yet — it goes after the PR merges.
+
+5. **Push the release branch and open the release PR.**
+   - `git push -u origin release/v<version>`
+   - `gh pr create --base main --head release/v<version> --title "release: v<version> — <summary>" --body-file <body>`
+   - PR body should: explain why the version bump (patch/minor/major
+     justification per semver), list issues closed, summarize highlights,
+     note validation results.
+
+6. **Wait for CI green, then merge the release PR.**
+   - `gh pr merge <num> --merge --delete-branch` (preserves the version-bump
+     commit in main's history under a merge commit)
+   - DO NOT use `--squash` or `--rebase` — the version-bump commit needs to
+     stay intact so the tag points at it.
+
+7. **Sync local main, then push the tag to trigger the release workflow.**
+   - `git switch main && git pull --ff-only`
+   - `git push origin v<version>` — this is what triggers the publish workflow
+   - The workflow runs in ~30-60 seconds. Monitor with:
+     `gh run list --workflow=release.yml --limit 1`
+
+8. **Verify everything published correctly.**
+   - `npm view taskplane version` — should show the new version (allow ~10-15s
+     for npm registry propagation)
+   - `gh release view v<version>` — should show the GitHub release with notes
+   - Optional: `npm view taskplane versions --json | tail` to confirm the
+     version is in the published list
 
 **Pre-release checklist (verify before step 3):**
-- [ ] `CHANGELOG.md` updated with all changes since last release
-- [ ] Tests pass: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
+- [ ] `main` is clean and synced (`git status -sb` shows no diverging commits)
+- [ ] All content PRs that should ship are already merged
+- [ ] Tests pass: `cd extensions && npm run test:fast`
 - [ ] CLI smoke: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
-- [ ] No uncommitted changes on the release branch
+- [ ] No uncommitted changes
+- [ ] Hotfix scan: any commits on `main` after the last `[Unreleased]` write
+      that need a CHANGELOG entry?
 
+**What NOT to do:**
+- Do **not** run `npm publish` locally. The workflow does it. Local publish
+  bypasses the tag’version validation, the test re-run, and the provenance
+  attestation — and it can’t use OIDC, so it would either fail (no
+  `NPM_TOKEN` configured) or use a less-trusted credential.
+- Do **not** create the GitHub release manually with `gh release create`.
+  The workflow does it with notes extracted from `CHANGELOG.md`. A manual
+  release would either conflict with the workflow's release or duplicate
+  it on the same tag.
+- Do **not** push the tag before the release PR is merged. The tag must
+  point at a commit that’s already in `main` (otherwise the release
+  references an orphan commit not reachable from any branch).
+- Do **not** use `--squash` or `--rebase` to merge the release PR. Both
+  rewrite the version-bump commit's SHA, which would orphan the local tag
+  you created in step 4. Use `--merge`.
 - Never perform publish/release actions unless the user explicitly asks.
+
+**If the workflow fails:**
+- Inspect with `gh run view <run-id> --log-failed`
+- Common causes: tag/version mismatch (workflow validates this), test
+  failure on the re-run (unlikely if PR CI was green), npm registry
+  hiccup (rare; re-trigger via Actions UI workflow_dispatch with the same
+  tag input)
+- The workflow is idempotent on a re-run for the same tag — npm rejects
+  republish of an existing version, but the GitHub release step uses
+  `gh release create --notes-file ...` which replaces existing notes.
 
 ---
 

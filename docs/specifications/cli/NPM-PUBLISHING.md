@@ -1,5 +1,21 @@
 # NPM Publishing Guide for Taskplane
 
+> ### ⚠️ This document is historical / educational only.
+>
+> Taskplane releases are now **automated** via
+> [`.github/workflows/release.yml`](../../../.github/workflows/release.yml)
+> using [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers)
+> (OIDC, no `NPM_TOKEN` secret). Pushing a `v*` tag triggers the workflow,
+> which publishes to npm AND creates the GitHub release.
+>
+> **The canonical maintainer guide is** [`docs/maintainers/release-process.md`](../../maintainers/release-process.md).
+> Read that one when you actually need to cut a release. This document is kept
+> for the npm-fundamentals background it provides (registry mechanics, semver
+> reasoning, dist-tags, scoping) — but its concrete `npm publish` /
+> `npm login` instructions are no longer the operative flow and would bypass
+> tag↔version validation, provenance attestation, and the automated GitHub
+> release.
+
 > **Audience:** Taskplane maintainers  
 > **Prerequisites:** Node.js ≥ 20, git, a terminal  
 > **Related:** [CLI-SPEC.md](CLI-SPEC.md) — package structure and distribution model
