@@ -33,7 +33,7 @@
 ---
 
 ### Step 1: Plan all six implementation parts
-**Status:** ✅ Complete (plan review R001 APPROVE)
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint. Reviewer evaluates architectural choices.
 
@@ -48,7 +48,7 @@
 ---
 
 ### Step 2: Implement Part 1 — package.json scripts and pinned dev deps
-**Status:** ✅ Complete (code review R003 APPROVE)
+**Status:** ✅ Complete
 
 > Plan-reviewer must have APPROVED Step 1 before proceeding.
 > ⚠️ Code-review fires after this step.
@@ -64,7 +64,7 @@
 ---
 
 ### Step 3: Implement Part 2 — pi-shims and tsconfig.ci.json
-**Status:** ✅ Complete (code review R004 APPROVE)
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -78,7 +78,7 @@
 ---
 
 ### Step 4: Implement Part 3 — Biome config modernization
-**Status:** ✅ Complete (code review R005 APPROVE)
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -94,7 +94,7 @@
 ---
 
 ### Step 5: Implement Parts 4-6 — reviewer discoverability, activation note, CI workflow
-**Status:** ✅ Complete (code review R006 APPROVE)
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -168,6 +168,8 @@
 | 2026-05-10 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-05-10 14:42 | Task started | Runtime V2 lane-runner execution |
 | 2026-05-10 14:42 | Step 0 started | Preflight |
+| 2026-05-10 15:13 | Worker iter 1 | done in 1866s, tools: 136 |
+| 2026-05-10 15:13 | Task complete | .DONE created |
 
 ---
 
