@@ -1,10 +1,10 @@
 # TP-191: Code-quality prep — Status
 
-**Current Step:** Step 3: Implement Part 2 — pi-shims and tsconfig.ci.json
+**Current Step:** Step 4: Implement Part 3 — Biome config modernization
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -64,7 +64,7 @@
 ---
 
 ### Step 3: Implement Part 2 — pi-shims and tsconfig.ci.json
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (code review R004 APPROVE)
 
 > ⚠️ Code-review fires after this step.
 
@@ -133,6 +133,7 @@
 | 1 | plan | 1 | APPROVE | .reviews/R001-plan-step1.md |
 | 2 | code | 2 | REVISE | .reviews/R002-code-step2.md |
 | 3 | code | 2 | APPROVE | .reviews/R003-code-step2.md |
+| 4 | code | 3 | APPROVE | .reviews/R004-code-step3.md |
 
 ---
 
@@ -336,3 +337,4 @@ with:
 | 2026-05-10 14:48 | Review R001 | plan Step 1: APPROVE |
 | 2026-05-10 14:53 | Review R002 | code Step 2: REVISE |
 | 2026-05-10 14:57 | Review R003 | code Step 2: APPROVE |
+| 2026-05-10 15:03 | Review R004 | code Step 3: APPROVE |
