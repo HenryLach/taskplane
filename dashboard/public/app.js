@@ -382,6 +382,53 @@ function taskSegmentProgress(task, segmentStatusMap, forcedActiveSegmentId) {
   };
 }
 
+// TP-197 (#464): Render a horizontal pill row of per-segment status badges for a
+// multi-segment task. Each pill shows an icon + repoId for one segment. The icon
+// reflects the segment's status (succeeded / running / pending / failed / stalled /
+// skipped). The current segment (the one actively executing on its lane) gets an
+// emphasis class. Returns "" for single-segment tasks so the rendered DOM is
+// byte-identical to today for the non-segmented common case (no regression).
+//
+// Consumes:
+//   - task.segmentIds: string[] (ordered, from PersistedTaskRecord)
+//   - segmentStatusMap: Map<segmentId, PersistedSegmentStatus> built by
+//     buildSegmentStatusMap() from batch.segments[]
+//   - activeSegmentId: string|null — current executing segment (from V2 lane
+//     snapshot's segmentId, or the task's activeSegmentId field)
+function taskSegmentPillRow(task, segmentStatusMap, activeSegmentId) {
+  const segmentIds = Array.isArray(task?.segmentIds)
+    ? task.segmentIds.filter(id => typeof id === "string")
+    : [];
+  if (segmentIds.length <= 1) return "";
+
+  // Status -> { icon, className } table. Keep emoji simple/monospace-friendly.
+  // ✅ succeeded, ⏳ running, ⬚ pending, ❌ failed, ⏸ stalled, ↷ skipped.
+  const styles = {
+    succeeded: { icon: "\u2705", cls: "seg-succeeded" },
+    running:   { icon: "\u23F3", cls: "seg-running" },
+    pending:   { icon: "\u2B1A", cls: "seg-pending" },
+    failed:    { icon: "\u274C", cls: "seg-failed" },
+    stalled:   { icon: "\u23F8", cls: "seg-stalled" },
+    skipped:   { icon: "\u21B7", cls: "seg-skipped" },
+  };
+
+  const pills = segmentIds.map((segId) => {
+    const status = segmentStatusMap.get(segId) || "pending";
+    const style = styles[status] || styles.pending;
+    const parsed = parseSegmentId(segId);
+    const repoLabel = parsed?.repoId || segId;
+    const isCurrent = activeSegmentId && segId === activeSegmentId;
+    const currentCls = isCurrent ? " seg-pill-current" : "";
+    const title = `${segId} \u00b7 ${status}`;
+    return `<span class="seg-pill ${style.cls}${currentCls}" title="${escapeHtml(title)}">`
+      + `<span class="seg-pill-icon">${style.icon}</span>`
+      + `<span class="seg-pill-label">${escapeHtml(repoLabel)}</span>`
+      + `</span>`;
+  }).join("");
+
+  return `<div class="task-segment-row">${pills}</div>`;
+}
+
 function laneActiveSegmentInfo(v2snap, laneTasks, segmentStatusMap) {
   if (!v2snap || !v2snap.segmentId) return null;
   const parsed = parseSegmentId(v2snap.segmentId);
@@ -859,8 +906,24 @@ function renderLanesTasks(batch, sessions) {
         stepHtml = `<span style="color:var(--text-faint)">${escapeHtml(task.exitReason || "—")}</span>`;
       }
 
+      // TP-197 (#464): Compute the per-segment pill row for multi-segment tasks.
+      // Returns "" for single-segment tasks (no DOM regression for the common case).
+      // For multi-segment tasks we render the pill row in the task-row's grid row 3
+      // (via .task-segment-row CSS) and suppress the inline "Segment N/T: repo" text
+      // in detailBits to avoid duplicating signal — the pill row already shows the
+      // current segment (via seg-pill-current) and total count (via pill count).
+      const segmentPillRowHtml = taskSegmentPillRow(
+        task,
+        segmentStatusMap,
+        v2snap && v2snap.taskId === task.taskId ? v2snap.segmentId : (segmentInfo?.segmentId || null),
+      );
+      const hasSegmentPillRow = segmentPillRowHtml !== "";
+
       const detailBits = [];
-      if (segmentInfo) {
+      if (segmentInfo && !hasSegmentPillRow) {
+        // Single-segment + non-segmented tasks: existing inline text (unchanged).
+        // Multi-segment tasks: suppressed because the new pill row carries the same
+        // information more legibly.
         detailBits.push(`<span class="task-segment-progress" title="${escapeHtml(segmentInfo.segmentId || segmentProgressText(segmentInfo))}">${escapeHtml(segmentProgressText(segmentInfo))}</span>`);
       }
       if (showPacketHome) {
@@ -950,6 +1013,9 @@ function renderLanesTasks(batch, sessions) {
       const titleHtml = task.taskTitle
         ? `<div class="task-title-subtitle">${escapeHtml(task.taskTitle)}</div>`
         : "";
+      // TP-197 (#464): segmentPillRowHtml is empty for single-segment tasks so
+      // the rendered DOM is byte-identical to today for non-segmented tasks.
+      // For multi-segment tasks it renders as grid-row 3 of .task-row.
       html += `
         <div class="task-row">
           <span class="task-icon"><span class="status-dot ${task.status}"></span></span>
@@ -960,6 +1026,7 @@ function renderLanesTasks(batch, sessions) {
           <span>${progressHtml}</span>
           <span class="task-step">${stepHtml}${workerHtml}</span>
           ${titleHtml}
+          ${segmentPillRowHtml}
         </div>`;
       html += reviewerRowHtml;
     }
