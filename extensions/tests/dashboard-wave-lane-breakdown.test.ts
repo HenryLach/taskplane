@@ -182,6 +182,51 @@ describe("TP-197 fold: formatWaveLaneBreakdown lane parallelization indicator", 
 		expect(result.compact).toContain(" | TP-C");
 	});
 
+	// ── Sentinel laneNumber=0 ("unallocated") must NOT be treated as a real lane ──
+	// Background: persistence.ts assigns `laneNumber: 0` to tasks that haven't
+	// been allocated to a lane yet (sentinel value, see persistence.ts:1378 +
+	// 2538). Real lane numbers start at 1. The wave-chip renderer must treat
+	// 0 as "unassigned" — otherwise all pending/future-wave tasks get grouped
+	// under a fake "lane 0" and render as serial (→) when they're actually
+	// going to run in parallel once their wave starts.
+
+	it("REGRESSION: laneNumber=0 sentinel does NOT count as a real lane", () => {
+		const { formatWaveLaneBreakdown } = loadHelper();
+		// Simulates a future wave where tasks have the sentinel laneNumber=0
+		// because their wave hasn't started and no lanes have been allocated.
+		const result = formatWaveLaneBreakdown(
+			["TP-004", "TP-005"],
+			[],
+			[
+				{ taskId: "TP-004", laneNumber: 0 },
+				{ taskId: "TP-005", laneNumber: 0 },
+			],
+			2,
+		);
+		// Both tasks have sentinel 0 — should fall back to comma display
+		// ("don't know yet"), NOT serial ("→") which would be misleading.
+		expect(result.compact).toBe("TP-004, TP-005");
+		expect(result.compact).not.toContain(" → ");
+		expect(result.compact).not.toContain(" | ");
+	});
+
+	it("REGRESSION: mixed sentinel-0 and real laneNumbers — only real ones count", () => {
+		const { formatWaveLaneBreakdown } = loadHelper();
+		const result = formatWaveLaneBreakdown(
+			["TP-A", "TP-B", "TP-C"],
+			[],
+			[
+				{ taskId: "TP-A", laneNumber: 1 }, // real lane
+				{ taskId: "TP-B", laneNumber: 0 }, // sentinel — unassigned
+				{ taskId: "TP-C", laneNumber: 2 }, // real lane
+			],
+			1,
+		);
+		// TP-A and TP-C have real lanes — separate. TP-B is unassigned and
+		// becomes part of the "unassigned" trailing group.
+		expect(result.compact).toBe("TP-A | TP-C | TP-B");
+	});
+
 	it("source: pending pill CSS uses --text-muted (post-fold contrast bump)", () => {
 		// Lock down the contrast fix: pending pill must use --text-muted,
 		// not --text-faint. text-faint (#484f58) gave ~3.7:1 contrast on

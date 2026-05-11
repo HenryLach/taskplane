@@ -720,7 +720,19 @@ function formatWaveLaneBreakdown(taskIds, lanes, tasks, waveNumber) {
   const taskToLane = new Map();
   if (Array.isArray(tasks)) {
     for (const t of tasks) {
-      if (t && t.taskId && t.laneNumber != null && !taskToLane.has(t.taskId)) {
+      // Persistence assigns `laneNumber: 0` as a sentinel meaning
+      // "unallocated" (see persistence.ts:1378 — `lane?.laneNumber ??
+      // outcome?.laneNumber ?? 0`). Real lane numbers start at 1. We must
+      // skip 0 here so future-wave tasks (which all have the 0 sentinel
+      // until their wave starts) don't get falsely grouped under a fake
+      // "lane 0" and rendered as serial.
+      if (
+        t &&
+        t.taskId &&
+        typeof t.laneNumber === "number" &&
+        t.laneNumber >= 1 &&
+        !taskToLane.has(t.taskId)
+      ) {
         taskToLane.set(t.taskId, t.laneNumber);
       }
     }
