@@ -228,4 +228,47 @@ describe("TP-197: taskSegmentPillRow renderer", () => {
 		// Only the two valid string segments should render.
 		expect((out.match(/class="seg-pill /g) || []).length).toBe(2);
 	});
+
+	// ── TP-197 sage post-merge fold: task-row grid-layout parity guard ────
+	// Background: an earlier draft of TP-197 changed .task-row from a 2-row
+	// grid to an unconditional 3-row grid, which added an 8px row-gap for
+	// single-segment tasks (because 'auto' rows don't fully collapse when
+	// row-gap is set). The fix is to opt the .task-row into a 3-row template
+	// only when the pill row is non-empty, via a .has-segments class added
+	// in JS conditioned on `hasSegmentPillRow`. These two tests lock down
+	// the source-pattern intent so future edits don't re-introduce the
+	// unconditional 3-row template or drop the conditional class.
+
+	it("source: .task-row's default grid keeps 2 rows; .has-segments opts into 3", () => {
+		const css = readFileSync(resolve(__dirname, "../../dashboard/public/style.css"), "utf-8");
+
+		// Default .task-row block: must declare 'grid-template-rows: auto auto'
+		// (2 rows), NOT 'auto auto auto'. We extract the .task-row block by
+		// finding its opening brace and reading up to the next closing brace.
+		const defaultBlockStart = css.indexOf(".task-row {");
+		expect(defaultBlockStart).toBeGreaterThan(-1);
+		const defaultBlockEnd = css.indexOf("}", defaultBlockStart);
+		const defaultBlock = css.slice(defaultBlockStart, defaultBlockEnd);
+		expect(defaultBlock).toMatch(/grid-template-rows:\s*auto\s+auto\s*;/);
+		expect(defaultBlock).not.toMatch(/grid-template-rows:\s*auto\s+auto\s+auto\s*;/);
+
+		// .task-row.has-segments block: must declare 3-row template.
+		const optInBlockStart = css.indexOf(".task-row.has-segments {");
+		expect(optInBlockStart).toBeGreaterThan(-1);
+		const optInBlockEnd = css.indexOf("}", optInBlockStart);
+		const optInBlock = css.slice(optInBlockStart, optInBlockEnd);
+		expect(optInBlock).toMatch(/grid-template-rows:\s*auto\s+auto\s+auto\s*;/);
+	});
+
+	it("source: app.js conditionally adds 'has-segments' class only when pill row is non-empty", () => {
+		const src = readFileSync(resolve(__dirname, "../../dashboard/public/app.js"), "utf-8");
+
+		// Must contain the conditional class assignment based on hasSegmentPillRow.
+		// We allow some whitespace variation but require the ternary pattern.
+		expect(src).toMatch(
+			/hasSegmentPillRow\s*\?\s*["']task-row has-segments["']\s*:\s*["']task-row["']/,
+		);
+		// And the rendered template must use the computed class (not a literal).
+		expect(src).toContain('<div class="${taskRowClass}">');
+	});
 });

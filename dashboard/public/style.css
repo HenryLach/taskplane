@@ -609,16 +609,25 @@ body {
   grid-template-columns: 36px 24px 100px 90px 80px 200px 1fr;
   /* #485 (revised): row 1 holds the primary cells; row 2 (auto, collapses to
    * 0 when empty) holds the optional task-title-subtitle spanning cols 3–6.
-   * TP-197 (#464): row 3 (auto, collapses to 0 when empty) holds the optional
-   * per-segment pill row for multi-segment tasks, spanning cols 3–7. Single-
-   * segment tasks render no pill row and row 3 auto-collapses, keeping the
-   * rendered row height byte-identical to today. */
-  grid-template-rows: auto auto auto;
+   * Default: 2 rows. TP-197 (#464) adds the optional per-segment pill row in
+   * grid-row 3 ONLY when the .has-segments class is set (multi-segment tasks).
+   * Non-segmented tasks keep the pre-TP-197 2-row layout exactly — 'auto'
+   * row tracks don't fully collapse with row-gap declared, so adding a third
+   * row track unconditionally would introduce an 8px visible gap for every
+   * single-segment task (sage post-merge fold). */
+  grid-template-rows: auto auto;
   align-items: center;
   gap: 8px 8px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-subtle);
   transition: background 0.15s;
+}
+
+/* TP-197 (#464): multi-segment tasks opt-in to a 3-row grid for the segment-
+ * pill row. JS adds .has-segments to .task-row only when the pill row is
+ * non-empty (see app.js taskSegmentPillRow + task-row template). */
+.task-row.has-segments {
+  grid-template-rows: auto auto auto;
 }
 
 .task-row:last-child { border-bottom: none; }

@@ -1016,8 +1016,14 @@ function renderLanesTasks(batch, sessions) {
       // TP-197 (#464): segmentPillRowHtml is empty for single-segment tasks so
       // the rendered DOM is byte-identical to today for non-segmented tasks.
       // For multi-segment tasks it renders as grid-row 3 of .task-row.
+      // Sage post-merge fold: the .has-segments class opts the .task-row
+      // grid into a 3-row template only when we actually have a pill row;
+      // otherwise the default 2-row template preserves single-segment task
+      // spacing exactly (an unconditional 3-row template would add an 8px
+      // row-gap even when row 3 is empty, breaking the no-regression contract).
+      const taskRowClass = hasSegmentPillRow ? "task-row has-segments" : "task-row";
       html += `
-        <div class="task-row">
+        <div class="${taskRowClass}">
           <span class="task-icon"><span class="status-dot ${task.status}"></span></span>
           <span class="task-actions">${eyeHtml}</span>
           <span class="task-id status-${task.status}">${escapeHtml(task.taskId)}${showRepos ? repoBadgeHtml(tRepo, "repo-badge-task") : ""}</span>
