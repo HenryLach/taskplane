@@ -237,4 +237,33 @@ describe("TP-197 fold: formatWaveLaneBreakdown lane parallelization indicator", 
 		expect(pendingLine!).toContain("var(--text-muted)");
 		expect(pendingLine!).not.toContain("var(--text-faint)");
 	});
+
+	// ── Merge-agents table cleanup (TP-197 post-merge fold) ─────────────
+	// User observed: SESSION ID and DETAILS columns were always '—' (dead
+	// weight). SESSION ID was hardcoded to '—' in every row. DETAILS was
+	// only populated for mr.failureReason (rare). Both columns removed.
+	// Merge-table header color was also bumped --text-faint → --text-muted
+	// to match other section headers and improve readability.
+
+	it("source: merge-agents table header has 4 columns; Session ID + Details removed", () => {
+		const src = readFileSync(resolve(__dirname, "../../dashboard/public/app.js"), "utf-8");
+		// The current 4-column header.
+		expect(src).toContain("<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th>");
+		// Removed columns must not appear in any header row.
+		expect(src).not.toMatch(/<th>Session ID<\/th>/);
+		expect(src).not.toMatch(/<th>Details<\/th>/);
+		// merge-detail-cell rendering in the merge-result row is gone
+		// (per-repo sub-rows previously had a 6th cell rendering rrDetail).
+		expect(src).not.toMatch(/merge-detail-cell.*rrDetail/);
+	});
+
+	it("source: .merge-table th uses --text-muted (post-fold contrast bump)", () => {
+		const css = readFileSync(resolve(__dirname, "../../dashboard/public/style.css"), "utf-8");
+		const ruleStart = css.indexOf(".merge-table th {");
+		expect(ruleStart).toBeGreaterThan(-1);
+		const ruleEnd = css.indexOf("}", ruleStart);
+		const rule = css.slice(ruleStart, ruleEnd);
+		expect(rule).toMatch(/color:\s*var\(--text-muted\)/);
+		expect(rule).not.toMatch(/color:\s*var\(--text-faint\)/);
+	});
 });

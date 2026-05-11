@@ -1163,7 +1163,15 @@ function renderMergeAgents(batch, sessions) {
   }
 
   let html = '<table class="merge-table"><thead><tr>';
-  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th><th>Session ID</th><th>Details</th>';
+  // TP-197 post-merge fold: removed 'Session ID' and 'Details' columns.
+  // SESSION ID was hardcoded to '—' in every row — dead weight.
+  // DETAILS only populated for `mr.failureReason` (rare failure cases);
+  // for the common all-merges-succeeded case it's always '—' too.
+  // When a real failure happens, the operator sees status='failed' in
+  // the Status column and can dig into engine logs for the reason —
+  // we'll re-add a focused DETAILS column if/when we have meaningful
+  // structured failure-reason data to surface in the dashboard table.
+  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th>';
   html += '</tr></thead><tbody>';
 
   // Track sessions shown in wave result rows so we don't duplicate them below
@@ -1244,10 +1252,6 @@ function renderMergeAgents(batch, sessions) {
     html += `<td class="merge-session-cell">${effectiveAlive ? escapeHtml(effectiveSession) : "—"}</td>`;
     // Full telemetry cell
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(mergeTel, effectiveAlive)}</td>`;
-    html += `<td>`;
-    html += '<span class="merge-no-data">—</span>';
-    html += `</td>`;
-    html += `<td class="merge-detail-cell">${mr.failureReason ? escapeHtml(mr.failureReason) : "—"}</td>`;
     html += `</tr>`;
 
     // Per-repo sub-rows: show when workspace mode has repo results
@@ -1268,8 +1272,6 @@ function renderMergeAgents(batch, sessions) {
         html += `<td><span class="status-badge ${rrStatusCls}">${rr.status}</span></td>`;
         html += `<td class="merge-session-cell">${rrLanes}</td>`;
         html += `<td></td>`; /* telemetry placeholder */
-        html += `<td></td>`; /* attach placeholder */
-        html += `<td class="merge-detail-cell">${rrDetail}</td>`;
         html += `</tr>`;
       }
     }
@@ -1286,8 +1288,6 @@ function renderMergeAgents(batch, sessions) {
     html += `<td class="merge-session-cell">${escapeHtml(sess)}</td>`;
     // Full telemetry cell for active merge session
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(sessTel, true)}</td>`;
-    html += `<td>—</td>`;
-    html += `<td>—</td>`;
     html += `</tr>`;
   }
 

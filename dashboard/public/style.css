@@ -861,7 +861,10 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-faint);
+  /* TP-197 post-merge fold: bumped --text-faint → --text-muted for
+   * readability. Matches other dashboard section headers (lines 224, 248,
+   * 458 of this file already use --text-muted for the same role). */
+  color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
 }
