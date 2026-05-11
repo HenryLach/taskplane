@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-segment engine hardening (TP-196, #462 + #502 + #503 + #508):**
+  closes four follow-up issues from the multi-repo task execution rollout
+  with a single coherent hardening pass against the multi-segment engine.
+
+  - **`.DONE` authority guards (#462)** — three defense-in-depth checks now
+    refuse to honor a stale or premature `.DONE` in multi-segment tasks:
+    (a) `resolveTaskMonitorState` (`execution.ts`) accepts an optional
+    `multiSegmentContext: { isFinalSegment, segmentId }` parameter; when
+    `isFinalSegment === false` and `.DONE` is present, Priority 1 is
+    skipped and a WARN is logged via `execLog`; `monitorLanes` populates
+    this context from `task.segmentIds` + `task.activeSegmentId`. (b)
+    `collectDoneTaskIdsForResume` (`resume.ts`) now refuses to add a
+    taskId to the done set when persisted segment records exist AND any
+    segment is not `succeeded`/`skipped` — the task re-reconciles instead
+    of silently being marked complete. (c) A new exported
+    `checkDoneAuthoritySafeguard` helper (`discovery.ts`) emits a
+    doctor-style `console.warn` when `.DONE` coexists with unchecked
+    STATUS.md checkboxes during area scans. The pre-existing TP-135
+    "keeps .DONE authoritative even when segment frontier is incomplete"
+    test was updated to assert the inverted (post-#462) contract.
+
+  - **SegmentScopeMode unification (#502 + #503)** — promotes the
+    FULL_TASK / SEGMENT_SCOPED decision to a first-class
+    `SegmentScopeMode = "FULL_TASK" | "SEGMENT_SCOPED"` type in `types.ts`
+    plus a `computeSegmentScopeMode(stepSegmentMap, repoStepNumbers,
+    currentRepoId, currentStepNumber)` helper in `lane-runner.ts`. The
+    iteration loop now derives both the authoritative `segmentScopeMode`
+    and the legacy `isSegmentScoped` boolean alias from one call, and
+    the segment-prompt injection block is gated on `isSegmentScoped`
+    instead of the previous scattered `stepSegmentMap && currentRepoId
+    && repoStepNumbers && remainingSteps.length > 0` composite. New
+    behavioural regression suite
+    (`extensions/tests/segment-scope-mode-prompt.test.ts`, 9 tests
+    across 4 describe blocks) mocks `spawnAgent` to capture the worker
+    prompt + env + system prompt and verifies the FULL_TASK,
+    SEGMENT_SCOPED, polyrepo single-segment, and legacy/partial-marker
+    contracts end-to-end.
+
+  - **Wasted-iteration elimination (#508)** — lane-runner now performs
+    an explicit pre-spawn segment-completion check between the existing
+    `remainingSteps.length === 0` guard and the `totalIterations++`
+    increment, delegating to a new pure helper
+    `shouldSkipSpawnForCompleteSegment(statusContent, repoStepNumbers,
+    currentRepoId)`. When every segment-scoped step for the active repo
+    is already complete, the loop logs `"Pre-spawn segment-completion
+    check"` and breaks before incurring a worker spawn. Behavioural
+    test (`extensions/tests/early-exit-segment-spawn-skip.test.ts`)
+    mocks `agent-host.spawnAgent` via `mock.module` and asserts
+    `spawnAgentCallCount === 0` for a fixture worktree whose checkboxes
+    are pre-checked.
+
+  - **Validation:** typecheck / lint / format:check all exit 0. Fast
+    test suite passes at 3678 / 0 fail / 1 skip — net +51 new tests
+    spread across 3 new test files plus targeted updates to
+    `segment-scoped-lane-runner.test.ts`, `resume-segment-frontier.test.ts`,
+    and `engine-runtime-v2-routing.test.ts` (slice-window widening for
+    the longer `resolveTaskMonitorState` body).
+
 ## [0.30.0] - 2026-05-10
 
 ### Fixed

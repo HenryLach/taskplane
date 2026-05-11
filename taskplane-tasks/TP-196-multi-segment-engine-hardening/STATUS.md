@@ -1,8 +1,8 @@
 # TP-196: Multi-segment engine hardening — Status
 
-**Current Step:** Step 0: Preflight
-**Status:** 🟡 In Progress
-**Last Updated:** 2026-05-10
+**Current Step:** Step 7: Documentation & Delivery
+**Status:** ✅ Complete
+**Last Updated:** 2026-05-11
 **Review Level:** 2
 **Review Counter:** 9
 **Iteration:** 1
@@ -133,12 +133,12 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] CHANGELOG entry under [Unreleased] → Fixed (or Internal)
-- [ ] Discoveries logged: per-issue final fix summary
-- [ ] Issue-close comment drafts for #462, #502, #503, #508 in Discoveries
-- [ ] All commits include `TP-196` prefix
+- [x] CHANGELOG entry under `[Unreleased]` → `Fixed` — added a 4-paragraph entry covering #462 guards (monitor + resume + discovery), #502 SegmentScopeMode unification, #503 regression suite, #508 wasted-iteration elimination, plus validation summary (3678 pass / 0 fail, all 4 gates green).
+- [x] Discoveries logged — per-issue final fix summaries appear in the Discoveries table (Step 1/2/3/4/5 plan + R002/R005/R006/R008 disposition rows).
+- [x] Issue-close comment drafts for #462, #502, #503, #508 — added below in Notes section.
+- [x] All commits include `TP-196` prefix — verified via `git log --oneline | head -25`.
 
 ---
 
@@ -205,6 +205,96 @@ If plan-review reveals a clear architectural split during Step 1, splitting is a
 **Hard-gate compliance:**
 
 Post-TP-194, the reviewer agent downgrades APPROVE → REVISE on any failing `typecheck` / `lint` / `format:check`. This is the first task to run entirely under hard gates; the worker should expect that gate failures will be surfaced in code reviews and cannot be ignored. Plan accordingly: don't break gates anywhere mid-step.
+
+---
+
+## Issue-close comment drafts
+
+> Operator: post these on each issue after the PR carrying TP-196 merges.
+
+### #462 — Harden `.DONE` authority for multi-segment tasks
+
+Closed by TP-196. Three defense-in-depth guards now refuse to honor a stale
+or premature `.DONE` in multi-segment tasks:
+
+1. **Monitor guard** (`execution.ts::resolveTaskMonitorState`): optional
+   `multiSegmentContext: { isFinalSegment, segmentId }` parameter; when the
+   active segment is known non-final and `.DONE` is observed, Priority 1 is
+   skipped (the task stays non-terminal) and a WARN is logged.
+2. **Resume guard** (`resume.ts::collectDoneTaskIdsForResume`): when persisted
+   segment records exist AND any segment is not `succeeded`/`skipped`, the
+   task is NOT added to the done set, so it re-reconciles instead of being
+   silently marked complete. The on-disk `.DONE` is left in place; the
+   engine recovers authoritative state on its own.
+3. **Discovery safeguard** (`discovery.ts::checkDoneAuthoritySafeguard`): a
+   doctor-style `console.warn` fires when `.DONE` coexists with unchecked
+   STATUS.md checkboxes during area scans. Behavior of the scan itself is
+   unchanged.
+
+New tests: `extensions/tests/done-authority-multi-segment.test.ts` (14
+behavioural tests across 3 describe blocks). The legacy TP-135 "keeps
+.DONE authoritative even when segment frontier is incomplete" test was
+updated to assert the inverted (post-#462) contract.
+
+### #502 — Segment scope mode should be a single enum gating all segment signals
+
+Closed by TP-196. Promoted `SegmentScopeMode` to a first-class
+`"FULL_TASK" | "SEGMENT_SCOPED"` string-literal union in `types.ts`, plus a
+`computeSegmentScopeMode(stepSegmentMap, repoStepNumbers, currentRepoId,
+currentStepNumber)` helper in `lane-runner.ts`. The iteration loop now
+derives both the authoritative `segmentScopeMode` and the legacy
+`isSegmentScoped` boolean alias from a single computation. The
+prompt-injection block, system-prompt overlay, and `TASKPLANE_ACTIVE_SEGMENT_ID`
+/ `TASKPLANE_SEGMENT_ID` env vars all gate on this unified flag.
+`request_segment_expansion` tool registration inherits the gating via the
+env var (`agent-bridge-extension.ts:97`). 16 new tests in
+`segment-scoped-lane-runner.test.ts` sections 9.x cover the helper's truth
+table and the unified gating sites.
+
+### #503 — Add regression tests for SegmentScopeMode prompt injection
+
+Closed by TP-196. New behavioural test suite
+`extensions/tests/segment-scope-mode-prompt.test.ts` (9 tests across 4
+describe blocks) mocks `agent-host.spawnAgent` via `mock.module` to
+capture the worker prompt + env + system prompt, then drives
+`executeTaskV2` with realistic fixtures:
+
+- **FULL_TASK** (3 tests): prompt does NOT include `Active segment ID`,
+  segment-scoped checkbox block, `Other segments in this step (NOT yours`,
+  or `Segment-scoped context`; env hard-clears both segment env vars;
+  system prompt is BASE only.
+- **SEGMENT_SCOPED** (3 tests): prompt INCLUDES all four prose elements;
+  env carries the active segment ID; system prompt appends the segment
+  overlay AFTER base.
+- **Polyrepo single-segment regression** (1 test): forces iteration-by-
+  iteration progress and asserts `capturedSpawns.length >= 2` plus the
+  second prompt mentions `Step 1` + the Step 1 checkbox text — proves
+  no silent self-scoping to Step 0.
+- **Legacy / partial-marker fallback** (2 tests): (a) task with NO
+  segment markers falls back to FULL_TASK; (b) task with markers for
+  OTHER repos but not the active repo also falls back to FULL_TASK.
+
+Architectural note: the issue body's literal `SegmentScopeMode: FULL_TASK`
+prose-injection assertion no longer applies post-commit `97816c08` ("hard
+mode separation for worker segment scoping"). The tests assert the
+architecturally-current contract (prompt content + env + system overlay
+reflect the mode), preserving the intent of #503 under the post-#502 design.
+
+### #508 — Lane-runner should check segment completion before spawning next iteration
+
+Closed by TP-196. Lane-runner now performs an explicit pre-spawn
+segment-completion check between the existing `remainingSteps.length === 0`
+guard and `totalIterations++`, delegating to a new pure helper
+`shouldSkipSpawnForCompleteSegment(statusContent, repoStepNumbers,
+currentRepoId)`. When every segment-scoped step for the active repo is
+already complete, the loop logs `"Pre-spawn segment-completion check"` and
+breaks before spawning. New behavioural test
+`extensions/tests/early-exit-segment-spawn-skip.test.ts` (7 tests: 6
+helper-level + 1 end-to-end) mocks `spawnAgent` and asserts the spawn call
+count stays at zero for a fixture worktree whose checkboxes are
+pre-checked. 5 source-analysis tests in `segment-scoped-lane-runner.test.ts`
+section 10.x verify the helper is invoked at the correct call site and
+breaks out of the loop on `true`.
 | 2026-05-10 23:39 | Review R001 | plan Step 1: APPROVE |
 | 2026-05-10 23:45 | Review R002 | code Step 2: REVISE |
 | 2026-05-10 23:48 | Review R003 | code Step 2: APPROVE |
