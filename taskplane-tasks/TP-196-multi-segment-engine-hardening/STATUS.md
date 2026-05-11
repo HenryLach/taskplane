@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
@@ -98,7 +98,7 @@
 ---
 
 ### Step 5: Implement #503 prompt-injection regression tests
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -119,7 +119,7 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ZERO test failures allowed. ALL FOUR GATES green.
 
@@ -153,6 +153,8 @@
 | 5 | code | 4 | REVISE  | `.reviews/R005-code-step4.md` |
 | 6 | code | 4 | REVISE  | `.reviews/R006-code-step4.md` |
 | 7 | code | 4 | APPROVE | (re-review after R006 format fix) |
+| 8 | code | 5 | REVISE  | `.reviews/R008-code-step5.md` |
+| 9 | code | 5 | APPROVE | (re-review after R008 fixes) |
 
 ---
 
@@ -211,3 +213,4 @@ Post-TP-194, the reviewer agent downgrades APPROVE → REVISE on any failing `ty
 | 2026-05-11 00:15 | Review R006 | code Step 4: REVISE |
 | 2026-05-11 00:17 | Review R007 | code Step 4: APPROVE |
 | 2026-05-11 00:23 | Review R008 | code Step 5: REVISE |
+| 2026-05-11 00:26 | Review R009 | code Step 5: APPROVE |
