@@ -589,9 +589,7 @@ describe("10.x: Pre-spawn segment-completion early-exit (TP-196 / #508)", () => 
 		// FULL_TASK iterations (currentRepoId null or no repo segment set) rely
 		// on the existing `remainingSteps.length === 0` exit. The new helper
 		// must short-circuit to `false` for those cases.
-		const helperIdx = laneRunnerSrc.indexOf(
-			"export function shouldSkipSpawnForCompleteSegment(",
-		);
+		const helperIdx = laneRunnerSrc.indexOf("export function shouldSkipSpawnForCompleteSegment(");
 		expect(helperIdx).toBeGreaterThan(-1);
 		const helperBody = laneRunnerSrc.slice(helperIdx, helperIdx + 800);
 		expect(helperBody).toContain(
