@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** M
 
@@ -112,6 +112,10 @@
 
 **Files touched:** `extensions/tests/segment-scope-mode-prompt.test.ts` (new, 9 behavioural tests across 4 describe blocks). No source changes required — #503 is a pure regression-test add-on.
 
+**R008 revision items:**
+- [x] Strengthen polyrepo single-segment test (3.1) to verify the worker actually advances past Step 0. Added a `workerAdvanceMode` toggle (`"all"` vs `"first"`) on the mock spawnAgent so test 3.1 can force iteration-by-iteration progress (one box checked per spawn). New assertions: `capturedSpawns.length >= 2`, first prompt mentions Step 0, second prompt mentions Step 1 + `Create endpoint`. Silent-scope regression would now fail the test.
+- [x] Reviewer style suggestion: use optional chaining `hostOpts.env?.TASKPLANE_STATUS_PATH` (applied).
+
 ---
 
 ### Step 6: Testing & Verification
@@ -206,3 +210,4 @@ Post-TP-194, the reviewer agent downgrades APPROVE → REVISE on any failing `ty
 | 2026-05-11 00:06 | Review R005 | code Step 4: REVISE |
 | 2026-05-11 00:15 | Review R006 | code Step 4: REVISE |
 | 2026-05-11 00:17 | Review R007 | code Step 4: APPROVE |
+| 2026-05-11 00:23 | Review R008 | code Step 5: REVISE |

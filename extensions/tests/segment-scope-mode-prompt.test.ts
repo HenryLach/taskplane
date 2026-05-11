@@ -53,6 +53,13 @@ type CapturedSpawn = {
 
 let capturedSpawns: CapturedSpawn[] = [];
 let spawnSucceedsImmediately = true;
+/**
+ * Controls how the mocked worker advances STATUS.md per spawn:
+ *  - `"all"`  : check off every unchecked box (fast — collapses to 1 spawn).
+ *  - `"first"`: check off only the FIRST unchecked box (forces iteration-by-
+ *               iteration progress so the lane-runner spawns multiple times).
+ */
+let workerAdvanceMode: "all" | "first" = "all";
 
 const realAgentHost = await import("../taskplane/agent-host.ts");
 
@@ -64,15 +71,19 @@ const mockSpawnAgent = mock.fn((hostOpts: Parameters<typeof realAgentHost.spawnA
 	});
 
 	if (spawnSucceedsImmediately) {
-		// Simulate a worker that immediately completes by checking off all
-		// segment checkboxes for the active repo, then exits cleanly.
-		// We mutate the on-disk STATUS.md so the iteration-loop's
-		// post-spawn read sees the work as done.
-		const statusPath = (hostOpts.env ?? {}).TASKPLANE_STATUS_PATH;
+		// Simulate a worker by mutating the on-disk STATUS.md so the
+		// iteration-loop's post-spawn read sees real progress.
+		const statusPath = hostOpts.env?.TASKPLANE_STATUS_PATH;
 		if (statusPath) {
 			try {
 				const content = readFileSync(statusPath, "utf-8");
-				const advanced = content.replace(/- \[ \]/g, "- [x]");
+				let advanced: string;
+				if (workerAdvanceMode === "all") {
+					advanced = content.replace(/- \[ \]/g, "- [x]");
+				} else {
+					// "first" — replace exactly one unchecked box per spawn.
+					advanced = content.replace(/- \[ \]/, "- [x]");
+				}
 				writeFileSync(statusPath, advanced);
 			} catch {
 				/* best effort */
@@ -615,10 +626,18 @@ describe("3.x: Polyrepo single-segment — worker proceeds beyond Step 0 (TP-196
 	beforeEach(() => {
 		capturedSpawns = [];
 		spawnSucceedsImmediately = true;
+		// Force iteration-by-iteration progress so we can verify the worker
+		// advances past Step 0 (one unchecked box per spawn).
+		workerAdvanceMode = "first";
 		tmpRoot = mkdtempSync(join(tmpdir(), "tp196-503-poly-"));
 	});
 
 	afterEach(() => {
+		workerAdvanceMode = "all";
+	});
+
+	afterEach(() => {
+		workerAdvanceMode = "all";
 		try {
 			rmSync(tmpRoot, { recursive: true, force: true });
 		} catch {
@@ -687,17 +706,25 @@ describe("3.x: Polyrepo single-segment — worker proceeds beyond Step 0 (TP-196
 			{ paused: false },
 		);
 
-		// We expect at least one spawn (Step 0). After the mock checks every box,
-		// the loop should detect completion and break — but BEFORE breaking, it
-		// must have iterated through both steps' worth of segment checkboxes. We
-		// verify the first prompt mentions ONE of the steps; the iteration count
-		// proves no silent self-scoping happened (it's >= 1 and <= maxIterations).
-		expect(capturedSpawns.length).toBeGreaterThanOrEqual(1);
+		// The fixture has 2 steps (Step 0 Preflight + Step 1 Implement), each
+		// with one segment checkbox for the active repo. The mocked worker
+		// checks off ONE box per spawn. To complete both steps, the lane-runner
+		// MUST iterate at least twice. If the engine were silently scoping the
+		// worker to Step 0 only (the regression #503 is guarding against),
+		// `capturedSpawns.length` would stop at 1.
+		expect(capturedSpawns.length).toBeGreaterThanOrEqual(2);
+
+		// First iteration is scoped to Step 0.
 		const firstPrompt = capturedSpawns[0].prompt;
-		// Single-segment polyrepo: segment-scoped block IS injected (it has a
-		// segmentMap with the active repo), confirming the iteration didn't
-		// fall back to FULL_TASK by accident.
 		expect(firstPrompt).toContain("Active segment ID: TP-X::api");
+		expect(firstPrompt).toContain("Step 0");
+
+		// Second iteration MUST advance to Step 1 (proves no silent scoping).
+		const secondPrompt = capturedSpawns[1].prompt;
+		expect(secondPrompt).toContain("Active segment ID: TP-X::api");
+		expect(secondPrompt).toContain("Step 1");
+		// And the Step 1 segment's checkbox is visible in the prompt:
+		expect(secondPrompt).toContain("Create endpoint");
 	});
 });
 
