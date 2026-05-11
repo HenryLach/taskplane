@@ -84,10 +84,12 @@
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] Pre-spawn segment-completion check
-- [ ] Exit-condition wiring
-- [ ] Behavioral test asserting wasted iteration skipped
-- [ ] Full fast suite passes
+- [x] Pre-spawn segment-completion check — added an explicit check in the iteration loop immediately AFTER `if (remainingSteps.length === 0) break;` and BEFORE `totalIterations++`. When `repoStepNumbers && currentRepoId` and ALL `repoStepNumbers` are `isSegmentComplete`, the loop logs `"Pre-spawn segment-completion check"` and `break`s.
+- [x] Exit-condition wiring — `break` falls through to the existing post-loop completion handling (same path as the line-419 break), so no new branching is introduced.
+- [x] Behavioral / source-analysis tests — 5 new tests (sections 10.0–10.4) in `segment-scoped-lane-runner.test.ts` covering: (10.1) check exists at the spawn boundary; (10.2) iterates `repoStepNumbers` with `isSegmentComplete`; (10.3) breaks out of the loop on all-complete; (10.4) gated so FULL_TASK iterations are unaffected.
+- [x] Full fast suite passes (3662 pass / 0 fail / 1 skip after Step 4; net +5 tests vs. Step 3 baseline). Typecheck / lint / format:check all clean.
+
+**Files touched:** `extensions/taskplane/lane-runner.ts` (pre-spawn check); `extensions/tests/segment-scoped-lane-runner.test.ts` (5 new source-analysis tests).
 
 ---
 

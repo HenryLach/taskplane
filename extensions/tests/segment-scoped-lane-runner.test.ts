@@ -536,6 +536,65 @@ describe("9.x: SegmentScopeMode source-analysis contracts (TP-196 / #502)", () =
 	});
 });
 
+// ── 10. Pre-spawn segment-completion check (TP-196 / #508) ─────────
+
+describe("10.x: Pre-spawn segment-completion early-exit (TP-196 / #508)", () => {
+	let laneRunnerSrc: string;
+
+	it("10.0: load lane-runner source", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { join, dirname } = await import("node:path");
+		const { fileURLToPath } = await import("node:url");
+		const testDir = dirname(fileURLToPath(import.meta.url));
+		laneRunnerSrc = readFileSync(join(testDir, "..", "taskplane", "lane-runner.ts"), "utf-8");
+	});
+
+	it("10.1: pre-spawn check exists between remainingSteps guard and iteration counter", () => {
+		// The TP-196 / #508 pre-spawn check must live AFTER the existing
+		// `if (remainingSteps.length === 0) break;` and BEFORE `totalIterations++`,
+		// so a fully-complete segment skips the spawn without incrementing iterations.
+		const breakIdx = laneRunnerSrc.indexOf("if (remainingSteps.length === 0) break;");
+		expect(breakIdx).toBeGreaterThan(-1);
+		const checkIdx = laneRunnerSrc.indexOf(
+			"TP-196 / #508: Pre-spawn segment-completion check",
+			breakIdx,
+		);
+		expect(checkIdx).toBeGreaterThan(breakIdx);
+		const iterIncIdx = laneRunnerSrc.indexOf("totalIterations++", checkIdx);
+		expect(iterIncIdx).toBeGreaterThan(checkIdx);
+	});
+
+	it("10.2: pre-spawn check uses isSegmentComplete on every repoStepNumber", () => {
+		const checkIdx = laneRunnerSrc.indexOf("TP-196 / #508: Pre-spawn segment-completion check");
+		expect(checkIdx).toBeGreaterThan(-1);
+		const block = laneRunnerSrc.slice(checkIdx, checkIdx + 1200);
+		// Iterates the repo's step set with isSegmentComplete (#508 contract).
+		expect(block).toContain("[...repoStepNumbers].every");
+		expect(block).toContain("isSegmentComplete(iterStatusContent, stepNum, currentRepoId)");
+	});
+
+	it("10.3: pre-spawn check breaks out of the loop (no spawn for an already-complete segment)", () => {
+		const checkIdx = laneRunnerSrc.indexOf("TP-196 / #508: Pre-spawn segment-completion check");
+		const block = laneRunnerSrc.slice(checkIdx, checkIdx + 1200);
+		// On allSegmentStepsComplete, logExecution + break.
+		expect(block).toContain("allSegmentStepsComplete");
+		expect(block).toContain("Pre-spawn segment-completion check");
+		// The break statement (after logExecution) lives inside the if-allComplete branch.
+		const allCompleteIdx = block.indexOf("if (allSegmentStepsComplete)");
+		expect(allCompleteIdx).toBeGreaterThan(-1);
+		const breakIdx = block.indexOf("break;", allCompleteIdx);
+		expect(breakIdx).toBeGreaterThan(allCompleteIdx);
+	});
+
+	it("10.4: pre-spawn check is gated on repoStepNumbers + currentRepoId (no-op in FULL_TASK)", () => {
+		const checkIdx = laneRunnerSrc.indexOf("TP-196 / #508: Pre-spawn segment-completion check");
+		const block = laneRunnerSrc.slice(checkIdx, checkIdx + 1200);
+		// Outer guard ensures FULL_TASK iterations (no repo segment set) are NOT
+		// affected — those rely on the existing `remainingSteps.length === 0` exit.
+		expect(block).toContain("if (repoStepNumbers && currentRepoId && repoStepNumbers.size > 0)");
+	});
+});
+
 // ── 8. Snapshot segment-scoped progress ───────────────────────────────
 
 describe("8.x: Snapshot segment-scoped progress (emitSnapshot)", () => {
