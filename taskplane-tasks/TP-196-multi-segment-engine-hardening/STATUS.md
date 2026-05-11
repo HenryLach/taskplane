@@ -102,11 +102,15 @@
 
 > ⚠️ Code-review fires after this step.
 
-- [ ] FULL_TASK assertions
-- [ ] SEGMENT_SCOPED assertions
-- [ ] Polyrepo single-segment regression
-- [ ] Legacy/partial-marker fallback case
-- [ ] Tests pass in isolation + full suite
+- [x] FULL_TASK assertions — 3 behavioural tests (section 1.x) verifying the worker prompt does NOT include `Active segment ID`, the segment-scoped checkbox block, `Other segments in this step (NOT yours)`, or `Segment-scoped context`; the env hard-clears `TASKPLANE_ACTIVE_SEGMENT_ID` and `TASKPLANE_SEGMENT_ID`; the system prompt is BASE only (no segment overlay).
+- [x] SEGMENT_SCOPED assertions — 3 behavioural tests (section 2.x) verifying the prompt INCLUDES `Active segment ID: TP-X::api`, `Your checkboxes for this step:`, `Other segments in this step (NOT yours`, and `Segment-scoped context`; env carries the active segment ID; system prompt appends the segment overlay AFTER base.
+- [x] Polyrepo single-segment regression — 1 behavioural test (section 3.1) verifying that a task with segment markers for only ONE repo still injects the segment-scoped block (proves the worker is not silently scoped to step 0).
+- [x] Legacy/partial-marker fallback case — 2 behavioural tests (section 4.x) covering: (4.1) task with NO segment markers at all falls back to FULL_TASK; (4.2) task with markers for OTHER repos but not the active repo also falls back to FULL_TASK.
+- [x] Tests pass in isolation (9/9 in `segment-scope-mode-prompt.test.ts`) + full fast suite (3678 pass / 0 fail / 1 skip). Typecheck / lint / format:check all clean.
+
+**Architectural note (#503 vs. current code):** The original #503 wording asks for assertions that the prompt includes `SegmentScopeMode: FULL_TASK` / `SegmentScopeMode: SEGMENT_SCOPED` literal text. That prose was deliberately removed in commit `97816c08` ("hard mode separation for worker segment scoping") in favor of separate system-prompt files ("the prompt IS the mode"). The tests here assert the architecturally-current contract — prompt content + env vars + system-prompt overlay reflect the mode — which preserves the intent of #503 while honoring the post-#502 design.
+
+**Files touched:** `extensions/tests/segment-scope-mode-prompt.test.ts` (new, 9 behavioural tests across 4 describe blocks). No source changes required — #503 is a pure regression-test add-on.
 
 ---
 
