@@ -885,6 +885,13 @@ async function parseStatusMdContent(
  * @param tracker        - Mtime tracker for stall detection
  * @param stallTimeoutMs - Stall timeout in milliseconds
  * @param now            - Current timestamp (epoch ms) for deterministic testing
+ * @param multiSegmentContext - Optional segment-authority context (TP-196 / #462).
+ *                              When provided AND `isFinalSegment === false`,
+ *                              `.DONE` is treated as a non-authoritative signal
+ *                              (Priority 1 is skipped). This guards against a
+ *                              stale or premature `.DONE` from a non-final
+ *                              segment short-circuiting the task to succeeded
+ *                              before the remaining segments have run.
  */
 export async function resolveTaskMonitorState(
 	taskId: string,
@@ -896,6 +903,7 @@ export async function resolveTaskMonitorState(
 	now: number,
 	runtimeBackend?: RuntimeBackend,
 	v2Context?: { stateRoot: string; batchId: string; laneNumber: number },
+	multiSegmentContext?: { isFinalSegment: boolean; segmentId: string },
 ): Promise<TaskMonitorSnapshot> {
 	// TP-115/TP-127: Backend-aware liveness check.
 	// V2: read the lane snapshot file written by lane-runner every second.
@@ -1035,7 +1043,27 @@ export async function resolveTaskMonitorState(
 	}
 
 	// ── Priority 1: .DONE file found → succeeded ────────────────
-	if (doneFileFound) {
+	// TP-196 / #462: Monitor guard for multi-segment tasks. When the caller
+	// has provided a segment-authority context AND tells us the active segment
+	// is NOT the final segment in the task plan, `.DONE` MUST NOT be accepted
+	// as authoritative — a non-final segment's worker should never have
+	// produced one. We log a WARN and fall through to the lower priorities
+	// (which keep the task in a non-terminal state so the engine can recover).
+	const doneAcceptedAsAuthority =
+		doneFileFound && !(multiSegmentContext && multiSegmentContext.isFinalSegment === false);
+	if (doneFileFound && !doneAcceptedAsAuthority) {
+		execLog(
+			"monitor",
+			taskId,
+			`WARN: .DONE present for non-final segment '${multiSegmentContext?.segmentId}' — ignoring (#462 guard)`,
+			{
+				session: sessionName,
+				segmentId: multiSegmentContext?.segmentId,
+				donePath,
+			},
+		);
+	}
+	if (doneAcceptedAsAuthority) {
 		return {
 			taskId,
 			status: "succeeded",
@@ -1315,6 +1343,19 @@ export async function monitorLanes(
 					const statusPath = unit.packet.statusPath;
 					const statusResult = await parseStatusMdAtPath(statusPath);
 
+					// TP-196 / #462: Build multi-segment authority context so
+					// `.DONE` from a non-final segment is not accepted as terminal.
+					const taskSegmentIds = task.task.segmentIds ?? [];
+					const taskActiveSegmentId = task.task.activeSegmentId ?? null;
+					let multiSegmentContext: { isFinalSegment: boolean; segmentId: string } | undefined;
+					if (taskSegmentIds.length > 1 && taskActiveSegmentId) {
+						const finalSegmentId = taskSegmentIds[taskSegmentIds.length - 1];
+						multiSegmentContext = {
+							isFinalSegment: taskActiveSegmentId === finalSegmentId,
+							segmentId: taskActiveSegmentId,
+						};
+					}
+
 					const snapshot = await resolveTaskMonitorState(
 						task.taskId,
 						donePath,
@@ -1331,6 +1372,7 @@ export async function monitorLanes(
 									laneNumber: lane.laneNumber,
 								}
 							: undefined,
+						multiSegmentContext,
 					);
 
 					currentTaskSnapshot = snapshot;

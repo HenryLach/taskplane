@@ -180,6 +180,29 @@ export function buildExpansionRequestId(timestamp = Date.now()): string {
 
 // ── Step-Segment Mapping (Phase A: segment-scoped worker visibility) ────
 
+/**
+ * Authoritative segment-scope mode for a single worker iteration.
+ *
+ * - `FULL_TASK`: the worker sees the entire PROMPT.md, all steps, all checkboxes.
+ *   No `Active segment ID` / `Your checkboxes for this step` prose is injected.
+ *   Segment-related environment variables (`TASKPLANE_ACTIVE_SEGMENT_ID`,
+ *   `TASKPLANE_SEGMENT_ID`) are hard-cleared so that runtime tools keyed on
+ *   them (e.g., `request_segment_expansion`) cannot accidentally register.
+ *
+ * - `SEGMENT_SCOPED`: the worker is iterating a specific segment of a
+ *   multi-segment task. Only that segment's steps and checkboxes are shown;
+ *   `Active segment ID` is announced; segment-related env vars carry the
+ *   active `segmentId`; the segment-overlay system prompt is appended.
+ *
+ * This is the single authoritative flag for the segment-scope decision
+ * (TP-196 / #502). Call sites should derive their behaviour from this mode
+ * rather than re-evaluating the underlying boolean conditions, which prevents
+ * the multiple branches drifting out of sync.
+ *
+ * @since TP-196
+ */
+export type SegmentScopeMode = "FULL_TASK" | "SEGMENT_SCOPED";
+
 /** A group of checkboxes scoped to a single repo within a step. */
 export interface SegmentCheckboxGroup {
 	repoId: string;
