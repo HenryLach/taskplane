@@ -217,6 +217,37 @@ export function computeSegmentScopeMode(
 	return mySegment ? "SEGMENT_SCOPED" : "FULL_TASK";
 }
 
+/**
+ * Pre-spawn segment-completion check (TP-196 / #508).
+ *
+ * Returns `true` when the lane-runner iteration loop should SKIP spawning
+ * a worker because all of the segment's checkboxes for this repo are
+ * already complete. The lane should `break` out of its iteration loop and
+ * fall through to post-loop completion handling.
+ *
+ * Contract:
+ *  - Returns `false` for FULL_TASK iterations (`currentRepoId === null` or
+ *    `repoStepNumbers === null` or empty). Those rely on the existing
+ *    `remainingSteps.length === 0` exit, not this check.
+ *  - Returns `true` iff EVERY step in `repoStepNumbers` is
+ *    `isSegmentComplete(statusContent, stepNum, currentRepoId)`.
+ *
+ * Pure function: no filesystem access, no global state. The caller reads
+ * the STATUS.md content once per iteration and passes it in.
+ *
+ * @since TP-196
+ */
+export function shouldSkipSpawnForCompleteSegment(
+	statusContent: string,
+	repoStepNumbers: Set<number> | null,
+	currentRepoId: string | null,
+): boolean {
+	if (!repoStepNumbers || !currentRepoId || repoStepNumbers.size === 0) return false;
+	return [...repoStepNumbers].every((stepNum) =>
+		isSegmentComplete(statusContent, stepNum, currentRepoId),
+	);
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 /**
@@ -459,27 +490,23 @@ export async function executeTaskV2(
 
 		// TP-196 / #508: Pre-spawn segment-completion check.
 		//
-		// When the lane is iterating a segment-scoped task, additionally verify
-		// that NOT ALL `repoStepNumbers` are segment-complete before incurring the
-		// cost of spawning a worker. The `remainingSteps` filter above already
-		// enforces this implicitly (via `isSegmentComplete`), but expressing the
-		// check explicitly at the spawn boundary:
+		// When the lane is iterating a segment-scoped task, verify that NOT ALL
+		// `repoStepNumbers` are segment-complete before incurring the cost of
+		// spawning a worker. The `remainingSteps` filter above already enforces
+		// this implicitly (via `isSegmentComplete`), but expressing the check
+		// explicitly at the spawn boundary:
 		//   1. Makes the wasted-iteration prevention contract visible.
 		//   2. Provides a defensive backstop for cases where `parsed.steps` and
 		//      `repoStepNumbers` diverge (e.g., legacy/partial-marker tasks).
-		//   3. Gives behavioural tests a clean assertion target.
-		if (repoStepNumbers && currentRepoId && repoStepNumbers.size > 0) {
-			const allSegmentStepsComplete = [...repoStepNumbers].every((stepNum) =>
-				isSegmentComplete(iterStatusContent, stepNum, currentRepoId),
+		//   3. Gives behavioural tests a clean assertion target (via the pure
+		//      helper `shouldSkipSpawnForCompleteSegment`).
+		if (shouldSkipSpawnForCompleteSegment(iterStatusContent, repoStepNumbers, currentRepoId)) {
+			logExecution(
+				statusPath,
+				"Pre-spawn segment-completion check",
+				`all segment checkboxes already complete for repo '${currentRepoId}' — skipping worker spawn (#508)`,
 			);
-			if (allSegmentStepsComplete) {
-				logExecution(
-					statusPath,
-					"Pre-spawn segment-completion check",
-					`all segment checkboxes already complete for repo '${currentRepoId}' — skipping worker spawn (#508)`,
-				);
-				break;
-			}
+			break;
 		}
 
 		totalIterations++;

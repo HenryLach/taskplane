@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -89,7 +89,11 @@
 - [x] Behavioral / source-analysis tests — 5 new tests (sections 10.0–10.4) in `segment-scoped-lane-runner.test.ts` covering: (10.1) check exists at the spawn boundary; (10.2) iterates `repoStepNumbers` with `isSegmentComplete`; (10.3) breaks out of the loop on all-complete; (10.4) gated so FULL_TASK iterations are unaffected.
 - [x] Full fast suite passes (3662 pass / 0 fail / 1 skip after Step 4; net +5 tests vs. Step 3 baseline). Typecheck / lint / format:check all clean.
 
-**Files touched:** `extensions/taskplane/lane-runner.ts` (pre-spawn check); `extensions/tests/segment-scoped-lane-runner.test.ts` (5 new source-analysis tests).
+**Files touched:** `extensions/taskplane/lane-runner.ts` (pre-spawn check + extracted `shouldSkipSpawnForCompleteSegment` pure helper); `extensions/tests/segment-scoped-lane-runner.test.ts` (5 source-analysis tests, updated to assert the helper-based wiring); `extensions/tests/early-exit-segment-spawn-skip.test.ts` (new — 7 behavioural tests: 6 helper-level + 1 end-to-end `executeTaskV2` test that mocks `spawnAgent` and asserts call-count === 0 for completed segments).
+
+**R005 revision items:**
+- [x] Add end-to-end behavioural regression for #508 — `extensions/tests/early-exit-segment-spawn-skip.test.ts` mocks `spawnAgent` via `mock.module("../taskplane/agent-host.ts", ...)`, calls `executeTaskV2` with a fixture worktree whose segment checkboxes are all `[x]`, and asserts (a) `spawnAgentCallCount === 0`, (b) `iterations === 0`. Helper-level behavioural tests (6) cover the `shouldSkipSpawnForCompleteSegment` decision contract directly.
+- [x] Reviewer suggestion: extract the inline check to a pure helper. Implemented as `export function shouldSkipSpawnForCompleteSegment(statusContent, repoStepNumbers, currentRepoId): boolean` next to the other segment helpers. The lane-runner now delegates to this helper instead of inlining the iteration.
 
 ---
 
@@ -192,3 +196,4 @@ Post-TP-194, the reviewer agent downgrades APPROVE → REVISE on any failing `ty
 | 2026-05-10 23:45 | Review R002 | code Step 2: REVISE |
 | 2026-05-10 23:48 | Review R003 | code Step 2: APPROVE |
 | 2026-05-11 00:01 | Review R004 | code Step 3: APPROVE |
+| 2026-05-11 00:06 | Review R005 | code Step 4: REVISE |

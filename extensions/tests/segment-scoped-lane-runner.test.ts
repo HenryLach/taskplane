@@ -564,34 +564,39 @@ describe("10.x: Pre-spawn segment-completion early-exit (TP-196 / #508)", () => 
 		expect(iterIncIdx).toBeGreaterThan(checkIdx);
 	});
 
-	it("10.2: pre-spawn check uses isSegmentComplete on every repoStepNumber", () => {
+	it("10.2: pre-spawn check delegates to shouldSkipSpawnForCompleteSegment helper", () => {
 		const checkIdx = laneRunnerSrc.indexOf("TP-196 / #508: Pre-spawn segment-completion check");
 		expect(checkIdx).toBeGreaterThan(-1);
 		const block = laneRunnerSrc.slice(checkIdx, checkIdx + 1200);
-		// Iterates the repo's step set with isSegmentComplete (#508 contract).
-		expect(block).toContain("[...repoStepNumbers].every");
-		expect(block).toContain("isSegmentComplete(iterStatusContent, stepNum, currentRepoId)");
+		// Delegates the decision to the pure helper (#508 contract).
+		expect(block).toContain(
+			"shouldSkipSpawnForCompleteSegment(iterStatusContent, repoStepNumbers, currentRepoId)",
+		);
 	});
 
 	it("10.3: pre-spawn check breaks out of the loop (no spawn for an already-complete segment)", () => {
 		const checkIdx = laneRunnerSrc.indexOf("TP-196 / #508: Pre-spawn segment-completion check");
 		const block = laneRunnerSrc.slice(checkIdx, checkIdx + 1200);
-		// On allSegmentStepsComplete, logExecution + break.
-		expect(block).toContain("allSegmentStepsComplete");
+		// Logs the decision and breaks out of the iteration loop on `true`.
 		expect(block).toContain("Pre-spawn segment-completion check");
-		// The break statement (after logExecution) lives inside the if-allComplete branch.
-		const allCompleteIdx = block.indexOf("if (allSegmentStepsComplete)");
-		expect(allCompleteIdx).toBeGreaterThan(-1);
-		const breakIdx = block.indexOf("break;", allCompleteIdx);
-		expect(breakIdx).toBeGreaterThan(allCompleteIdx);
+		const ifCallIdx = block.indexOf("if (shouldSkipSpawnForCompleteSegment(");
+		expect(ifCallIdx).toBeGreaterThan(-1);
+		const breakIdx = block.indexOf("break;", ifCallIdx);
+		expect(breakIdx).toBeGreaterThan(ifCallIdx);
 	});
 
-	it("10.4: pre-spawn check is gated on repoStepNumbers + currentRepoId (no-op in FULL_TASK)", () => {
-		const checkIdx = laneRunnerSrc.indexOf("TP-196 / #508: Pre-spawn segment-completion check");
-		const block = laneRunnerSrc.slice(checkIdx, checkIdx + 1200);
-		// Outer guard ensures FULL_TASK iterations (no repo segment set) are NOT
-		// affected — those rely on the existing `remainingSteps.length === 0` exit.
-		expect(block).toContain("if (repoStepNumbers && currentRepoId && repoStepNumbers.size > 0)");
+	it("10.4: helper itself is gated so FULL_TASK iterations are unaffected", () => {
+		// FULL_TASK iterations (currentRepoId null or no repo segment set) rely
+		// on the existing `remainingSteps.length === 0` exit. The new helper
+		// must short-circuit to `false` for those cases.
+		const helperIdx = laneRunnerSrc.indexOf(
+			"export function shouldSkipSpawnForCompleteSegment(",
+		);
+		expect(helperIdx).toBeGreaterThan(-1);
+		const helperBody = laneRunnerSrc.slice(helperIdx, helperIdx + 800);
+		expect(helperBody).toContain(
+			"if (!repoStepNumbers || !currentRepoId || repoStepNumbers.size === 0) return false",
+		);
 	});
 });
 
