@@ -667,7 +667,13 @@ function renderSummary(batch) {
       // their assigned lane: tasks on the same lane render with `→` (serial),
       // tasks on different lanes render with ` | ` (parallel). Tooltip shows
       // the expanded lane breakdown.
-      const { compact, tooltip } = formatWaveLaneBreakdown(taskIds, batch.lanes || [], i + 1);
+      // TP-197 post-merge fold: pass `batch.tasks` as the task→lane source.
+      // The previous arg `batch.lanes` only carries live Runtime V2 lane
+      // state for the *currently active* wave — past/future wave chips
+      // would fall back to comma-separated. `batch.tasks[].laneNumber` is
+      // persisted for the entire batch lifecycle, so all waves render with
+      // the correct parallelization separator regardless of active state.
+      const { compact, tooltip } = formatWaveLaneBreakdown(taskIds, batch.lanes || [], batch.tasks || [], i + 1);
       const titleAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : "";
       wavesHtml += `<span class="wave-chip ${cls}"${titleAttr}>W${i + 1} [${compact}]</span>`;
     });
@@ -695,16 +701,34 @@ function renderSummary(batch) {
  * are shown with the previous flat formatting and no tooltip is generated
  * — this preserves backward compatibility with future-wave display.
  */
-function formatWaveLaneBreakdown(taskIds, lanes, waveNumber) {
+function formatWaveLaneBreakdown(taskIds, lanes, tasks, waveNumber) {
   if (!Array.isArray(taskIds) || taskIds.length === 0) {
     return { compact: "", tooltip: "" };
   }
-  // Build taskId → laneNumber map for the lanes that have any of these tasks.
+  // Build taskId → laneNumber map. Prefer the persisted-per-task
+  // `tasks[i].laneNumber` (covers all waves, lifecycle-stable). Fall back
+  // to live `lanes[]` only when tasks data is missing or doesn't carry
+  // laneNumber for a given task.
+  //
+  // TP-197 post-merge fold: the previous implementation read ONLY from
+  // `lanes`, which is Runtime V2 live state and only populated for the
+  // currently active wave. That caused inactive waves' chips to fall back
+  // to comma-separated display (no parallelization indicator), giving the
+  // impression that the separator changed as the batch progressed. Using
+  // the persisted `tasks[].laneNumber` makes the indicator stable across
+  // all waves regardless of active state.
   const taskToLane = new Map();
+  if (Array.isArray(tasks)) {
+    for (const t of tasks) {
+      if (t && t.taskId && t.laneNumber != null && !taskToLane.has(t.taskId)) {
+        taskToLane.set(t.taskId, t.laneNumber);
+      }
+    }
+  }
+  // Fallback: anything `tasks` didn't cover, try `lanes` (live state).
   for (const lane of lanes) {
     if (!lane || !Array.isArray(lane.taskIds)) continue;
     for (const tid of lane.taskIds) {
-      // First lane to claim a task wins (lanes shouldn't overlap, but be defensive).
       if (!taskToLane.has(tid)) taskToLane.set(tid, lane.laneNumber);
     }
   }

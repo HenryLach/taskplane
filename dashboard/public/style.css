@@ -717,7 +717,7 @@ body {
  * consistency with .status-badge.status-{succeeded,running,failed,…}. */
 .seg-pill.seg-succeeded { background: var(--badge-succeeded-bg); color: var(--green); }
 .seg-pill.seg-running   { background: var(--badge-running-bg);   color: var(--accent); }
-.seg-pill.seg-pending   { background: var(--bg-surface);         color: var(--text-faint); border-color: var(--border-subtle); }
+.seg-pill.seg-pending   { background: var(--bg-surface);         color: var(--text-muted); border-color: var(--border-default, var(--border-subtle)); }
 .seg-pill.seg-failed    { background: var(--badge-failed-bg);    color: var(--red); }
 .seg-pill.seg-stalled   { background: var(--badge-failed-bg);    color: var(--yellow, var(--red)); opacity: 0.85; }
 .seg-pill.seg-skipped   { background: var(--bg-surface);         color: var(--text-muted); opacity: 0.7; }
