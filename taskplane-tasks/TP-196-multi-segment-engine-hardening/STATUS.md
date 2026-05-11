@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-10
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
@@ -80,7 +80,7 @@
 ---
 
 ### Step 4: Implement #508 early-exit optimization
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Code-review fires after this step.
 
@@ -98,7 +98,7 @@
 ---
 
 ### Step 5: Implement #503 prompt-injection regression tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Code-review fires after this step.
 
@@ -141,7 +141,10 @@
 | 1 | plan | 1 | APPROVE | `.reviews/R001-plan-step1.md` |
 | 2 | code | 2 | REVISE  | `.reviews/R002-code-step2.md` |
 | 3 | code | 2 | APPROVE | (re-review after R002 fixes) |
-| 4 | code | 3 | APPROVE | `.reviews/` (step-3 code) |
+| 4 | code | 3 | APPROVE | `.reviews/R004-code-step3.md` |
+| 5 | code | 4 | REVISE  | `.reviews/R005-code-step4.md` |
+| 6 | code | 4 | REVISE  | `.reviews/R006-code-step4.md` |
+| 7 | code | 4 | APPROVE | (re-review after R006 format fix) |
 
 ---
 
@@ -198,3 +201,4 @@ Post-TP-194, the reviewer agent downgrades APPROVE → REVISE on any failing `ty
 | 2026-05-11 00:01 | Review R004 | code Step 3: APPROVE |
 | 2026-05-11 00:06 | Review R005 | code Step 4: REVISE |
 | 2026-05-11 00:15 | Review R006 | code Step 4: REVISE |
+| 2026-05-11 00:17 | Review R007 | code Step 4: APPROVE |
