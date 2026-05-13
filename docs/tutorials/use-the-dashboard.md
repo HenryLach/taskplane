@@ -101,6 +101,12 @@ dashboard automatically shows repo-aware features:
 - **Repo badges** appear on lanes and tasks, showing which repo each belongs to
 - **Repo filter dropdown** lets you focus on a single repository
 - **Merge outcomes** are grouped per repo, showing individual branch/status details
+- **Per-segment progress pills** appear under each multi-segment task row,
+  showing one pill per segment with a status icon (✅ succeeded · ⏳ running ·
+  ⬚ pending · ❌ failed · ⏸ stalled · ↷ skipped) and the segment’s repo ID.
+  The currently-executing segment is highlighted so you can see which segment
+  the lane is working on right now. Single-segment tasks render no pill row,
+  so non-segmented batches look identical to before.
 
 These features activate when the batch is in workspace mode and involves 2+
 distinct repositories. For single-repo batches, the dashboard looks and

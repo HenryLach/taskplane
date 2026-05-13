@@ -68,6 +68,7 @@ import {
 	type LaneTaskStatus,
 	type SupervisorAlertCallback,
 	type StepSegmentMapping,
+	type SegmentScopeMode,
 } from "./types.ts";
 
 const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -176,6 +177,75 @@ export function isSegmentComplete(
 	if (!result) return false;
 	if (result.total === 0) return false;
 	return result.unchecked === 0;
+}
+
+/**
+ * Compute the authoritative `SegmentScopeMode` for one worker iteration.
+ *
+ * This is the single source of truth for the FULL_TASK vs SEGMENT_SCOPED
+ * decision (TP-196 / #502). All segment-related side-effects (env vars,
+ * system-prompt overlay, prompt content, tool registration) should derive
+ * their behaviour from this mode rather than re-evaluating the underlying
+ * boolean conditions in isolation, which is what created the drift risk
+ * documented in #502.
+ *
+ * Returns `SEGMENT_SCOPED` iff ALL of the following hold:
+ *  - The task has a non-empty `stepSegmentMap` (parsed from PROMPT.md markers).
+ *  - The lane has an associated `currentRepoId` (segmentId set, so we know
+ *    which repo this lane is iterating).
+ *  - The (legacy-fallback-filtered) `repoStepNumbers` set is non-null (the
+ *    repo has at least one step with explicit segment markers).
+ *  - A `currentStepNumber` is provided (there is a step to evaluate).
+ *  - The current step's segment mapping contains an entry for `currentRepoId`
+ *    (the worker actually has segment-scoped work in the current step).
+ *
+ * In any other case the mode is `FULL_TASK`.
+ *
+ * @since TP-196
+ */
+export function computeSegmentScopeMode(
+	stepSegmentMap: StepSegmentMapping[] | undefined | null,
+	repoStepNumbers: Set<number> | null,
+	currentRepoId: string | null,
+	currentStepNumber: number | null,
+): SegmentScopeMode {
+	if (!stepSegmentMap || !currentRepoId || !repoStepNumbers) return "FULL_TASK";
+	if (currentStepNumber === null) return "FULL_TASK";
+	const currentStepMapping = stepSegmentMap.find((s) => s.stepNumber === currentStepNumber);
+	if (!currentStepMapping) return "FULL_TASK";
+	const mySegment = currentStepMapping.segments.find((seg) => seg.repoId === currentRepoId);
+	return mySegment ? "SEGMENT_SCOPED" : "FULL_TASK";
+}
+
+/**
+ * Pre-spawn segment-completion check (TP-196 / #508).
+ *
+ * Returns `true` when the lane-runner iteration loop should SKIP spawning
+ * a worker because all of the segment's checkboxes for this repo are
+ * already complete. The lane should `break` out of its iteration loop and
+ * fall through to post-loop completion handling.
+ *
+ * Contract:
+ *  - Returns `false` for FULL_TASK iterations (`currentRepoId === null` or
+ *    `repoStepNumbers === null` or empty). Those rely on the existing
+ *    `remainingSteps.length === 0` exit, not this check.
+ *  - Returns `true` iff EVERY step in `repoStepNumbers` is
+ *    `isSegmentComplete(statusContent, stepNum, currentRepoId)`.
+ *
+ * Pure function: no filesystem access, no global state. The caller reads
+ * the STATUS.md content once per iteration and passes it in.
+ *
+ * @since TP-196
+ */
+export function shouldSkipSpawnForCompleteSegment(
+	statusContent: string,
+	repoStepNumbers: Set<number> | null,
+	currentRepoId: string | null,
+): boolean {
+	if (!repoStepNumbers || !currentRepoId || repoStepNumbers.size === 0) return false;
+	return [...repoStepNumbers].every((stepNum) =>
+		isSegmentComplete(statusContent, stepNum, currentRepoId),
+	);
 }
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -418,6 +488,27 @@ export async function executeTaskV2(
 
 		if (remainingSteps.length === 0) break; // All done
 
+		// TP-196 / #508: Pre-spawn segment-completion check.
+		//
+		// When the lane is iterating a segment-scoped task, verify that NOT ALL
+		// `repoStepNumbers` are segment-complete before incurring the cost of
+		// spawning a worker. The `remainingSteps` filter above already enforces
+		// this implicitly (via `isSegmentComplete`), but expressing the check
+		// explicitly at the spawn boundary:
+		//   1. Makes the wasted-iteration prevention contract visible.
+		//   2. Provides a defensive backstop for cases where `parsed.steps` and
+		//      `repoStepNumbers` diverge (e.g., legacy/partial-marker tasks).
+		//   3. Gives behavioural tests a clean assertion target (via the pure
+		//      helper `shouldSkipSpawnForCompleteSegment`).
+		if (shouldSkipSpawnForCompleteSegment(iterStatusContent, repoStepNumbers, currentRepoId)) {
+			logExecution(
+				statusPath,
+				"Pre-spawn segment-completion check",
+				`all segment checkboxes already complete for repo '${currentRepoId}' — skipping worker spawn (#508)`,
+			);
+			break;
+		}
+
 		totalIterations++;
 		updateStatusField(
 			statusPath,
@@ -454,16 +545,16 @@ export async function executeTaskV2(
 				/* ignore */
 			}
 
-		// TP-174/TP-501: Compute segment scope mode BEFORE building prompt.
-		const isSegmentScoped = !!(
-			stepSegmentMap &&
-			currentRepoId &&
-			repoStepNumbers &&
-			remainingSteps.length > 0 &&
-			stepSegmentMap
-				.find((s) => s.stepNumber === remainingSteps[0].number)
-				?.segments.find((seg) => seg.repoId === currentRepoId)
+		// TP-174/TP-501/TP-196: Compute segment scope mode BEFORE building prompt.
+		// `segmentScopeMode` is the authoritative TP-196 flag; `isSegmentScoped` is
+		// preserved as a boolean alias for ergonomics at the many existing call sites.
+		const segmentScopeMode: SegmentScopeMode = computeSegmentScopeMode(
+			stepSegmentMap,
+			repoStepNumbers,
+			currentRepoId,
+			remainingSteps.length > 0 ? remainingSteps[0].number : null,
 		);
+		const isSegmentScoped = segmentScopeMode === "SEGMENT_SCOPED";
 
 		const promptLines = [
 			`Read your task instructions at: ${promptPath}`,
@@ -513,16 +604,27 @@ export async function executeTaskV2(
 		// Segment scope mode is determined by which system prompt was loaded.
 		// No SegmentScopeMode line needed — the prompt IS the mode.
 
-		// TP-174: Segment-scoped prompt — show only this segment's checkboxes
-		if (stepSegmentMap && currentRepoId && repoStepNumbers && remainingSteps.length > 0) {
+		// TP-174/TP-196: Segment-scoped prompt — show only this segment's checkboxes.
+		// Gated on the authoritative `isSegmentScoped` (derived from `segmentScopeMode`)
+		// rather than the raw composite condition, so the prompt branch can't drift
+		// from the mode decision (TP-196 / #502).
+		if (isSegmentScoped) {
 			const currentStepNum = remainingSteps[0].number;
-			const currentStepMapping = stepSegmentMap.find((s) => s.stepNumber === currentStepNum);
+			// Defensive guards: when `isSegmentScoped === true`, `computeSegmentScopeMode`
+			// has already verified `stepSegmentMap`, `currentRepoId`, and that the
+			// current step's mapping contains an entry for the active repo. We re-fetch
+			// the structures here for clarity. If any are missing we log and skip the
+			// segment block (defense-in-depth — should never trip in practice).
+			const currentStepMapping = stepSegmentMap?.find((s) => s.stepNumber === currentStepNum);
 			const mySegment = currentStepMapping?.segments.find((seg) => seg.repoId === currentRepoId);
 
-			// Only inject segment-scoped prompt when the current step has an explicit
-			// segment for this repoId. If mySegment is missing (legacy task without
-			// markers, or step has no work for this repo), skip and preserve legacy behavior.
-			if (currentStepMapping && mySegment) {
+			if (!currentStepMapping || !mySegment) {
+				logExecution(
+					statusPath,
+					"WARN",
+					`segmentScopeMode === SEGMENT_SCOPED but current step mapping missing — skipping segment prompt block (currentRepoId=${currentRepoId}, stepNum=${currentStepNum})`,
+				);
+			} else {
 				const otherSegments = currentStepMapping.segments.filter((seg) => seg.repoId !== currentRepoId);
 
 				// Count total segments for this repo across all steps

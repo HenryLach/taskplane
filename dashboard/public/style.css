@@ -608,13 +608,26 @@ body {
   display: grid;
   grid-template-columns: 36px 24px 100px 90px 80px 200px 1fr;
   /* #485 (revised): row 1 holds the primary cells; row 2 (auto, collapses to
-   * 0 when empty) holds the optional task-title-subtitle spanning cols 3–6. */
+   * 0 when empty) holds the optional task-title-subtitle spanning cols 3–6.
+   * Default: 2 rows. TP-197 (#464) adds the optional per-segment pill row in
+   * grid-row 3 ONLY when the .has-segments class is set (multi-segment tasks).
+   * Non-segmented tasks keep the pre-TP-197 2-row layout exactly — 'auto'
+   * row tracks don't fully collapse with row-gap declared, so adding a third
+   * row track unconditionally would introduce an 8px visible gap for every
+   * single-segment task (sage post-merge fold). */
   grid-template-rows: auto auto;
   align-items: center;
   gap: 8px 8px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-subtle);
   transition: background 0.15s;
+}
+
+/* TP-197 (#464): multi-segment tasks opt-in to a 3-row grid for the segment-
+ * pill row. JS adds .has-segments to .task-row only when the pill row is
+ * non-empty (see app.js taskSegmentPillRow + task-row template). */
+.task-row.has-segments {
+  grid-template-rows: auto auto auto;
 }
 
 .task-row:last-child { border-bottom: none; }
@@ -650,6 +663,71 @@ body {
   text-overflow: ellipsis;
   /* Pull subtitle visually closer to the task-id row above. */
   margin-top: -2px;
+}
+
+/* ─── TP-197 (#464): Per-segment pill row for multi-segment tasks ─────── */
+
+.task-segment-row {
+  /* Sub-row beneath the primary task row, mirroring the title-subtitle pattern
+   * (TP-485). Spans cols 3 → 7 so it shares the title area's horizontal space.
+   * Placed at grid row 3 so it sits *below* the optional title-subtitle.
+   * Container collapses to 0 height when not rendered (single-segment tasks),
+   * so non-segmented tasks render with identical row height to today.
+   * Lives OUTSIDE .task-step intentionally so the @media (max-width: 900px)
+   * rule that hides .task-step does NOT hide the pill row — keeps segment
+   * context visible at narrow viewports. */
+  grid-column: 3 / 7;
+  grid-row: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  min-width: 0;
+}
+
+.seg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  max-width: 140px;
+  white-space: nowrap;
+}
+
+.seg-pill .seg-pill-icon {
+  font-size: 0.72rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.seg-pill .seg-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Status variants — reuse the existing status-badge color tokens for
+ * consistency with .status-badge.status-{succeeded,running,failed,…}. */
+.seg-pill.seg-succeeded { background: var(--badge-succeeded-bg); color: var(--green); }
+.seg-pill.seg-running   { background: var(--badge-running-bg);   color: var(--accent); }
+.seg-pill.seg-pending   { background: var(--bg-surface);         color: var(--text-muted); border-color: var(--border-default, var(--border-subtle)); }
+.seg-pill.seg-failed    { background: var(--badge-failed-bg);    color: var(--red); }
+.seg-pill.seg-stalled   { background: var(--badge-failed-bg);    color: var(--yellow, var(--red)); opacity: 0.85; }
+.seg-pill.seg-skipped   { background: var(--bg-surface);         color: var(--text-muted); opacity: 0.7; }
+
+/* Current-segment emphasis: brighter border + slight weight bump so operator
+ * can spot "we're here right now" at a glance independent of icon. */
+.seg-pill.seg-pill-current {
+  border-color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--accent-dim, transparent);
 }
 
 .task-duration {
@@ -783,7 +861,10 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-faint);
+  /* TP-197 post-merge fold: bumped --text-faint → --text-muted for
+   * readability. Matches other dashboard section headers (lines 224, 248,
+   * 458 of this file already use --text-muted for the same role). */
+  color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
 }

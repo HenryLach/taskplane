@@ -810,6 +810,41 @@ export function parsePromptForOrchestrator(
 // ── Area Scanning ────────────────────────────────────────────────────
 
 /**
+ * TP-196 / #462 — Discovery safeguard for `.DONE` authority drift.
+ *
+ * Discovery has no access to persisted segment state, so it cannot make a
+ * hard `.DONE` vs. segment-frontier authority decision (that lives in the
+ * monitor/resume guards). What it CAN do cheaply is detect the most common
+ * symptom of a stale or premature `.DONE`: a `.DONE` file exists alongside
+ * a STATUS.md that still has unchecked checkboxes. When that pattern is
+ * found, emit a one-line `console.warn` so operators see the inconsistency
+ * during scan. Behaviour of `scanAreaForTasks` is unchanged — the task is
+ * still skipped — this is a doctor-style warning only.
+ *
+ * Returns `true` when the safeguard issued a warning (used by tests).
+ */
+export function checkDoneAuthoritySafeguard(
+	taskFolder: string,
+	logger: (msg: string) => void = console.warn,
+): boolean {
+	const statusPath = join(taskFolder, "STATUS.md");
+	if (!existsSync(statusPath)) return false;
+	let content: string;
+	try {
+		content = readFileSync(statusPath, "utf-8");
+	} catch {
+		return false;
+	}
+	// Look for any unchecked checkbox `- [ ]` on its own line.
+	const hasUnchecked = /^\s*-\s*\[\s\]\s+/m.test(content);
+	if (!hasUnchecked) return false;
+	logger(
+		`[discovery] WARN: .DONE present in ${taskFolder} but STATUS.md contains unchecked checkboxes — possible stale/premature .DONE (#462 safeguard).`,
+	);
+	return true;
+}
+
+/**
  * Scan an area path for pending tasks.
  *
  * Lists immediate subdirectories only (no recursion).
@@ -858,8 +893,14 @@ export function scanAreaForTasks(
 			continue;
 		}
 
-		// Skip if .DONE exists (already complete)
-		if (existsSync(join(entryPath, ".DONE"))) continue;
+		// Skip if .DONE exists (already complete).
+		// TP-196 / #462: doctor-style safeguard — if .DONE coexists with
+		// unchecked checkboxes in STATUS.md, warn so operators can investigate
+		// before the task is silently treated as complete.
+		if (existsSync(join(entryPath, ".DONE"))) {
+			checkDoneAuthoritySafeguard(entryPath);
+			continue;
+		}
 
 		// Skip if no PROMPT.md
 		const promptPath = join(entryPath, "PROMPT.md");

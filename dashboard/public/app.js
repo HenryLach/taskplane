@@ -382,6 +382,53 @@ function taskSegmentProgress(task, segmentStatusMap, forcedActiveSegmentId) {
   };
 }
 
+// TP-197 (#464): Render a horizontal pill row of per-segment status badges for a
+// multi-segment task. Each pill shows an icon + repoId for one segment. The icon
+// reflects the segment's status (succeeded / running / pending / failed / stalled /
+// skipped). The current segment (the one actively executing on its lane) gets an
+// emphasis class. Returns "" for single-segment tasks so the rendered DOM is
+// byte-identical to today for the non-segmented common case (no regression).
+//
+// Consumes:
+//   - task.segmentIds: string[] (ordered, from PersistedTaskRecord)
+//   - segmentStatusMap: Map<segmentId, PersistedSegmentStatus> built by
+//     buildSegmentStatusMap() from batch.segments[]
+//   - activeSegmentId: string|null — current executing segment (from V2 lane
+//     snapshot's segmentId, or the task's activeSegmentId field)
+function taskSegmentPillRow(task, segmentStatusMap, activeSegmentId) {
+  const segmentIds = Array.isArray(task?.segmentIds)
+    ? task.segmentIds.filter(id => typeof id === "string")
+    : [];
+  if (segmentIds.length <= 1) return "";
+
+  // Status -> { icon, className } table. Keep emoji simple/monospace-friendly.
+  // ✅ succeeded, ⏳ running, ⬚ pending, ❌ failed, ⏸ stalled, ↷ skipped.
+  const styles = {
+    succeeded: { icon: "\u2705", cls: "seg-succeeded" },
+    running:   { icon: "\u23F3", cls: "seg-running" },
+    pending:   { icon: "\u2B1A", cls: "seg-pending" },
+    failed:    { icon: "\u274C", cls: "seg-failed" },
+    stalled:   { icon: "\u23F8", cls: "seg-stalled" },
+    skipped:   { icon: "\u21B7", cls: "seg-skipped" },
+  };
+
+  const pills = segmentIds.map((segId) => {
+    const status = segmentStatusMap.get(segId) || "pending";
+    const style = styles[status] || styles.pending;
+    const parsed = parseSegmentId(segId);
+    const repoLabel = parsed?.repoId || segId;
+    const isCurrent = activeSegmentId && segId === activeSegmentId;
+    const currentCls = isCurrent ? " seg-pill-current" : "";
+    const title = `${segId} \u00b7 ${status}`;
+    return `<span class="seg-pill ${style.cls}${currentCls}" title="${escapeHtml(title)}">`
+      + `<span class="seg-pill-icon">${style.icon}</span>`
+      + `<span class="seg-pill-label">${escapeHtml(repoLabel)}</span>`
+      + `</span>`;
+  }).join("");
+
+  return `<div class="task-segment-row">${pills}</div>`;
+}
+
 function laneActiveSegmentInfo(v2snap, laneTasks, segmentStatusMap) {
   if (!v2snap || !v2snap.segmentId) return null;
   const parsed = parseSegmentId(v2snap.segmentId);
@@ -620,7 +667,13 @@ function renderSummary(batch) {
       // their assigned lane: tasks on the same lane render with `→` (serial),
       // tasks on different lanes render with ` | ` (parallel). Tooltip shows
       // the expanded lane breakdown.
-      const { compact, tooltip } = formatWaveLaneBreakdown(taskIds, batch.lanes || [], i + 1);
+      // TP-197 post-merge fold: pass `batch.tasks` as the task→lane source.
+      // The previous arg `batch.lanes` only carries live Runtime V2 lane
+      // state for the *currently active* wave — past/future wave chips
+      // would fall back to comma-separated. `batch.tasks[].laneNumber` is
+      // persisted for the entire batch lifecycle, so all waves render with
+      // the correct parallelization separator regardless of active state.
+      const { compact, tooltip } = formatWaveLaneBreakdown(taskIds, batch.lanes || [], batch.tasks || [], i + 1);
       const titleAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : "";
       wavesHtml += `<span class="wave-chip ${cls}"${titleAttr}>W${i + 1} [${compact}]</span>`;
     });
@@ -648,16 +701,46 @@ function renderSummary(batch) {
  * are shown with the previous flat formatting and no tooltip is generated
  * — this preserves backward compatibility with future-wave display.
  */
-function formatWaveLaneBreakdown(taskIds, lanes, waveNumber) {
+function formatWaveLaneBreakdown(taskIds, lanes, tasks, waveNumber) {
   if (!Array.isArray(taskIds) || taskIds.length === 0) {
     return { compact: "", tooltip: "" };
   }
-  // Build taskId → laneNumber map for the lanes that have any of these tasks.
+  // Build taskId → laneNumber map. Prefer the persisted-per-task
+  // `tasks[i].laneNumber` (covers all waves, lifecycle-stable). Fall back
+  // to live `lanes[]` only when tasks data is missing or doesn't carry
+  // laneNumber for a given task.
+  //
+  // TP-197 post-merge fold: the previous implementation read ONLY from
+  // `lanes`, which is Runtime V2 live state and only populated for the
+  // currently active wave. That caused inactive waves' chips to fall back
+  // to comma-separated display (no parallelization indicator), giving the
+  // impression that the separator changed as the batch progressed. Using
+  // the persisted `tasks[].laneNumber` makes the indicator stable across
+  // all waves regardless of active state.
   const taskToLane = new Map();
+  if (Array.isArray(tasks)) {
+    for (const t of tasks) {
+      // Persistence assigns `laneNumber: 0` as a sentinel meaning
+      // "unallocated" (see persistence.ts:1378 — `lane?.laneNumber ??
+      // outcome?.laneNumber ?? 0`). Real lane numbers start at 1. We must
+      // skip 0 here so future-wave tasks (which all have the 0 sentinel
+      // until their wave starts) don't get falsely grouped under a fake
+      // "lane 0" and rendered as serial.
+      if (
+        t &&
+        t.taskId &&
+        typeof t.laneNumber === "number" &&
+        t.laneNumber >= 1 &&
+        !taskToLane.has(t.taskId)
+      ) {
+        taskToLane.set(t.taskId, t.laneNumber);
+      }
+    }
+  }
+  // Fallback: anything `tasks` didn't cover, try `lanes` (live state).
   for (const lane of lanes) {
     if (!lane || !Array.isArray(lane.taskIds)) continue;
     for (const tid of lane.taskIds) {
-      // First lane to claim a task wins (lanes shouldn't overlap, but be defensive).
       if (!taskToLane.has(tid)) taskToLane.set(tid, lane.laneNumber);
     }
   }
@@ -859,8 +942,24 @@ function renderLanesTasks(batch, sessions) {
         stepHtml = `<span style="color:var(--text-faint)">${escapeHtml(task.exitReason || "—")}</span>`;
       }
 
+      // TP-197 (#464): Compute the per-segment pill row for multi-segment tasks.
+      // Returns "" for single-segment tasks (no DOM regression for the common case).
+      // For multi-segment tasks we render the pill row in the task-row's grid row 3
+      // (via .task-segment-row CSS) and suppress the inline "Segment N/T: repo" text
+      // in detailBits to avoid duplicating signal — the pill row already shows the
+      // current segment (via seg-pill-current) and total count (via pill count).
+      const segmentPillRowHtml = taskSegmentPillRow(
+        task,
+        segmentStatusMap,
+        v2snap && v2snap.taskId === task.taskId ? v2snap.segmentId : (segmentInfo?.segmentId || null),
+      );
+      const hasSegmentPillRow = segmentPillRowHtml !== "";
+
       const detailBits = [];
-      if (segmentInfo) {
+      if (segmentInfo && !hasSegmentPillRow) {
+        // Single-segment + non-segmented tasks: existing inline text (unchanged).
+        // Multi-segment tasks: suppressed because the new pill row carries the same
+        // information more legibly.
         detailBits.push(`<span class="task-segment-progress" title="${escapeHtml(segmentInfo.segmentId || segmentProgressText(segmentInfo))}">${escapeHtml(segmentProgressText(segmentInfo))}</span>`);
       }
       if (showPacketHome) {
@@ -950,8 +1049,17 @@ function renderLanesTasks(batch, sessions) {
       const titleHtml = task.taskTitle
         ? `<div class="task-title-subtitle">${escapeHtml(task.taskTitle)}</div>`
         : "";
+      // TP-197 (#464): segmentPillRowHtml is empty for single-segment tasks so
+      // the rendered DOM is byte-identical to today for non-segmented tasks.
+      // For multi-segment tasks it renders as grid-row 3 of .task-row.
+      // Sage post-merge fold: the .has-segments class opts the .task-row
+      // grid into a 3-row template only when we actually have a pill row;
+      // otherwise the default 2-row template preserves single-segment task
+      // spacing exactly (an unconditional 3-row template would add an 8px
+      // row-gap even when row 3 is empty, breaking the no-regression contract).
+      const taskRowClass = hasSegmentPillRow ? "task-row has-segments" : "task-row";
       html += `
-        <div class="task-row">
+        <div class="${taskRowClass}">
           <span class="task-icon"><span class="status-dot ${task.status}"></span></span>
           <span class="task-actions">${eyeHtml}</span>
           <span class="task-id status-${task.status}">${escapeHtml(task.taskId)}${showRepos ? repoBadgeHtml(tRepo, "repo-badge-task") : ""}</span>
@@ -960,6 +1068,7 @@ function renderLanesTasks(batch, sessions) {
           <span>${progressHtml}</span>
           <span class="task-step">${stepHtml}${workerHtml}</span>
           ${titleHtml}
+          ${segmentPillRowHtml}
         </div>`;
       html += reviewerRowHtml;
     }
@@ -1054,7 +1163,15 @@ function renderMergeAgents(batch, sessions) {
   }
 
   let html = '<table class="merge-table"><thead><tr>';
-  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th><th>Session ID</th><th>Details</th>';
+  // TP-197 post-merge fold: removed 'Session ID' and 'Details' columns.
+  // SESSION ID was hardcoded to '—' in every row — dead weight.
+  // DETAILS only populated for `mr.failureReason` (rare failure cases);
+  // for the common all-merges-succeeded case it's always '—' too.
+  // When a real failure happens, the operator sees status='failed' in
+  // the Status column and can dig into engine logs for the reason —
+  // we'll re-add a focused DETAILS column if/when we have meaningful
+  // structured failure-reason data to surface in the dashboard table.
+  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th>';
   html += '</tr></thead><tbody>';
 
   // Track sessions shown in wave result rows so we don't duplicate them below
@@ -1135,10 +1252,6 @@ function renderMergeAgents(batch, sessions) {
     html += `<td class="merge-session-cell">${effectiveAlive ? escapeHtml(effectiveSession) : "—"}</td>`;
     // Full telemetry cell
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(mergeTel, effectiveAlive)}</td>`;
-    html += `<td>`;
-    html += '<span class="merge-no-data">—</span>';
-    html += `</td>`;
-    html += `<td class="merge-detail-cell">${mr.failureReason ? escapeHtml(mr.failureReason) : "—"}</td>`;
     html += `</tr>`;
 
     // Per-repo sub-rows: show when workspace mode has repo results
@@ -1159,8 +1272,6 @@ function renderMergeAgents(batch, sessions) {
         html += `<td><span class="status-badge ${rrStatusCls}">${rr.status}</span></td>`;
         html += `<td class="merge-session-cell">${rrLanes}</td>`;
         html += `<td></td>`; /* telemetry placeholder */
-        html += `<td></td>`; /* attach placeholder */
-        html += `<td class="merge-detail-cell">${rrDetail}</td>`;
         html += `</tr>`;
       }
     }
@@ -1177,8 +1288,6 @@ function renderMergeAgents(batch, sessions) {
     html += `<td class="merge-session-cell">${escapeHtml(sess)}</td>`;
     // Full telemetry cell for active merge session
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(sessTel, true)}</td>`;
-    html += `<td>—</td>`;
-    html += `<td>—</td>`;
     html += `</tr>`;
   }
 

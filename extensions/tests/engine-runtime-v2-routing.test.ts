@@ -586,7 +586,9 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 
 	it("14.5: stall kill uses Runtime V2 PID termination (no TMUX fallback)", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
-		const block = execSrc.slice(fnIdx, fnIdx + 8000); // expanded window: TP-159 added ~1340 chars before stall block
+		// Expanded window: TP-159 added ~1340 chars; TP-196 / #462 monitor guard
+		// added another ~700 chars before the stall block.
+		const block = execSrc.slice(fnIdx, fnIdx + 10000);
 		const stallIdx = block.indexOf("stall detected");
 		expect(stallIdx).toBeGreaterThan(-1);
 		const stallBlock = block.slice(stallIdx, stallIdx + 500);
