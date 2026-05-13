@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-05-11
+
 ### Enhanced
 
 - **Dashboard segment-level progress indicators (TP-197, #464):** Multi-segment
