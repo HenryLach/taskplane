@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V13 — Why pi</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .reasons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 40px;
+  }
+  .reason {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px 26px;
+    border-top: 3px solid currentColor;
+    display: flex;
+    flex-direction: column;
+  }
+  .reason.r1 { color: var(--green); }
+  .reason.r2 { color: var(--blue); }
+  .reason.r3 { color: var(--amber); }
+  .reason-num {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    color: currentColor;
+  }
+  .reason-title {
+    font-family: var(--mono);
+    font-size: var(--fs-2xl);
+    color: var(--text);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .reason-tagline {
+    font-size: var(--fs-lg);
+    color: var(--text-dim);
+    margin-bottom: 20px;
+    line-height: 1.45;
+  }
+  .reason-body {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.65;
+    margin-bottom: 22px;
+    flex: 1;
+  }
+  .reason-tag {
+    margin-top: auto;
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border-left: 3px solid currentColor;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .reason-tag .lk {
+    display: block;
+    color: currentColor;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: var(--fs-xs);
+    margin-bottom: 6px;
+  }
+  .closing {
+    padding: 22px 26px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.65;
+  }
+  .closing .hl-g { color: var(--green); }
+  .closing .hl-b { color: var(--blue); }
+  .closing .hl-a { color: var(--amber); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>13 · The foundation</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="12-dashboard-visibility.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="14-pi-capabilities.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Why pi?</h1>
+    <p class="subtitle">Taskplane runs on top of pi. Three properties made it the obvious foundation — the same three properties that let other projects (like OpenClaw) build very different agents on the same base.</p>
+
+    <div class="reasons">
+      <div class="reason r1">
+        <div class="reason-num">01 · what won me over</div>
+        <div class="reason-title">Truly extensible</div>
+        <div class="reason-tagline">Build whatever you want on top of pi. The runtime that powers Taskplane is just one possible build.</div>
+        <div class="reason-body">pi is extension-first. Extensions register commands, tools, and behaviors. Nothing is hardcoded that you can't replace. The same architecture that lets OpenClaw layer its own agent on top is what lets Taskplane add an entire orchestration engine — without forking pi.</div>
+        <div class="reason-tag">
+          <span class="lk">For Taskplane</span>
+          /orch* commands, the review_step + wait_for_review tools, mailbox handlers, agent spawning — all live in extensions/taskplane/*. Upgrades flow through pi update with zero rewrites.
+        </div>
+      </div>
+
+      <div class="reason r2">
+        <div class="reason-num">02 · the deal-maker</div>
+        <div class="reason-title">Model agnostic</div>
+        <div class="reason-tagline">Anthropic, OpenAI, Bedrock, Vertex, Gemini, local Ollama — pi treats them the same. Swap any agent's model with a string.</div>
+        <div class="reason-body">Provider abstraction is built in. Models are configured per agent as <code>provider/model-name</code> strings. No SDK glue code, no routing layer, no fork-per-vendor. Per agent, per task, per command — different models can light up the same execution path.</div>
+        <div class="reason-tag">
+          <span class="lk">For Taskplane</span>
+          Cross-model reviews are non-negotiable. Worker on Opus, reviewer on GPT, merger on a third. Without pi's abstraction this means writing three SDK adapters and an in-house routing layer — and maintaining it.
+        </div>
+      </div>
+
+      <div class="reason r3">
+        <div class="reason-num">03 · the ethos match</div>
+        <div class="reason-title">Open source</div>
+        <div class="reason-tagline">MIT-licensed. The whole stack is inspectable. The only cost is your token bill.</div>
+        <div class="reason-body">No SaaS layer. No per-seat fees. No enterprise tier behind a paywall. You bring your own keys, your own machine, your own data. The full source for the agent runtime is right there if you want to read it, fork it, or patch it.</div>
+        <div class="reason-tag">
+          <span class="lk">For Taskplane</span>
+          Taskplane is also open source. The two together cost users nothing beyond tokens. A closed harness on top of an open agent framework would have defeated the point — pi shares the ethos.
+        </div>
+      </div>
+    </div>
+
+    <div class="closing">
+      <span class="hl-g">extensible</span> &nbsp;+&nbsp; <span class="hl-b">model-agnostic</span> &nbsp;+&nbsp; <span class="hl-a">open</span> &nbsp;·&nbsp; the right foundation for what Taskplane needed
+    </div>
+  </div>
+</body>
+</html>

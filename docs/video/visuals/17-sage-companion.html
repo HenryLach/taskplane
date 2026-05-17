@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V17 — Sage: the post-batch quality gate</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px;
+    border-top: 3px solid currentColor;
+    display: flex;
+    flex-direction: column;
+  }
+  .card.c1 { color: var(--green); }
+  .card.c2 { color: var(--amber); }
+  .card.c3 { color: var(--blue); }
+
+  /* The flagship Taskplane use case — distinct treatment, full-width row. */
+  .card.flagship {
+    grid-column: 1 / -1;
+    background: var(--surface-2);
+    border: 1px solid var(--pink);
+    border-top: 3px solid var(--pink);
+    box-shadow: 0 0 0 1px rgba(255, 155, 184, 0.15) inset;
+    color: var(--pink);
+    position: relative;
+  }
+  .card.flagship .star-badge {
+    position: absolute;
+    top: -10px;
+    right: 16px;
+    background: var(--pink);
+    color: var(--bg);
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .card-num {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: currentColor;
+  }
+  .card-where {
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  .card-title {
+    font-family: var(--mono);
+    font-size: var(--fs-xl);
+    color: var(--text);
+    margin-bottom: 6px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .card-tagline {
+    font-size: var(--fs-md);
+    color: currentColor;
+    margin-bottom: 12px;
+    line-height: 1.45;
+    font-style: italic;
+    opacity: 0.95;
+  }
+  .card-desc {
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 14px;
+    flex: 1;
+  }
+  .card-desc code,
+  .card-cmd code {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+
+  /* Trigger-chip list inside card 3. */
+  .trigger-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 0;
+    margin-bottom: 14px;
+  }
+  .trigger-chips .chip {
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 2px solid currentColor;
+    border-radius: 3px;
+    padding: 4px 8px;
+    letter-spacing: 0.02em;
+  }
+
+  .card-cmd {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    background: var(--bg);
+    padding: 10px 14px;
+    border-radius: 4px;
+    color: var(--text);
+    border-left: 2px solid currentColor;
+    margin-top: auto;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+  .card-cmd .prompt { color: var(--text-faint); }
+  .card-cmd .com    { color: var(--text-faint); }
+  .card-cmd .kw     { color: currentColor; }
+  .card-cmd .slash  { color: currentColor; }
+  .card-cmd .nl     { color: var(--text-dim); font-style: italic; }
+
+  /* Flagship card uses a 2-column inner layout: body + example. */
+  .flagship-inner {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 22px;
+    align-items: stretch;
+  }
+  .flagship-callout {
+    padding: 14px 16px;
+    background: var(--bg);
+    border-left: 3px solid var(--pink);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .flagship-callout .lk {
+    display: block;
+    color: var(--pink);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .flagship-callout .pull {
+    font-size: var(--fs-md);
+    color: var(--text);
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  .flagship-callout .pull em { color: var(--pink); font-style: normal; }
+
+  .footer-band {
+    padding: 18px 26px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--pink);
+    line-height: 1.7;
+    text-align: center;
+  }
+  .footer-band .hl-g { color: var(--green); }
+  .footer-band .hl-b { color: var(--blue); }
+  .footer-band .dim  { color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>17 · The companion</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="16-real-work-playbook.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <span class="disabled" aria-label="Next (none)">&rarr;</span>
+      </nav>
+    </div>
+    <h1>Sage — the post-batch quality gate</h1>
+    <p class="subtitle">Sage is a separate pi extension from Taskplane — but the two pair so well I treat them as one workflow. Per-step reviews catch problems inside a task. Sage catches problems <em>across</em> tasks. Every batch I ship gets a Sage pass before I merge.</p>
+
+    <div class="cards">
+      <!-- Card 1: What Sage is -->
+      <div class="card c1">
+        <div class="card-head">
+          <div class="card-num">01 · concept</div>
+          <div class="card-where">advisory</div>
+        </div>
+        <div class="card-title">A high-reasoning second opinion</div>
+        <div class="card-tagline">Ad-hoc <em>and</em> agentic cross-model review.</div>
+        <div class="card-desc">Sage is an isolated subagent: a separate <code>pi</code> process running a different model, with its own context, its own tool profile, and a strict advisory mandate. It analyses and recommends — it never edits files or runs your code. You can ask for it conversationally, and pi can also decide on its own that a question warrants a second opinion.</div>
+        <div class="card-cmd"><span class="com"># separate extension from Taskplane</span><br><span class="kw">pi-sage</span>  <span class="com">· github.com/&hellip;/pi-sage</span></div>
+      </div>
+
+      <!-- Card 2: Install & configure -->
+      <div class="card c2">
+        <div class="card-head">
+          <div class="card-num">02 · install</div>
+          <div class="card-where">shell + in pi</div>
+        </div>
+        <div class="card-title">Install and pick a different model</div>
+        <div class="card-tagline">The whole point is a model that <em>isn't</em> your primary.</div>
+        <div class="card-desc">One global install, then configure once. In <code>/sage-settings</code>, choose a model from a provider you don't use for your primary pi session — that's where the cross-model value comes from. Different family, different blind spots, different second opinion.</div>
+        <div class="card-cmd"><span class="prompt">$</span> <span class="kw">pi install</span> npm:pi-sage<br><span class="com"># then, inside pi:</span><br><span class="slash">/sage-settings</span></div>
+      </div>
+
+      <!-- Card 3: Invoke -->
+      <div class="card c3">
+        <div class="card-head">
+          <div class="card-num">03 · invoke</div>
+          <div class="card-where">in pi</div>
+        </div>
+        <div class="card-title">Two ways to summon Sage</div>
+        <div class="card-tagline">Ask out loud, or let pi decide.</div>
+        <div class="card-desc"><strong>Conversational:</strong> just say "use Sage" or "get a second opinion." No slash command exists — natural language is the interface. <strong>Autonomous:</strong> pi will reach for Sage on its own when the situation warrants it.</div>
+        <div class="trigger-chips">
+          <span class="chip">ambiguous root-cause</span>
+          <span class="chip">risky architecture trade-off</span>
+          <span class="chip">conflicting evidence</span>
+          <span class="chip">high-impact refactor</span>
+        </div>
+        <div class="card-cmd"><span class="nl">"Use Sage to check this approach."</span></div>
+      </div>
+
+      <!-- Card 4: FLAGSHIP — post-batch review -->
+      <div class="card flagship">
+        <div class="star-badge">★ Why Taskplane users care</div>
+        <div class="card-head">
+          <div class="card-num">04 · taskplane use case</div>
+          <div class="card-where">after every batch</div>
+        </div>
+        <div class="card-title">Run Sage on the whole batch when it's done</div>
+        <div class="card-tagline">Cross-task consistency is something per-step review simply can't see.</div>
+        <div class="flagship-inner">
+          <div class="card-desc">
+            Taskplane's built-in reviewer agent reviews <strong>each step of each task</strong> as the worker writes it. That gate is excellent at what it does — catching defects, missing tests, drift from the prompt — but it sees one step at a time, in isolation.
+            <br><br>
+            After the batch lands, a different question matters: <em>does the whole thing hang together?</em> Are interfaces consistent across tasks? Did lane 2's refactor leave lane 5's call site broken? Did the same concern get solved three different ways in three different lanes? Is the testing strategy coherent end-to-end?
+            <br><br>
+            That's the gap Sage fills. Point it at the merged diff between your working branch and the orch branch (or the integration commit), and ask for a full code review. It's the quality gate I run on every Taskplane batch before I push.
+          </div>
+          <div class="flagship-callout">
+            <div class="pull">Per-step reviews verify <em>steps.</em><br>Sage verifies <em>the whole.</em></div>
+            <span class="lk">Typical invocation</span>
+            <div class="card-cmd" style="margin-top:0;"><span class="nl">"Use Sage to review the diff between</span><br><span class="nl">develop and the orch branch."</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-band">
+      <span class="dim">Taskplane runs the batch.</span> &nbsp;Sage <em>reviews</em> it. &nbsp;<span class="dim">·</span> &nbsp;separate extensions, one workflow
+    </div>
+  </div>
+</body>
+</html>
