@@ -21,3 +21,5 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+.claude/
+.sage-tmp/
