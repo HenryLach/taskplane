@@ -199,6 +199,7 @@ h1 {
   color: var(--text-dim);
   font-size: var(--fs-subtitle);
   margin-bottom: var(--subtitle-mb);
-  max-width: calc(820px * var(--scale));
+  /* Subtitle spans the full frame width — no soft cap. */
+  max-width: 100%;
   line-height: 1.55;
 }

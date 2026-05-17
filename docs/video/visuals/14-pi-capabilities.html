@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V14 — Pi capabilities</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .capabilities {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-bottom: 32px;
+  }
+  .cap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px;
+    border-top: 3px solid currentColor;
+    display: flex;
+    flex-direction: column;
+  }
+  .cap.c1 { color: var(--green); }
+  .cap.c2 { color: var(--blue); }
+  .cap.c3 { color: var(--amber); }
+  .cap.c4 { color: var(--purple); }
+  .cap.c5 { color: var(--pink); }
+  .cap.c6 { color: var(--red); }
+  .cap-tag {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: currentColor;
+    margin-bottom: 10px;
+  }
+  .cap-title {
+    font-family: var(--mono);
+    font-size: var(--fs-xl);
+    color: var(--text);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .cap-desc {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 16px;
+    flex: 1;
+  }
+  .cap-example {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    background: var(--surface-2);
+    padding: 10px 14px;
+    border-radius: 4px;
+    color: var(--text);
+    border-left: 2px solid currentColor;
+    margin-top: auto;
+  }
+  .cap-example .com { color: var(--text-faint); }
+  .cap-example .kw  { color: currentColor; }
+
+  .for-tp-band {
+    padding: 20px 26px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .for-tp-band .tag {
+    display: inline-block;
+    color: var(--green);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-right: 12px;
+    padding: 4px 10px;
+    border: 1px solid var(--green);
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+  .for-tp-band .hl { color: var(--text); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>14 · The engineering surface</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="13-why-pi.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="15-how-to-get-started.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>What pi actually gives you</h1>
+    <p class="subtitle">Beyond the three big reasons in V13, here's the concrete engineering surface Taskplane builds on. Each of these is a primitive that another agent project could use just as easily.</p>
+
+    <div class="capabilities">
+      <div class="cap c1">
+        <div class="cap-tag">runtime</div>
+        <div class="cap-title">Local-first execution</div>
+        <div class="cap-desc">Runs in your terminal. Your keys, your machine, your filesystem. No cloud service, no telemetry pipeline, no shared backplane. The entire agent loop is observable from your own disk and your own process tree.</div>
+        <div class="cap-example"><span class="com"># install once, run anywhere</span><br><span class="kw">pi install</span> npm:taskplane</div>
+      </div>
+
+      <div class="cap c2">
+        <div class="cap-tag">capability packaging</div>
+        <div class="cap-title">Skills as folders</div>
+        <div class="cap-desc">A "skill" is a folder with a SKILL.md manifest plus any supporting files the agent needs. pi auto-discovers them and exposes them via natural-language triggers. Taskplane's create-taskplane-task skill is one of these — totally portable.</div>
+        <div class="cap-example"><span class="com"># skill = folder + manifest</span><br>skills/create-taskplane-task/<br>&nbsp;&nbsp;<span class="kw">SKILL.md</span></div>
+      </div>
+
+      <div class="cap c3">
+        <div class="cap-tag">extensibility</div>
+        <div class="cap-title">Custom tool registration</div>
+        <div class="cap-desc">Extensions declare tools. Agents call them the same way they call read or write. Taskplane registers review_step, wait_for_review, send_agent_message, broadcast_message, and the entire orch_* family this way.</div>
+        <div class="cap-example"><span class="kw">registerTool</span>(<br>&nbsp;&nbsp;<span class="kw">'review_step'</span>,<br>&nbsp;&nbsp;reviewStepHandler<br>)</div>
+      </div>
+
+      <div class="cap c4">
+        <div class="cap-tag">control plane</div>
+        <div class="cap-title">RPC steering</div>
+        <div class="cap-desc">The steer RPC injects a user-turn message into a running agent's context without killing the session. This is the primitive Taskplane's mailbox layers on top of — and what makes mid-flight course-correction possible at all.</div>
+        <div class="cap-example"><span class="com"># inject mid-conversation</span><br><span class="kw">rpc.steer</span>(session, msg)</div>
+      </div>
+
+      <div class="cap c5">
+        <div class="cap-tag">process model</div>
+        <div class="cap-title">Direct child processes</div>
+        <div class="cap-desc">Agents run as ordinary OS subprocesses of pi. No tmux dependency, no daemon, no message broker. A process registry tracks PIDs and liveness. Worker threads keep the engine non-blocking. Standard OS primitives all the way down.</div>
+        <div class="cap-example"><span class="kw">processRegistry</span><br>&nbsp;&nbsp;.spawn(agent, opts)<br>&nbsp;&nbsp;.track(pid)</div>
+      </div>
+
+      <div class="cap c6">
+        <div class="cap-tag">configurability</div>
+        <div class="cap-title">Composable agent prompts</div>
+        <div class="cap-desc">Every agent role is a markdown file with frontmatter — model, tools, standalone flag. Project-specific guidance composes on top of the base prompts shipped by extensions. Versionable, diff-able, reviewable.</div>
+        <div class="cap-example"><span class="com"># composes with base</span><br>.pi/agents/<br>&nbsp;&nbsp;<span class="kw">task-worker.md</span></div>
+      </div>
+    </div>
+
+    <div class="for-tp-band">
+      <span class="tag">For Taskplane</span>
+      Every primitive on this page maps to something concrete in the orchestration system. Skills give you the task-creation entry point. Custom tools give you reviews. RPC steering gives you the mailbox. Subprocess agents give you parallel lanes. Composable prompts give you the <span class="hl">supervisor / worker / reviewer / merger</span> quartet without forking a thing.
+    </div>
+  </div>
+</body>
+</html>

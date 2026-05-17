@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V16 — How to get started on real work</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-bottom: 28px;
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px;
+    border-top: 3px solid currentColor;
+    display: flex;
+    flex-direction: column;
+  }
+  .step.s1 { color: var(--green); }
+  .step.s2 { color: var(--amber); }
+  .step.s3 { color: var(--blue); }
+  .step.s4 { color: var(--purple); }
+  .step.s5 { color: var(--green); }   /* the critical step */
+  .step.s6 { color: var(--red); }
+
+  /* The critical step — distinct background + star badge. */
+  .step.critical {
+    background: var(--surface-2);
+    border: 1px solid var(--green);
+    border-top: 3px solid var(--green);
+    box-shadow: 0 0 0 1px rgba(126, 231, 135, 0.15) inset;
+    position: relative;
+  }
+  .step.critical .star-badge {
+    position: absolute;
+    top: -10px;
+    right: 14px;
+    background: var(--green);
+    color: var(--bg);
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .step-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .step-num {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: currentColor;
+  }
+  .step-where {
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  .step-title {
+    font-family: var(--mono);
+    font-size: var(--fs-xl);
+    color: var(--text);
+    margin-bottom: 6px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .step-tagline {
+    font-size: var(--fs-md);
+    color: currentColor;
+    margin-bottom: 12px;
+    line-height: 1.45;
+    font-style: italic;
+    opacity: 0.95;
+  }
+  .step-desc {
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 14px;
+    flex: 1;
+  }
+  .step-desc code,
+  .step-cmd code {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+
+  /* Doc-type chips inside step 3. */
+  .doc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: auto;
+  }
+  .doc-chips .chip {
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 2px solid currentColor;
+    border-radius: 3px;
+    padding: 4px 8px;
+    letter-spacing: 0.02em;
+  }
+
+  .step-cmd {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    background: var(--bg);
+    padding: 10px 14px;
+    border-radius: 4px;
+    color: var(--text);
+    border-left: 2px solid currentColor;
+    margin-top: auto;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+  .step-cmd .prompt { color: var(--text-faint); }
+  .step-cmd .com    { color: var(--text-faint); }
+  .step-cmd .kw     { color: currentColor; }
+  .step-cmd .slash  { color: currentColor; }
+  .step-cmd .nl     { color: var(--text-dim); font-style: italic; }
+
+  /* The critical step gets a heavier callout below the body. */
+  .crit-quote {
+    margin-top: 10px;
+    padding: 12px 14px;
+    background: var(--bg);
+    border-left: 3px solid var(--green);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .crit-quote .lk {
+    display: block;
+    color: var(--green);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .footer-band {
+    padding: 20px 26px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--green);   /* match step 05 critical-callout accent */
+    line-height: 1.7;
+    text-align: center;
+  }
+  .footer-band .hl-g { color: var(--green); }
+  .footer-band .hl-b { color: var(--blue); }
+  .footer-band .hl-a { color: var(--amber); }
+  .footer-band .hl-p { color: var(--purple); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>16 · Real work</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="15-how-to-get-started.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="17-sage-companion.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>How to get started on real work</h1>
+    <p class="subtitle">Page 15 was the sample batch. Here's the playbook for your own project — where the planning matters more than the running, and the 30 minutes you spend up front decides whether the 8-hour batch produces code you'll keep.</p>
+
+    <div class="steps">
+      <!-- Step 1: write spec -->
+      <div class="step s1">
+        <div class="step-head">
+          <div class="step-num">01 · spec</div>
+          <div class="step-where">in LLM chat</div>
+        </div>
+        <div class="step-title">Start with a spec</div>
+        <div class="step-tagline">Bring rough ideas. Walk out with structured docs.</div>
+        <div class="step-desc">Modern LLMs are excellent at turning handwavy intent into clear specifications tailored for AI coding agents. Keep specs <em>atomic</em>: one concern per document, organized so an agent can pull only what it needs for the task at hand — not the whole corpus on every prompt.</div>
+        <div class="step-cmd"><span class="com"># in your favorite chat UI</span><br><span class="nl">"Turn these notes into spec docs for an AI coding agent."</span></div>
+      </div>
+
+      <!-- Step 2: cross-review spec -->
+      <div class="step s2">
+        <div class="step-head">
+          <div class="step-num">02 · review</div>
+          <div class="step-where">different LLM</div>
+        </div>
+        <div class="step-title">Cross-review the spec</div>
+        <div class="step-tagline">A different model finds different issues. It always finds issues.</div>
+        <div class="step-desc">Hand the draft to a <em>different</em> LLM — if Claude wrote it, ask GPT to critique, or vice versa. Have it flag gaps, ambiguities, contradictions, and missing context. Apply its corrections. <em>Then</em> read it yourself; you'll catch what both models missed. Thirty minutes here saves an 8-hour batch from going sideways.</div>
+        <div class="step-cmd"><span class="nl">"Review this spec for gaps, contradictions,</span><br><span class="nl">and assumptions an AI coding agent would miss."</span></div>
+      </div>
+
+      <!-- Step 3: supporting docs -->
+      <div class="step s3">
+        <div class="step-head">
+          <div class="step-num">03 · context</div>
+          <div class="step-where">editor</div>
+        </div>
+        <div class="step-title">Add supporting docs</div>
+        <div class="step-tagline">Spec is "what to build". These are "how we build here".</div>
+        <div class="step-desc">Around the spec, write the project-context docs every agent will reach for. Keep each focused; agents read selectively when files are well-named and single-purpose.</div>
+        <div class="doc-chips">
+          <span class="chip">tech-stack.md</span>
+          <span class="chip">coding-standards.md</span>
+          <span class="chip">architecture/ADRs</span>
+          <span class="chip">project-structure.md</span>
+          <span class="chip">test-strategy.md</span>
+          <span class="chip">glossary.md</span>
+        </div>
+      </div>
+
+      <!-- Step 4: AGENTS.md -->
+      <div class="step s4">
+        <div class="step-head">
+          <div class="step-num">04 · north star</div>
+          <div class="step-where">editor</div>
+        </div>
+        <div class="step-title">Write AGENTS.md</div>
+        <div class="step-tagline">The first file every agent reads.</div>
+        <div class="step-desc">A single top-level <code>AGENTS.md</code> orients any agent that lands in the repo: what the project is, where major areas live, links to the docs above (relative paths!), and a "<strong>what NOT to do</strong>" section. If an agent only has time to read one file, this is it. Treat it as living documentation — update it whenever conventions shift.</div>
+        <div class="step-cmd"><span class="com"># top of repo, alongside README.md</span><br><span class="kw">AGENTS.md</span>  <span class="com">· purpose, layout, rules, links</span></div>
+      </div>
+
+      <!-- Step 5: CRITICAL — create task packets -->
+      <div class="step s5 critical">
+        <div class="star-badge">★ The critical step</div>
+        <div class="step-head">
+          <div class="step-num">05 · tasks</div>
+          <div class="step-where">in pi</div>
+        </div>
+        <div class="step-title">Turn the spec into task packets</div>
+        <div class="step-tagline">This is the step that decides whether your batch produces quality code.</div>
+        <div class="step-desc">Use the <code>create-taskplane-task</code> skill. It scaffolds one folder per task, each with <code>PROMPT.md</code> (the contract) and <code>STATUS.md</code> (the agent's persistent memory). The number of packets follows the spec's complexity — smaller, atomic tasks are easier to scope, review, and merge than big-bang ones. Read every generated <code>PROMPT.md</code> and tighten it. This is your last write-time investment before tokens get spent on code.</div>
+        <div class="step-cmd"><span class="prompt">$</span> <span class="kw">pi</span><br><span class="nl">"Create taskplane tasks from the spec in docs/spec/"</span></div>
+      </div>
+
+      <!-- Step 6: orch-plan -->
+      <div class="step s6">
+        <div class="step-head">
+          <div class="step-num">06 · preview</div>
+          <div class="step-where">in pi</div>
+        </div>
+        <div class="step-title">Preview with /orch-plan</div>
+        <div class="step-tagline">See the staging before you spend a single token on code.</div>
+        <div class="step-desc">Runs discovery and the wave planner without spawning workers. Prints the wave structure, lane assignment, dependency graph, and (for polyrepo) segment groupings. Catch ordering mistakes, lane skew, and packet-size surprises here — before they cost you the batch.</div>
+        <div class="step-cmd"><span class="slash">/orch-plan</span> all</div>
+      </div>
+    </div>
+
+    <div class="footer-band">
+      A clear, well-scoped <code>PROMPT.md</code> is the difference between an agent that delivers and one that drifts. Time spent here compounds across every lane in every wave.
+    </div>
+  </div>
+</body>
+</html>
