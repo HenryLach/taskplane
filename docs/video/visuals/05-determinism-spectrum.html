@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V5 — Determinism spectrum</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .bar-wrap { padding: 0 8px; margin-bottom: 86px; }
+  .bar-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .bar-labels .left { color: var(--green); }
+  .bar-labels .right { color: var(--amber); }
+  .bar {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--green) 0%, #8bd1c5 40%, var(--amber) 100%);
+    position: relative;
+    margin-bottom: 22px;
+  }
+  .marker {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  .marker-pin {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--text);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text);
+  }
+  .marker-label {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .marker-sub {
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    margin-top: 2px;
+    white-space: nowrap;
+  }
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    margin-top: 16px;
+  }
+  .col {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+  .col.deterministic { border-top: 3px solid var(--green); }
+  .col.stochastic { border-top: 3px solid var(--amber); }
+  .col-title {
+    font-family: var(--mono);
+    font-size: var(--fs-xl);
+    margin-bottom: 6px;
+  }
+  .col.deterministic .col-title { color: var(--green); }
+  .col.stochastic .col-title { color: var(--amber); }
+  .col-tagline {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    margin-bottom: 18px;
+    line-height: 1.55;
+  }
+  .items {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    list-style: none;
+  }
+  .item {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text);
+    line-height: 1.45;
+  }
+  .item .sub {
+    display: block;
+    color: var(--text-faint);
+    margin-top: 4px;
+    font-size: var(--fs-xs);
+  }
+  .principle {
+    margin-top: 48px;
+    padding: 20px 24px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.7;
+    text-align: center;
+  }
+  .principle .hl { color: var(--green); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>5 · Design philosophy</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="04-task-packet-anatomy.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="06-cross-model-review.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Where Taskplane sits on the determinism spectrum</h1>
+    <p class="subtitle">Push every decision you can to a deterministic file or rule, so the only randomness left is the model's actual thinking.</p>
+
+    <div class="bar-wrap">
+      <div class="bar-labels">
+        <span class="left">Fully deterministic</span>
+        <span class="right">Fully autonomous</span>
+      </div>
+      <div class="bar">
+        <div class="marker">
+          <div class="marker-pin">TP</div>
+          <div class="marker-label">Taskplane</div>
+          <div class="marker-sub">deterministic harness · autonomous calls</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="col deterministic">
+        <div class="col-title">Forced deterministic</div>
+        <div class="col-tagline">Everything around the LLM call. File-backed, rule-based, repeatable across runs.</div>
+        <ul class="items">
+          <li class="item">DAG resolution<span class="sub">Kahn-style topological sort</span></li>
+          <li class="item">Wave assignment<span class="sub">stable by task ID</span></li>
+          <li class="item">Lane affinity<span class="sub">file-scope overlap → same lane</span></li>
+          <li class="item">Branch names<span class="sub">orch/{op}-{batch} · task/{op}-lane-N-{batch}</span></li>
+          <li class="item">State writes<span class="sub">atomic temp → rename</span></li>
+          <li class="item">Event log<span class="sub">append-only events.jsonl</span></li>
+          <li class="item">Segment DAG<span class="sub">explicit ## Segment DAG or inferred chain for polyrepo support</span></li>
+          <li class="item">Mailbox addressing<span class="sub">batch-scoped, session-scoped paths</span></li>
+        </ul>
+      </div>
+
+      <div class="col stochastic">
+        <div class="col-title">Left to the model</div>
+        <div class="col-tagline">The bits you can't make deterministic without giving up the value. Bounded by the harness.</div>
+        <ul class="items">
+          <li class="item">Worker implementation<span class="sub">code generation within step</span></li>
+          <li class="item">Reviewer verdicts<span class="sub">APPROVE / REVISE / RETHINK</span></li>
+          <li class="item">Merge resolutions<span class="sub">semantic conflict combining</span></li>
+          <li class="item">Plan generation<span class="sub">how to approach a step</span></li>
+          <li class="item">Supervisor steering<span class="sub">when / what to inject</span></li>
+          <li class="item">Discovery hydration<span class="sub">checkbox expansion at runtime</span></li>
+          <li class="item">Verify-then-fix<span class="sub">test failures post-merge</span></li>
+          <li class="item">Exit interception<span class="sub">supervisor re-steer up to 2×</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="principle">
+      Two runs of the same batch produce the same waves, the same lanes, the same branch names —<br>
+      <span class="hl">only the contents of the model's tokens differ.</span>
+    </div>
+  </div>
+</body>
+</html>

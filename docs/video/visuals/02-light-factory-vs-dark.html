@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V2 — Light factory vs dark factory</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .panel.dark {
+    background: linear-gradient(135deg, #0a0c10 0%, #14181f 100%);
+  }
+  .panel.light {
+    background: linear-gradient(135deg, #131a22 0%, #1a2330 100%);
+    border-color: rgba(126, 231, 135, 0.25);
+  }
+  .panel-label {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .panel.dark .panel-label { color: var(--red); }
+  .panel.light .panel-label { color: var(--green); }
+  .panel-title {
+    font-size: var(--fs-5xl);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .panel-tagline {
+    color: var(--text-dim);
+    font-size: var(--fs-lg);
+    margin-bottom: 24px;
+    line-height: 1.55;
+  }
+  .traits { list-style: none; }
+  .trait {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid rgba(48,54,61,0.6);
+    align-items: flex-start;
+  }
+  .trait:last-child { border-bottom: 1px solid rgba(48,54,61,0.6); }
+  .glyph {
+    flex-shrink: 0;
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: var(--fs-lg);
+    margin-top: 1px;
+  }
+  .panel.dark .glyph { background: rgba(255, 123, 114, 0.12); color: var(--red); }
+  .panel.light .glyph { background: rgba(126, 231, 135, 0.12); color: var(--green); }
+  .trait-text { font-family: var(--mono); font-size: var(--fs-md); line-height: 1.55; color: var(--text); }
+  .trait-text .dim { color: var(--text-faint); }
+
+  .floor-banner {
+    margin-top: 24px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-faint);
+    padding: 16px 20px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    line-height: 1.6;
+    text-align: center;
+  }
+  .panel.dark .floor-banner { border-color: rgba(255, 123, 114, 0.25); color: rgba(255, 123, 114, 0.85); }
+  .panel.light .floor-banner { border-color: rgba(126, 231, 135, 0.25); color: rgba(126, 231, 135, 0.85); }
+
+  .footer-note {
+    margin-top: 40px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-faint);
+  }
+  .footer-note .hl { color: var(--green); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>2 · Philosophy</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="01-origin-timeline.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="03-agent-quartet.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Light factory vs dark factory</h1>
+    <p class="subtitle">Two ways to run autonomous agents but the light factory model gives you the visibility you need to steer effectively.</p>
+
+    <div class="split">
+      <div class="panel dark">
+        <div class="panel-label">Dark factory</div>
+        <div class="panel-title">"Just trust the agent"</div>
+        <div class="panel-tagline">Single opaque prompt. Agent decides everything. You see the receipts only when it's over.</div>
+        <ul class="traits">
+          <li class="trait"><div class="glyph">✕</div><div class="trait-text">One-line prompts. <span class="dim">No file scope, no dependencies, no guardrails.</span></div></li>
+          <li class="trait"><div class="glyph">✕</div><div class="trait-text">In-memory state. <span class="dim">Crash = lose the work and the plan.</span></div></li>
+          <li class="trait"><div class="glyph">✕</div><div class="trait-text">Shared working directory. <span class="dim">Silent collisions. Last writer wins.</span></div></li>
+          <li class="trait"><div class="glyph">✕</div><div class="trait-text">No review surface. <span class="dim">Same model writes, same model evaluates. Confirmation bias.</span></div></li>
+          <li class="trait"><div class="glyph">✕</div><div class="trait-text">Black-box telemetry. <span class="dim">Spinner spinning. $8 burning. No clue why.</span></div></li>
+        </ul>
+        <div class="floor-banner">visibility → 0 · recoverability → 0 · operator clarity → 0</div>
+      </div>
+
+      <div class="panel light">
+        <div class="panel-label">Light factory · Taskplane</div>
+        <div class="panel-title">"Show the work"</div>
+        <div class="panel-tagline">The plan is on disk. The progress is on disk. The decisions are on disk. The orchestration is deterministic around the model's randomness.</div>
+        <ul class="traits">
+          <li class="trait"><div class="glyph">✓</div><div class="trait-text">Verbose task packets. <span class="dim">PROMPT.md + STATUS.md. What, why, and where to write.</span></div></li>
+          <li class="trait"><div class="glyph">✓</div><div class="trait-text">File-backed state. <span class="dim">.DONE, STATUS.md, batch-state.json. Resume from any crash.</span></div></li>
+          <li class="trait"><div class="glyph">✓</div><div class="trait-text">Worktree isolation. <span class="dim">Every lane is its own checkout. No collisions, ever.</span></div></li>
+          <li class="trait"><div class="glyph">✓</div><div class="trait-text">Cross-model reviews. <span class="dim">Different family on the other side. Independent quality gate.</span></div></li>
+          <li class="trait"><div class="glyph">✓</div><div class="trait-text">Dashboard reads disk. <span class="dim">SSE-streamed truth. Cannot lie. Doesn't decide.</span></div></li>
+        </ul>
+        <div class="floor-banner">visibility → full · recoverability → atomic · operator clarity → first-class</div>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      autonomy is fine — <span class="hl">inspectable autonomy is the goal</span>
+    </div>
+  </div>
+</body>
+</html>

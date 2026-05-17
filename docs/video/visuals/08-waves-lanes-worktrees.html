@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V8 — Waves, lanes, worktrees</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .legend {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 28px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .swatch {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .sw-wave { background: var(--purple); }
+  .sw-lane { background: var(--blue); }
+  .sw-tree { background: var(--green); }
+  .sw-task { background: var(--amber); }
+
+  .batch {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .batch-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .batch-title {
+    font-family: var(--mono);
+    font-size: var(--fs-lg);
+    color: var(--text);
+  }
+  .batch-meta {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .waves {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .wave {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--purple);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .wave-label {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--purple);
+    margin-bottom: 12px;
+    letter-spacing: 0.06em;
+  }
+  .lanes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .lane {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .lane-label {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--blue);
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+  .lane-tree {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--green);
+    margin-bottom: 8px;
+  }
+  .lane-tasks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .task-chip {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    background: var(--surface);
+    color: var(--amber);
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+    border-radius: 3px;
+  }
+  .task-chip.serial { border-color: var(--amber); }
+  .lane-note {
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    color: var(--text-faint);
+    margin-top: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .merge-band {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    text-align: center;
+    padding: 6px 0;
+    border-top: 1px dashed var(--border);
+  }
+  .merge-band .hl { color: var(--blue); }
+
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 32px;
+  }
+  .rule {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    border-top: 2px solid currentColor;
+  }
+  .rule.r1 { color: var(--purple); }
+  .rule.r2 { color: var(--blue); }
+  .rule.r3 { color: var(--green); }
+  .rule-name {
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .rule-desc {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .rule-desc code {
+    font-family: var(--mono);
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: var(--fs-sm);
+  }
+  /* Let the subtitle span the full frame width instead of the shared 820px cap. */
+  .subtitle {
+    max-width: 100%;
+  }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>8 · Execution hierarchy</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="07-mailbox-protocol.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="09-branching-lifecycle.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Batch, waves, lanes, worktrees, tasks</h1>
+    <p class="subtitle">A batch runs waves in series. Each wave runs lanes in parallel. Each lane runs tasks in series in its own git worktree. That's the whole shape.</p>
+
+    <div class="legend">
+      <span class="legend-item"><span class="swatch sw-wave"></span> wave</span>
+      <span class="legend-item"><span class="swatch sw-lane"></span> lane</span>
+      <span class="legend-item"><span class="swatch sw-tree"></span> worktree</span>
+      <span class="legend-item"><span class="swatch sw-task"></span> task</span>
+    </div>
+
+    <div class="batch">
+      <div class="batch-header">
+        <div class="batch-title">batch · orch/{username}-20260514T103207</div>
+        <div class="batch-meta">10 tasks · 3 waves · max_lanes=3</div>
+      </div>
+
+      <div class="waves">
+        <div class="wave">
+          <div class="wave-label">Wave 1 · no unmet dependencies · parallel across lanes</div>
+          <div class="lanes">
+            <div class="lane">
+              <div class="lane-label">lane-1</div>
+              <div class="lane-tree">.worktrees/{batch}/lane-1/</div>
+              <div class="lane-tasks">
+                <span class="task-chip serial">TP-201</span>→
+                <span class="task-chip serial">TP-202</span>→
+                <span class="task-chip serial">TP-203</span>
+              </div>
+              <div class="lane-note">affinity-first · shared file scope · serial in shared worktree</div>
+            </div>
+            <div class="lane">
+              <div class="lane-label">lane-2</div>
+              <div class="lane-tree">.worktrees/{batch}/lane-2/</div>
+              <div class="lane-tasks">
+                <span class="task-chip serial">TP-210</span>
+              </div>
+              <div class="lane-note">independent file scope · runs in parallel</div>
+            </div>
+            <div class="lane">
+              <div class="lane-label">lane-3</div>
+              <div class="lane-tree">.worktrees/{batch}/lane-3/</div>
+              <div class="lane-tasks">
+                <span class="task-chip serial">TP-215</span>
+              </div>
+              <div class="lane-note">independent file scope · runs in parallel</div>
+            </div>
+          </div>
+          <div class="merge-band">lane branches → <span class="hl">merge worktree</span> → orch branch · LLM merger runs verify</div>
+        </div>
+
+        <div class="wave">
+          <div class="wave-label">Wave 2 · deps satisfied by wave 1 · parallel across lanes</div>
+          <div class="lanes">
+            <div class="lane">
+              <div class="lane-label">lane-1</div>
+              <div class="lane-tree">.worktrees/{batch}/lane-1/</div>
+              <div class="lane-tasks">
+                <span class="task-chip serial">TP-204</span>→
+                <span class="task-chip serial">TP-205</span>
+              </div>
+              <div class="lane-note">sees wave 1's merged orch state</div>
+            </div>
+            <div class="lane">
+              <div class="lane-label">lane-2</div>
+              <div class="lane-tree">.worktrees/{batch}/lane-2/</div>
+              <div class="lane-tasks">
+                <span class="task-chip serial">TP-220</span>
+              </div>
+              <div class="lane-note">parallel</div>
+            </div>
+            <div class="lane">
+              <div class="lane-label">lane-3</div>
+              <div class="lane-tree">.worktrees/{batch}/lane-3/</div>
+              <div class="lane-tasks">
+                <span class="task-chip serial">TP-225</span>
+              </div>
+              <div class="lane-note">parallel</div>
+            </div>
+          </div>
+          <div class="merge-band">lane branches → <span class="hl">merge worktree</span> → orch branch</div>
+        </div>
+
+        <div class="wave">
+          <div class="wave-label">Wave 3 · final · serial when only one task remains</div>
+          <div class="lanes">
+            <div class="lane">
+              <div class="lane-label">lane-1</div>
+              <div class="lane-tree">.worktrees/{batch}/lane-1/</div>
+              <div class="lane-tasks">
+                <span class="task-chip serial">TP-230</span>
+              </div>
+              <div class="lane-note">depends on TP-220 + TP-225</div>
+            </div>
+            <div class="lane" style="opacity:0.4;">
+              <div class="lane-label">lane-2 · idle</div>
+              <div class="lane-tree">—</div>
+              <div class="lane-tasks"></div>
+              <div class="lane-note">nothing assigned this wave</div>
+            </div>
+            <div class="lane" style="opacity:0.4;">
+              <div class="lane-label">lane-3 · idle</div>
+              <div class="lane-tree">—</div>
+              <div class="lane-tasks"></div>
+              <div class="lane-note">nothing assigned this wave</div>
+            </div>
+          </div>
+          <div class="merge-band">all waves merged into orch branch · ready for <span class="hl">/orch-integrate</span> for final merge or PR to working branch</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rules">
+      <div class="rule r1">
+        <div class="rule-name">Waves are serial</div>
+        <div class="rule-desc">Wave N+1 starts only after wave N's merge into the orch branch completes. The next wave always sees integrated state.</div>
+      </div>
+      <div class="rule r2">
+        <div class="rule-name">Lanes are parallel</div>
+        <div class="rule-desc">Up to <code>max_lanes</code> within a wave. Each lane is one subprocess worker against one worktree against one branch.</div>
+      </div>
+      <div class="rule r3">
+        <div class="rule-name">Tasks share lanes when scopes overlap</div>
+        <div class="rule-desc">Affinity-first assignment. Overlapping <code>## File Scope</code> entries collapse onto the same lane and run serially.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

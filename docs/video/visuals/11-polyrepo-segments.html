@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V11 — Polyrepo segments</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .workspace {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 28px;
+  }
+  .ws-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--border);
+    margin-bottom: 18px;
+  }
+  .ws-title {
+    font-family: var(--mono);
+    font-size: var(--fs-lg);
+    color: var(--text);
+  }
+  .ws-tag {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .repos {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .repo {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    border-top: 3px solid currentColor;
+    position: relative;
+  }
+  .repo.r1 { color: var(--green); }
+  .repo.r2 { color: var(--blue); }
+  .repo.r3 { color: var(--purple); }
+  .repo-name {
+    font-family: var(--mono);
+    font-size: var(--fs-lg);
+    color: var(--text);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .home-badge {
+    font-family: var(--mono);
+    font-size: var(--fs-3xs);
+    background: rgba(126, 231, 135, 0.18);
+    color: var(--green);
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid var(--green);
+  }
+  .repo-path {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    margin-bottom: 14px;
+  }
+  .repo-section {
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    margin-top: 12px;
+  }
+  .seg-pill {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid currentColor;
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-right: 6px;
+    margin-bottom: 6px;
+    display: inline-block;
+  }
+  .repo-files {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  .dag-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .dag-title {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .dag {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
+  }
+  .seg-node {
+    background: var(--surface);
+    border: 2px solid currentColor;
+    border-radius: 8px;
+    padding: 12px 18px;
+    text-align: center;
+    min-width: 200px;
+  }
+  .seg-node.s1 { color: var(--green); }
+  .seg-node.s2 { color: var(--blue); }
+  .seg-node.s3 { color: var(--purple); }
+  .seg-id {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+  .seg-label {
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text);
+  }
+  .seg-arrow {
+    font-family: var(--mono);
+    font-size: var(--fs-icon);
+    color: var(--text-faint);
+  }
+
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .rule {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid currentColor;
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .rule.k1 { color: var(--green); }
+  .rule.k2 { color: var(--blue); }
+  .rule.k3 { color: var(--purple); }
+  .rule-name {
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .rule-desc {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .rule-desc code {
+    font-family: var(--mono);
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: var(--fs-sm);
+  }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>11 · The hard case</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="10-semantic-merge.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="12-dashboard-visibility.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Polyrepo: tasks decompose into segments</h1>
+    <p class="subtitle">One task. Three repos. A segment per repo. A segment DAG to order them. One packet home for the task's memory. Every other piece — worktrees, branches, merges — happens independently per repo.</p>
+
+    <div class="workspace">
+      <div class="ws-header">
+        <div class="ws-title">workspace · ~/dev/tp-test-workspace/ · taskplane-pointer.json</div>
+        <div class="ws-tag">workspace mode · 3 repos · routing.taskPacketRepo = shared-libs</div>
+      </div>
+
+      <div class="repos">
+        <div class="repo r1">
+          <div class="repo-name">shared-libs <span class="home-badge">packet home</span></div>
+          <div class="repo-path">../shared-libs · main</div>
+          <div class="repo-section">Segments owned</div>
+          <span class="seg-pill">TP-302::shared-libs</span>
+          <div class="repo-section">Code touched</div>
+          <div class="repo-files">packages/utils/string.ts<br>packages/types/api.ts</div>
+          <div class="repo-section">Packet files</div>
+          <div class="repo-files">PROMPT.md · STATUS.md · .DONE · .reviews/</div>
+        </div>
+
+        <div class="repo r2">
+          <div class="repo-name">api-service</div>
+          <div class="repo-path">../api-service · main</div>
+          <div class="repo-section">Segments owned</div>
+          <span class="seg-pill">TP-302::api-service</span>
+          <div class="repo-section">Code touched</div>
+          <div class="repo-files">src/handlers/users.ts<br>src/schemas/user.ts</div>
+          <div class="repo-section">Packet files</div>
+          <div class="repo-files" style="color:var(--text-faint);">— writes flow back to packet home</div>
+        </div>
+
+        <div class="repo r3">
+          <div class="repo-name">web-client</div>
+          <div class="repo-path">../web-client · main</div>
+          <div class="repo-section">Segments owned</div>
+          <span class="seg-pill">TP-302::web-client</span>
+          <div class="repo-section">Code touched</div>
+          <div class="repo-files">src/api/client.ts<br>src/components/Profile.tsx</div>
+          <div class="repo-section">Packet files</div>
+          <div class="repo-files" style="color:var(--text-faint);">— writes flow back to packet home</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dag-card">
+      <div class="dag-title">Segment DAG · task TP-302 · intra-task ordering</div>
+      <div class="dag">
+        <div class="seg-node s1">
+          <div class="seg-id">segment 1</div>
+          <div class="seg-label">shared-libs</div>
+        </div>
+        <div class="seg-arrow">→</div>
+        <div class="seg-node s2">
+          <div class="seg-id">segment 2</div>
+          <div class="seg-label">api-service</div>
+        </div>
+        <div class="seg-arrow">→</div>
+        <div class="seg-node s3">
+          <div class="seg-id">segment 3</div>
+          <div class="seg-label">web-client</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rules">
+      <div class="rule k1">
+        <div class="rule-name">Packet authority</div>
+        <div class="rule-desc"><code>STATUS.md</code>, <code>.DONE</code>, <code>.reviews/</code> are <em>always</em> written to the packet home repo. No splits, no inference.</div>
+      </div>
+      <div class="rule k2">
+        <div class="rule-name">Segment isolation</div>
+        <div class="rule-desc">Workers <em>read</em> across all repos for planning. They <em>write</em> only to the active segment repo + the packet home.</div>
+      </div>
+      <div class="rule k3">
+        <div class="rule-name">Per-repo orch branches</div>
+        <div class="rule-desc">An <code>orch/…</code> branch is created in <em>every</em> repo with work. <code>/orch-integrate</code> loops over all of them.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
