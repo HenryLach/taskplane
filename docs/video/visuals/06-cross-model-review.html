@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V6 — Cross-model review flow</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr 90px 1fr;
+    gap: 0;
+    align-items: stretch;
+    margin-bottom: 40px;
+  }
+  .actor {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+    position: relative;
+  }
+  .actor.worker { border-top: 3px solid var(--green); }
+  .actor.reviewer { border-top: 3px solid var(--amber); }
+  .actor-name {
+    font-family: var(--mono);
+    font-size: var(--fs-4xl);
+    margin-bottom: 4px;
+  }
+  .actor.worker .actor-name { color: var(--green); }
+  .actor.reviewer .actor-name { color: var(--amber); }
+  .actor-tag {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .model-pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    padding: 6px 10px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid currentColor;
+    margin-bottom: 22px;
+  }
+  .actor.worker .model-pill { color: var(--green); }
+  .actor.reviewer .model-pill { color: var(--amber); }
+  .actions {
+    list-style: none;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    line-height: 1.85;
+  }
+  .actions li {
+    padding-left: 22px;
+    position: relative;
+    color: var(--text);
+  }
+  .actions li::before {
+    content: '›';
+    position: absolute; left: 0;
+    color: currentColor;
+  }
+  .actions .dim { color: var(--text-faint); }
+  .actor.worker .actions li::before { color: var(--green); }
+  .actor.reviewer .actions li::before { color: var(--amber); }
+
+  .arrow-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+  }
+  .arrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .arrow-line {
+    flex: 1;
+    height: 2px;
+    background: var(--text-faint);
+    position: relative;
+  }
+  .arrow-line.right::after {
+    content: '';
+    position: absolute;
+    right: -1px; top: -4px;
+    border-left: 8px solid var(--text-faint);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+  }
+  .arrow-line.left::before {
+    content: '';
+    position: absolute;
+    left: -1px; top: -4px;
+    border-right: 8px solid var(--text-faint);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+  }
+  .arrow-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 6px;
+  }
+  .arrow-label {
+    text-align: center;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0px 5px;
+  }
+  .arrow-row {
+    display: flex;
+    align-items: center;
+  }
+
+  .verdicts {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid currentColor;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .verdict.approve { color: var(--green); }
+  .verdict.revise { color: var(--amber); }
+  .verdict.rethink { color: var(--red); }
+  .verdict.unavail { color: var(--text-faint); }
+  .verdict-name {
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text);
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .verdict-desc {
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .section-h {
+    font-family: var(--mono);
+    color: var(--text-faint);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    margin-top: 12px;
+  }
+
+  .footer-line {
+    margin-top: 36px;
+    padding: 16px 20px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.65;
+    text-align: center;
+  }
+  .footer-line .hl-g { color: var(--green); }
+  .footer-line .hl-a { color: var(--amber); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>6 · The independent gate</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="05-determinism-spectrum.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="07-mailbox-protocol.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Cross-model reviews</h1>
+    <p class="subtitle">What one model writes, another model reviews. Cross model reviews drive exceptional outcomes — different blind spots, different priors. The cheapest review you'll ever buy.</p>
+
+    <div class="flow">
+      <div class="actor worker">
+        <div class="actor-name">worker</div>
+        <div class="actor-tag">implements steps</div>
+        <div class="model-pill">model: claude</div>
+        <ul class="actions">
+          <li>read PROMPT.md + STATUS.md</li>
+          <li>plan the step</li>
+          <li><span class="dim">→ call review_step(plan)</span></li>
+          <li>implement on review.APPROVE</li>
+          <li>commit at step boundary</li>
+          <li><span class="dim">→ call review_step(code)</span></li>
+          <li>address REVISE inline</li>
+        </ul>
+      </div>
+
+      <div class="arrow-col">
+        <div class="arrow-stack">
+          <div class="arrow-label">request</div>
+          <div class="arrow-row"><div class="arrow-line right"></div></div>
+        </div>
+        <div class="arrow-stack">
+          <div class="arrow-label">verdict</div>
+          <div class="arrow-row"><div class="arrow-line left"></div></div>
+        </div>
+      </div>
+
+      <div class="actor reviewer">
+        <div class="actor-name">reviewer</div>
+        <div class="actor-tag">persistent · cross-step memory</div>
+        <div class="model-pill">model: gpt</div>
+        <ul class="actions">
+          <li>wait_for_review (tool, not bash)</li>
+          <li>read request-R00N.md</li>
+          <li>read code at baseline SHA only</li>
+          <li>cross-check earlier findings</li>
+          <li>write .reviews/R00N-{type}-stepN.md</li>
+          <li>emit verdict</li>
+          <li>wait_for_review again</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-h">Verdict surface</div>
+    <div class="verdicts">
+      <div class="verdict approve">
+        <div class="verdict-name">APPROVE</div>
+        <div class="verdict-desc">Continue to next step. Implementation commits stand.</div>
+      </div>
+      <div class="verdict revise">
+        <div class="verdict-name">REVISE</div>
+        <div class="verdict-desc">Worker reads feedback, fixes inline, recommits. Same context, no spawn.</div>
+      </div>
+      <div class="verdict rethink">
+        <div class="verdict-name">RETHINK</div>
+        <div class="verdict-desc">Plan-level concern. Worker reconsiders the approach before more code.</div>
+      </div>
+      <div class="verdict unavail">
+        <div class="verdict-name">UNAVAILABLE</div>
+        <div class="verdict-desc">Reviewer crashed / timed out. Worker proceeds cautiously. Logged for the operator.</div>
+      </div>
+    </div>
+
+    <div class="footer-line">
+      review levels per task → <span class="hl-g">0</span> none · <span class="hl-g">1</span> plan · <span class="hl-a">2</span> plan + code · <span class="hl-a">3</span> plan + code + test
+      <br />step 0 (preflight) and the final step (docs) always skip
+    </div>
+
+  </div>
+</body>
+</html>

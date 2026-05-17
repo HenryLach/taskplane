@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V4 — Anatomy of a task packet</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    margin-top: 16px;
+      }
+  .file {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .file-header {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+  }
+  .file-name { color: var(--text); }
+  .file-role { color: var(--text-faint); letter-spacing: 0.08em; text-transform: uppercase; font-size: var(--fs-2xs); }
+  .file-body {
+    padding: 20px 22px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    line-height: 1.7;
+  }
+  .line { display: flex; gap: 16px; padding: 1px 0; }
+  .line .ln {
+    width: 22px;
+    color: var(--text-faint);
+    text-align: right;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .line .src { color: var(--text); flex: 1; }
+  .h1 { color: var(--purple); font-weight: 600; }
+  .h2 { color: var(--blue); font-weight: 600; }
+  .h3 { color: var(--amber); font-weight: 600; }
+  .h4 { color: var(--green); font-weight: 600; }
+  .kw { color: var(--red); }
+  .str { color: var(--green); }
+  .num { color: var(--amber); }
+  .com { color: var(--text-faint); font-style: italic; }
+  .tag { color: var(--blue); }
+  .check { color: var(--amber); }
+  .check-done { color: var(--green); }
+  .blank .src { color: transparent; }
+
+  .annotation {
+    position: relative;
+  }
+  .callouts {
+    margin-top: -25px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid currentColor;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .callout.c1 { color: var(--purple); }
+  .callout.c2 { color: var(--blue); }
+  .callout.c3 { color: var(--amber); }
+  .callout.c4 { color: var(--green); }
+  .callout.c5 { color: var(--red); }
+  .callout.c6 { color: var(--text-dim); }
+  .callout-title {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .callout-text {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .callout-text code { color: var(--text); background: var(--surface-2); padding: 1px 4px; border-radius: 3px; font-family: var(--mono); font-size: var(--fs-sm); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>4 · The contract</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="03-agent-quartet.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="05-determinism-spectrum.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Anatomy of a Taskplane task packet</h1>
+    <p class="subtitle">Two files. The plan and the memory. Verbose by design — the verbosity is what makes wave planning, lane affinity, and resume deterministic.</p>
+
+        <div class="callouts">
+      <div class="callout c1">
+        <div class="callout-title">## Mission</div>
+        <div class="callout-text">What and <em>why</em>. The worker starts with no memory of the conversation that created the task. Mission is the brief.</div>
+      </div>
+      <div class="callout c2">
+        <div class="callout-title">## Dependencies</div>
+        <div class="callout-text">Machine-parsed. Feeds the wave DAG. <code>**Task:**</code> patterns and <code>**External:**</code> entries — strict format on purpose.</div>
+      </div>
+      <div class="callout c3">
+        <div class="callout-title">## File Scope</div>
+        <div class="callout-text">Feeds <em>lane affinity</em>. Two tasks that share files land on the same lane and run serially. Verbosity here prevents merge conflicts later.</div>
+      </div>
+      <div class="callout c4">
+        <div class="callout-title">### Step N</div>
+        <div class="callout-text">Outcome-level checkboxes. Each step has a commit boundary. Plan + code reviews fire at the step level when review level ≥ 1.</div>
+      </div>
+      <div class="callout c5">
+        <div class="callout-title">## Do NOT</div>
+        <div class="callout-text">Explicit guardrails. Workers shortcut when given room. Naming the off-limits surface area reduces that pull.</div>
+      </div>
+      <div class="callout c6">
+        <div class="callout-title">STATUS.md</div>
+        <div class="callout-text">The memory. Iteration count, current step, checkboxes, discoveries, review history. Survives crashes. Drives resume.</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="file">
+        <div class="file-header"><span class="file-name">PROMPT.md</span><span class="file-role">the contract · immutable</span></div>
+        <div class="file-body">
+          <div class="line"><span class="ln">1</span><span class="src"><span class="h1"># TP-201 · Add repo-aware fields to schema</span></span></div>
+          <div class="line blank"><span class="ln">2</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">3</span><span class="src"><span class="h2">## Mission</span></span></div>
+          <div class="line"><span class="ln">4</span><span class="src">Add <span class="kw">repoId</span> + <span class="kw">packetRepo</span> to PersistedTaskRecord</span></div>
+          <div class="line"><span class="ln">5</span><span class="src">so resume can reconstruct segment frontier...</span></div>
+          <div class="line blank"><span class="ln">6</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">7</span><span class="src"><span class="h2">## Dependencies</span></span></div>
+          <div class="line"><span class="ln">8</span><span class="src">- <span class="kw">**Task:**</span> TP-081 (segment graph)</span></div>
+          <div class="line"><span class="ln">9</span><span class="src">- <span class="kw">**None**</span> for external</span></div>
+          <div class="line blank"><span class="ln">10</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">11</span><span class="src"><span class="h2">## File Scope</span></span></div>
+          <div class="line"><span class="ln">12</span><span class="src">- <span class="tag">extensions/taskplane/types.ts</span></span></div>
+          <div class="line"><span class="ln">13</span><span class="src">- <span class="tag">extensions/taskplane/persistence.ts</span></span></div>
+          <div class="line blank"><span class="ln">14</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">15</span><span class="src"><span class="h2">## Review Level:</span> <span class="num">2</span></span></div>
+          <div class="line"><span class="ln">16</span><span class="src"><span class="h2">## Size:</span> <span class="num">M</span></span></div>
+          <div class="line blank"><span class="ln">17</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">18</span><span class="src"><span class="h3">### Step 1: Add fields to types.ts</span></span></div>
+          <div class="line"><span class="ln">19</span><span class="src">- [ ] add repoId, packetRepo to PersistedTaskRecord</span></div>
+         </div>
+      </div>
+
+      <div class="file">
+        <div class="file-header"><span class="file-name">STATUS.md</span><span class="file-role">the memory · checkpoint log</span></div>
+        <div class="file-body">
+          <div class="line"><span class="ln">1</span><span class="src"><span class="h1"># TP-201 · STATUS</span></span></div>
+          <div class="line blank"><span class="ln">2</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">3</span><span class="src"><span class="h2">Current Step:</span> <span class="num">2</span></span></div>
+          <div class="line"><span class="ln">4</span><span class="src"><span class="h2">Iteration:</span> <span class="num">1</span></span></div>
+          <div class="line"><span class="ln">5</span><span class="src"><span class="h2">Reviews fired:</span> <span class="num">1</span> / max <span class="num">8</span></span></div>
+          <div class="line blank"><span class="ln">6</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">7</span><span class="src"><span class="h3">### Step 1: Add fields</span> ✓</span></div>
+          <div class="line"><span class="ln">8</span><span class="src">- <span class="check-done">[x]</span> add repoId, packetRepo</span></div>
+          <div class="line"><span class="ln">9</span><span class="src">- <span class="check-done">[x]</span> update schema version</span></div>
+          <div class="line"><span class="ln">10</span><span class="src"><span class="com">commit 9af2c1 · plan APPROVE · code APPROVE</span></span></div>
+          <div class="line blank"><span class="ln">11</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">12</span><span class="src"><span class="h3">### Step 2: Migration</span> ⏵</span></div>
+          <div class="line"><span class="ln">13</span><span class="src">- <span class="check-done">[x]</span> add v3→v4 upconverter</span></div>
+          <div class="line"><span class="ln">14</span><span class="src">- <span class="check">[ ]</span> cover idempotent re-run</span></div>
+          <div class="line"><span class="ln">15</span><span class="src"><span class="com">awaiting plan review for step 2</span></span></div>
+          <div class="line blank"><span class="ln">16</span><span class="src">.</span></div>
+          <div class="line"><span class="ln">17</span><span class="src"><span class="h3">### Step 3: Tests</span></span></div>
+          <div class="line"><span class="ln">18</span><span class="src">- <span class="check">[ ]</span> add schema-v4-migration.test.ts</span></div>
+          <div class="line blank"><span class="ln">19</span><span class="src">.</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V3 — Agent quartet</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+  .agent {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    position: relative;
+    border-top: 3px solid currentColor;
+  }
+  .agent.supervisor { color: var(--purple); }
+  .agent.worker { color: var(--green); }
+  .agent.reviewer { color: var(--amber); }
+  .agent.merger { color: var(--blue); }
+  .agent-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  .agent-name {
+    font-family: var(--mono);
+    font-size: var(--fs-2xl);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .agent-tag {
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid currentColor;
+  }
+  .agent-tagline {
+    font-size: var(--fs-lg);
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin-bottom: 18px;
+    min-height: 64px;
+  }
+  .section-label {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    margin-top: 16px;
+  }
+  .duties {
+    list-style: none;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    line-height: 1.7;
+  }
+  .duties li {
+    padding-left: 16px;
+    position: relative;
+    color: var(--text);
+  }
+  .duties li::before {
+    content: '›';
+    position: absolute; left: 0;
+    color: currentColor;
+  }
+  .model-line {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-radius: 4px;
+    margin-top: 14px;
+    border-left: 2px solid currentColor;
+  }
+  .model-line .mk { color: var(--text-faint); }
+  .model-line .mv { color: var(--text); }
+
+  .flow-band {
+    margin-top: 40px;
+    padding: 20px 24px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.7;
+    text-align: center;
+  }
+  .flow-band .hl-p { color: var(--purple); }
+  .flow-band .hl-g { color: var(--green); }
+  .flow-band .hl-a { color: var(--amber); }
+  .flow-band .hl-b { color: var(--blue); }
+  .flow-band .arrow { color: var(--text-faint); padding: 0 6px; }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>3 · Roster</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="02-light-factory-vs-dark.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="04-task-packet-anatomy.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>The agent quartet</h1>
+    <p class="subtitle">Four roles. Four prompts. Four jobs. No more agents than the work demands — and no less.</p>
+
+    <div class="grid">
+      <div class="agent supervisor">
+        <div class="agent-header">
+          <div class="agent-name">supervisor</div>
+          <div class="agent-tag">control</div>
+        </div>
+        <div class="agent-tagline">The conversational operator-in-the-loop. Watches the batch, talks to agents, never writes code.</div>
+        <div class="section-label">Owns</div>
+        <ul class="duties">
+          <li>batch progress + recovery</li>
+          <li>steering via mailbox</li>
+          <li>orch_* tool calls</li>
+          <li>failure triage</li>
+        </ul>
+        <div class="model-line"><span class="mk">model →</span> <span class="mv">your session model</span></div>
+      </div>
+
+      <div class="agent worker">
+        <div class="agent-header">
+          <div class="agent-name">worker</div>
+          <div class="agent-tag">execute</div>
+        </div>
+        <div class="agent-tagline">Implements the steps in PROMPT.md. One per lane. Owns checkpoint discipline and STATUS.md.</div>
+        <div class="section-label">Owns</div>
+        <ul class="duties">
+          <li>step-by-step execution</li>
+          <li>commits at step boundary</li>
+          <li>review_step calls</li>
+          <li>.DONE on completion</li>
+        </ul>
+        <div class="model-line"><span class="mk">model →</span> <span class="mv">e.g. claude-opus</span></div>
+      </div>
+
+      <div class="agent reviewer">
+        <div class="agent-header">
+          <div class="agent-name">reviewer</div>
+          <div class="agent-tag">verify</div>
+        </div>
+        <div class="agent-tagline">Independent quality gate. Reads plans and code. Persistent across a task — remembers what it flagged earlier.</div>
+        <div class="section-label">Owns</div>
+        <ul class="duties">
+          <li>plan + code reviews</li>
+          <li>APPROVE / REVISE / RETHINK</li>
+          <li>cross-step memory</li>
+          <li>verdicts on disk in .reviews/</li>
+        </ul>
+        <div class="model-line"><span class="mk">model →</span> <span class="mv">different family (e.g. gpt-5)</span></div>
+      </div>
+
+      <div class="agent merger">
+        <div class="agent-header">
+          <div class="agent-name">merger</div>
+          <div class="agent-tag">integrate</div>
+        </div>
+        <div class="agent-tagline">LLM that combines lane branches into the orch branch. Reads conflict markers. Resolves semantically. Runs verify.</div>
+        <div class="section-label">Owns</div>
+        <ul class="duties">
+          <li>git merge --no-ff per lane</li>
+          <li>semantic conflict resolution</li>
+          <li>post-merge verification</li>
+          <li>result.json reporting</li>
+        </ul>
+        <div class="model-line"><span class="mk">model →</span> <span class="mv">capable code model</span></div>
+      </div>
+    </div>
+
+    <div class="flow-band">
+      <span class="hl-p">supervisor</span> <span class="arrow">→</span> spawns <span class="hl-g">worker</span> per lane <span class="arrow">→</span> worker calls <span class="hl-a">reviewer</span> at step boundaries <span class="arrow">→</span> wave completes <span class="arrow">→</span> <span class="hl-b">merger</span> combines lanes <span class="arrow">→</span> next wave
+    </div>
+  </div>
+</body>
+</html>

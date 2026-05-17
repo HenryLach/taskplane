@@ -1,0 +1,204 @@
+/* ============================================================================
+   Taskplane intro video · shared visual stylesheet
+   ----------------------------------------------------------------------------
+   Edit this file to make universal changes to every visual at once.
+   Each per-visual HTML file imports this file and adds its own
+   layout/component styles inline.
+
+   Sections:
+     1. Design tokens          (colors, fonts, type scale, spacing)
+        1a. Global scale knob  (single value resizes text + page padding)
+        1b. Surfaces + text
+        1c. Accents
+        1d. Fonts
+        1e. Type scale (size ladder + semantic aliases)
+        1f. Page padding / frame width
+        1g. Radii
+     2. Reset                  (box-sizing, margin/padding zeroing)
+     3. Base                   (body, html backgrounds)
+     4. Frame                  (centered container)
+     5. Typography             (.eyebrow, h1, .subtitle)
+   ============================================================================ */
+
+
+/* ----------------------------------------------------------------------------
+   1. Design tokens
+   ---------------------------------------------------------------------------- */
+:root {
+
+  /* ----- 1a. Scale knob ----------------------------------------------------
+     One number to enlarge or shrink everything controlled by shared.css.
+     Per-file hardcoded paddings/gaps are NOT affected — text gets bigger
+     while containers keep their original geometry. That's usually what you
+     want for "fill the screen" output: text dominates and reads on mobile.
+
+       --scale: 1      → IDE-density (matches original storyboard preview)
+       --scale: 1.5    → 16:9 video-ready · mobile-readable on YouTube  (default)
+       --scale: 1.75   → larger still; some dense visuals (V8, V12) may exceed
+                         1080p height — scroll or zoom Chrome out to compensate
+       --scale: 2      → poster / thumbnail capture
+     -------------------------------------------------------------------------- */
+  --scale: 1.5;
+
+
+  /* ----- 1b. Surfaces + text ----------------------------------------------- */
+  --bg:        #0d1117;
+  --surface:   #161b22;
+  --surface-2: #1c2128;
+  --border:    #30363d;
+
+  --text:       #e6edf3;   /* primary — high contrast */
+  --text-dim:   #c9d1d9;   /* secondary — was #8b949e, bumped for mobile/video */
+  --text-faint: #a3aeb8;   /* tertiary  — was #6e7681, bumped for mobile/video */
+
+
+  /* ----- 1c. Accents ------------------------------------------------------- */
+  --green:  #7ee787;
+  --amber:  #f0b35e;
+  --blue:   #79c0ff;
+  --red:    #ff7b72;
+  --purple: #d2a8ff;
+  --pink:   #ff9bb8;
+
+
+  /* ----- 1d. Fonts --------------------------------------------------------- */
+  --mono: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, system-ui, sans-serif;
+
+
+  /* ----- 1e. Type scale ---------------------------------------------------
+     The base values (9px, 10px, 11px, …) are the "natural" sizes. They get
+     multiplied by --scale at runtime, so the ratios are preserved. Tweak a
+     base value to drift just that rung without affecting the rest.
+     -------------------------------------------------------------------------- */
+
+  /* size ladder */
+  --fs-3xs:  calc( 9px * var(--scale));   /* tiny badges (home-badge) */
+  --fs-2xs:  calc(10px * var(--scale));   /* micro labels, table headers */
+  --fs-xs:   calc(11px * var(--scale));   /* tags, lane labels, panel labels */
+  --fs-sm:   calc(12px * var(--scale));   /* small body, code, file lines */
+  --fs-md:   calc(13px * var(--scale));   /* default body, eyebrow */
+  --fs-lg:   calc(14px * var(--scale));   /* descriptions, taglines */
+  --fs-xl:   calc(16px * var(--scale));   /* subtitle, marker pins */
+  --fs-2xl:  calc(18px * var(--scale));   /* medium card titles, agent names */
+  --fs-3xl:  calc(20px * var(--scale));   /* large numeric values, panel titles */
+  --fs-4xl:  calc(22px * var(--scale));   /* hero inline names, actor names */
+  --fs-5xl:  calc(26px * var(--scale));   /* hero display titles inside cards */
+  --fs-6xl:  calc(36px * var(--scale));   /* page h1 */
+  --fs-icon: calc(24px * var(--scale));   /* large icon glyphs (DAG arrows) */
+
+  /* semantic aliases (used by base styles below) */
+  --fs-h1:       var(--fs-6xl);
+  --fs-eyebrow:  var(--fs-md);
+  --fs-subtitle: var(--fs-xl);
+
+
+  /* ----- 1f. Page padding / frame width ------------------------------------ */
+  --page-pad-y: calc(32px * var(--scale));   /* top/bottom body padding */
+  --page-pad-x: calc(40px * var(--scale));   /* left/right body padding */
+  --frame-max:  1820px;                      /* hard cap on content width (16:9 ≈ 1920) */
+  --subtitle-mb: calc(28px * var(--scale));  /* space below h1 subtitle */
+
+
+  /* ----- 1g. Radii --------------------------------------------------------- */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 10px;
+  --r-2xl: 12px;
+}
+
+
+/* ----------------------------------------------------------------------------
+   2. Reset
+   ---------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+
+/* ----------------------------------------------------------------------------
+   3. Base
+   ---------------------------------------------------------------------------- */
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+body {
+  min-height: 100vh;
+  padding: var(--page-pad-y) var(--page-pad-x);
+}
+
+
+/* ----------------------------------------------------------------------------
+   4. Frame
+   ---------------------------------------------------------------------------- */
+.frame {
+  max-width: var(--frame-max);
+  margin: 0 auto;
+}
+
+
+/* ----------------------------------------------------------------------------
+   5. Typography
+   ---------------------------------------------------------------------------- */
+.eyebrow {
+  font-family: var(--mono);
+  color: var(--green);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  /* Allow a per-page nav (.page-nav) to sit at the right edge of the eyebrow.
+     With one child the title still aligns left as before. */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Subtle per-page navigation: prev / index / next. Placed inside .eyebrow. */
+.page-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  letter-spacing: normal;
+  text-transform: none;
+  font-size: var(--fs-lg);
+  line-height: 1;
+}
+.page-nav a,
+.page-nav span {
+  color: var(--text-faint);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.page-nav a:hover {
+  color: var(--green);
+}
+.page-nav .disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+h1 {
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  font-size: var(--fs-subtitle);
+  margin-bottom: var(--subtitle-mb);
+  max-width: calc(820px * var(--scale));
+  line-height: 1.55;
+}

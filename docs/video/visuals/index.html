@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Taskplane intro video · visuals index</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  a.card {
+    display: block;
+    text-decoration: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 22px;
+    color: inherit;
+    transition: border-color 0.15s, transform 0.15s;
+    border-left: 3px solid currentColor;
+  }
+  a.card:hover { border-color: var(--green); transform: translateY(-2px); }
+  a.card.c1 { color: var(--green); }
+  a.card.c2 { color: var(--amber); }
+  a.card.c3 { color: var(--blue); }
+  a.card.c4 { color: var(--purple); }
+  a.card.c5 { color: var(--green); }
+  a.card.c6 { color: var(--amber); }
+  a.card.c7 { color: var(--blue); }
+  a.card.c8 { color: var(--purple); }
+  a.card.c9 { color: var(--green); }
+  a.card.c10 { color: var(--amber); }
+  a.card.c11 { color: var(--blue); }
+  a.card.c12 { color: var(--purple); }
+  .num {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    color: currentColor;
+    margin-bottom: 6px;
+  }
+  .title {
+    font-family: var(--mono);
+    font-size: var(--fs-lg);
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+  .desc {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .meta {
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+  }
+  .footer {
+    margin-top: 40px;
+    padding: 16px 20px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .footer .hl { color: var(--green); }
+  .footer code {
+    background: var(--bg);
+    color: var(--text);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">Introduction to Taskplane</div>
+    <h1>Visual Overview</h1>
+    <p class="subtitle">These 12 pages provide a overview of how Taskplane dramatically improves AI agent coding outcomes for long-running multi-task orchestration.</p>
+
+    <div class="grid">
+      <a class="card c1" href="01-origin-timeline.html">
+        <div class="num">1</div>
+        <div class="title">Origin timeline</div>
+        <div class="desc">Vibe → Ralph → Parallel Ralph → Taskplane. The ~1M lines of lessons.</div>
+      </a>
+      <a class="card c2" href="02-light-factory-vs-dark.html">
+        <div class="num">2</div>
+        <div class="title">Light factory vs dark factory</div>
+        <div class="desc">Two-panel philosophy framing. Visibility is the differentiator.</div>
+      </a>
+      <a class="card c3" href="03-agent-quartet.html">
+        <div class="num">3</div>
+        <div class="title">The agent quartet</div>
+        <div class="desc">Supervisor · worker · reviewer · merger. One row, four jobs.</div>
+      </a>
+      <a class="card c4" href="04-task-packet-anatomy.html">
+        <div class="num">4</div>
+        <div class="title">Anatomy of a task packet</div>
+        <div class="desc">PROMPT.md + STATUS.md side by side with annotated callouts.</div>
+      </a>
+      <a class="card c5" href="05-determinism-spectrum.html">
+        <div class="num">5</div>
+        <div class="title">Determinism spectrum</div>
+        <div class="desc">What Taskplane forces deterministic vs what it leaves to the model.</div>
+      </a>
+      <a class="card c6" href="06-cross-model-review.html">
+        <div class="num">6</div>
+        <div class="title">Cross-model review flow</div>
+        <div class="desc">Opus writes · GPT reads · APPROVE / REVISE / RETHINK / UNAVAILABLE.</div>
+      </a>
+      <a class="card c7" href="07-mailbox-protocol.html">
+        <div class="num">7</div>
+        <div class="title">Mailbox protocol</div>
+        <div class="desc">Inbox · outbox · ack · _broadcast. Supervisor steers via files.</div>
+      </a>
+      <a class="card c8" href="08-waves-lanes-worktrees.html">
+        <div class="num">8</div>
+        <div class="title">Waves, lanes, worktrees</div>
+        <div class="desc">Execution hierarchy with affinity-first lane assignment shown.</div>
+      </a>
+      <a class="card c9" href="09-branching-lifecycle.html">
+        <div class="num">9</div>
+        <div class="title">Branching lifecycle</div>
+        <div class="desc">Working branch → orch branch → lane branches → merge → integrate.</div>
+      </a>
+      <a class="card c10" href="10-semantic-merge.html">
+        <div class="num">10</div>
+        <div class="title">Semantic merge vs git merge</div>
+        <div class="desc">Side-by-side: conflict markers vs LLM-resolved combined intent.</div>
+      </a>
+      <a class="card c11" href="11-polyrepo-segments.html">
+        <div class="num">11</div>
+        <div class="title">Polyrepo segments</div>
+        <div class="desc">Three repos, segment DAG, packet home repo, write isolation.</div>
+      </a>
+      <a class="card c12" href="12-dashboard-visibility.html">
+        <div class="num">12</div>
+        <div class="title">Dashboard visibility map</div>
+        <div class="desc">A view over disk. Read-only. Cannot lie. Cannot decide.</div>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

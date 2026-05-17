@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V1 — Origin timeline</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  /* V1-only: faint grid pattern behind the timeline */
+  body {
+    background-image:
+      linear-gradient(to right, rgba(48,54,61,0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(48,54,61,0.18) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .timeline {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    margin-top: 24px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    top: 36px;
+    left: 6%;
+    right: 6%;
+    height: 2px;
+    background: linear-gradient(90deg, var(--red) 0%, var(--amber) 33%, var(--blue) 66%, var(--green) 100%);
+    opacity: 0.55;
+    border-radius: 2px;
+    z-index: 0;
+  }
+  .stage { position: relative; z-index: 1; }
+  .marker {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid currentColor;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: var(--fs-4xl);
+    font-weight: 700;
+  }
+  .stage-1 { color: var(--red); }
+  .stage-2 { color: var(--amber); }
+  .stage-3 { color: var(--blue); }
+  .stage-4 { color: var(--green); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    height: calc(100% - 92px);
+  }
+  .card-title {
+    font-family: var(--mono);
+    font-size: var(--fs-2xl);
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .card-meta {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .card-desc {
+    font-size: var(--fs-lg);
+    line-height: 1.55;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+  }
+  .lesson {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    padding: 8px 10px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    border-left: 3px solid currentColor;
+    line-height: 1.5;
+  }
+  .lesson .lk { color: var(--text-faint); font-weight: 500; }
+  .lesson .lv { color: var(--text); }
+  .footer-tag {
+    margin-top: 56px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text-faint);
+    text-align: center;
+  }
+  .footer-tag .hl { color: var(--green); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>1 · Origin</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <span class="disabled" aria-label="Previous (none)">&larr;</span>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="02-light-factory-vs-dark.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>The road to Taskplane</h1>
+    <p class="subtitle">A million lines of AI-generated code. Three failed harnesses. Each failure produced a design rule.</p>
+
+    <div class="timeline">
+      <div class="stage stage-1">
+        <div class="marker">01</div>
+        <div class="card">
+          <div class="card-title">Vibe coding</div>
+          <div class="card-meta">stage one · chat-driven</div>
+          <div class="card-desc">Paste, regenerate, accept. Fast for greenfield prototypes. Falls apart the moment the codebase outgrows the model's working memory.</div>
+          <div class="lesson"><span class="lk">lesson →</span> <span class="lv">A working memory must live outside the model.</span></div>
+        </div>
+      </div>
+
+      <div class="stage stage-2">
+        <div class="marker">02</div>
+        <div class="card">
+          <div class="card-title">Ralph Wiggum loop</div>
+          <div class="card-meta">stage two · single agent, single prompt</div>
+          <div class="card-desc">One prompt, run it forever. The agent grinds. Beautiful for narrow problems. Drops context across iterations and can't survive long-running work.</div>
+          <div class="lesson"><span class="lk">lesson →</span> <span class="lv">State must be on disk. <code>STATUS.md</code> was born here.</span></div>
+        </div>
+      </div>
+
+      <div class="stage stage-3">
+        <div class="marker">03</div>
+        <div class="card">
+          <div class="card-title">Parallel Ralph</div>
+          <div class="card-meta">stage three · many agents, one repo</div>
+          <div class="card-desc">More loops, more throughput — and a cascade of silent collisions. Two agents both "complete." One overwrites the other. Git stops being a safety net.</div>
+          <div class="lesson"><span class="lk">lesson →</span> <span class="lv">Worktrees. Lanes. A real DAG. And a merge that understands intent.</span></div>
+        </div>
+      </div>
+
+      <div class="stage stage-4">
+        <div class="marker">04</div>
+        <div class="card">
+          <div class="card-title">Taskplane</div>
+          <div class="card-meta">today · deterministic orchestration</div>
+          <div class="card-desc">Four agents. Verbose packets. File-backed state. Worktree isolation. Cross-model reviews. Semantic merges. A web-based dashboard to drive observability.</div>
+          <div class="lesson"><span class="lk">rule →</span> <span class="lv">Autonomy is fine. Inspectable autonomy is the goal.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-tag">
+      vibe → ralph → parallel ralph → <span class="hl">taskplane</span> · ~1M lines of AI-generated code along the way
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V10 — Semantic merge vs git merge</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    margin-bottom: 32px;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    border-top: 3px solid currentColor;
+  }
+  .panel.bad { color: var(--red); }
+  .panel.good { color: var(--green); }
+  .panel-tag {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: var(--fs-3xl);
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .panel-sub {
+    font-size: var(--fs-md);
+    color: var(--text-dim);
+    margin-bottom: 18px;
+    line-height: 1.55;
+  }
+  .code {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    line-height: 1.75;
+    overflow-x: auto;
+  }
+  .code .com { color: var(--text-faint); }
+  .code .conflict { color: var(--red); font-weight: 600; }
+  .code .branch-a { color: var(--blue); }
+  .code .branch-b { color: var(--amber); }
+  .code .kw { color: var(--purple); }
+  .code .fn { color: var(--green); }
+  .code .str { color: var(--green); }
+  .code .added { color: var(--green); }
+  .code .removed { color: var(--red); }
+  .code .dim { color: var(--text-faint); }
+
+  .verdict {
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    background: var(--surface-2);
+    border-left: 3px solid currentColor;
+  }
+  .panel.bad .verdict { color: var(--red); }
+  .panel.good .verdict { color: var(--green); }
+
+  .merger-steps {
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+  }
+  .merger-steps-title {
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .merger-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+  }
+  .ms {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .ms-num {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--green);
+    margin-bottom: 4px;
+  }
+  .ms-name {
+    font-family: var(--mono);
+    font-size: var(--fs-md);
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .ms-desc {
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .monitor {
+    margin-top: 24px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--text-dim);
+  }
+  .monitor .hl-a { color: var(--amber); }
+  .monitor .hl-r { color: var(--red); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">
+      <span>10 · The merge agent</span>
+      <nav class="page-nav" aria-label="Page navigation">
+        <a href="09-branching-lifecycle.html" aria-label="Previous">&larr;</a>
+        <a href="index.html" aria-label="Index">&#9675;</a>
+        <a href="11-polyrepo-segments.html" aria-label="Next">&rarr;</a>
+      </nav>
+    </div>
+    <h1>Semantic merge vs git merge</h1>
+    <p class="subtitle">Plain <code style="font-family:var(--mono); background:var(--surface-2); color:var(--text); padding:1px 5px; border-radius:3px;">git merge</code> sees text. The Taskplane merge agent reads task intent, understands the diff, and resolves conflicts as a developer would. With a verify step.</p>
+
+    <div class="split">
+      <div class="panel bad">
+        <div class="panel-tag">git merge · 3-way text</div>
+        <div class="panel-title">conflict markers, no resolution</div>
+        <div class="panel-sub">Worker A added validation. Worker B added an options parameter. Both touched the same region. Git stops.</div>
+        <pre class="code"><span class="kw">function</span> <span class="fn">process</span>(data<span class="branch-b">, options</span>) {
+<span class="conflict">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</span>
+  <span class="branch-a">validate(data);</span>
+  <span class="kw">return</span> <span class="fn">transform</span>(data);
+<span class="conflict">=======</span>
+  <span class="kw">return</span> <span class="fn">transform</span>(data<span class="branch-b">, options</span>);
+<span class="conflict">&gt;&gt;&gt;&gt;&gt;&gt;&gt; task/lane-2</span>
+}
+<span class="com">// neither side complete · build is broken</span>
+<span class="com">// merge halts · operator must fix by hand</span></pre>
+        <div class="verdict">verdict → fail · waits for human · cannot proceed</div>
+      </div>
+
+      <div class="panel good">
+        <div class="panel-tag">Taskplane merge · LLM with read/write/edit/bash</div>
+        <div class="panel-title">reads intent, combines correctly</div>
+        <div class="panel-sub">The merger reads both lanes' PROMPT.md, sees A wanted validation and B wanted options, and combines them. Then runs the test suite.</div>
+        <pre class="code"><span class="kw">function</span> <span class="fn">process</span>(data, <span class="branch-b">options</span>) {
+  <span class="branch-a">validate(data);</span>
+  <span class="kw">return</span> <span class="fn">transform</span>(data, <span class="branch-b">options</span>);
+}
+<span class="com">// both changes preserved · semantics intact</span>
+<span class="com">// git add + commit + run verify command</span>
+<span class="dim">$ node --test tests/*.test.ts</span>
+<span class="dim">  ✓ 3,587 tests passed</span></pre>
+        <div class="verdict">verdict → succeeded · 2 conflicts resolved · tests green</div>
+      </div>
+    </div>
+
+    <div class="merger-steps">
+      <div class="merger-steps-title">merge agent lifecycle</div>
+      <div class="merger-grid">
+        <div class="ms">
+          <div class="ms-num">1</div>
+          <div class="ms-name">request</div>
+          <div class="ms-desc">Engine writes merge-request file with branches + task IDs + verify command.</div>
+        </div>
+        <div class="ms">
+          <div class="ms-num">2</div>
+          <div class="ms-name">spawn in merge worktree</div>
+          <div class="ms-desc">Agent lives in <code style="font-family:var(--mono);font-size:var(--fs-xs);color:var(--text);">.worktrees/{batch}/merge/</code>. Full tool access.</div>
+        </div>
+        <div class="ms">
+          <div class="ms-num">3</div>
+          <div class="ms-name">merge per lane</div>
+          <div class="ms-desc">git merge → if conflict, read PROMPT.md, resolve in code, git add + commit.</div>
+        </div>
+        <div class="ms">
+          <div class="ms-num">4</div>
+          <div class="ms-name">verify</div>
+          <div class="ms-desc">Run the configured verify command (typically the test suite). Iterate on failures.</div>
+        </div>
+        <div class="ms">
+          <div class="ms-num">5</div>
+          <div class="ms-name">result.json</div>
+          <div class="ms-desc">Engine polls. Counters update. Next wave provisions.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="monitor">
+      merge health monitor polls every 2 min · <span class="hl-a">stale at 10</span> · <span class="hl-r">stuck at 20</span> · emits events, never kills autonomously
+    </div>
+  </div>
+</body>
+</html>
