@@ -165,7 +165,7 @@ body {
   font-size: var(--fs-eyebrow);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   /* Three-column grid: title (left) · wordmark (center) · nav (right).
      1fr / auto / 1fr keeps the wordmark perfectly centered regardless of
      how wide the title or nav columns end up. */
@@ -173,6 +173,16 @@ body {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 16px;
+
+  /* Docked at the top of the viewport so the nav buttons are always
+     reachable. position: sticky keeps the eyebrow in normal flow until
+     the page scrolls past it, then pins it to top: 0. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding-block: 10px;
 }
 .eyebrow > :first-child { justify-self: start; }
 .eyebrow > .page-nav    { justify-self: end; }
@@ -186,27 +196,40 @@ body {
   justify-self: center;
 }
 
-/* Subtle per-page navigation: prev / index / next. Placed inside .eyebrow. */
+/* Per-page navigation: prev / index / next. Lives inside .eyebrow.
+   Sized large (~2x the title) and tinted green so the controls read as
+   primary actions on every viewport, with 44x44 hit areas for touch. */
 .page-nav {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   letter-spacing: normal;
   text-transform: none;
-  font-size: var(--fs-lg);
+  font-size: calc(var(--fs-lg) * 2);
   line-height: 1;
 }
 .page-nav a,
 .page-nav span {
-  color: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px 6px;
+  color: var(--green);
   text-decoration: none;
-  transition: color 0.15s ease;
+  transition: color 0.15s ease, transform 0.15s ease;
 }
 .page-nav a:hover {
-  color: var(--green);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.page-nav a:active {
+  transform: translateY(0);
 }
 .page-nav .disabled {
-  opacity: 0.3;
+  color: var(--text-faint);
+  opacity: 0.35;
   cursor: default;
 }
 
