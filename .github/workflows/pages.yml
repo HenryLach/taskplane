@@ -1,0 +1,53 @@
+name: Deploy Taskplane Overview to GitHub Pages
+
+# Deploys docs/taskplane-overview/ to GitHub Pages whenever its contents
+# (or this workflow) change on main. Other docs/ subfolders are NOT served.
+#
+# To broaden the site later: change the `path:` value on the
+# upload-pages-artifact step. To switch to a /docs-wide branch deploy,
+# change Settings -> Pages source to "Deploy from a branch" and delete
+# this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/taskplane-overview/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Standard Pages permissions: read repo, write Pages, write id-token
+# (required by deploy-pages for OIDC attestation).
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Don't cancel an in-flight deploy if a second push arrives; finish
+# the current one and queue the next. Pages serves the latest
+# successful deploy regardless of order.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Taskplane Overview artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/taskplane-overview
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
