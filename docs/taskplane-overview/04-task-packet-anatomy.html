@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V4 — Anatomy of a task packet</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -92,6 +93,15 @@
     line-height: 1.55;
   }
   .callout-text code { color: var(--text); background: var(--surface-2); padding: 1px 4px; border-radius: 3px; font-family: var(--mono); font-size: var(--fs-sm); }
+
+  /* Mobile: stack the PROMPT.md / STATUS.md split, and collapse callouts. */
+  @media (max-width: 900px) {
+    .callouts { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .split    { grid-template-columns: 1fr; }
+    .callouts { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

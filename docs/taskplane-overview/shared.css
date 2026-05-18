@@ -120,6 +120,16 @@
   padding: 0;
 }
 
+/* Global media safety: keep images/SVGs from busting their containers on
+   narrow viewports. Per-page rules that set explicit width/height still win
+   because of selector specificity, except height: auto, which is what we
+   want for fluid scaling. */
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
 
 /* ----------------------------------------------------------------------------
    3. Base
@@ -214,4 +224,59 @@ h1 {
   /* Subtitle spans the full frame width — no soft cap. */
   max-width: 100%;
   line-height: 1.55;
+}
+
+
+/* ----------------------------------------------------------------------------
+   6. Responsive (mobile baseline)
+   ----------------------------------------------------------------------------
+   The deck was originally authored at 1820px max-width with --scale: 1.5
+   for 16:9 video frames. These breakpoints retarget it for portrait phones
+   and tablets without a rebuild.
+
+   Two breakpoints:
+     900px : tablet portrait + small landscape
+     700px : phone portrait — also restructures the eyebrow so the wordmark
+             logo doesn't get crushed against the title and nav.
+
+   --scale comes down but is floored at 0.95 — anything smaller starts to
+   make the dense card text microscopic on phones. Page padding shrinks
+   aggressively because every saved pixel matters at <400px viewport widths.
+   ---------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  :root {
+    --scale:       1.1;
+    --page-pad-x:  20px;
+    --page-pad-y:  24px;
+  }
+}
+
+@media (max-width: 700px) {
+  :root {
+    --scale:       0.95;
+    --page-pad-x:  14px;
+    --page-pad-y:  18px;
+  }
+
+  /* Stack the eyebrow: wordmark on its own row above title + nav.
+     Without this the three items get squeezed into <340px and overflow. */
+  .eyebrow {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "logo  logo"
+      "title nav";
+    row-gap: 8px;
+  }
+  .eyebrow > :first-child  { grid-area: title; justify-self: start; }
+  .eyebrow > .eyebrow-logo { grid-area: logo;  justify-self: center; }
+  .eyebrow > .page-nav     { grid-area: nav;   justify-self: end; }
+
+  /* Heading needs more aggressive size reduction than --scale alone
+     delivers. --fs-h1 at scale 0.95 is still 34px which crowds out
+     everything else on a 375px viewport. */
+  h1 {
+    font-size: calc(26px * var(--scale));
+    line-height: 1.15;
+  }
 }

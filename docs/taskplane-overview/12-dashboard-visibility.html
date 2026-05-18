@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V12 — Dashboard visibility map</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -197,6 +198,13 @@
     color: var(--text-dim);
   }
   .footer .hl { color: var(--green); }
+
+  /* Mobile: stack the 2-column layout so the side panels move below the
+     dashboard screenshot instead of getting squeezed into a 320px track
+     that doesn't fit a phone. */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

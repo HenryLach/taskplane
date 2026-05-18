@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V13 — Why pi</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -84,6 +85,11 @@
   .closing .hl-g { color: var(--green); }
   .closing .hl-b { color: var(--blue); }
   .closing .hl-a { color: var(--amber); }
+
+  /* Mobile: stack the three reasons. */
+  @media (max-width: 700px) {
+    .reasons { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

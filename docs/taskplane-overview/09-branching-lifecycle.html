@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V9 — Branching lifecycle</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -114,6 +115,21 @@
   }
   .rule .hl { color: var(--green); }
   .rule .pink { color: var(--pink); }
+
+  /* Mobile: stack the develop-label row, collapse the 5-step grid, and let
+     the git-graph scroll horizontally so its swim lanes stay readable
+     instead of shrinking to a ~90px-tall strip. */
+  @media (max-width: 900px) {
+    .steps { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .branch-labels { grid-template-columns: 1fr; }
+    .branch-name   { text-align: left; }
+    .steps         { grid-template-columns: 1fr; }
+    /* Horizontal-scroll the dense git-graph rather than crushing it. */
+    .graph-card    { overflow-x: auto; }
+    svg.git-graph  { min-width: 760px; }
+  }
 </style>
 </head>
 <body>
@@ -136,7 +152,7 @@
         <div></div>
       </div>
 
-      <svg class="git-graph" viewBox="0 0 1500 360" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <svg class="git-graph" viewBox="0 0 1500 360" xmlns="http://www.w3.org/2000/svg">
         <!-- horizontal grid -->
         <line x1="0" y1="60" x2="1500" y2="60" stroke="#30363d" stroke-width="2" opacity="0.4"/>
         <line x1="0" y1="160" x2="1500" y2="160" stroke="#30363d" stroke-width="2" opacity="0.4"/>

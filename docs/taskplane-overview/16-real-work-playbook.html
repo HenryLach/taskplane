@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V16 — How to get started on real work</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -180,6 +181,14 @@
   .footer-band .hl-b { color: var(--blue); }
   .footer-band .hl-a { color: var(--amber); }
   .footer-band .hl-p { color: var(--purple); }
+
+  /* Mobile: stack the 6 step cards. */
+  @media (max-width: 900px) {
+    .steps { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .steps { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

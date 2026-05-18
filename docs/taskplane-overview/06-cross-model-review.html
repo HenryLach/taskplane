@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V6 — Cross-model review flow</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -183,6 +184,18 @@
   }
   .footer-line .hl-g { color: var(--green); }
   .footer-line .hl-a { color: var(--amber); }
+
+  /* Mobile: stack the worker-arrow-reviewer flow (hide the arrow column
+     since the vertical reading order makes the worker->reviewer direction
+     implicit), and collapse the 4 verdict cards. */
+  @media (max-width: 900px) {
+    .verdicts { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .flow      { grid-template-columns: 1fr; }
+    .arrow-col { display: none; }
+    .verdicts  { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

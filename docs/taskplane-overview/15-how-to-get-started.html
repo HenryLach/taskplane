@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V15 — Getting started: install and test</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -99,6 +100,14 @@
   .footer-band .hl-g { color: var(--green); }
   .footer-band .hl-b { color: var(--blue); }
   .footer-band .hl-a { color: var(--amber); }
+
+  /* Mobile: stack the 9 setup-step cards. */
+  @media (max-width: 900px) {
+    .steps { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .steps { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

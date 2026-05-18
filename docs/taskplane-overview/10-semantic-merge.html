@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V10 — Semantic merge vs git merge</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -124,6 +125,16 @@
   }
   .monitor .hl-a { color: var(--amber); }
   .monitor .hl-r { color: var(--red); }
+
+  /* Mobile: stack the git-merge / merge-agent split, and collapse the
+     5-step merger pipeline to 2 then 1 column. */
+  @media (max-width: 900px) {
+    .merger-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .split       { grid-template-columns: 1fr; }
+    .merger-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

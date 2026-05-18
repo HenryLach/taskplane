@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Taskplane Overview</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -105,6 +106,14 @@
     color: var(--text);
     padding: 1px 5px;
     border-radius: 3px;
+  }
+
+  /* Mobile: collapse the 3-column page index. */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .grid { grid-template-columns: 1fr; }
   }
 
 </style>
