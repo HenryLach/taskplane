@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V7 — Mailbox protocol</title>
 <link rel="stylesheet" href="shared.css">
 <style>
@@ -129,6 +130,18 @@
     font-size: var(--fs-sm);
     color: var(--text-dim);
     line-height: 1.5;
+  }
+
+  /* Mobile: stack the 3-col topology (supervisor / mailbox / agent) and
+     drop the 4-col props grid to 2 columns. */
+  @media (max-width: 900px) {
+    .props { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .topology { grid-template-columns: 1fr; gap: 18px; }
+    .props    { grid-template-columns: 1fr; }
+    /* Tighten the inbox/outbox label column on phone. */
+    .lane     { grid-template-columns: 70px 1fr; gap: 10px; }
   }
 </style>
 </head>
