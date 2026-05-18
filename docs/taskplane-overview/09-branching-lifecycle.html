@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>V9 — Branching lifecycle</title>
-<link rel="stylesheet" href="_shared.css">
+<link rel="stylesheet" href="shared.css">
 <style>
   .graph-card {
     background: var(--surface);
@@ -120,6 +120,7 @@
   <div class="frame">
     <div class="eyebrow">
       <span>9 · Git topology</span>
+      <img class="eyebrow-logo" src="taskplane-word-white.svg" alt="Taskplane">
       <nav class="page-nav" aria-label="Page navigation">
         <a href="08-waves-lanes-worktrees.html" aria-label="Previous">&larr;</a>
         <a href="index.html" aria-label="Index">&#9675;</a>
@@ -243,21 +244,4 @@
         <div class="step-title">wave merge</div>
         <div class="step-desc">After each wave, a merge agent combines lane branches back into orch. Next wave sees the previous wave's merged changes.</div>
       </div>
-      <div class="step s4">
-        <div class="step-num">4</div>
-        <div class="step-title">all waves complete</div>
-        <div class="step-desc">Orch branch now holds the full batch result. Your working branch is still untouched.</div>
-      </div>
-      <div class="step s5">
-        <div class="step-num">5</div>
-        <div class="step-title">/orch-integrate</div>
-        <div class="step-desc">Fast-forward, merge commit, or open a PR. Your choice. Always an explicit step.</div>
-      </div>
-    </div>
-
-    <div class="rule">
-      your <span class="pink">working branch</span> is sacred — <span class="hl">never touched</span> until <code style="font-family:var(--mono); color:var(--green); background:var(--bg); padding:1px 5px; border-radius:3px;">/orch-integrate</code>
-    </div>
-  </div>
-</body>
-</html>
+      <div class="step
