@@ -143,7 +143,10 @@ body {
 
 body {
   min-height: 100vh;
-  padding: var(--page-pad-y) var(--page-pad-x);
+  /* No top padding: the sticky .eyebrow sits flush against the viewport
+     top from page load, so it's always in its docked position. Side and
+     bottom padding remain. */
+  padding: 0 var(--page-pad-x) var(--page-pad-y);
 }
 
 
