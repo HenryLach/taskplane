@@ -297,4 +297,13 @@
       </div>
       <div class="rule r2">
         <div class="rule-name">Lanes are parallel</div>
-        <div class="rule-desc">Up to <code>max_lanes</code> within a 
+        <div class="rule-desc">Up to <code>max_lanes</code> within a wave. Each lane is one subprocess worker against one worktree against one branch.</div>
+      </div>
+      <div class="rule r3">
+        <div class="rule-name">Tasks share lanes when scopes overlap</div>
+        <div class="rule-desc">Affinity-first assignment. Overlapping <code>## File Scope</code> entries collapse onto the same lane and run serially.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
