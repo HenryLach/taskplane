@@ -107,6 +107,14 @@
   .flow-band .hl-a { color: var(--amber); }
   .flow-band .hl-b { color: var(--blue); }
   .flow-band .arrow { color: var(--text-faint); padding: 0 6px; }
+
+  /* Mobile: collapse the 4-agent quartet. */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

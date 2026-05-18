@@ -120,6 +120,13 @@
     text-align: center;
   }
   .principle .hl { color: var(--green); }
+
+  /* Mobile: stack the forced-deterministic / left-to-the-model split, and
+     drop the inner 2-col item list to a single column for readability. */
+  @media (max-width: 700px) {
+    .split { grid-template-columns: 1fr; }
+    .items { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

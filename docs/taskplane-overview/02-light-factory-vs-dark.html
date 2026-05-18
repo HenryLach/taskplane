@@ -91,6 +91,11 @@
     color: var(--text-faint);
   }
   .footer-note .hl { color: var(--green); }
+
+  /* Mobile: stack the dark / light factory comparison panels. */
+  @media (max-width: 700px) {
+    .split { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

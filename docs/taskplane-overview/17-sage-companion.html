@@ -195,6 +195,19 @@
   .footer-band .hl-g { color: var(--green); }
   .footer-band .hl-b { color: var(--blue); }
   .footer-band .dim  { color: var(--text-dim); }
+
+  /* Mobile: stack the 3 basic cards. The flagship card already spans the
+     full row; its internal 2-column inner layout (body + pull-quote
+     callout) stacks the callout below the body on phone. */
+  @media (max-width: 900px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    /* The flagship card still spans the full row at tablet sizes. */
+    .card.flagship { grid-column: 1 / -1; }
+  }
+  @media (max-width: 700px) {
+    .cards          { grid-template-columns: 1fr; }
+    .flagship-inner { grid-template-columns: 1fr; gap: 16px; }
+  }
 </style>
 </head>
 <body>

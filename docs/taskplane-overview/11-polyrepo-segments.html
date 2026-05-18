@@ -189,6 +189,19 @@
     border-radius: 3px;
     font-size: var(--fs-sm);
   }
+
+  /* Mobile: stack the 3 repo cards, stack the 3 rule cards, and reorient
+     the segment-DAG flow vertically (arrows rotate from -> to v). */
+  @media (max-width: 900px) {
+    .repos { grid-template-columns: repeat(2, 1fr); }
+    .rules { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .repos     { grid-template-columns: 1fr; }
+    .rules     { grid-template-columns: 1fr; }
+    .dag       { flex-direction: column; align-items: center; }
+    .seg-arrow { transform: rotate(90deg); }
+  }
 </style>
 </head>
 <body>

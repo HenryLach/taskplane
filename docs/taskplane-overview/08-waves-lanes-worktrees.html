@@ -167,6 +167,18 @@
     border-radius: 3px;
     font-size: var(--fs-sm);
   }
+
+  /* Mobile: the 3-lane row inside each wave stays horizontal but scrolls
+     inside its wave card (lane affinity is easiest to read laterally),
+     while the summary rule cards at the bottom stack vertically. */
+  @media (max-width: 900px) {
+    .rules { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .wave  { overflow-x: auto; }
+    .lanes { min-width: 540px; }
+    .rules { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

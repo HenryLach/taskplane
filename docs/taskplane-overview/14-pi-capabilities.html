@@ -85,6 +85,14 @@
     vertical-align: middle;
   }
   .for-tp-band .hl { color: var(--text); }
+
+  /* Mobile: collapse the 6 capability cards. */
+  @media (max-width: 900px) {
+    .capabilities { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .capabilities { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

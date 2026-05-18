@@ -125,6 +125,16 @@
   }
   .monitor .hl-a { color: var(--amber); }
   .monitor .hl-r { color: var(--red); }
+
+  /* Mobile: stack the git-merge / merge-agent split, and collapse the
+     5-step merger pipeline to 2 then 1 column. */
+  @media (max-width: 900px) {
+    .merger-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .split       { grid-template-columns: 1fr; }
+    .merger-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

@@ -93,6 +93,15 @@
     line-height: 1.55;
   }
   .callout-text code { color: var(--text); background: var(--surface-2); padding: 1px 4px; border-radius: 3px; font-family: var(--mono); font-size: var(--fs-sm); }
+
+  /* Mobile: stack the PROMPT.md / STATUS.md split, and collapse callouts. */
+  @media (max-width: 900px) {
+    .callouts { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .split    { grid-template-columns: 1fr; }
+    .callouts { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

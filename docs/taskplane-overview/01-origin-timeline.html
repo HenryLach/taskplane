@@ -95,6 +95,14 @@
     text-align: center;
   }
   .footer-tag .hl { color: var(--green); }
+
+  /* Mobile: collapse the 4-column harness timeline. */
+  @media (max-width: 900px) {
+    .timeline { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .timeline { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
