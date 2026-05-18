@@ -156,12 +156,24 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   margin-bottom: 12px;
-  /* Allow a per-page nav (.page-nav) to sit at the right edge of the eyebrow.
-     With one child the title still aligns left as before. */
-  display: flex;
+  /* Three-column grid: title (left) · wordmark (center) · nav (right).
+     1fr / auto / 1fr keeps the wordmark perfectly centered regardless of
+     how wide the title or nav columns end up. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
+}
+.eyebrow > :first-child { justify-self: start; }
+.eyebrow > .page-nav    { justify-self: end; }
+
+/* Wordmark centered in the eyebrow. Height matches the nav-arrow line-height
+   (--fs-lg) so adding the logo does NOT grow the eyebrow row. */
+.eyebrow-logo {
+  display: block;
+  height: var(--fs-lg);
+  width: auto;
+  justify-self: center;
 }
 
 /* Subtle per-page navigation: prev / index / next. Placed inside .eyebrow. */

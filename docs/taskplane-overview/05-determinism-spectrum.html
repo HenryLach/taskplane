@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>V5 — Determinism spectrum</title>
-<link rel="stylesheet" href="_shared.css">
+<link rel="stylesheet" href="shared.css">
 <style>
   .bar-wrap { padding: 0 8px; margin-bottom: 86px; }
   .bar-labels {
@@ -125,6 +125,7 @@
   <div class="frame">
     <div class="eyebrow">
       <span>5 · Design philosophy</span>
+      <img class="eyebrow-logo" src="taskplane-word-white.svg" alt="Taskplane">
       <nav class="page-nav" aria-label="Page navigation">
         <a href="04-task-packet-anatomy.html" aria-label="Previous">&larr;</a>
         <a href="index.html" aria-label="Index">&#9675;</a>
@@ -175,15 +176,4 @@
           <li class="item">Supervisor steering<span class="sub">when / what to inject</span></li>
           <li class="item">Discovery hydration<span class="sub">checkbox expansion at runtime</span></li>
           <li class="item">Verify-then-fix<span class="sub">test failures post-merge</span></li>
-          <li class="item">Exit interception<span class="sub">supervisor re-steer up to 2×</span></li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="principle">
-      Two runs of the same batch produce the same waves, the same lanes, the same branch names —<br>
-      <span class="hl">only the contents of the model's tokens differ.</span>
-    </div>
-  </div>
-</body>
-</html>
+          <li class="item">Exit inter

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>V7 — Mailbox protocol</title>
-<link rel="stylesheet" href="_shared.css">
+<link rel="stylesheet" href="shared.css">
 <style>
   .topology {
     display: grid;
@@ -136,6 +136,7 @@
   <div class="frame">
     <div class="eyebrow">
       <span>7 · Steering</span>
+      <img class="eyebrow-logo" src="taskplane-word-white.svg" alt="Taskplane">
       <nav class="page-nav" aria-label="Page navigation">
         <a href="06-cross-model-review.html" aria-label="Previous">&larr;</a>
         <a href="index.html" aria-label="Index">&#9675;</a>
@@ -202,13 +203,4 @@
       </div>
       <div class="prop">
         <div class="prop-name">bidirectional</div>
-        <div class="prop-desc">agents reply into outbox/ — the engine polls and surfaces alerts to the supervisor.</div>
-      </div>
-      <div class="prop">
-        <div class="prop-name">portable</div>
-        <div class="prop-desc">windows, macOS, linux — same protocol. no sockets, no named pipes, no daemon.</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
+        <div class="prop-desc">agents reply into 

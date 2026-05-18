@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>V6 — Cross-model review flow</title>
-<link rel="stylesheet" href="_shared.css">
+<link rel="stylesheet" href="shared.css">
 <style>
   .flow {
     display: grid;
@@ -189,6 +189,7 @@
   <div class="frame">
     <div class="eyebrow">
       <span>6 · The independent gate</span>
+      <img class="eyebrow-logo" src="taskplane-word-white.svg" alt="Taskplane">
       <nav class="page-nav" aria-label="Page navigation">
         <a href="05-determinism-spectrum.html" aria-label="Previous">&larr;</a>
         <a href="index.html" aria-label="Index">&#9675;</a>
@@ -257,15 +258,4 @@
       </div>
       <div class="verdict unavail">
         <div class="verdict-name">UNAVAILABLE</div>
-        <div class="verdict-desc">Reviewer crashed / timed out. Worker proceeds cautiously. Logged for the operator.</div>
-      </div>
-    </div>
-
-    <div class="footer-line">
-      review levels per task → <span class="hl-g">0</span> none · <span class="hl-g">1</span> plan · <span class="hl-a">2</span> plan + code · <span class="hl-a">3</span> plan + code + test
-      <br />step 0 (preflight) and the final step (docs) always skip
-    </div>
-
-  </div>
-</body>
-</html>
+        <div class="verdict-desc">Reviewer crashed / timed out. Worker proceeds cautiously. Logged for the operator.</div

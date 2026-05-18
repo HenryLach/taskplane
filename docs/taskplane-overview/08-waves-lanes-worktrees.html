@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>V8 — Waves, lanes, worktrees</title>
-<link rel="stylesheet" href="_shared.css">
+<link rel="stylesheet" href="shared.css">
 <style>
   .legend {
     display: flex;
@@ -172,6 +172,7 @@
   <div class="frame">
     <div class="eyebrow">
       <span>8 · Execution hierarchy</span>
+      <img class="eyebrow-logo" src="taskplane-word-white.svg" alt="Taskplane">
       <nav class="page-nav" aria-label="Page navigation">
         <a href="07-mailbox-protocol.html" aria-label="Previous">&larr;</a>
         <a href="index.html" aria-label="Index">&#9675;</a>
@@ -296,13 +297,4 @@
       </div>
       <div class="rule r2">
         <div class="rule-name">Lanes are parallel</div>
-        <div class="rule-desc">Up to <code>max_lanes</code> within a wave. Each lane is one subprocess worker against one worktree against one branch.</div>
-      </div>
-      <div class="rule r3">
-        <div class="rule-name">Tasks share lanes when scopes overlap</div>
-        <div class="rule-desc">Affinity-first assignment. Overlapping <code>## File Scope</code> entries collapse onto the same lane and run serially.</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
+        <div class="rule-desc">Up to <code>max_lanes</code> within a 

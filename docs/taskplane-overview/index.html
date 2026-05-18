@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Taskplane intro video · visuals index</title>
-<link rel="stylesheet" href="_shared.css">
+<title>Taskplane Overview</title>
+<link rel="stylesheet" href="shared.css">
 <style>
   .grid {
     display: grid;
@@ -22,6 +22,31 @@
     border-left: 3px solid currentColor;
   }
   a.card:hover { border-color: var(--green); transform: translateY(-2px); }
+
+  /* Highlight the entry-point card so a first-time reader knows where to begin.
+     Visual language mirrors the "critical step" treatment on page 16. */
+  a.card.start-here {
+    background: var(--surface-2);
+    border: 1px solid var(--green);
+    border-left: 3px solid var(--green);
+    box-shadow: 0 0 0 1px rgba(126, 231, 135, 0.15) inset;
+    position: relative;
+  }
+  a.card.start-here .start-badge {
+    position: absolute;
+    top: -10px;
+    right: 14px;
+    background: var(--green);
+    color: var(--bg);
+    font-family: var(--mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
   a.card.c1 { color: var(--green); }
   a.card.c2 { color: var(--amber); }
   a.card.c3 { color: var(--blue); }
@@ -81,19 +106,24 @@
     padding: 1px 5px;
     border-radius: 3px;
   }
+
 </style>
 </head>
 <body>
   <div class="frame">
-    <div class="eyebrow">Introduction to Taskplane</div>
-    <h1>Visual Overview</h1>
+    <div class="eyebrow">
+      <span>Introduction to Taskplane</span>
+      <img class="eyebrow-logo" src="taskplane-word-white.svg" alt="Taskplane">
+    </div>
+    <h1>Table of Contents</h1>
     <p class="subtitle">These 17 pages provide an overview of how Taskplane dramatically improves AI agent coding outcomes for long-running multi-task orchestration.</p>
 
     <div class="grid">
-      <a class="card c1" href="01-origin-timeline.html">
+      <a class="card c1 start-here" href="01-origin-timeline.html">
+        <div class="start-badge">★ Start here</div>
         <div class="num">1</div>
         <div class="title">Origin timeline</div>
-        <div class="desc">Vibe → Ralph → Parallel Ralph → Taskplane. The ~1M lines of lessons.</div>
+        <div class="desc">Vibe → Ralph → Parallel Ralph → Taskplane. 1 million lines of lessons.</div>
       </a>
       <a class="card c2" href="02-light-factory-vs-dark.html">
         <div class="num">2</div>
