@@ -179,6 +179,12 @@
     .lanes { min-width: 540px; }
     .rules { grid-template-columns: 1fr; }
   }
+
+  /* Page-specific override: this page is the tallest of the deck and
+     spills past one 16:9 viewport on desktop with the shared 48px body
+     padding-bottom. Trim it to 20px here so the whole page fits without
+     a vertical scrollbar at standard desktop aspect ratios. */
+  body { padding-bottom: 20px; }
 </style>
 </head>
 <body>
