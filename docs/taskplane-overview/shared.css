@@ -223,6 +223,15 @@ body {
   text-decoration: none;
   transition: color 0.15s ease, transform 0.15s ease;
 }
+.page-nav a svg {
+  /* GitHub icon: scale to track the nav font-size so it sits at the same
+     visual weight as the arrow glyphs and follows the green/hover color
+     via fill="currentColor". 0.85em accounts for the SVG filling its full
+     viewBox while text glyphs leave intrinsic side bearings. */
+  width: 0.85em;
+  height: 0.85em;
+  display: block;
+}
 .page-nav a:hover {
   color: var(--text);
   transform: translateY(-1px);
