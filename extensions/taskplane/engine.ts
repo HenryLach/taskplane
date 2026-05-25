@@ -4225,14 +4225,23 @@ export async function executeOrchBatch(
 						"info",
 					);
 
-					// TP-040: Emit merge_success event
+					// TP-040: Emit merge_success event.
+					//
+					// `waveIndex` is the segment-round index (0-based), and the supervisor
+					// formatter renders the (N/M) counter using `waveIndex + 1` for N.
+					// For unit consistency we therefore pair it with the segment-level
+					// `batchState.totalWaves` (segment-expanded round count), not
+					// `taskLevelWaveCount` (pre-expansion). Using the task-level count as
+					// the denominator while the numerator counts segment rounds produced
+					// `(4/3)`, `(5/3)`, `(6/3)` style overflow once segments expanded —
+					// see issue #562.
 					emitEvent(
 						stateRoot,
 						{
 							...buildEngineEventBase("merge_success", batchState.batchId, waveIdx, batchState.phase),
 							laneCount: mergedCount,
 							durationMs: mergeResult.totalDurationMs,
-							totalWaves: taskLevelWaveCount,
+							totalWaves: batchState.totalWaves,
 						},
 						onEngineEvent,
 					);

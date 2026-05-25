@@ -924,6 +924,33 @@ describe("5.x — formatEventNotification", () => {
 		expect(text).toContain("42");
 	});
 
+	it("5.8a: merge_success counter denominator stays >= numerator across segment-expanded waves (regression for #562)", () => {
+		// Polyrepo scenario from #562: 3 task-level waves expand into 6
+		// segment-level merge rounds. The engine emits one merge_success
+		// per segment round, with waveIndex = segment-round index (0..5)
+		// and totalWaves = segment-expanded round count (6). The formatter
+		// must therefore render (1/6) through (6/6), never (4/3), (5/3),
+		// or (6/3) as observed in the bug report.
+		const denominator = 6;
+		for (let waveIdx = 0; waveIdx < denominator; waveIdx++) {
+			const event = {
+				timestamp: "t",
+				type: "merge_success" as any,
+				batchId: "b",
+				waveIndex: waveIdx,
+				totalWaves: denominator,
+			};
+			const text = formatEventNotification(event, "supervised");
+			const expectedNumerator = waveIdx + 1;
+			expect(text).toContain(`(${expectedNumerator}/${denominator})`);
+			// Belt-and-suspenders: the bug surfaced as a numerator that
+			// exceeded the denominator. Pin that the rendered text never
+			// contains `(N/3)` for any N — the only valid denominator in
+			// the segment-expanded case is the segment count.
+			expect(text).not.toMatch(/\(\d+\/3\)/);
+		}
+	});
+
 	it("5.9: formats merge_failed differently for autonomous vs interactive", () => {
 		const event = {
 			timestamp: "t",
