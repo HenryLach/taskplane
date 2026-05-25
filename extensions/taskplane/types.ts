@@ -4323,12 +4323,26 @@ export interface RuntimeMergeSnapshot {
  *
  * @since TP-164
  */
+/**
+ * Path to a merge agent snapshot file.
+ *
+ * The filename includes BOTH `waveIndex` and `mergeNumber` because lane
+ * numbers (and therefore the legacy `mergeNumber`-only filename) repeat
+ * across waves — a wave-2 lane-1 merge would overwrite the wave-1 lane-1
+ * snapshot before the dashboard's next poll could read it. Per-wave
+ * namespacing keeps each merge's snapshot durable until the runtime
+ * directory itself is cleaned up at end-of-batch. See #509.
+ *
+ * @param waveIndex   0-based wave index for the merge
+ * @param mergeNumber 1-based merge agent number (derived from lane number)
+ */
 export function runtimeMergeSnapshotPath(
 	stateRoot: string,
 	batchId: string,
+	waveIndex: number,
 	mergeNumber: number,
 ): string {
-	return `${stateRoot}/.pi/runtime/${batchId}/lanes/merge-${mergeNumber}.json`;
+	return `${stateRoot}/.pi/runtime/${batchId}/lanes/merge-w${waveIndex}-${mergeNumber}.json`;
 }
 
 /**

@@ -38,6 +38,8 @@ import {
 	cleanupBatchRuntime,
 	appendAgentEvent,
 	writeLaneSnapshot,
+	writeMergeSnapshot,
+	readMergeSnapshot,
 } from "../taskplane/process-registry.ts";
 
 import {
@@ -45,7 +47,9 @@ import {
 	runtimeRegistryPath,
 	runtimeAgentEventsPath,
 	runtimeLaneSnapshotPath,
+	runtimeMergeSnapshotPath,
 	type RuntimeAgentManifest,
+	type RuntimeMergeSnapshot,
 } from "../taskplane/types.ts";
 
 let tmpDir: string;
@@ -416,6 +420,87 @@ describe("7.x: Event and snapshot persistence", () => {
 		expect(existsSync(path)).toBe(true);
 		const data = JSON.parse(readFileSync(path, "utf-8"));
 		expect(data.laneNumber).toBe(1);
+	});
+
+	// ── #509 regression: merge snapshots are namespaced per wave ──────────
+	// Pre-fix, writeMergeSnapshot keyed the on-disk filename by mergeNumber
+	// alone (which is derived from lane.laneNumber). Because lane numbers
+	// reset every wave, wave N+1's first merge would overwrite wave N's
+	// first merge before the dashboard could observe the terminal snapshot,
+	// causing the dashboard's merge telemetry column to render '—' for any
+	// wave whose lane numbers were reused by a subsequent wave.
+
+	function sampleSnapshot(
+		waveIndex: number,
+		mergeNumber: number,
+		status: RuntimeMergeSnapshot["status"] = "complete",
+	): RuntimeMergeSnapshot {
+		return {
+			batchId,
+			mergeNumber,
+			sessionName: `orch-${batchId}-merge-w${waveIndex}-${mergeNumber}`,
+			waveIndex,
+			status,
+			agent: {
+				contextPct: 0,
+				costUsd: 0,
+				elapsedMs: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0,
+				toolCalls: 0,
+				lastTool: "",
+				status: status === "running" ? "running" : "exited",
+			},
+			updatedAt: Date.now(),
+		} as RuntimeMergeSnapshot;
+	}
+
+	it("7.4: writeMergeSnapshot namespaces filename by wave (#509 regression)", () => {
+		writeMergeSnapshot(tmpDir, batchId, 0, 1, sampleSnapshot(0, 1));
+		const expected = runtimeMergeSnapshotPath(tmpDir, batchId, 0, 1);
+		expect(existsSync(expected)).toBe(true);
+		// The new filename must include the waveIndex so wave-N+1's lane-1
+		// merge cannot reuse the same path as wave-N's lane-1 merge.
+		expect(expected).toMatch(/merge-w0-1\.json$/);
+	});
+
+	it("7.5: same mergeNumber across two waves writes to distinct files (#509)", () => {
+		writeMergeSnapshot(tmpDir, batchId, 0, 1, sampleSnapshot(0, 1, "complete"));
+		writeMergeSnapshot(tmpDir, batchId, 1, 1, sampleSnapshot(1, 1, "running"));
+
+		const wave0Path = runtimeMergeSnapshotPath(tmpDir, batchId, 0, 1);
+		const wave1Path = runtimeMergeSnapshotPath(tmpDir, batchId, 1, 1);
+
+		expect(wave0Path).not.toBe(wave1Path);
+		expect(existsSync(wave0Path)).toBe(true);
+		expect(existsSync(wave1Path)).toBe(true);
+	});
+
+	it("7.6: writing wave 1 does not overwrite wave 0 with same mergeNumber (#509)", () => {
+		// This is the exact failure mode from the issue: wave-2 lane-1 merge
+		// trampling wave-1 lane-1's terminal snapshot.
+		writeMergeSnapshot(tmpDir, batchId, 0, 1, sampleSnapshot(0, 1, "complete"));
+		writeMergeSnapshot(tmpDir, batchId, 1, 1, sampleSnapshot(1, 1, "running"));
+
+		const wave0Snap = readMergeSnapshot(tmpDir, batchId, 0, 1);
+		const wave1Snap = readMergeSnapshot(tmpDir, batchId, 1, 1);
+
+		expect(wave0Snap).not.toBeNull();
+		expect(wave1Snap).not.toBeNull();
+		expect(wave0Snap?.waveIndex).toBe(0);
+		expect(wave0Snap?.status).toBe("complete");
+		expect(wave1Snap?.waveIndex).toBe(1);
+		expect(wave1Snap?.status).toBe("running");
+	});
+
+	it("7.7: readMergeSnapshot returns null for absent (wave, mergeNumber) tuple (#509)", () => {
+		writeMergeSnapshot(tmpDir, batchId, 0, 1, sampleSnapshot(0, 1));
+		// Same wave, different mergeNumber — absent
+		expect(readMergeSnapshot(tmpDir, batchId, 0, 99)).toBeNull();
+		// Different wave, same mergeNumber — also absent (no cross-wave fallback)
+		expect(readMergeSnapshot(tmpDir, batchId, 5, 1)).toBeNull();
 	});
 });
 

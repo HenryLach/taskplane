@@ -400,20 +400,25 @@ export function readLaneSnapshot(
  * Stored in the `lanes/` directory alongside lane snapshots so the dashboard
  * server picks it up with the same scan that reads lane-N.json files.
  *
+ * Filename includes BOTH waveIndex and mergeNumber so wave-N+1's merges
+ * cannot overwrite wave-N's snapshots before the dashboard polls them (#509).
+ *
  * @param stateRoot   - Repository root (where `.pi/` lives)
  * @param batchId     - Current batch identifier
+ * @param waveIndex   - 0-based wave index for the merge
  * @param mergeNumber - 1-indexed merge agent number
  * @param snapshot    - Snapshot data to persist
  *
- * @since TP-164
+ * @since TP-164 (waveIndex parameter added in #509 remediation)
  */
 export function writeMergeSnapshot(
 	stateRoot: string,
 	batchId: string,
+	waveIndex: number,
 	mergeNumber: number,
 	snapshot: RuntimeMergeSnapshot,
 ): void {
-	const path = runtimeMergeSnapshotPath(stateRoot, batchId, mergeNumber);
+	const path = runtimeMergeSnapshotPath(stateRoot, batchId, waveIndex, mergeNumber);
 	mkdirSync(dirname(path), { recursive: true });
 	const tmpPath = path + ".tmp";
 	writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2) + "\n", "utf-8");
@@ -426,17 +431,19 @@ export function writeMergeSnapshot(
  *
  * @param stateRoot   - Repository root (where `.pi/` lives)
  * @param batchId     - Current batch identifier
+ * @param waveIndex   - 0-based wave index for the merge
  * @param mergeNumber - 1-indexed merge agent number
  *
- * @since TP-164
+ * @since TP-164 (waveIndex parameter added in #509 remediation)
  */
 export function readMergeSnapshot(
 	stateRoot: string,
 	batchId: string,
+	waveIndex: number,
 	mergeNumber: number,
 ): RuntimeMergeSnapshot | null {
 	try {
-		const p = runtimeMergeSnapshotPath(stateRoot, batchId, mergeNumber);
+		const p = runtimeMergeSnapshotPath(stateRoot, batchId, waveIndex, mergeNumber);
 		if (!existsSync(p)) return null;
 		return JSON.parse(readFileSync(p, "utf-8")) as RuntimeMergeSnapshot;
 	} catch {

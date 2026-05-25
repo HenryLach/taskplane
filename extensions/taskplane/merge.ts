@@ -895,7 +895,7 @@ export async function spawnMergeAgentV2(
 				agent: buildAgentSnap(tel, "running"),
 				updatedAt: Date.now(),
 			};
-			writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+			writeMergeSnapshot(mergeStateRoot, bid, waveIndex ?? 0, mergeNumber, snap);
 		} catch {
 			/* non-fatal */
 		}
@@ -915,7 +915,7 @@ export async function spawnMergeAgentV2(
 			agent: buildAgentSnap({}, "running"),
 			updatedAt: Date.now(),
 		};
-		writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, initialSnap);
+		writeMergeSnapshot(mergeStateRoot, bid, waveIndex ?? 0, mergeNumber, initialSnap);
 	} catch {
 		/* non-fatal */
 	}
@@ -964,7 +964,7 @@ export async function spawnMergeAgentV2(
 					agent: buildAgentSnap(result, terminalStatus === "complete" ? "exited" : "crashed"),
 					updatedAt: Date.now(),
 				};
-				writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+				writeMergeSnapshot(mergeStateRoot, bid, waveIndex ?? 0, mergeNumber, snap);
 			} catch {
 				/* non-fatal */
 			}
@@ -987,7 +987,7 @@ export async function spawnMergeAgentV2(
 					agent: buildAgentSnap({}, "crashed"),
 					updatedAt: Date.now(),
 				};
-				writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+				writeMergeSnapshot(mergeStateRoot, bid, waveIndex ?? 0, mergeNumber, snap);
 			} catch {
 				/* non-fatal */
 			}

@@ -243,6 +243,17 @@ let viewerMode = null;   // "conversation" | "status-md" | null
 let viewerTarget = null; // session name (conversation) or taskId (status-md)
 let lastBatchId = null;  // TP-178: track batchId for stale viewer detection (#487)
 
+// #507: Debounce the no-batch transition. A single missed poll happens
+// transiently during batch-state.json writes at batch startup, and was
+// causing the dashboard to flash the previous batch's history view before
+// switching to the new live batch. Require N consecutive no-batch polls
+// before clearing the viewer / showing history. With the server's 2s
+// POLL_INTERVAL, a threshold of 3 corresponds to ~6s of confirmed silence —
+// well past the typical batch-state.json write window (sub-second) while
+// still cleaning up promptly when a batch genuinely ends.
+let consecutiveNoBatchPolls = 0;
+const NO_BATCH_DEBOUNCE_THRESHOLD = 3;
+
 // ─── Repo Helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -1818,6 +1829,16 @@ function render(data) {
   $lastUpdate.textContent = new Date().toLocaleTimeString();
 
   if (!batch) {
+    // #507: A single missed poll during batch startup (batch-state.json being
+    // written) is not a real "batch disappeared" signal. Only act on no-batch
+    // after N consecutive polls confirm it, so we don't flash the history
+    // view between two live batches.
+    consecutiveNoBatchPolls += 1;
+    if (consecutiveNoBatchPolls < NO_BATCH_DEBOUNCE_THRESHOLD) {
+      // Hold the previous render in place. Still tick the timestamp so the
+      // user knows the SSE stream is alive.
+      return;
+    }
     // TP-178: Clear viewer when batch disappears (#487)
     if (lastBatchId && viewerMode) closeViewer();
     lastBatchId = null;
@@ -1829,6 +1850,9 @@ function render(data) {
     renderNoBatch();
     return;
   }
+
+  // Batch present — reset the no-batch debounce counter (#507).
+  consecutiveNoBatchPolls = 0;
 
   // TP-178: Detect batchId change — clear stale viewer state (#487)
   if (batch.batchId && lastBatchId && batch.batchId !== lastBatchId && viewerMode) {
