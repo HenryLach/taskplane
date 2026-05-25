@@ -467,12 +467,26 @@ function loadRuntimeLaneSnapshots(batchId) {
 /**
  * Load Runtime V2 merge agent snapshots for the current batch.
  *
- * Reads all `merge-N.json` files from `.pi/runtime/{batchId}/lanes/`.
- * Returns a map of mergeNumber (string) → snapshot data.
+ * Reads all `merge-*.json` files from `.pi/runtime/{batchId}/lanes/`.
+ * Returns a map of unique key → snapshot data, where the key is a composite
+ * of waveIndex and mergeNumber.
+ *
+ * The composite key is essential because lane numbers (and therefore
+ * `mergeNumber`) repeat across waves — keying solely by `mergeNumber` caused
+ * wave N+1's snapshots to silently overwrite wave N's in the intermediate
+ * map, which is the root cause of #509 ('merge agent telemetry missing for
+ * some waves').
  *
  * Follows the same pattern as {@link loadRuntimeLaneSnapshots}.
  *
- * @since TP-164
+ * Filename accepted patterns (back-compat-tolerant):
+ *   merge-w{waveIndex}-{mergeNumber}.json  (current, post-#509)
+ *   merge-{mergeNumber}.json               (legacy, pre-#509)
+ *
+ * Both patterns embed waveIndex inside the snapshot JSON itself, so the key
+ * derivation works for either filename.
+ *
+ * @since TP-164 (composite key added in #509 remediation)
  */
 function loadRuntimeMergeSnapshots(batchId) {
   if (!batchId) return {};
@@ -484,7 +498,14 @@ function loadRuntimeMergeSnapshots(batchId) {
     for (const file of files) {
       try {
         const data = JSON.parse(fs.readFileSync(path.join(lanesDir, file), "utf-8"));
-        if (data.mergeNumber != null) snapshots[data.mergeNumber] = data;
+        if (data.mergeNumber == null) continue;
+        // Composite key keeps cross-wave snapshots from colliding in this map.
+        // Falls back to mergeNumber-only for legacy snapshots that pre-date
+        // the waveIndex-in-filename change.
+        const key = data.waveIndex != null
+          ? `w${data.waveIndex}-${data.mergeNumber}`
+          : String(data.mergeNumber);
+        snapshots[key] = data;
       } catch { continue; }
     }
   } catch { /* dir missing */ }
