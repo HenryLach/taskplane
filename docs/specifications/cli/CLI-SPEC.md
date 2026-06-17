@@ -152,9 +152,9 @@ taskplane/                              ← npm package root (= repo root)
     "templates/"
   ],
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*",
-    "@mariozechner/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-ai": "*",
     "@sinclair/typebox": "*"
   },
   "dependencies": {
@@ -949,9 +949,9 @@ Clear ownership prevents upgrade conflicts:
 
 | Dependency | Range | Purpose |
 |---|---|---|
-| `@mariozechner/pi-coding-agent` | `*` | Pi extension runtime |
-| `@mariozechner/pi-tui` | `*` | TUI components for widgets |
-| `@mariozechner/pi-ai` | `*` | AI utilities (StringEnum) |
+| `@earendil-works/pi-coding-agent` | `*` | Pi extension runtime |
+| `@earendil-works/pi-tui` | `*` | TUI components for widgets |
+| `@earendil-works/pi-ai` | `*` | AI utilities (StringEnum) |
 | `@sinclair/typebox` | `*` | Schema definitions for tool parameters |
 
 ### Dev

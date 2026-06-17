@@ -1,5 +1,5 @@
 {
-  "// NOTE": "Pi extensions are runtime-transpiled by pi's bundler. This tsconfig is for editor/CI type-checking only. Full tsc --noEmit will report module resolution errors for @mariozechner/* packages (globally installed, not in node_modules).",
+  "// NOTE": "Pi extensions are runtime-transpiled by pi's bundler. This tsconfig is for editor/CI type-checking only. Full tsc --noEmit will report module resolution errors for @earendil-works/* packages — and legacy @mariozechner/* aliases retained for back-compat — because pi packages are globally installed (not in node_modules). See extensions/tsconfig.ci.json for the CI variant that adds pi-shims path mappings.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",

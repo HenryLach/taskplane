@@ -73,7 +73,7 @@ It slipped through:
 
 ```json
 {
-  "// NOTE": "Pi extensions are runtime-transpiled by pi's bundler. This tsconfig is for editor/CI type-checking only. Full tsc --noEmit will report module resolution errors for @mariozechner/* packages (globally installed, not in node_modules).",
+  "// NOTE": "Pi extensions are runtime-transpiled by pi's bundler. This tsconfig is for editor/CI type-checking only. Full tsc --noEmit will report module resolution errors for @earendil-works/* packages — and legacy @mariozechner/* aliases retained for back-compat — because pi packages are globally installed (not in node_modules). See extensions/tsconfig.ci.json for the CI variant that adds pi-shims path mappings.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -93,7 +93,7 @@ It slipped through:
 
 1. The pi packages (`@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui` — and legacy `@mariozechner/*`) are NOT in `node_modules`. They live at `npm root -g/<scope>/<pkg>` and are aliased at runtime by Pi's extension loader. `tsc --noEmit` cannot resolve them.
 2. `include: ["task-orchestrator.ts"]` only covers ONE entry point. The reviewer extension and the rest of `extensions/taskplane/` are excluded from typecheck scope today.
-3. The `// NOTE` comment in this file is **stale** — it still references `@mariozechner/*` only, even though the canonical scope is now `@earendil-works/*` (per issue #560 and Pi v0.74.0). This is a historical reference, not the current canonical scope. **TP-191 will refresh the comment** as part of the tsconfig modernization.
+3. ~~The `// NOTE` comment in this file is **stale** — it still references `@mariozechner/*` only, even though the canonical scope is now `@earendil-works/*` (per issue #560 and Pi v0.74.0). This is a historical reference, not the current canonical scope. **TP-191 will refresh the comment** as part of the tsconfig modernization.~~ **(Addressed 2026-06-17:** the comment now mentions both scopes — `@earendil-works/*` as canonical, `@mariozechner/*` as legacy back-compat — and points readers at `tsconfig.ci.json` for the CI-shim path mappings. This was overlooked during the TP-191 implementation and folded into a follow-up cleanup pass.**)**
 
 ### 4.2 `extensions/tsconfig.test.json`
 

@@ -1606,7 +1606,7 @@ sudo dnf install git tmux
 sudo pacman -S git tmux
 
 # Pi (via npm)
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 TMUX and Git are standard packages on all major Linux distributions.
@@ -1619,7 +1619,7 @@ No special configuration needed.
 brew install git tmux
 
 # Pi
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 macOS ships with Git, but the Homebrew version is typically newer.
@@ -1668,7 +1668,7 @@ Key facts about Git Bash TMUX:
 ```bash
 # Inside WSL:
 sudo apt install tmux git
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 WSL works but introduces filesystem boundary considerations:
