@@ -9,7 +9,7 @@
 
 ## 1. Problem Statement
 
-Taskplane is an AI agent orchestration system built as a set of [pi](https://github.com/badlogic/pi-mono) extensions. It provides:
+Taskplane is an AI agent orchestration system built as a set of [pi](https://github.com/earendil-works/pi) extensions. It provides:
 
 - **Task Runner** (`/task`) — Autonomous single-task execution with checkpoint discipline, fresh-context worker loops, and cross-model reviews
 - **Task Orchestrator** (`/orch`) — Parallel multi-task execution using git worktrees, dependency-aware wave scheduling, and automated merges

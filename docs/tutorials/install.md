@@ -5,7 +5,7 @@ This tutorial gets Taskplane running in a project and verifies that `/orch` is a
 ## Prerequisites
 
 - Node.js **22+**
-- [pi](https://github.com/badlogic/pi-mono)
+- [pi](https://github.com/earendil-works/pi)
 - Git
 
 ---
@@ -22,7 +22,25 @@ Use this if you want Taskplane commands available in every pi session.
 pi install npm:taskplane
 ```
 
-> **Recommended.** This registers the package for pi extension/skill auto-discovery AND keeps Taskplane updateable via `pi update` (a single source of truth).
+As of pi `0.75.0`, this installs Taskplane into pi's private extension directory (`~/.pi/agent/npm/node_modules/`) rather than the system npm-global root. To make the `taskplane` CLI callable from your shell, add pi's bin dir to PATH once:
+
+```bash
+# bash / zsh — add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.pi/agent/npm/node_modules/.bin:$PATH"
+```
+
+```powershell
+# PowerShell — persistent across sessions (set the user-scope env var once)
+[Environment]::SetEnvironmentVariable(
+  "PATH",
+  "$HOME\.pi\agent\npm\node_modules\.bin;" + [Environment]::GetEnvironmentVariable("PATH", "User"),
+  "User"
+)
+```
+
+With Pi's bin dir on PATH, `pi update` keeps Taskplane current automatically — a single source of truth, no second update command needed.
+
+> **Recommended.** This pattern registers the package for pi extension/skill auto-discovery AND keeps Taskplane updateable via `pi update`.
 
 > **Avoid `npm install -g taskplane`** unless you have a specific reason. As of pi `0.75.0`, `pi install` puts Taskplane in pi's private extension directory (`~/.pi/agent/npm/node_modules/`). A separate `npm install -g taskplane` creates a **second** on-disk copy in the system npm-global root, and the two drift independently — `pi update` only refreshes the pi-private copy. If you're already in this state, `taskplane doctor` detects it and prints a remediation.
 
