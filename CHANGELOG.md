@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-06-17
+
+### Fixed
+
+- **Pi CLI resolution fails on NVM-Windows and non-canonical installs (#598, #519):**
+  `resolvePiCliPath()` ignored `process.argv[1]` and relied entirely on
+  `npm root -g` plus a small static fallback list. That stranded NVM-on-Windows
+  users (child processes inherit a stripped PATH, so `npm root -g` returns
+  empty and the fallback list doesn't include NVM-versioned dirs) and Nix
+  users (Pi lives at `/nix/store/...`, outside any npm prefix). The fix adds
+  `process.argv[1]` as the authoritative candidate 0 — when Taskplane runs as
+  a Pi extension, the parent process IS Pi and Node sets `process.argv[1]`
+  to Pi's `cli.js` directly. Two sanity guards (`endsWith('cli.js')` +
+  `existsSync()`) keep wrappers and test runners from being mistaken for Pi.
+  Defense in depth: two additional env-var-driven bases (`$NVM_SYMLINK\node_modules`
+  for NVM-for-Windows, `dirname($NVM_BIN)/../lib/node_modules` for NVM-for-Unix)
+  cover the same NVM scenarios in environments where `argv[1]` isn't available.
+  6 new regression tests in `path-resolver-pi-scope.test.ts`. Apologies to
+  `@chenxin-yan` whose PR #520 (closed 2026-05-25) proposed exactly this fix
+  for `resolvePiCliPath` 7 weeks ago — it was incorrectly closed as already-fixed
+  because `process.argv[1]` had been added to the *sibling* `resolveTaskplanePackageFile`
+  resolver, but not to `resolvePiCliPath` itself.
+
+- **Dashboard merge agent telemetry missing for some waves (#509):**
+  Merge snapshot files were keyed on disk by `mergeNumber` alone
+  (`merge-{N}.json`), and `mergeNumber` is derived from `lane.laneNumber`.
+  Because lane numbers reset every wave, wave N+1's lane-1 merge silently
+  overwrote wave N's lane-1 terminal snapshot before the dashboard could
+  read it — surfacing as `—` in the merge telemetry column for any wave
+  whose lane numbers were reused by a subsequent wave. The fix namespaces
+  the filename per wave (`merge-w{waveIndex}-{mergeNumber}.json`) and
+  updates the dashboard server's intermediate map key to a composite
+  (`w{waveIndex}-{mergeNumber}`) so collisions can't reappear at read time.
+  Filename filter remains permissive so legacy snapshots from pre-fix
+  batches still load for back-compat. 4 new regression tests in
+  `process-registry.test.ts` (7.4–7.7) pin the cross-wave invariants.
+
+- **Dashboard briefly flips to history view at batch startup (#507):**
+  A single missed SSE poll during `batch-state.json` write at startup
+  triggered the no-batch handler in `app.js`, which closes the viewer and
+  renders the history panel before the next poll picked up the new batch.
+  The user-visible effect was a flash of stale history between two live
+  batches. The fix adds a 3-consecutive-miss debounce on the no-batch
+  transition (~6s with the 2s `POLL_INTERVAL`) — well past the sub-second
+  `batch-state.json` write window while still cleaning up promptly when a
+  batch genuinely ends.
+
+- **Wave-merge counter `(N/3)` overflow past wave 3 (#562):**
+  In polyrepo batches where task-level waves expand into segment-level
+  merge rounds (3 task waves → 6 segment rounds in the reporter's case),
+  the merge_success alert's `(X/Y)` counter overflowed its denominator:
+  `(1/3)`, `(2/3)`, `(3/3)`, then `(4/3)`, `(5/3)`, `(6/3)`. The supervisor
+  formatter's `(X/Y)` rendering paired a segment-round numerator with a
+  task-level denominator from `taskLevelWaveCount`. The fix swaps the event
+  emission's `totalWaves` source from `taskLevelWaveCount` to
+  `batchState.totalWaves` (the segment-expanded round count), so numerator
+  and denominator share units. Purely cosmetic — functionality was correct.
+  Regression test 5.8a in `supervisor.test.ts`.
+
+### Internal
+
+- **Administrative closeouts for already-shipped fixes:** Closed five stale
+  open issues whose fixes had already shipped in earlier releases but were
+  never marked complete: **#557** (Pi `@earendil-works` rename — fixed by
+  `34b303a4` in v0.29.0), **#538** / **#539** / **#540** (supervisor recovery
+  cluster — all three fixed by TP-187 in v0.29.0), and **#519** (Nix CLI
+  resolution — NOW fixed in v0.30.2; the closeout in May was incorrect).
+  Open issue queue dropped from 16 to 7 across this release cycle.
+
 ## [0.30.1] - 2026-05-11
 
 ### Enhanced
