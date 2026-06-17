@@ -61,12 +61,34 @@ IMPORTANT: If you just installed pi, make sure you've configured at least one mo
 pi install npm:taskplane
 ```
 
+As of pi `0.75.0`, this installs Taskplane into pi's private extension directory (`~/.pi/agent/npm/node_modules/`) rather than the system npm-global root. To make the `taskplane` CLI available on your shell PATH, add pi's bin dir once:
+
+```bash
+# bash / zsh
+echo 'export PATH="$HOME/.pi/agent/npm/node_modules/.bin:$PATH"' >> ~/.bashrc   # or ~/.zshrc
+```
+
+```powershell
+# PowerShell
+[Environment]::SetEnvironmentVariable(
+  "PATH",
+  "$HOME\.pi\agent\npm\node_modules\.bin;" + [Environment]::GetEnvironmentVariable("PATH", "User"),
+  "User"
+)
+```
+
+With Pi's bin dir on PATH, `pi update` keeps Taskplane current automatically — there's no second update command to remember.
+
+> **Note for users who previously ran `npm install -g taskplane`:** That puts a second copy of Taskplane in your system npm-global, separate from pi's private copy. The two copies drift independently (`pi update` only refreshes the pi-private one), and your shell will resolve `taskplane` to whichever is earlier on PATH. Run `taskplane doctor` — it now detects this duplication and prints a remediation. The fix is `npm uninstall -g taskplane` plus the PATH change above.
+
 ### Option B: Single Project-Local Install
 
 ```bash
 cd my-project
 pi install -l npm:taskplane
 ```
+
+Project-local installs land in `.pi/npm/node_modules/`. Either invoke via `npx taskplane <cmd>`, run the binary directly at `.pi/npm/node_modules/.bin/taskplane`, or add that dir to PATH (project-scoped — e.g. via a `.envrc` if you use direnv).
 
 ## Quickstart
 
