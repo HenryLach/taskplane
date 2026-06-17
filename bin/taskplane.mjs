@@ -2797,8 +2797,10 @@ function cmdDoctor() {
 	// npm's global root to `~/.pi/agent/npm/` to avoid system-Node permission
 	// errors. Users who installed via `npm install -g taskplane` before that
 	// landed (or who installed via both paths) end up with two on-disk copies.
+	let duplicationDetected = false;
 	const duplication = detectDuplicateTaskplaneInstall();
 	if (duplication) {
+		duplicationDetected = true;
 		console.log();
 		console.log(`  ${WARN} taskplane is installed in TWO locations with different versions:`);
 		for (const loc of duplication.locations) {
@@ -2813,9 +2815,24 @@ function cmdDoctor() {
 			`     ${c.dim}→ Recommended fix: drop the npm-global copy and put Pi's bin dir on PATH:${c.reset}`,
 		);
 		console.log(`     ${c.cyan}    npm uninstall -g taskplane${c.reset}`);
-		console.log(
-			`     ${c.cyan}    export PATH="$HOME/.pi/agent/npm/node_modules/.bin:$PATH"${c.reset}  ${c.dim}# add to ~/.bashrc / ~/.zshrc${c.reset}`,
-		);
+		// Platform-aware PATH guidance: PowerShell on Windows, bash/zsh elsewhere.
+		// Linux & macOS users running PowerShell can still copy the bash form;
+		// Windows users running Git Bash can still copy the PowerShell form. The
+		// platform check picks the line most likely to match a fresh shell on
+		// the host OS so the inline copy/paste path is one-line on the common
+		// case.
+		if (process.platform === "win32") {
+			console.log(
+				`     ${c.cyan}    $env:PATH = "$HOME\\.pi\\agent\\npm\\node_modules\\.bin;" + $env:PATH${c.reset}  ${c.dim}# PowerShell, add to $PROFILE${c.reset}`,
+			);
+			console.log(
+				`     ${c.dim}    or, for Git Bash:${c.reset} ${c.cyan}export PATH="$HOME/.pi/agent/npm/node_modules/.bin:$PATH"${c.reset}  ${c.dim}# ~/.bashrc${c.reset}`,
+			);
+		} else {
+			console.log(
+				`     ${c.cyan}    export PATH="$HOME/.pi/agent/npm/node_modules/.bin:$PATH"${c.reset}  ${c.dim}# add to ~/.bashrc / ~/.zshrc${c.reset}`,
+			);
+		}
 		issues++;
 	}
 
@@ -3345,9 +3362,21 @@ function cmdDoctor() {
 	if (issues === 0) {
 		console.log(`${OK} ${c.green}All checks passed!${c.reset}\n`);
 	} else {
-		console.log(
-			`${FAIL} ${issues} issue(s) found. Run ${c.cyan}taskplane init${c.reset} to fix config issues.\n`,
-		);
+		// Each check above prints its own inline remediation hint, so the
+		// summary points back to those rather than recommending a single
+		// generic fix. The previous summary always recommended
+		// `taskplane init`, which was misleading when the underlying issue
+		// was a duplicate install (whose remediation is
+		// `npm uninstall -g taskplane`, not init).
+		if (duplicationDetected) {
+			console.log(
+				`${FAIL} ${issues} issue(s) found. See remediation hints above (${c.cyan}npm uninstall -g taskplane${c.reset} for the duplicate install).\n`,
+			);
+		} else {
+			console.log(
+				`${FAIL} ${issues} issue(s) found. See remediation hints above; run ${c.cyan}taskplane init${c.reset} to fix config issues.\n`,
+			);
+		}
 		process.exit(1);
 	}
 }
@@ -3434,9 +3463,16 @@ function detectDuplicateTaskplaneInstall() {
 
 	let npmRootGlobal = null;
 	try {
+		// 5s timeout guards against the rare case where `npm` is on PATH but
+		// hangs (slow registry probe, misconfigured custom prefix, etc.).
+		// `taskplane doctor` is a diagnostic — it should never make the CLI
+		// itself feel hung. On timeout, execSync throws and we fall back to
+		// the catch branch, returning null and silently skipping the
+		// duplication check (best-effort by design).
 		npmRootGlobal = execSync("npm root -g", {
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 5000,
 		})
 			.toString()
 			.trim();
