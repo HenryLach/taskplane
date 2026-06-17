@@ -25,7 +25,7 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 - [Node.js](https://nodejs.org/) ≥ 20.0.0
 - [Git](https://git-scm.com/)
-- [pi](https://github.com/badlogic/pi-mono) (the AI coding agent Taskplane extends)
+- [pi](https://github.com/earendil-works/pi) (the AI coding agent Taskplane extends)
 - [just](https://github.com/casey/just) (optional — task runner for common commands)
 
 ### Clone and Install

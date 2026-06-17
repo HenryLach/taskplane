@@ -1,6 +1,6 @@
 # Taskplane
 
-Multi-agent AI orchestration for coding with [pi](https://github.com/badlogic/pi-mono) — parallel task execution, mono- and poly-repo support, fresh-context worker loops, cross-model reviews, automated merges and a killer dashboard! 
+Multi-agent AI orchestration for coding with [pi](https://github.com/earendil-works/pi) — parallel task execution, mono- and poly-repo support, fresh-context worker loops, cross-model reviews, automated merges and a killer dashboard! 
 
 > **Status:** Initial release.
 
@@ -50,7 +50,7 @@ Taskplane is a pi package. You need Node.js 22+, pi and Git installed first.
 | Dependency | Required | Notes |
 |-----------|----------|-------|
 | [Node.js](https://nodejs.org/) ≥ 22 | Yes | Runtime |
-| [pi](https://github.com/badlogic/pi-mono) | Yes | Agent framework |
+| [pi](https://github.com/earendil-works/pi) | Yes | Agent framework |
 | [Git](https://git-scm.com/) | Yes | Version control, worktrees |
 
 IMPORTANT: If you just installed pi, make sure you've configured at least one model provider and tested before installing Taskplane.
