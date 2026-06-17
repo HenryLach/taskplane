@@ -112,32 +112,53 @@ const PI_PACKAGE_SCOPES = ["@earendil-works", "@mariozechner"] as const;
  * `dist/cli.js` so callers can spawn it with `node` directly, without a shell
  * intermediary.
  *
- * Resolution order: the cross product of base directories × package scopes,
- * with each base directory tried for the new scope before any base directory
- * is tried for the legacy scope. (Equivalently: scope is the inner loop, base
- * is the outer loop.)
+ * Resolution order:
  *
- * Base directories (outer loop):
- *   1. `npm root -g` result (dynamic — covers all setups: nvm, Homebrew, volta, etc.)
+ *   0. **AUTHORITATIVE** — `process.argv[1]` when it points at a Pi `cli.js`.
+ *      When Taskplane is running as a Pi extension, the parent process IS
+ *      Pi, and Node sets `process.argv[1]` to the path of the file used to
+ *      start it. This is the single most reliable resolution path: it works
+ *      for npm-global, mise, asdf, NVM (Windows + Unix), Nix, Bun-installed
+ *      Pi, and any future install method we can't enumerate. Issues #519
+ *      and #598 both stem from this signal being ignored in favor of a
+ *      static-path search that misses non-canonical install layouts.
+ *
+ * If `process.argv[1]` isn't a Pi `cli.js` (e.g. running standalone in tests,
+ * or invoked through an indirect wrapper), the function falls through to a
+ * cross product of base directories × package scopes:
+ *
+ *   1. `npm root -g` result (dynamic — covers npm-global, Homebrew, volta, etc.)
  *   2. `%APPDATA%\npm\node_modules\...` (Windows, APPDATA env var)
  *   3. `%USERPROFILE%\AppData\Roaming\npm\node_modules\...` (Windows, HOME-relative)
  *   4. `~/.npm-global/lib/node_modules/...` (macOS/Linux custom global prefix)
- *   5. `/usr/local/lib/node_modules/...` (macOS system Node, Linux)
- *   6. `/opt/homebrew/lib/node_modules/...` (macOS Homebrew)
+ *   5. `$NVM_SYMLINK\node_modules` (NVM-for-Windows, when the env var is set)
+ *   6. `dirname($NVM_BIN)/../lib/node_modules` (NVM-for-Unix, when the env var is set)
+ *   7. `/usr/local/lib/node_modules/...` (macOS system Node, Linux)
+ *   8. `/opt/homebrew/lib/node_modules/...` (macOS Homebrew)
  *
  * Scopes per base (inner loop):
  *   a. `@earendil-works/pi-coding-agent/dist/cli.js`
  *   b. `@mariozechner/pi-coding-agent/dist/cli.js`
  *
- * @returns Absolute path to a Pi CLI `dist/cli.js` (under whichever scope was found).
- * @throws  {Error} If the CLI entrypoint cannot be found under any base × scope
- *          combination. The error message includes the `npm root -g` value
- *          AND lists both scopes searched, for operator diagnosis.
+ * @returns Absolute path to a Pi CLI `dist/cli.js`.
+ * @throws  {Error} If the CLI entrypoint cannot be found by any strategy.
+ *          The error message includes the `npm root -g` value AND lists
+ *          both scopes searched, for operator diagnosis.
  */
 export function resolvePiCliPath(): string {
+	// 0. AUTHORITATIVE: trust process.argv[1] when it points at a Pi cli.js.
+	// Pi's package.json declares `"bin": { "pi": "dist/cli.js" }`, so the
+	// `endsWith("cli.js")` guard is a tight sanity check that rejects e.g.
+	// test runners or wrapper scripts that happen to leave argv[1] pointing
+	// somewhere else. existsSync() guards against stale argv state in mocks.
+	const piEntry = process.argv[1] || "";
+	if (piEntry.endsWith("cli.js") && existsSync(piEntry)) {
+		return piEntry;
+	}
+
 	const bases: string[] = [];
 
-	// 1. Dynamic: npm root -g (covers nvm, Homebrew, volta, custom npm prefix, etc.)
+	// 1. Dynamic: npm root -g (covers npm-global, Homebrew, volta, custom npm prefix, etc.)
 	const npmRoot = getNpmGlobalRoot();
 	if (npmRoot) bases.push(npmRoot);
 
@@ -151,9 +172,25 @@ export function resolvePiCliPath(): string {
 		// 4. macOS/Linux custom global prefix
 		bases.push(join(home, ".npm-global", "lib", "node_modules"));
 	}
-	// 5. macOS system Node / Linux
+
+	// 5. NVM-for-Windows defense in depth: NVM_SYMLINK points at the active
+	// Node install (typically C:\Program Files\nodejs as a junction), and the
+	// global packages live under <symlink>\node_modules. Child processes
+	// inherit this env var even when PATH is stripped of npm.
+	if (process.env.NVM_SYMLINK) {
+		bases.push(join(process.env.NVM_SYMLINK, "node_modules"));
+	}
+
+	// 6. NVM-for-Unix defense in depth: NVM_BIN points at the active version's
+	// bin directory, and the corresponding node_modules sit alongside it at
+	// `../lib/node_modules`. Same inheritance properties as NVM_SYMLINK.
+	if (process.env.NVM_BIN) {
+		bases.push(join(process.env.NVM_BIN, "..", "lib", "node_modules"));
+	}
+
+	// 7. macOS system Node / Linux
 	bases.push(join("/usr", "local", "lib", "node_modules"));
-	// 6. macOS Homebrew
+	// 8. macOS Homebrew
 	bases.push(join("/opt", "homebrew", "lib", "node_modules"));
 
 	// Cross product: scope is the inner loop so a single base directory is
