@@ -22,7 +22,9 @@ Use this if you want Taskplane commands available in every pi session.
 pi install npm:taskplane
 ```
 
-> You can also install the CLI directly with `npm install -g taskplane`, but the recommended path is `pi install npm:taskplane` because it also registers the package for pi extension/skill auto-discovery.
+> **Recommended.** This registers the package for pi extension/skill auto-discovery AND keeps Taskplane updateable via `pi update` (a single source of truth).
+
+> **Avoid `npm install -g taskplane`** unless you have a specific reason. As of pi `0.75.0`, `pi install` puts Taskplane in pi's private extension directory (`~/.pi/agent/npm/node_modules/`). A separate `npm install -g taskplane` creates a **second** on-disk copy in the system npm-global root, and the two drift independently — `pi update` only refreshes the pi-private copy. If you're already in this state, `taskplane doctor` detects it and prints a remediation.
 
 ### Option B — Project-local install (recommended for teams)
 
@@ -45,17 +47,37 @@ From the project root:
 taskplane init
 ```
 
-If `taskplane` is not on your PATH (common with project-local installs), run:
+If `taskplane` is not on your PATH (common with both global Pi installs and project-local installs as of pi `0.75.0+`), you have three options:
+
+**1. One-shot via npx** (works anywhere):
 
 ```bash
 npx taskplane init
 ```
 
-Or:
+**2. Invoke pi's bin shim directly:**
 
 ```bash
+# Global Pi install
+~/.pi/agent/npm/node_modules/.bin/taskplane init
+
+# Project-local install
 .pi/npm/node_modules/.bin/taskplane init
 ```
+
+**3. Add the appropriate bin dir to PATH** (one-time, recommended for global installs):
+
+```bash
+# bash / zsh — add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.pi/agent/npm/node_modules/.bin:$PATH"
+```
+
+```powershell
+# PowerShell — add to your $PROFILE
+$env:PATH = "$HOME\.pi\agent\npm\node_modules\.bin;" + $env:PATH
+```
+
+With Pi's bin dir on PATH, `pi update` keeps Taskplane current and you can call `taskplane <command>` from any shell.
 
 ### Mode Auto-Detection
 

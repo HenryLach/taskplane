@@ -2789,6 +2789,36 @@ function cmdDoctor() {
 		`  ${OK} taskplane package installed ${c.dim}(v${pkgVersion}, ${installType})${c.reset}`,
 	);
 
+	// Duplication check: when both the Pi-private and the npm-global copies
+	// exist with different versions, `pi update` only refreshes the Pi-private
+	// one and the system-wide CLI silently drifts behind. Surface this clearly
+	// so operators don't run a stale CLI thinking `pi update` covered it.
+	// Background: Pi 0.75.0 (2026-05-17) moved user-scoped pi packages from
+	// npm's global root to `~/.pi/agent/npm/` to avoid system-Node permission
+	// errors. Users who installed via `npm install -g taskplane` before that
+	// landed (or who installed via both paths) end up with two on-disk copies.
+	const duplication = detectDuplicateTaskplaneInstall();
+	if (duplication) {
+		console.log();
+		console.log(`  ${WARN} taskplane is installed in TWO locations with different versions:`);
+		for (const loc of duplication.locations) {
+			console.log(
+				`     ${c.dim}${loc.label}:${c.reset} v${loc.version}  ${c.dim}(${loc.path})${c.reset}`,
+			);
+		}
+		console.log(
+			`     ${c.dim}→ ${c.reset}\`pi update\`${c.dim} only refreshes the Pi-private copy.${c.reset}`,
+		);
+		console.log(
+			`     ${c.dim}→ Recommended fix: drop the npm-global copy and put Pi's bin dir on PATH:${c.reset}`,
+		);
+		console.log(`     ${c.cyan}    npm uninstall -g taskplane${c.reset}`);
+		console.log(
+			`     ${c.cyan}    export PATH="$HOME/.pi/agent/npm/node_modules/.bin:$PATH"${c.reset}  ${c.dim}# add to ~/.bashrc / ~/.zshrc${c.reset}`,
+		);
+		issues++;
+	}
+
 	if (isWorkspaceMode) {
 		console.log();
 		if (wsResult.error) {
@@ -3332,17 +3362,28 @@ function cmdVersion() {
 	console.log(`\ntaskplane ${c.bold}v${pkgVersion}${c.reset}`);
 	console.log(`  Package:  ${installType}`);
 
-	// Check for project config
+	// Check for project config. Only render the `version` / `installedAt`
+	// fields when they're actually present and non-empty — some marker files
+	// (e.g. taskplane's own source repo, where `.pi/taskplane.json` carries
+	// only migration history rather than init metadata) would otherwise
+	// produce the user-visible "vundefined, initialized unknown" placeholders.
 	const projectRoot = process.cwd();
 	const tpJson = path.join(projectRoot, ".pi", "taskplane.json");
 	if (fs.existsSync(tpJson)) {
 		try {
 			const info = JSON.parse(fs.readFileSync(tpJson, "utf-8"));
-			console.log(
-				`  Config:   .pi/taskplane.json (v${info.version}, initialized ${info.installedAt?.slice(0, 10) || "unknown"})`,
-			);
+			const parts = [];
+			if (typeof info.version === "string" && info.version.length > 0) {
+				parts.push(`v${info.version}`);
+			}
+			if (typeof info.installedAt === "string" && info.installedAt.length > 0) {
+				parts.push(`initialized ${info.installedAt.slice(0, 10)}`);
+			}
+			const suffix =
+				parts.length > 0 ? ` (${parts.join(", ")})` : ` ${c.dim}(metadata only)${c.reset}`;
+			console.log(`  Config:   .pi/taskplane.json${suffix}`);
 		} catch {
-			console.log(`  Config:   .pi/taskplane.json (unreadable)`);
+			console.log(`  Config:   .pi/taskplane.json ${c.dim}(unreadable)${c.reset}`);
 		}
 	} else {
 		console.log(`  Config:   ${c.dim}not initialized (run taskplane init)${c.reset}`);
@@ -3364,6 +3405,75 @@ function getPackageVersion() {
 	} catch {
 		return "unknown";
 	}
+}
+
+/**
+ * Detect a duplicate taskplane install: one copy at Pi's private extension
+ * directory (`~/.pi/agent/npm/node_modules/taskplane/`) and another at the
+ * system npm-global root, with DIFFERENT versions. Same-version installs
+ * are harmless and intentionally not flagged (they may drift later but
+ * aren't a problem in the present tense).
+ *
+ * Returns null when there's no detectable duplication, or an object
+ * describing the two locations + their versions when there is.
+ *
+ * Best-effort: silently returns null if `npm root -g` is unreachable or
+ * either package.json is unreadable, since the rest of `taskplane doctor`
+ * should never crash on a side check.
+ *
+ * Background: Pi 0.75.0 (2026-05-17) moved user-scoped pi packages from
+ * npm's global root to `~/.pi/agent/npm/` to avoid permission errors with
+ * system-managed Node installs (Pi changelog: "Fixed user-scoped npm pi
+ * packages to install under `~/.pi/agent/npm/` instead of npm's global
+ * package root"). Users who had previously run `npm install -g taskplane`
+ * (or who continue to do so per older docs) now have two on-disk copies
+ * that drift independently: `pi update` only refreshes the Pi-private one.
+ */
+function detectDuplicateTaskplaneInstall() {
+	const piPrivatePath = path.join(homedir(), ".pi", "agent", "npm", "node_modules", "taskplane");
+
+	let npmRootGlobal = null;
+	try {
+		npmRootGlobal = execSync("npm root -g", {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		})
+			.toString()
+			.trim();
+	} catch {
+		return null;
+	}
+	if (!npmRootGlobal) return null;
+	const npmGlobalPath = path.join(npmRootGlobal, "taskplane");
+
+	// Skip if Pi-private and npm-global resolve to the same path on disk.
+	// This can happen on installs where Pi hasn't (yet) migrated to its
+	// private directory or where the two paths point at the same install.
+	if (path.resolve(piPrivatePath) === path.resolve(npmGlobalPath)) return null;
+
+	const candidates = [
+		{ path: piPrivatePath, label: "Pi-private" },
+		{ path: npmGlobalPath, label: "npm-global" },
+	];
+
+	const found = [];
+	for (const candidate of candidates) {
+		try {
+			const pkgJsonPath = path.join(candidate.path, "package.json");
+			if (!fs.existsSync(pkgJsonPath)) continue;
+			const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+			if (typeof pkg.version !== "string" || pkg.version.length === 0) continue;
+			found.push({ path: candidate.path, label: candidate.label, version: pkg.version });
+		} catch {
+			/* unreadable — skip this candidate */
+		}
+	}
+
+	// Need both copies to be a duplication. Same-version pair is not flagged.
+	if (found.length < 2) return null;
+	if (found[0].version === found[1].version) return null;
+
+	return { locations: found };
 }
 
 // ─── dashboard ──────────────────────────────────────────────────────────────
