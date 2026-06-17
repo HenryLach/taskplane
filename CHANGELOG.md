@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-06-17
+
+### Fixed
+
+- **`taskplane --version` displayed "vundefined, initialized unknown" placeholders
+  for `.pi/taskplane.json` files lacking `version` / `installedAt` fields:**
+  Reproducible in any repo where `.pi/taskplane.json` exists for a non-init
+  purpose (e.g. taskplane's own source repo, where the file carries only
+  migration history). `cmdVersion()` now defensively renders only the fields
+  that are actually present and non-empty; falls through to `(metadata only)`
+  when neither field is set. Cosmetic but operator-visible.
+
+### Enhanced
+
+- **`taskplane doctor` detects duplicate Pi-private / npm-global installs:**
+  Pi 0.75.0 (2026-05-17) moved user-scoped pi extensions from npm's global
+  root to `~/.pi/agent/npm/node_modules/`. Operators who had previously
+  installed via `npm install -g taskplane` now have two on-disk copies that
+  drift independently: `pi update` refreshes only the Pi-private one, so the
+  system-wide CLI silently runs stale code. The new
+  `detectDuplicateTaskplaneInstall()` helper in `cmdDoctor` identifies this
+  state (both copies present + versions differ) and emits a WARN with both
+  paths, both versions, and a platform-aware remediation (PowerShell snippet
+  on Windows, bash form on Linux/macOS, both inline on either). Same-version
+  pairs are silently tolerated. Best-effort: 5s timeout on `npm root -g`,
+  silently returns null on errors so doctor never crashes on this side
+  check. Doctor's failure-summary line is also context-aware now: when
+  duplication is the issue it points at `npm uninstall -g taskplane`
+  instead of the generic `taskplane init` (which was actively misleading
+  remediation for this case).
+
+### Docs
+
+- **`README.md` Installation section:** documents the PATH requirement for
+  Pi 0.75.0+ (bash/zsh + PowerShell snippets) so the `taskplane` CLI is
+  callable on the shell after `pi install npm:taskplane`. Adds a
+  duplication-caveat note for users who previously ran
+  `npm install -g taskplane` under older docs.
+- **`docs/tutorials/install.md`:** Reframes Option A (Global install) to
+  explicitly steer users away from `npm install -g taskplane` as the
+  primary install command, citing the Pi 0.75.0 install-location change
+  and the duplication caveat. Expands the "taskplane not on PATH"
+  troubleshooting section into three labeled options (npx, direct bin
+  invocation, PATH addition) with platform-specific snippets for each.
+
 ## [0.30.2] - 2026-06-17
 
 ### Fixed
