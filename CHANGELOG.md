@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-06-19
+
+### Fixed
+
+- **Supervisor heartbeat timer crashed pi with stale extension ctx (#597,
+  reported by @beettlle):** Pi throws `"This extension ctx is stale after
+  session replacement or reload"` from its `assertActive` guard when an
+  extension uses a captured `pi: ExtensionAPI` handle after `ctx.newSession()`,
+  `ctx.fork()`, `ctx.switchSession()`, or `ctx.reload()`. Two background
+  timers in `supervisor.ts` (`startHeartbeat` takeover-detection branch,
+  `startEventTailer.notify` callback) captured `pi` in their closures and
+  called `pi.sendMessage()` at arbitrary times — when the captured handle
+  went stale between ticks, the throw became a process-fatal
+  `uncaughtException` that killed the entire Pi process during normal
+  batch startup, taking the operator's supervisor UI and monitoring down
+  with it.
+
+  Fix introduces two helpers (`isStaleExtensionCtx` and
+  `safeSendMessageFromTimer`) and rewires three `pi.sendMessage` call sites
+  through the never-throw wrapper: the two known timer-context sites plus
+  `presentBatchSummary` (reachable indirectly via `startHeartbeat →
+  deactivateSupervisor → presentBatchSummary` when `state.pendingSummaryDeps`
+  is set — caught by Sage's code review as a blocking gap in the initial
+  fix). Also adds defensive timer teardown at the top of
+  `activateSupervisor` so re-activation paths can't orphan timers holding
+  stale `pi` references. 9 new regression tests in `supervisor.test.ts`
+  including a behavioral test (8.22) that mutation-verifies it actually
+  catches regressions in the indirect path.
+
+### Docs
+
+- **Pi GitHub URL sweep + install tutorial PATH co-location (#604):** Five
+  references to the legacy `https://github.com/badlogic/pi-mono` URL in
+  `README.md`, `CONTRIBUTING.md`, `docs/specifications/cli/CLI-SPEC.md`,
+  and `docs/tutorials/install.md` updated to Pi's canonical repo at
+  `https://github.com/earendil-works/pi`. Install tutorial's Option A
+  also gains the PATH-setup snippets (bash/zsh + PowerShell) co-located
+  with the install command, so users hit the complete unified-update
+  recipe (`pi install` → add bin dir to PATH → `pi update` is the single
+  source of truth) at the natural decision point rather than only in
+  the later 'taskplane not on PATH' troubleshooting section.
+- **`@mariozechner/*` stale-references follow-up sweep (#605):** Pi was
+  renamed from `@mariozechner/pi-coding-agent` to
+  `@earendil-works/pi-coding-agent` at Pi v0.74.0 (issue #560). TP-191's
+  tsconfig modernization was supposed to refresh related stale references
+  but several were overlooked. This sweep updates the truly stale items
+  (the `extensions/tsconfig.json` `// NOTE` comment that the
+  `code-quality-gates.md` spec explicitly flagged as awaiting refresh,
+  the CLI-SPEC peerDependencies examples, and three `npm install -g
+  @mariozechner/pi-coding-agent` install commands in the framework spec)
+  while preserving accurate descriptions of back-compat behavior in
+  maintainer docs (the test loader genuinely still aliases
+  `@mariozechner/*` because Taskplane source code still imports under
+  those names — Pi maintains both scope aliases at runtime).
+
 ## [0.30.3] - 2026-06-17
 
 ### Fixed
