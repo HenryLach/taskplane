@@ -61,6 +61,7 @@ import {
 	startHeartbeat,
 	isStaleExtensionCtx,
 	safeSendMessageFromTimer,
+	deactivateSupervisor,
 	EVENT_POLL_INTERVAL_MS,
 	TASK_DIGEST_INTERVAL_MS,
 	// Audit trail
@@ -1813,6 +1814,70 @@ describe("8.x — Activation/deactivation: state lifecycle", () => {
 		// Old heartbeat must be explicitly cleared, not just overwritten.
 		expect(activateFn).toContain("clearInterval(state.heartbeatTimer)");
 		expect(activateFn).toContain("state.heartbeatTimer = null");
+	});
+
+	it("8.22 (#597): deactivateSupervisor with stale pi + pendingSummaryDeps does NOT throw (Sage finding)", async () => {
+		// Behavioural regression for Sage's blocking finding on the initial #597
+		// PR. The first-cut fix wrapped pi.sendMessage at the two direct timer
+		// call sites but missed an indirect path:
+		//
+		//   startHeartbeat takeover branch → deactivateSupervisor(pi, state)
+		//     → (if state.pendingSummaryDeps) presentBatchSummary(pi, ...)
+		//       → raw pi.sendMessage(...)   ← still unwrapped, still kills pi.
+		//
+		// Fix: presentBatchSummary's sole pi.sendMessage now goes through
+		// safeSendMessageFromTimer too. This test exercises that exact path
+		// in isolation: a stale-throwing pi handle plus a deferred summary,
+		// invoked via deactivateSupervisor. The test passes iff no exception
+		// escapes — i.e. no "uncaughtException-class" leak from the path
+		// the heartbeat takeover branch hits.
+		const stalePi = {
+			sendMessage: () => {
+				throw new Error("This extension ctx is stale after session replacement or reload.");
+			},
+			setModel: async () => {
+				/* not exercised by this path */
+			},
+		};
+
+		// Set up a fresh state in the active-with-pending-summary configuration
+		// that the heartbeat takeover branch reaches when it calls deactivate.
+		const tmpRoot = mkdtempSync(join(tmpdir(), "tp597-stale-deactivate-"));
+		try {
+			const state = freshSupervisorState();
+			state.active = true;
+			state.stateRoot = tmpRoot;
+			state.lockSessionId = "test-session-id";
+			state.batchStateRef = {
+				batchId: "test-batch",
+				succeededTasks: 1,
+				totalTasks: 1,
+				failedTasks: 0,
+				startedAt: Date.now() - 60_000,
+				endedAt: Date.now(),
+			} as never;
+			state.pendingSummaryDeps = {
+				opId: "test-op",
+				diagnostics: { taskExits: {}, batchCost: 0 },
+				mergeResults: [],
+			} as never;
+
+			let caughtThrow: unknown = null;
+			try {
+				await deactivateSupervisor(stalePi as never, state);
+			} catch (e) {
+				caughtThrow = e;
+			}
+			expect(caughtThrow).toBe(null);
+			// Sanity: deactivation completed its bookkeeping despite the stale
+			// pi handle (state should be marked inactive, pendingSummaryDeps
+			// cleared) — confirms we didn't just swallow the error mid-flight
+			// and skip the cleanup.
+			expect(state.active).toBe(false);
+			expect(state.pendingSummaryDeps).toBe(null);
+		} finally {
+			rmSync(tmpRoot, { recursive: true, force: true });
+		}
 	});
 });
 

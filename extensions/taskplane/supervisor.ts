@@ -2020,7 +2020,16 @@ export function presentBatchSummary(
 		(batchState.failedTasks > 0 ? `- **Failed:** ${batchState.failedTasks} task(s)\n` : "") +
 		`\nFull summary written to \`.pi/supervisor/${filename}\`.`;
 
-	pi.sendMessage(
+	// #597 (post-Sage-review): `presentBatchSummary` is a terminal best-effort
+	// operation, and it can be reached from a timer-origin call chain via
+	// `startHeartbeat → deactivateSupervisor → (state.pendingSummaryDeps)`.
+	// If the captured `pi` handle has gone stale by the time the heartbeat
+	// fires, an unwrapped `pi.sendMessage` here re-introduces the exact
+	// uncaughtException pattern #597 is meant to prevent. Use the same
+	// never-throw wrapper as the timer call sites: deliver the message if
+	// pi is healthy, drop it silently if pi is stale.
+	safeSendMessageFromTimer(
+		pi,
 		{
 			customType: "supervisor-batch-summary",
 			content: [{ type: "text", text: conciseText }],
