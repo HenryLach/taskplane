@@ -2020,7 +2020,16 @@ export function presentBatchSummary(
 		(batchState.failedTasks > 0 ? `- **Failed:** ${batchState.failedTasks} task(s)\n` : "") +
 		`\nFull summary written to \`.pi/supervisor/${filename}\`.`;
 
-	pi.sendMessage(
+	// #597 (post-Sage-review): `presentBatchSummary` is a terminal best-effort
+	// operation, and it can be reached from a timer-origin call chain via
+	// `startHeartbeat → deactivateSupervisor → (state.pendingSummaryDeps)`.
+	// If the captured `pi` handle has gone stale by the time the heartbeat
+	// fires, an unwrapped `pi.sendMessage` here re-introduces the exact
+	// uncaughtException pattern #597 is meant to prevent. Use the same
+	// never-throw wrapper as the timer call sites: deliver the message if
+	// pi is healthy, drop it silently if pi is stale.
+	safeSendMessageFromTimer(
+		pi,
 		{
 			customType: "supervisor-batch-summary",
 			content: [{ type: "text", text: conciseText }],
@@ -3037,6 +3046,23 @@ export async function activateSupervisor(
 	};
 	writeLockfile(stateRoot, lock);
 
+	// #597: Defensive teardown before installing new timers.
+	//
+	// `state` is a mutable singleton that persists across activate/deactivate
+	// cycles. In re-activation paths (a previous activation that didn't go
+	// through `deactivateSupervisor` cleanly, session churn after takeover,
+	// etc.) `state.heartbeatTimer` and `state.eventTailer` may still reference
+	// running timers that captured a now-stale `pi` handle. If we just
+	// reassign `state.heartbeatTimer = startHeartbeat(...)` the previous
+	// timer is orphaned — still ticking, still holding the stale `pi`, and
+	// at the next tick its `pi.sendMessage()` call throws `assertActive` and
+	// crashes the host process. Tear down explicitly before replacing.
+	stopEventTailer(state.eventTailer);
+	if (state.heartbeatTimer) {
+		clearInterval(state.heartbeatTimer);
+		state.heartbeatTimer = null;
+	}
+
 	// Start heartbeat timer — updates lockfile every 30s, detects takeover
 	state.heartbeatTimer = startHeartbeat(stateRoot, state, pi);
 
@@ -3710,6 +3736,87 @@ export function buildTakeoverSummary(stateRoot: string, batchState: PersistedBat
  *
  * @since TP-041
  */
+
+// ── Stale extension-context guard (#597) ──────────────────────────────
+//
+// Pi throws "This extension ctx is stale after session replacement or reload."
+// from `assertActive` when an extension uses a captured `pi` handle after
+// `ctx.newSession()`, `ctx.fork()`, `ctx.switchSession()`, or `ctx.reload()`.
+// Background timers in this file (`startHeartbeat`, `startEventTailer`)
+// capture `pi` in a closure and call `pi.sendMessage()` at arbitrary times;
+// when the captured handle goes stale between timer ticks, an uncaught
+// throw from `pi.sendMessage()` becomes a process-fatal `uncaughtException`
+// that kills the entire Pi process — issue #597.
+//
+// `isStaleExtensionCtx` and `safeSendMessageFromTimer` together harden the
+// timer call sites: stale-ctx errors are recognized and swallowed (the timer
+// caller then stops itself), other errors are logged to stderr but do not
+// propagate. The supervisor surrenders its UI surface gracefully instead of
+// taking Pi down.
+
+/**
+ * Returns true when `err` is Pi's distinctive stale-extension-ctx error.
+ *
+ * Matched by error-message substring rather than by class identity because
+ * the error class is not exported by `@earendil-works/pi-coding-agent` and
+ * the message text is the stable, documented contract
+ * (`core/extensions/loader.js:assertActive`).
+ *
+ * Defensive against non-Error throws (string throws, null, undefined, etc.)
+ * which are not stale-ctx errors and should propagate to the caller's
+ * normal error path — we only swallow the specific Pi case.
+ *
+ * @since #597
+ */
+export function isStaleExtensionCtx(err: unknown): boolean {
+	if (err === null || err === undefined) return false;
+	// Read message off either an Error instance or a plain object with .message
+	const message =
+		typeof err === "object" && err !== null && "message" in err
+			? String((err as { message: unknown }).message ?? "")
+			: typeof err === "string"
+				? err
+				: "";
+	return message.includes("This extension ctx is stale");
+}
+
+/**
+ * `pi.sendMessage()` wrapper for timer-context callers (heartbeat / event
+ * tailer / digest timer).
+ *
+ * Returns `true` on success, `false` when the call was swallowed because
+ * the extension context has gone stale (per `isStaleExtensionCtx`). Other
+ * exceptions are logged via `console.error` but also do not propagate —
+ * the timer caller stays alive and continues, since the safe-default for a
+ * background timer in a long-running process is to keep ticking rather
+ * than crash the host. Callers should treat a `false` return as "Pi has
+ * replaced us; stop trying" and clear their own interval.
+ *
+ * @since #597
+ */
+export function safeSendMessageFromTimer(
+	pi: ExtensionAPI,
+	message: Parameters<ExtensionAPI["sendMessage"]>[0],
+	options?: Parameters<ExtensionAPI["sendMessage"]>[1],
+): boolean {
+	try {
+		pi.sendMessage(message, options);
+		return true;
+	} catch (err) {
+		if (isStaleExtensionCtx(err)) {
+			// Pi has replaced us. The timer caller will see `false` and stop.
+			return false;
+		}
+		// Unexpected error — log for diagnosis but do not crash the host.
+		console.error(
+			`[supervisor] pi.sendMessage from timer callback threw: ${
+				err instanceof Error ? err.message : String(err)
+			}`,
+		);
+		return true; // not stale; let the caller continue ticking
+	}
+}
+
 export function startHeartbeat(
 	stateRoot: string,
 	state: SupervisorState,
@@ -3731,9 +3838,14 @@ export function startHeartbeat(
 			// Read current lockfile to detect force takeover — async (TP-070)
 			const currentLock = await readLockfileAsync(stateRoot);
 			if (currentLock && currentLock.sessionId !== sessionId) {
-				// Another session has taken over — yield gracefully
+				// Another session has taken over — yield gracefully.
+				// #597: the captured `pi` handle may be stale at this point;
+				// use safeSendMessageFromTimer so a stale-ctx throw cannot
+				// escape and become an uncaughtException that kills the
+				// whole Pi process.
 				clearInterval(timer);
-				pi.sendMessage(
+				safeSendMessageFromTimer(
+					pi,
 					{
 						customType: "supervisor-yield",
 						content: [
@@ -4444,7 +4556,12 @@ export function startEventTailer(
 			setStatus("supervisor", `🔀 ${statusText}`);
 		}
 
-		pi.sendMessage(
+		// #597: guard against stale-ctx throws from the captured `pi` handle.
+		// If Pi has replaced us between event-tailer ticks, swallow the throw
+		// and stop the tailer rather than letting an uncaughtException kill
+		// the Pi process.
+		const ok = safeSendMessageFromTimer(
+			pi,
 			{
 				customType: "supervisor-event",
 				content: [{ type: "text", text }],
@@ -4452,6 +4569,9 @@ export function startEventTailer(
 			},
 			{ triggerTurn: true },
 		);
+		if (!ok) {
+			stopEventTailer(tailer);
+		}
 	};
 
 	// ── TP-043: Integration is triggered by triggerSupervisorIntegration() ──

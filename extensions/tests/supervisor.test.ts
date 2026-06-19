@@ -59,6 +59,9 @@ import {
 	startEventTailer,
 	stopEventTailer,
 	startHeartbeat,
+	isStaleExtensionCtx,
+	safeSendMessageFromTimer,
+	deactivateSupervisor,
 	EVENT_POLL_INTERVAL_MS,
 	TASK_DIGEST_INTERVAL_MS,
 	// Audit trail
@@ -1655,6 +1658,226 @@ describe("8.x — Activation/deactivation: state lifecycle", () => {
 		expect(heartbeatFn).toContain("currentLock.sessionId !== sessionId");
 		expect(heartbeatFn).toContain("supervisor-yield");
 		expect(heartbeatFn).toContain("deactivateSupervisor");
+	});
+
+	// ── #597 regression: timer-context pi.sendMessage hardening ───────────
+	// Pre-fix, both the heartbeat takeover branch and the event tailer's
+	// notify() callback called pi.sendMessage() unwrapped. If the captured
+	// pi handle had gone stale (per Pi's assertActive guard), the throw
+	// became a process-fatal uncaughtException that killed the entire Pi
+	// process during normal batch startup. The fix introduces an
+	// isStaleExtensionCtx detector + a safeSendMessageFromTimer wrapper,
+	// rewires those two sites, and adds defensive timer teardown at the
+	// top of activateSupervisor so re-activation paths can't leave
+	// orphaned timers holding stale pi references.
+
+	it("8.14 (#597): isStaleExtensionCtx detects Pi's distinctive stale-ctx error message", () => {
+		const err = new Error(
+			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload().",
+		);
+		expect(isStaleExtensionCtx(err)).toBe(true);
+	});
+
+	it("8.15 (#597): isStaleExtensionCtx rejects unrelated errors and non-Error values", () => {
+		expect(isStaleExtensionCtx(new Error("Some other error"))).toBe(false);
+		expect(isStaleExtensionCtx(new Error(""))).toBe(false);
+		expect(isStaleExtensionCtx(null)).toBe(false);
+		expect(isStaleExtensionCtx(undefined)).toBe(false);
+		expect(isStaleExtensionCtx("not an error")).toBe(false);
+		expect(isStaleExtensionCtx(42)).toBe(false);
+		expect(isStaleExtensionCtx({})).toBe(false);
+		// String values that DO contain the marker phrase — covers the
+		// edge case where Pi throws a plain string rather than an Error
+		// (defensive cross-check).
+		expect(isStaleExtensionCtx("This extension ctx is stale ...")).toBe(true);
+	});
+
+	it("8.16 (#597): safeSendMessageFromTimer returns true and forwards on success", () => {
+		let called = false;
+		let receivedMessage: unknown = null;
+		let receivedOptions: unknown = null;
+		const fakePi = {
+			sendMessage: (msg: unknown, opts: unknown) => {
+				called = true;
+				receivedMessage = msg;
+				receivedOptions = opts;
+			},
+		};
+		const msg = { customType: "x", content: [], display: "" };
+		const opts = { triggerTurn: false };
+		const result = safeSendMessageFromTimer(fakePi as never, msg as never, opts as never);
+		expect(result).toBe(true);
+		expect(called).toBe(true);
+		expect(receivedMessage).toBe(msg);
+		expect(receivedOptions).toBe(opts);
+	});
+
+	it("8.17 (#597): safeSendMessageFromTimer swallows stale-ctx errors and returns false", () => {
+		const staleErr = new Error("This extension ctx is stale after session replacement or reload.");
+		const fakePi = {
+			sendMessage: () => {
+				throw staleErr;
+			},
+		};
+		// Must NOT throw — if it did, the caller's timer (and pi process)
+		// would be killed. The whole point of the wrapper.
+		let caughtThrow: unknown = null;
+		let result: boolean | null = null;
+		try {
+			result = safeSendMessageFromTimer(
+				fakePi as never,
+				{ customType: "x", content: [], display: "" } as never,
+			);
+		} catch (e) {
+			caughtThrow = e;
+		}
+		expect(caughtThrow).toBe(null);
+		expect(result).toBe(false);
+	});
+
+	it("8.18 (#597): safeSendMessageFromTimer logs but does NOT throw on unexpected errors", () => {
+		const otherErr = new Error("some completely unrelated failure");
+		const fakePi = {
+			sendMessage: () => {
+				throw otherErr;
+			},
+		};
+		// Capture console.error so the test stays quiet and verifies the log.
+		const originalError = console.error;
+		const logged: string[] = [];
+		console.error = (...args: unknown[]) => {
+			logged.push(args.map(String).join(" "));
+		};
+		let caughtThrow: unknown = null;
+		let result: boolean | null = null;
+		try {
+			result = safeSendMessageFromTimer(
+				fakePi as never,
+				{ customType: "x", content: [], display: "" } as never,
+			);
+		} catch (e) {
+			caughtThrow = e;
+		} finally {
+			console.error = originalError;
+		}
+		expect(caughtThrow).toBe(null);
+		// Non-stale errors return true (don't stop the timer) but ARE logged.
+		expect(result).toBe(true);
+		expect(logged.length).toBe(1);
+		expect(logged[0]).toContain("pi.sendMessage from timer callback threw");
+		expect(logged[0]).toContain("some completely unrelated failure");
+	});
+
+	it("8.19 (#597): startHeartbeat takeover branch uses the safe wrapper", () => {
+		const supervisorSource = readSource("supervisor.ts");
+		const heartbeatFn = supervisorSource.substring(
+			supervisorSource.indexOf("function startHeartbeat("),
+			supervisorSource.indexOf("// ── Engine Event Consumption"),
+		);
+		// The takeover branch must NOT call pi.sendMessage directly anymore;
+		// it must go through safeSendMessageFromTimer so a stale ctx cannot
+		// kill the host process.
+		expect(heartbeatFn).toContain("safeSendMessageFromTimer");
+		expect(heartbeatFn).toContain("supervisor-yield");
+		// Belt-and-suspenders: no bare pi.sendMessage( in the heartbeat fn.
+		expect(heartbeatFn).not.toMatch(/\bpi\.sendMessage\s*\(/);
+	});
+
+	it("8.20 (#597): startEventTailer notify callback uses the safe wrapper + stops the tailer on stale ctx", () => {
+		const supervisorSource = readSource("supervisor.ts");
+		const tailerFn = supervisorSource.substring(
+			supervisorSource.indexOf("function startEventTailer("),
+			supervisorSource.indexOf("function stopEventTailer("),
+		);
+		// The notify callback must wrap pi.sendMessage in the safe helper.
+		expect(tailerFn).toContain("safeSendMessageFromTimer");
+		expect(tailerFn).toContain("supervisor-event");
+		// When the wrapper returns false (stale ctx), the tailer must stop
+		// itself so subsequent ticks don't repeat the failed call.
+		expect(tailerFn).toContain("stopEventTailer(tailer)");
+	});
+
+	it("8.21 (#597): activateSupervisor tears down existing timers before starting new ones", () => {
+		const supervisorSource = readSource("supervisor.ts");
+		const activateFn = supervisorSource.substring(
+			supervisorSource.indexOf("async function activateSupervisor("),
+			supervisorSource.indexOf("async function deactivateSupervisor("),
+		);
+		// The teardown block must appear BEFORE the startHeartbeat call so
+		// the previous timer (if any) is cleared before its replacement is
+		// installed and the state field is reassigned.
+		const teardownIdx = activateFn.indexOf("stopEventTailer(state.eventTailer)");
+		const startHeartbeatIdx = activateFn.indexOf("startHeartbeat(stateRoot, state, pi)");
+		expect(teardownIdx).toBeGreaterThan(-1);
+		expect(startHeartbeatIdx).toBeGreaterThan(-1);
+		expect(teardownIdx).toBeLessThan(startHeartbeatIdx);
+		// Old heartbeat must be explicitly cleared, not just overwritten.
+		expect(activateFn).toContain("clearInterval(state.heartbeatTimer)");
+		expect(activateFn).toContain("state.heartbeatTimer = null");
+	});
+
+	it("8.22 (#597): deactivateSupervisor with stale pi + pendingSummaryDeps does NOT throw (Sage finding)", async () => {
+		// Behavioural regression for Sage's blocking finding on the initial #597
+		// PR. The first-cut fix wrapped pi.sendMessage at the two direct timer
+		// call sites but missed an indirect path:
+		//
+		//   startHeartbeat takeover branch → deactivateSupervisor(pi, state)
+		//     → (if state.pendingSummaryDeps) presentBatchSummary(pi, ...)
+		//       → raw pi.sendMessage(...)   ← still unwrapped, still kills pi.
+		//
+		// Fix: presentBatchSummary's sole pi.sendMessage now goes through
+		// safeSendMessageFromTimer too. This test exercises that exact path
+		// in isolation: a stale-throwing pi handle plus a deferred summary,
+		// invoked via deactivateSupervisor. The test passes iff no exception
+		// escapes — i.e. no "uncaughtException-class" leak from the path
+		// the heartbeat takeover branch hits.
+		const stalePi = {
+			sendMessage: () => {
+				throw new Error("This extension ctx is stale after session replacement or reload.");
+			},
+			setModel: async () => {
+				/* not exercised by this path */
+			},
+		};
+
+		// Set up a fresh state in the active-with-pending-summary configuration
+		// that the heartbeat takeover branch reaches when it calls deactivate.
+		const tmpRoot = mkdtempSync(join(tmpdir(), "tp597-stale-deactivate-"));
+		try {
+			const state = freshSupervisorState();
+			state.active = true;
+			state.stateRoot = tmpRoot;
+			state.lockSessionId = "test-session-id";
+			state.batchStateRef = {
+				batchId: "test-batch",
+				succeededTasks: 1,
+				totalTasks: 1,
+				failedTasks: 0,
+				startedAt: Date.now() - 60_000,
+				endedAt: Date.now(),
+			} as never;
+			state.pendingSummaryDeps = {
+				opId: "test-op",
+				diagnostics: { taskExits: {}, batchCost: 0 },
+				mergeResults: [],
+			} as never;
+
+			let caughtThrow: unknown = null;
+			try {
+				await deactivateSupervisor(stalePi as never, state);
+			} catch (e) {
+				caughtThrow = e;
+			}
+			expect(caughtThrow).toBe(null);
+			// Sanity: deactivation completed its bookkeeping despite the stale
+			// pi handle (state should be marked inactive, pendingSummaryDeps
+			// cleared) — confirms we didn't just swallow the error mid-flight
+			// and skip the cleanup.
+			expect(state.active).toBe(false);
+			expect(state.pendingSummaryDeps).toBe(null);
+		} finally {
+			rmSync(tmpRoot, { recursive: true, force: true });
+		}
 	});
 });
 
