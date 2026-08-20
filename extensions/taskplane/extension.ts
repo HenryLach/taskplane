@@ -120,6 +120,7 @@ import {
 	resolveModelFromString,
 } from "./supervisor.ts";
 import { SupervisorNoticeGate } from "./supervisor-dispatch.ts";
+import { repairToolResultOrdering } from "./context-repair.ts";
 import type {
 	SupervisorConfig,
 	SupervisorRoutingContext,
@@ -5577,6 +5578,20 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── Session Lifecycle ────────────────────────────────────────────
+
+	// #621 (defense in depth): repair tool_use/tool_result ordering on every
+	// outgoing request. The `context` event fires before each provider call on
+	// the pi-internal AgentMessage[] (before convertToLlm). Any supervisor
+	// `custom` message that was spliced between an assistant tool_use and its
+	// tool_result (from ANY send site — batch summary, integration progress/
+	// result, heartbeat, routing) is moved back after the tool-result group, so
+	// the request is always valid and a mistimed injection can never wedge the
+	// session. Only transforms the per-request context; the persisted tree is
+	// untouched (self-correcting across reloads).
+	pi.on("context", (event: { messages: unknown[] }) => {
+		const repaired = repairToolResultOrdering(event.messages as Array<Record<string, unknown>>);
+		if (repaired !== event.messages) return { messages: repaired };
+	});
 
 	// #621: Flush a deferred batch-end epilogue once the interactive agent has
 	// fully settled (all tool_results appended). Re-check idleness here because a
