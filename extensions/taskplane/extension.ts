@@ -107,6 +107,7 @@ import {
 	activateSupervisor,
 	deactivateSupervisor,
 	transitionToRoutingMode,
+	stopBatchMonitoring,
 	freshSupervisorState,
 	registerSupervisorPromptHook,
 	checkSupervisorLockOnStartup,
@@ -118,6 +119,7 @@ import {
 	presentBatchSummary,
 	resolveModelFromString,
 } from "./supervisor.ts";
+import { SupervisorNoticeGate } from "./supervisor-dispatch.ts";
 import type {
 	SupervisorConfig,
 	SupervisorRoutingContext,
@@ -1834,6 +1836,112 @@ export default function (pi: ExtensionAPI) {
 	let supervisorState = freshSupervisorState();
 	let supervisorConfig: SupervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
 
+	// ── #621: Batch-end epilogue gate ────────────────────────────────
+	// The batch-end epilogue appends display banners via
+	// pi.sendMessage(..., {triggerTurn:false}), which immediately splices a
+	// custom entry into the session tree. If the interactive agent has a tool
+	// call in flight, that splice lands between an assistant `tool_use` and its
+	// `tool_result` and produces an Anthropic 400 that wedges the session. The
+	// gate runs the epilogue immediately when idle, else defers it to the next
+	// `agent_settled` boundary. `batchGeneration` tags deferred work so a newer
+	// batch invalidates a stale pending epilogue.
+	const noticeGate = new SupervisorNoticeGate();
+	let batchGeneration = 0;
+
+	// #621: The batch-end epilogue, shared by /orch (doOrchStart) and
+	// /orch-resume (doOrchResume). Appends the batch-summary / integration-skipped
+	// banners and transitions the supervisor to routing mode. Both entry points
+	// historically inlined identical logic differing only in `repoRoot` vs
+	// `execCtx!.repoRoot` — the same value, since doOrchStart destructures
+	// `const { repoRoot } = execCtx`. Deferring the WHOLE epilogue (rather than
+	// individual sends) also protects the completed->triggerSupervisorIntegration
+	// branch, whose progress/result messages are the same splice hazard.
+	function runSupervisorBatchEndEpilogue(): void {
+		const mode = orchConfig.orchestrator.integration;
+		const opId = resolveOperatorId(orchConfig);
+		const sDeps: SummaryDeps = {
+			opId,
+			diagnostics: orchBatchState.diagnostics ?? null,
+			mergeResults: (orchBatchState.mergeResults || []).map((mr) => ({
+				waveIndex: mr.waveIndex,
+				status: mr.status,
+				failedLane: mr.failedLane,
+				failureReason: mr.failureReason,
+			})),
+		};
+		if (orchBatchState.phase === "completed" && (mode === "supervised" || mode === "auto")) {
+			triggerSupervisorIntegration(
+				pi,
+				supervisorState,
+				orchBatchState,
+				mode,
+				execCtx!.repoRoot,
+				buildIntegrationExecutor(execCtx!.repoRoot, opId, execCtx!.workspaceRoot),
+				buildCiDeps(execCtx!.repoRoot, execCtx!.workspaceRoot),
+				sDeps,
+			);
+			return;
+		}
+		if ((mode === "supervised" || mode === "auto") && orchBatchState.phase !== "completed") {
+			pi.sendMessage(
+				{
+					customType: "supervisor-integration-skipped",
+					content: [
+						{
+							type: "text",
+							text:
+								`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
+								`Integration skipped — only completed batches are eligible.\n` +
+								`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
+						},
+					],
+					display: `Integration skipped — batch ${orchBatchState.phase}`,
+				},
+				{ triggerTurn: false },
+			);
+		}
+		presentBatchSummary(
+			pi,
+			orchBatchState,
+			execCtx!.workspaceRoot,
+			opId,
+			orchBatchState.diagnostics,
+			sDeps.mergeResults,
+		);
+		const postBatchContext: SupervisorRoutingContext =
+			orchBatchState.phase === "completed"
+				? {
+						routingState: "completed-batch",
+						contextMessage:
+							`Batch **${orchBatchState.batchId}** completed — ` +
+							`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
+							`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
+							`Would you like me to integrate it, or would you prefer to review first?\n\n` +
+							`You can also:\n` +
+							`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
+							`• Create new tasks for the next batch\n` +
+							`• Run a health check`,
+					}
+				: {
+						routingState: "no-tasks",
+						contextMessage:
+							`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+							`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
+							`${orchBatchState.skippedTasks} skipped.\n\n` +
+							`What would you like to do next?`,
+					};
+		transitionToRoutingMode(pi, supervisorState, postBatchContext);
+	}
+
+	// #621: Route the batch-end epilogue through the idle gate. When the agent
+	// has a tool call in flight, eagerly stop batch monitoring (so a heartbeat
+	// timer send can't splice either) and defer the epilogue to the next settle.
+	function dispatchBatchEndEpilogue(ctx: ExtensionContext): void {
+		const idle = ctx.isIdle();
+		if (!idle) stopBatchMonitoring(supervisorState);
+		noticeGate.runOrDefer(idle, batchGeneration, runSupervisorBatchEndEpilogue);
+	}
+
 	// TP-187 (#538): Zombie-alert filter state
 	// Lane numbers and agent IDs that have reached a terminal state (no-progress
 	// kill, hard-fail, or supervisor-takeover). Supervisor-alert IPC messages
@@ -2377,6 +2485,11 @@ export default function (pi: ExtensionAPI) {
 		orchBatchState = freshOrchBatchState();
 		latestMonitorState = null;
 
+		// #621: a new batch supersedes any epilogue still deferred from the
+		// previous batch. Bump the generation and drop the stale pending work.
+		batchGeneration++;
+		noticeGate.invalidate();
+
 		// TP-187 (#538): Clear zombie-alert filter for the new batch.
 		clearTerminationFilter("new_batch_started");
 
@@ -2424,80 +2537,7 @@ export default function (pi: ExtensionAPI) {
 				if (changed) updateOrchWidget();
 			},
 			() => {
-				const mode = orchConfig.orchestrator.integration;
-				const opId = resolveOperatorId(orchConfig);
-				const sDeps: SummaryDeps = {
-					opId,
-					diagnostics: orchBatchState.diagnostics ?? null,
-					mergeResults: (orchBatchState.mergeResults || []).map((mr) => ({
-						waveIndex: mr.waveIndex,
-						status: mr.status,
-						failedLane: mr.failedLane,
-						failureReason: mr.failureReason,
-					})),
-				};
-				if (orchBatchState.phase === "completed" && (mode === "supervised" || mode === "auto")) {
-					triggerSupervisorIntegration(
-						pi,
-						supervisorState,
-						orchBatchState,
-						mode,
-						repoRoot,
-						buildIntegrationExecutor(repoRoot, opId, execCtx!.workspaceRoot),
-						buildCiDeps(repoRoot, execCtx!.workspaceRoot),
-						sDeps,
-					);
-					return;
-				}
-				if ((mode === "supervised" || mode === "auto") && orchBatchState.phase !== "completed") {
-					pi.sendMessage(
-						{
-							customType: "supervisor-integration-skipped",
-							content: [
-								{
-									type: "text",
-									text:
-										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
-										`Integration skipped — only completed batches are eligible.\n` +
-										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
-								},
-							],
-							display: `Integration skipped — batch ${orchBatchState.phase}`,
-						},
-						{ triggerTurn: false },
-					);
-				}
-				presentBatchSummary(
-					pi,
-					orchBatchState,
-					execCtx!.workspaceRoot,
-					opId,
-					orchBatchState.diagnostics,
-					sDeps.mergeResults,
-				);
-				const postBatchContext: SupervisorRoutingContext =
-					orchBatchState.phase === "completed"
-						? {
-								routingState: "completed-batch",
-								contextMessage:
-									`Batch **${orchBatchState.batchId}** completed — ` +
-									`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
-									`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
-									`Would you like me to integrate it, or would you prefer to review first?\n\n` +
-									`You can also:\n` +
-									`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
-									`• Create new tasks for the next batch\n` +
-									`• Run a health check`,
-							}
-						: {
-								routingState: "no-tasks",
-								contextMessage:
-									`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
-									`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
-									`${orchBatchState.skippedTasks} skipped.\n\n` +
-									`What would you like to do next?`,
-							};
-				transitionToRoutingMode(pi, supervisorState, postBatchContext);
+				dispatchBatchEndEpilogue(ctx);
 			},
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
 			(alert) => {
@@ -2844,80 +2884,7 @@ export default function (pi: ExtensionAPI) {
 				updateOrchWidget();
 			},
 			() => {
-				const mode = orchConfig.orchestrator.integration;
-				const opId = resolveOperatorId(orchConfig);
-				const sDeps: SummaryDeps = {
-					opId,
-					diagnostics: orchBatchState.diagnostics ?? null,
-					mergeResults: (orchBatchState.mergeResults || []).map((mr) => ({
-						waveIndex: mr.waveIndex,
-						status: mr.status,
-						failedLane: mr.failedLane,
-						failureReason: mr.failureReason,
-					})),
-				};
-				if (orchBatchState.phase === "completed" && (mode === "supervised" || mode === "auto")) {
-					triggerSupervisorIntegration(
-						pi,
-						supervisorState,
-						orchBatchState,
-						mode,
-						execCtx!.repoRoot,
-						buildIntegrationExecutor(execCtx!.repoRoot, opId, execCtx!.workspaceRoot),
-						buildCiDeps(execCtx!.repoRoot, execCtx!.workspaceRoot),
-						sDeps,
-					);
-					return;
-				}
-				if ((mode === "supervised" || mode === "auto") && orchBatchState.phase !== "completed") {
-					pi.sendMessage(
-						{
-							customType: "supervisor-integration-skipped",
-							content: [
-								{
-									type: "text",
-									text:
-										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
-										`Integration skipped — only completed batches are eligible.\n` +
-										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
-								},
-							],
-							display: `Integration skipped — batch ${orchBatchState.phase}`,
-						},
-						{ triggerTurn: false },
-					);
-				}
-				presentBatchSummary(
-					pi,
-					orchBatchState,
-					execCtx!.workspaceRoot,
-					opId,
-					orchBatchState.diagnostics,
-					sDeps.mergeResults,
-				);
-				const postBatchContext: SupervisorRoutingContext =
-					orchBatchState.phase === "completed"
-						? {
-								routingState: "completed-batch",
-								contextMessage:
-									`Batch **${orchBatchState.batchId}** completed — ` +
-									`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
-									`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
-									`Would you like me to integrate it, or would you prefer to review first?\n\n` +
-									`You can also:\n` +
-									`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
-									`• Create new tasks for the next batch\n` +
-									`• Run a health check`,
-							}
-						: {
-								routingState: "no-tasks",
-								contextMessage:
-									`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
-									`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
-									`${orchBatchState.skippedTasks} skipped.\n\n` +
-									`What would you like to do next?`,
-							};
-				transitionToRoutingMode(pi, supervisorState, postBatchContext);
+				dispatchBatchEndEpilogue(ctx);
 			},
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
 			(alert) => {
@@ -5610,6 +5577,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── Session Lifecycle ────────────────────────────────────────────
+
+	// #621: Flush a deferred batch-end epilogue once the interactive agent has
+	// fully settled (all tool_results appended). Re-check idleness here because a
+	// prior settle handler may have started another run.
+	pi.on("agent_settled", (_event: unknown, ctx: ExtensionContext) => {
+		noticeGate.onSettled(ctx.isIdle(), batchGeneration);
+	});
+
+	// #621: Drop any deferred epilogue and disable the gate on shutdown so a
+	// stale closure cannot fire against a replaced session.
+	pi.on("session_shutdown", () => {
+		noticeGate.dispose();
+	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		// Store widget context for dashboard updates (needed even if startup fails)
