@@ -3200,13 +3200,18 @@ export async function deactivateSupervisor(
  *
  * @since TP-128
  */
-export async function transitionToRoutingMode(
-	pi: ExtensionAPI,
-	state: SupervisorState,
-	routingContext: SupervisorRoutingContext,
-): Promise<void> {
-	if (!state.active) return;
-
+/**
+ * Tear down batch-monitoring infrastructure (event tailer, heartbeat timer,
+ * lockfile). Idempotent — safe to call multiple times.
+ *
+ * Extracted from `transitionToRoutingMode` (#621) so the batch-end epilogue can
+ * stop background timers EAGERLY when it must defer its display banners past an
+ * in-flight tool call. Stopping the heartbeat immediately prevents a
+ * timer-origin `pi.sendMessage(..., {triggerTurn:false})` from splicing a custom
+ * entry between an assistant `tool_use` and its `tool_result` during the defer
+ * window.
+ */
+export function stopBatchMonitoring(state: SupervisorState): void {
 	// Tear down batch-monitoring infrastructure
 	stopEventTailer(state.eventTailer);
 
@@ -3223,6 +3228,16 @@ export async function transitionToRoutingMode(
 		}
 	}
 	state.lockSessionId = "";
+}
+
+export async function transitionToRoutingMode(
+	pi: ExtensionAPI,
+	state: SupervisorState,
+	routingContext: SupervisorRoutingContext,
+): Promise<void> {
+	if (!state.active) return;
+
+	stopBatchMonitoring(state);
 
 	// Present deferred batch summary if any
 	if (state.pendingSummaryDeps && state.batchStateRef && state.stateRoot) {
