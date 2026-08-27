@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Engine-worker IPC crashed Pi on a stale extension context (#620,
+  reported by @daemons2000):** The asynchronous engine-worker IPC handlers
+  (`child.on("message"|"error"|"exit")`), the widget refresh
+  (`updateOrchWidget`), the batch-end epilogue dispatch, and the
+  supervisor-alert delivery all used a captured `ExtensionContext` /
+  `ExtensionAPI` after Pi had invalidated it — on session replacement/reload,
+  or at the end of a headless `-p` run while the forked engine worker was
+  still emitting IPC. Every `ctx` accessor (`ctx.ui`, `ctx.isIdle()`) and the
+  `pi.send*` methods call Pi's `assertActive`, which throws `"This extension
+  ctx is stale after session replacement or reload"`. That throw, uncaught
+  inside a `child_process` callback, became a process-fatal
+  `uncaughtException` that exited the supervising Pi process mid-batch;
+  recovery required a restart.
+
+  Fixed by generalizing the #597 hardening pattern to any thunk
+  (`safeCtxCallFromCallback`) and routing all four stale-sensitive vectors
+  through it: `ctx.ui.notify` (all worker-IPC callbacks + the main-thread
+  fallback path), `ctx.ui.setWidget` (guarded inside `updateOrchWidget`, the
+  single choke point), `ctx.isIdle()` (the batch-end epilogue now skips
+  dispatch and stops monitoring when the ctx is stale), and
+  `pi.sendUserMessage` (both supervisor-alert callbacks — #597's
+  `sendMessage`-only wrapper did not cover it). The guard no-ops **only** on
+  Pi's exact stale-ctx error (via `isStaleExtensionCtx`), logs any other
+  error so real failures still surface, and never rethrows (a throw from an
+  IPC callback is the very crash this fixes). The `"error"` IPC branch now
+  persists the failed batch state **before** touching the UI, so a dead UI
+  sink can never prevent the dashboard/resume from seeing the failure.
+  Engine state, review, verification, retries, and failure propagation are
+  unchanged. This is the same class as #597 (stale captured handle in a
+  background callback) but a distinct path — timers/`pi.sendMessage` there,
+  child-process IPC/`ctx.ui.*` here. 7 new regression tests (wrapper
+  behavior + wiring assertions for all four vectors).
+
 ## [0.30.5] - 2026-08-27
 
 ### Fixed

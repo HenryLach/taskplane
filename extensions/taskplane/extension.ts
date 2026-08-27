@@ -118,6 +118,8 @@ import {
 	triggerSupervisorIntegration,
 	presentBatchSummary,
 	resolveModelFromString,
+	isStaleExtensionCtx,
+	safeCtxCallFromCallback,
 } from "./supervisor.ts";
 import { SupervisorNoticeGate } from "./supervisor-dispatch.ts";
 import { repairToolResultOrdering } from "./context-repair.ts";
@@ -1052,10 +1054,17 @@ export function startBatchAsync(
 					batchState.endedAt = Date.now();
 					batchState.errors.push(`Unhandled engine error: ${errMsg}`);
 				}
-				ctx.ui.notify(
-					`❌ Engine crashed with unhandled error: ${errMsg}\n` +
-						`   Batch ${batchState.batchId} marked as failed.`,
-					"error",
+				// #620: this .catch runs when the (main-thread fallback) engine promise
+				// rejects later — an async window where ctx may be stale. Guard the UI
+				// sink so a stale-ctx throw can't crash Pi; onTerminal still runs.
+				safeCtxCallFromCallback(
+					() =>
+						ctx.ui.notify(
+							`❌ Engine crashed with unhandled error: ${errMsg}\n` +
+								`   Batch ${batchState.batchId} marked as failed.`,
+							"error",
+						),
+					"startBatchAsync.catch.notify",
 				);
 				updateWidget();
 				// TP-041 R002-3: Deactivate supervisor on all terminal paths
@@ -1142,9 +1151,16 @@ export function startBatchInWorker(
 		});
 	} catch (spawnErr: unknown) {
 		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
-		ctx.ui.notify(
-			`⚠️ Engine process spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
-			"warning",
+		// #620: stale-safe (uniform with the async callbacks below). This runs
+		// synchronously during the command so ctx is normally fresh, but guarding
+		// keeps the "no bare ctx.ui.notify in startBatchInWorker" invariant simple.
+		safeCtxCallFromCallback(
+			() =>
+				ctx.ui.notify(
+					`⚠️ Engine process spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
+					"warning",
+				),
+			"spawn.fallback.notify",
 		);
 		// Construct fallback engine function from workerData and run on main thread
 		const wsConfig = wkData.workspaceConfig
@@ -1159,7 +1175,7 @@ export function startBatchInWorker(
 							wkData.cwd,
 							batchState,
 							(msg: string, lvl: "info" | "warning" | "error") => {
-								ctx.ui.notify(msg, lvl);
+								safeCtxCallFromCallback(() => ctx.ui.notify(msg, lvl), "fallback.notify");
 								updateWidget();
 							},
 							(monState: import("./types.ts").MonitorState) => {
@@ -1182,7 +1198,7 @@ export function startBatchInWorker(
 							wkData.cwd,
 							batchState,
 							(msg: string, lvl: "info" | "warning" | "error") => {
-								ctx.ui.notify(msg, lvl);
+								safeCtxCallFromCallback(() => ctx.ui.notify(msg, lvl), "fallback.notify");
 								updateWidget();
 							},
 							(monState: import("./types.ts").MonitorState) => {
@@ -1288,7 +1304,10 @@ export function startBatchInWorker(
 	child.on("message", (msg: WorkerToMainMessage) => {
 		switch (msg.type) {
 			case "notify":
-				ctx.ui.notify(msg.msg, msg.level);
+				// #620: ctx may be stale (session replaced/reload, or headless -p run
+				// finalized while this forked worker still emits IPC). Accessing
+				// ctx.ui throws assertActive; unguarded that crashes Pi. No-op on stale.
+				safeCtxCallFromCallback(() => ctx.ui.notify(msg.msg, msg.level), "ipc.notify");
 				updateWidget();
 				break;
 
@@ -1338,11 +1357,26 @@ export function startBatchInWorker(
 					batchState.errors.push(`Unhandled engine error${sourceLabel}: ${msg.message}`);
 					if (stackLine) batchState.errors.push(`Engine stack: ${stackLine}`);
 				}
-				ctx.ui.notify(
-					`❌ Engine crashed with unhandled error${sourceLabel}: ${msg.message}\n` +
-						(stackLine ? `   ${stackLine}\n` : "") +
-						`   Batch ${batchState.batchId} marked as failed.`,
-					"error",
+				// #620: persist the failed state FIRST so a dead UI sink can never
+				// prevent the dashboard/resume from seeing the failure. The engine-
+				// worker is dead and can't persist — we must. (Reordered ahead of the
+				// UI notify + supervisor alert, both of which are now stale-safe.)
+				try {
+					saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd);
+				} catch {
+					/* best effort */
+				}
+				// #620: stale-safe — a stale ctx here must not crash Pi nor block the
+				// supervisor alert below.
+				safeCtxCallFromCallback(
+					() =>
+						ctx.ui.notify(
+							`❌ Engine crashed with unhandled error${sourceLabel}: ${msg.message}\n` +
+								(stackLine ? `   ${stackLine}\n` : "") +
+								`   Batch ${batchState.batchId} marked as failed.`,
+							"error",
+						),
+					"ipc.error.notify",
 				);
 				// Alert supervisor — this is the PRIMARY notification path for engine
 				// crashes caught by uncaughtException/unhandledRejection handlers.
@@ -1374,13 +1408,6 @@ export function startBatchInWorker(
 								: undefined,
 					},
 				});
-				// Persist failed state to disk so dashboard/resume see it.
-				// The engine-worker is dead and can't persist — we must do it here.
-				try {
-					saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd);
-				} catch {
-					/* best effort */
-				}
 				updateWidget();
 				break;
 			}
@@ -1395,9 +1422,14 @@ export function startBatchInWorker(
 			batchState.endedAt = Date.now();
 			batchState.errors.push(`Engine process error: ${err.message}`);
 		}
-		ctx.ui.notify(
-			`❌ Engine process error: ${err.message}\n` + `   Batch ${batchState.batchId} marked as failed.`,
-			"error",
+		safeCtxCallFromCallback(
+			() =>
+				ctx.ui.notify(
+					`❌ Engine process error: ${err.message}\n` +
+						`   Batch ${batchState.batchId} marked as failed.`,
+					"error",
+				),
+			"child.error.notify",
 		);
 		updateWidget();
 		// ── TP-076: Alert supervisor about engine process error ──
@@ -1444,7 +1476,10 @@ export function startBatchInWorker(
 				batchState.endedAt = Date.now();
 				batchState.errors.push(`Engine process exited with code ${code}`);
 			}
-			ctx.ui.notify(`❌ Engine process exited unexpectedly (code ${code}).`, "error");
+			safeCtxCallFromCallback(
+				() => ctx.ui.notify(`❌ Engine process exited unexpectedly (code ${code}).`, "error"),
+				"child.exit.notify",
+			);
 			updateWidget();
 			// ── TP-076: Alert supervisor about unexpected engine exit ──
 			onSupervisorAlert?.({
@@ -1949,7 +1984,28 @@ export default function (pi: ExtensionAPI) {
 	// has a tool call in flight, eagerly stop batch monitoring (so a heartbeat
 	// timer send can't splice either) and defer the epilogue to the next settle.
 	function dispatchBatchEndEpilogue(ctx: ExtensionContext): void {
-		const idle = ctx.isIdle();
+		// #620: this runs from the engine-worker terminal (onTerminal) callback,
+		// where ctx may be stale. ctx.isIdle() is assertActive-guarded, so an
+		// unguarded call crashes Pi. If the ctx is stale the session is gone — there
+		// is no live UI to render the epilogue — so skip dispatch entirely, but still
+		// stop monitoring and drop any deferred epilogue so no later timer send
+		// fires against the dead session. Non-stale errors are logged, not rethrown
+		// (a throw here is an uncaught IPC-callback exception — the #620 crash class).
+		let idle: boolean;
+		try {
+			idle = ctx.isIdle();
+		} catch (err) {
+			if (!isStaleExtensionCtx(err)) {
+				console.error(
+					`[taskplane] dispatchBatchEndEpilogue ctx.isIdle() threw (non-stale): ${
+						err instanceof Error ? (err.stack ?? err.message) : String(err)
+					}`,
+				);
+			}
+			stopBatchMonitoring(supervisorState);
+			noticeGate.invalidate();
+			return;
+		}
 		if (!idle) stopBatchMonitoring(supervisorState);
 		noticeGate.runOrDefer(idle, batchGeneration, runSupervisorBatchEndEpilogue);
 	}
@@ -2051,13 +2107,24 @@ export default function (pi: ExtensionAPI) {
 		const ctx = orchWidgetCtx;
 		const prefix = orchConfig.orchestrator.sessionPrefix;
 
-		ctx.ui.setWidget(
-			"task-orchestrator",
-			createOrchWidget(
-				() => orchBatchState,
-				() => latestMonitorState,
-				prefix,
-			),
+		// #620: updateOrchWidget is the single choke point for widget refresh and is
+		// called from BOTH synchronous command handlers (ctx fresh) AND long-lived
+		// async engine-worker IPC callbacks (ctx may be stale after session
+		// replacement/reload or a finalized headless -p run). ctx.ui.setWidget
+		// accesses the assertActive-guarded ctx.ui getter, so an unguarded call from
+		// the async path crashes Pi. Guarding here covers every caller at once; for
+		// the sync callers the stale branch simply never triggers.
+		safeCtxCallFromCallback(
+			() =>
+				ctx.ui.setWidget(
+					"task-orchestrator",
+					createOrchWidget(
+						() => orchBatchState,
+						() => latestMonitorState,
+						prefix,
+					),
+				),
+			"widget.setWidget",
 		);
 	}
 
@@ -2561,7 +2628,14 @@ export default function (pi: ExtensionAPI) {
 					);
 					return;
 				}
-				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+				// #620: stale-safe — pi.sendUserMessage is assertActive-guarded on
+				// ExtensionAPI; a stale ctx from this async worker-IPC alert callback
+				// would otherwise crash Pi. #597 safeSendMessageFromTimer covers
+				// sendMessage only, so use the general callback guard here.
+				safeCtxCallFromCallback(
+					() => pi.sendUserMessage(alert.summary, { deliverAs: "followUp" }),
+					"alert.sendUserMessage",
+				);
 			},
 			// TP-187 (#538): Lane-terminated handler.
 			(info) => {
@@ -2916,7 +2990,14 @@ export default function (pi: ExtensionAPI) {
 					);
 					return;
 				}
-				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+				// #620: stale-safe — pi.sendUserMessage is assertActive-guarded on
+				// ExtensionAPI; a stale ctx from this async worker-IPC alert callback
+				// would otherwise crash Pi. #597 safeSendMessageFromTimer covers
+				// sendMessage only, so use the general callback guard here.
+				safeCtxCallFromCallback(
+					() => pi.sendUserMessage(alert.summary, { deliverAs: "followUp" }),
+					"alert.sendUserMessage",
+				);
 			},
 			// TP-187 (#538): Lane-terminated handler.
 			(info) => {

@@ -3832,6 +3832,56 @@ export function safeSendMessageFromTimer(
 	}
 }
 
+/**
+ * Stale-safe wrapper for a UI / side-effect call that touches a possibly-stale
+ * `ExtensionContext` or `ExtensionAPI` from a long-lived ASYNC callback —
+ * engine-worker IPC handlers (`child.on("message"|"error"|"exit")`), widget
+ * refresh, the batch-end epilogue, and supervisor-alert delivery (#620).
+ *
+ * Pi invalidates captured `ctx`/`pi` handles on session replacement/reload, and
+ * also at the end of headless `-p` runs while the forked engine worker is still
+ * emitting IPC. Every `ctx` accessor (`ctx.ui`, `ctx.isIdle()`, …) and the
+ * `pi.send*` methods then call Pi's `assertActive`, which throws
+ * `"This extension ctx is stale after session replacement or reload"`. Such a
+ * throw inside a `child_process` / EventEmitter callback is an
+ * `uncaughtException` that kills the supervising Pi process.
+ *
+ * Return value semantics (to prevent caller misuse):
+ *   - `false`  → STALE only. The session is gone; caller should skip any
+ *              further UI work for this event.
+ *   - `true`   → success OR a non-stale failure that was logged. NOT a
+ *              success-only signal — a `true` may mean "logged and continued".
+ *
+ * Any non-stale error is logged (so genuine failures still surface in
+ * stderr/telemetry) but is deliberately NOT rethrown:
+ * rethrowing from an IPC/EventEmitter callback would re-introduce the exact
+ * process-fatal crash class this guards against. This mirrors the proven #597
+ * `safeSendMessageFromTimer` contract, generalized to any thunk so it can wrap
+ * `ctx.ui.notify`, `ctx.ui.setWidget`, and `pi.sendUserMessage` alike.
+ *
+ * @since #620
+ */
+export function safeCtxCallFromCallback(fn: () => void, label = "ui"): boolean {
+	try {
+		fn();
+		return true;
+	} catch (err) {
+		if (isStaleExtensionCtx(err)) {
+			// Pi replaced/ended the session — no live UI sink. Skip, never crash.
+			return false;
+		}
+		// Not stale: surface it (so real failures are visible) but do not rethrow,
+		// because a throw from an async IPC callback is a process-fatal uncaught
+		// exception — the very failure mode #620 fixes.
+		console.error(
+			`[taskplane] ${label} call from async callback threw (non-stale): ${
+				err instanceof Error ? (err.stack ?? err.message) : String(err)
+			}`,
+		);
+		return true;
+	}
+}
+
 export function startHeartbeat(
 	stateRoot: string,
 	state: SupervisorState,
