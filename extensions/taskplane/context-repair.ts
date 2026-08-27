@@ -40,10 +40,15 @@ interface AgentMessageLike {
 }
 
 function toolUseIds(msg: AgentMessageLike): string[] {
-	if (msg.role !== "assistant" || !Array.isArray(msg.content)) return [];
+	if (!msg || msg.role !== "assistant" || !Array.isArray(msg.content)) return [];
 	const ids: string[] = [];
 	for (const block of msg.content as ToolCallBlock[]) {
-		if (block && typeof block === "object" && block.type === "toolCall" && typeof block.id === "string") {
+		if (
+			block &&
+			typeof block === "object" &&
+			block.type === "toolCall" &&
+			typeof block.id === "string"
+		) {
 			ids.push(block.id);
 		}
 	}
@@ -55,6 +60,15 @@ function toolUseIds(msg: AgentMessageLike): string[] {
  * its matching `toolResult`(s), relocating any spliced-in non-tool messages to
  * after the tool-result group.
  *
+ * Robustness (Sage #621 review):
+ * - Duplicate `toolResult` messages sharing a `toolCallId` are all preserved
+ *   (queue-based grouping, not last-wins), so repair never drops data.
+ * - Emitted results are tracked by message identity, not by id.
+ * - Also repairs the result-before-assistant shape: a `toolResult` whose owning
+ *   assistant appears later is held and pulled forward at the owner.
+ * - A final safety-net pass appends any never-emitted result, guaranteeing no
+ *   `toolResult` is ever lost regardless of input malformation.
+ *
  * Returns the SAME array reference when already well-formed (no reordering
  * needed), so callers can cheaply detect a no-op. Otherwise returns a new,
  * reordered array. Pure: never mutates the input array or its elements.
@@ -62,40 +76,70 @@ function toolUseIds(msg: AgentMessageLike): string[] {
 export function repairToolResultOrdering<T extends AgentMessageLike>(messages: T[]): T[] {
 	if (!Array.isArray(messages) || messages.length < 3) return messages;
 
-	// Map each toolCallId -> its toolResult message (last one wins if duplicated).
-	const resultById = new Map<string, T>();
+	// Collect ALL toolResult messages per toolCallId, preserving original order.
+	// A queue (array) rather than last-wins so duplicate results for the same id
+	// are never dropped (Sage #621 review: last-wins could silently lose data).
+	const resultsById = new Map<string, T[]>();
 	for (const m of messages) {
 		if (m && m.role === "toolResult" && typeof m.toolCallId === "string") {
-			resultById.set(m.toolCallId, m);
+			const list = resultsById.get(m.toolCallId);
+			if (list) list.push(m);
+			else resultsById.set(m.toolCallId, [m]);
 		}
 	}
-	if (resultById.size === 0) return messages;
+	if (resultsById.size === 0) return messages;
+
+	// First-occurrence index of the assistant that owns each toolCallId. Lets us
+	// HOLD an in-place toolResult whose owning assistant appears LATER, repairing
+	// the result-before-assistant shape (Sage #621 review) instead of emitting it
+	// in a position that would still be invalid.
+	const ownerIndexById = new Map<string, number>();
+	for (let i = 0; i < messages.length; i++) {
+		for (const id of toolUseIds(messages[i])) {
+			if (!ownerIndexById.has(id)) ownerIndexById.set(id, i);
+		}
+	}
 
 	const out: T[] = [];
-	const emitted = new Set<string>();
+	// Track emitted results by message IDENTITY, not by id, so duplicate result
+	// messages sharing a toolCallId are each accounted for individually.
+	const emitted = new Set<T>();
 
 	for (let i = 0; i < messages.length; i++) {
 		const m = messages[i];
 		if (m && m.role === "toolResult" && typeof m.toolCallId === "string") {
-			// Emit here only if not already pulled forward next to its assistant;
-			// otherwise skip (its original, now-misplaced slot is dropped).
-			if (!emitted.has(m.toolCallId)) {
-				out.push(m);
-				emitted.add(m.toolCallId);
-			}
+			if (emitted.has(m)) continue; // already pulled forward next to its assistant
+			const owner = ownerIndexById.get(m.toolCallId);
+			// Owner appears later → hold; it will be pulled forward at the owner.
+			// Owner earlier (normal splice case) or orphan (no owner) → emit in place.
+			if (owner !== undefined && owner > i) continue;
+			out.push(m);
+			emitted.add(m);
 			continue;
 		}
 
 		out.push(m);
 
-		// Pull each matching toolResult to immediately follow this assistant, in
-		// tool-call order.
+		// Pull every matching toolResult (all of them, in original order) to
+		// immediately follow this assistant, in tool-call order.
 		for (const id of toolUseIds(m)) {
-			if (emitted.has(id)) continue;
-			const result = resultById.get(id);
-			if (!result) continue; // genuinely unanswered tool_use — not repairable here
-			out.push(result);
-			emitted.add(id);
+			const list = resultsById.get(id);
+			if (!list) continue; // genuinely unanswered tool_use — not repairable here
+			for (const result of list) {
+				if (emitted.has(result)) continue;
+				out.push(result);
+				emitted.add(result);
+			}
+		}
+	}
+
+	// Safety net: guarantee no toolResult is ever dropped. Any result not emitted
+	// above (only reachable via a held-but-never-pulled edge case) is appended in
+	// original order. Guarded by identity so it can never double-emit.
+	for (const m of messages) {
+		if (m && m.role === "toolResult" && typeof m.toolCallId === "string" && !emitted.has(m)) {
+			out.push(m);
+			emitted.add(m);
 		}
 	}
 

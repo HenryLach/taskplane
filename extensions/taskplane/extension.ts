@@ -1849,6 +1849,17 @@ export default function (pi: ExtensionAPI) {
 	const noticeGate = new SupervisorNoticeGate();
 	let batchGeneration = 0;
 
+	// #621: Both /orch (doOrchStart) and /orch-resume (doOrchResume) must, on
+	// (re)start, supersede any batch-end epilogue still deferred from a previous
+	// batch: bump the generation (so a later agent_settled no longer matches the
+	// stale pending work) AND drop the pending closure. Extracted into one helper
+	// so the two entry points cannot drift apart again (the original /orch-resume
+	// gap was exactly this drift). Call immediately after freshOrchBatchState().
+	function supersedeDeferredEpilogue(): void {
+		batchGeneration++;
+		noticeGate.invalidate();
+	}
+
 	// #621: The batch-end epilogue, shared by /orch (doOrchStart) and
 	// /orch-resume (doOrchResume). Appends the batch-summary / integration-skipped
 	// banners and transitions the supervisor to routing mode. Both entry points
@@ -2488,8 +2499,7 @@ export default function (pi: ExtensionAPI) {
 
 		// #621: a new batch supersedes any epilogue still deferred from the
 		// previous batch. Bump the generation and drop the stale pending work.
-		batchGeneration++;
-		noticeGate.invalidate();
+		supersedeDeferredEpilogue();
 
 		// TP-187 (#538): Clear zombie-alert filter for the new batch.
 		clearTerminationFilter("new_batch_started");
@@ -2852,6 +2862,14 @@ export default function (pi: ExtensionAPI) {
 		// Reset batch state for resume
 		orchBatchState = freshOrchBatchState();
 		latestMonitorState = null;
+
+		// #621: a resume supersedes any epilogue still deferred from the previous
+		// batch, exactly as doOrchStart does. Without this, an epilogue deferred
+		// mid-tool by the prior batch keeps the same batchGeneration; if the user
+		// resumes before `agent_settled` flushes it, onSettled() sees a matching
+		// generation and fires the stale epilogue against the resumed batch
+		// (wrong/duplicate banner). Shared helper mirrors doOrchStart exactly.
+		supersedeDeferredEpilogue();
 
 		// TP-187 (#538): Clear zombie-alert filter so post-resume alerts pass through.
 		clearTerminationFilter("orch_resume_called");

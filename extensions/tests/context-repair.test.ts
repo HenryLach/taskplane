@@ -15,7 +15,11 @@ import { expect } from "./expect.ts";
 import { repairToolResultOrdering } from "../taskplane/context-repair.ts";
 
 const user = (text: string) => ({ role: "user", content: [{ type: "text", text }] });
-const custom = (text: string) => ({ role: "custom", customType: "supervisor-x", content: [{ type: "text", text }] });
+const custom = (text: string) => ({
+	role: "custom",
+	customType: "supervisor-x",
+	content: [{ type: "text", text }],
+});
 const asst = (id: string, text = "") => ({
 	role: "assistant",
 	content: [
@@ -27,14 +31,27 @@ const asstMulti = (...ids: string[]) => ({
 	role: "assistant",
 	content: ids.map((id) => ({ type: "toolCall", id, name: "orch_status" })),
 });
-const result = (id: string) => ({ role: "toolResult", toolCallId: id, content: [{ type: "text", text: "ok" }] });
+const result = (id: string) => ({
+	role: "toolResult",
+	toolCallId: id,
+	content: [{ type: "text", text: "ok" }],
+});
 
 function roles(msgs: Array<Record<string, unknown>>): string[] {
-	return msgs.map((m) => (m.role === "toolResult" ? `R:${m.toolCallId}` : m.role === "assistant" ? `A:${toolIds(m)}` : String(m.role)));
+	return msgs.map((m) =>
+		m.role === "toolResult"
+			? `R:${m.toolCallId}`
+			: m.role === "assistant"
+				? `A:${toolIds(m)}`
+				: String(m.role),
+	);
 }
 function toolIds(m: Record<string, unknown>): string {
 	const c = m.content as Array<{ type: string; id?: string }>;
-	return c.filter((b) => b.type === "toolCall").map((b) => b.id).join(",");
+	return c
+		.filter((b) => b.type === "toolCall")
+		.map((b) => b.id)
+		.join(",");
 }
 
 describe("#621 — repairToolResultOrdering", () => {
@@ -62,20 +79,19 @@ describe("#621 — repairToolResultOrdering", () => {
 	});
 
 	it("repairs a splice within a parallel tool-result group", () => {
-		const msgs = [asstMulti("t1", "t2", "t3"), result("t1"), result("t2"), custom("splice"), result("t3")];
+		const msgs = [
+			asstMulti("t1", "t2", "t3"),
+			result("t1"),
+			result("t2"),
+			custom("splice"),
+			result("t3"),
+		];
 		const out = repairToolResultOrdering(msgs);
 		expect(roles(out)).toEqual(["A:t1,t2,t3", "R:t1", "R:t2", "R:t3", "custom"]);
 	});
 
 	it("repairs multiple independent splices in one pass", () => {
-		const msgs = [
-			asst("t1"),
-			custom("s1"),
-			result("t1"),
-			asst("t2"),
-			custom("s2"),
-			result("t2"),
-		];
+		const msgs = [asst("t1"), custom("s1"), result("t1"), asst("t2"), custom("s2"), result("t2")];
 		const out = repairToolResultOrdering(msgs);
 		expect(roles(out)).toEqual(["A:t1", "R:t1", "custom", "A:t2", "R:t2", "custom"]);
 	});
@@ -97,5 +113,52 @@ describe("#621 — repairToolResultOrdering", () => {
 		expect(repairToolResultOrdering([]).length).toBe(0);
 		const one = [asst("t1")];
 		expect(repairToolResultOrdering(one) === one).toBe(true);
+	});
+
+	// ── Sage #621 review hardening ──────────────────────────────────────────
+
+	it("preserves duplicate tool_results for the same id (no data loss)", () => {
+		// Two distinct result messages share toolCallId t1, split by a splice.
+		// Last-wins mapping would drop one; queue-based grouping keeps both.
+		const msgs = [asst("t1"), result("t1"), custom("splice"), result("t1")];
+		const out = repairToolResultOrdering(msgs);
+		expect(roles(out)).toEqual(["A:t1", "R:t1", "R:t1", "custom"]);
+		// Both original result objects survive (no drop).
+		const results = out.filter((m) => m.role === "toolResult");
+		expect(results.length).toBe(2);
+	});
+
+	it("leaves already-grouped duplicate results untouched (no-op)", () => {
+		const msgs = [asst("t1"), result("t1"), result("t1"), user("x")];
+		expect(repairToolResultOrdering(msgs) === msgs).toBe(true);
+	});
+
+	it("repairs a tool_result that appears before its assistant", () => {
+		const msgs = [user("x"), result("t1"), asst("t1")];
+		const out = repairToolResultOrdering(msgs);
+		expect(out === msgs).toBe(false);
+		expect(roles(out)).toEqual(["user", "A:t1", "R:t1"]);
+	});
+
+	it("repairs a compound fixture: result-before-assistant + parallel group + splice", () => {
+		// A single malformed stream combining all three repair concerns:
+		//  - result(t2) appears BEFORE its parallel-owning assistant
+		//  - assistant owns a parallel group [t1, t2, t3]
+		//  - a custom banner is spliced INTO the group (between t1 and t3)
+		const msgs = [
+			user("start"),
+			result("t2"), // owner appears later -> must be held
+			asstMulti("t1", "t2", "t3"),
+			result("t1"),
+			custom("spliced banner"),
+			result("t3"),
+		];
+		const out = repairToolResultOrdering(msgs);
+		// All three results grouped immediately after the assistant, in tool-call
+		// order (t1, t2, t3); the splice relocates after the group; no data lost.
+		expect(roles(out)).toEqual(["user", "A:t1,t2,t3", "R:t1", "R:t2", "R:t3", "custom"]);
+		expect(out.filter((m) => m.role === "toolResult").length).toBe(3);
+		// Idempotent on the repaired output.
+		expect(repairToolResultOrdering(out) === out).toBe(true);
 	});
 });

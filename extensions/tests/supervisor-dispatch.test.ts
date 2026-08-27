@@ -121,4 +121,41 @@ describe("#621 — SupervisorNoticeGate", () => {
 		gate.onSettled(true, 1);
 		expect(runs).toBe(1);
 	});
+
+	// ── Sage #621 review: /orch-resume supersession contract ───────────────────
+	//
+	// doOrchStart bumps batchGeneration + calls noticeGate.invalidate() on
+	// (re)start. doOrchResume must do the SAME. Without it, an epilogue deferred
+	// mid-tool by the prior batch survives into the resumed run and fires against
+	// it. These two tests model the extension wiring (a shared generation counter
+	// + the gate) to demonstrate the failure mode and lock in the fix.
+
+	it("FAILURE MODE: resume that does NOT invalidate fires the prior batch's stale epilogue", () => {
+		const gate = new SupervisorNoticeGate();
+		let batchGeneration = 1; // batch A running
+		let staleRuns = 0;
+		// Batch A ends mid-tool (agent busy) -> defer epilogue at gen 1.
+		gate.runOrDefer(false, batchGeneration, () => staleRuns++);
+		// BUGGY resume: resets state but forgets to bump generation / invalidate.
+		// batchGeneration stays 1; gate still holds the stale pending epilogue.
+		expect(gate.hasPending()).toBe(true);
+		// Agent settles; settle reads the (un-bumped) current generation.
+		gate.onSettled(true, batchGeneration);
+		expect(staleRuns).toBe(1); // <-- the #621 /orch-resume bug: stale epilogue fired
+	});
+
+	it("FIXED: resume that bumps generation + invalidates drops the stale epilogue", () => {
+		const gate = new SupervisorNoticeGate();
+		let batchGeneration = 1; // batch A running
+		let staleRuns = 0;
+		// Batch A ends mid-tool -> defer epilogue at gen 1.
+		gate.runOrDefer(false, batchGeneration, () => staleRuns++);
+		// FIXED resume mirrors doOrchStart: bump generation + invalidate the gate.
+		batchGeneration++; // -> 2
+		gate.invalidate();
+		expect(gate.hasPending()).toBe(false); // stale epilogue dropped immediately
+		// Agent settles at the new generation; nothing stale remains.
+		gate.onSettled(true, batchGeneration);
+		expect(staleRuns).toBe(0);
+	});
 });

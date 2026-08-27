@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Supervisor status injection during an in-flight tool call wedged the
+  interactive session (#621):** On batch phase transitions the supervisor
+  injects display banners via `pi.sendMessage(customEntry, {triggerTurn:false})`,
+  which appends the entry (rendered `role:"user"`) at the current session leaf.
+  If the interactive agent had an assistant `tool_use` appended but its
+  `tool_result` had not yet landed (tool still executing), the banner spliced
+  *between* them. On the next request Anthropic hard-rejected the conversation
+  (`400 ... unexpected tool_use_id ... in tool_result blocks; each tool_result
+  must have a corresponding tool_use block in the previous message`),
+  permanently wedging the session — every retry re-sent the same broken
+  ordering. Recovery previously required hand-editing the session `.jsonl`.
+
+  Fixed with a two-layer defense:
+  1. **Prevention** — a `SupervisorNoticeGate` routes the batch-end epilogue
+     through an idleness check: it runs immediately when the agent is idle,
+     otherwise defers the whole epilogue to the next `agent_settled` boundary
+     (the first lifecycle point at which all tool results, retries, compaction,
+     and queued continuations have finished). A monotonic batch generation tag
+     lets a newer batch — started via `/orch` **or** `/orch-resume` — supersede
+     stale deferred work.
+  2. **Defense-in-depth** — a `context` event handler
+     (`repairToolResultOrdering`) reorders every outgoing provider request so
+     each `tool_use` is immediately followed by its matching `tool_result`(s),
+     relocating any spliced-in message after the tool-result group. This covers
+     the other background `sendMessage` sites (heartbeat, routing, integration
+     progress) without gating each one, and only transforms the per-request
+     context — the persisted session tree is untouched, so it self-corrects
+     across reloads. Hardened (per Sage review) to preserve duplicate results,
+     track emitted messages by identity, and repair result-before-assistant
+     ordering without ever dropping a `tool_result`.
+
+  **Behavior note:** when a batch completes while the interactive agent is
+  mid-turn, auto-integration (supervised/auto modes) now starts at the next
+  `agent_settled` boundary rather than instantly — a small, bounded latency
+  introduced deliberately to guarantee the epilogue can never split a
+  `tool_use`/`tool_result` pair. This is distinct from #597 (a stale-ctx
+  heartbeat *crash*); the `safeSendMessageFromTimer` wrapper from #597 does
+  not prevent #621 because the send succeeds — it just lands in the wrong place.
+
 ## [0.30.4] - 2026-06-19
 
 ### Fixed
