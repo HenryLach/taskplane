@@ -25,7 +25,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "./expect.ts";
-import { normalizeReviewDisposition } from "../taskplane/agent-host.ts";
+import { normalizeReviewDisposition, extractToolResultText } from "../taskplane/agent-host.ts";
 import { formatEventNotification } from "../taskplane/supervisor.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +162,53 @@ describe("review-boundary — formatEventNotification", () => {
 	});
 });
 
+describe("review-boundary — #624 tool-result extraction + verdict authority", () => {
+	it("extractToolResultText handles structured content arrays (not just strings)", () => {
+		// Pi delivers review_step results as content blocks; the old extraction
+		// produced "" for these, making every verdict look UNKNOWN → review_failed.
+		const structured = {
+			result: [
+				{
+					type: "text",
+					text: "REVISE: fix the null check\n\nFull review: .reviews/R005-code-step1.md",
+				},
+			],
+		};
+		const text = extractToolResultText(structured);
+		expect(text).toContain("REVISE:");
+		expect(normalizeReviewDisposition(text)).toBe("REVISE");
+	});
+
+	it("extractToolResultText handles {content:[...]} objects and plain strings + string fallback", () => {
+		expect(extractToolResultText({ result: "APPROVE" })).toBe("APPROVE");
+		expect(extractToolResultText({ result: { content: [{ type: "text", text: "APPROVE" }] } })).toBe(
+			"APPROVE",
+		);
+		expect(extractToolResultText({ output: "RETHINK — reconsider" })).toContain("RETHINK");
+		expect(extractToolResultText({ result: undefined, output: undefined })).toBe("");
+	});
+
+	it("agent-host only buckets a genuine UNAVAILABLE into review_failed (UNKNOWN is NOT a broken reviewer)", () => {
+		const src = readSrc("agent-host.ts");
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain("extractToolResultText(event)");
+		// The fix: UNKNOWN must no longer route to review_failed.
+		expect(flat).toContain('if (disposition === "UNAVAILABLE") { emitEvent("review_failed"');
+		expect(flat).not.toContain('disposition === "UNAVAILABLE" || disposition === "UNKNOWN"');
+	});
+
+	it("lane-runner treats the review file's verdict as authoritative and classifies accordingly", () => {
+		const src = readSrc("lane-runner.ts");
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain("parseReviewVerdict(reviewMd)");
+		expect(flat).toContain("const disposition = fileVerdict ?? payloadDisposition");
+		// review_failed only when there is genuinely no verdict anywhere.
+		expect(flat).toContain(
+			'disposition === "UNAVAILABLE" || disposition === "UNKNOWN" || disposition === undefined ? "review_failed" : "review_completed"',
+		);
+	});
+});
+
 describe("review-boundary — wiring", () => {
 	it("agent-host emits review_requested at review_step start", () => {
 		const src = readSrc("agent-host.ts");
@@ -177,8 +224,9 @@ describe("review-boundary — wiring", () => {
 		expect(flat).toContain("normalizeReviewDisposition(fullResult)");
 		expect(flat).toContain('emitEvent("review_completed"');
 		expect(flat).toContain('emitEvent("review_failed"');
-		// UNAVAILABLE / UNKNOWN route to review_failed (the broken-reviewer signal).
-		expect(flat).toMatch(/disposition === "UNAVAILABLE" \|\| disposition === "UNKNOWN"/);
+		// #624: only a GENUINE UNAVAILABLE routes to review_failed here; UNKNOWN
+		// (a parse miss) does not — lane-runner resolves the verdict from the file.
+		expect(flat).toContain('if (disposition === "UNAVAILABLE") { emitEvent("review_failed"');
 		// End events carry step + reviewType (from the pendingReview slot) so the
 		// supervisor can key adjudication + Stage-3 spiral counts on (task, step).
 		expect(flat).toContain("pendingReview = { step: stepNum, reviewType: rType }");

@@ -86,6 +86,7 @@ import {
 	shouldFireSpiral,
 	shouldFireOrderViolation,
 	sanitizeSpiralConfig,
+	parseReviewVerdict,
 	type ReviewStreakState,
 } from "./review-analysis.ts";
 // NOTE: emitEngineEvent is NOT statically imported from ./persistence.ts.
@@ -626,14 +627,16 @@ export async function executeTaskV2(
 		return st;
 	};
 	// Read + parse finding counts from the exact review file agent-host referenced.
-	const readFindingCounts = (reviewPath?: string): Record<string, number> => {
-		if (!reviewPath) return {};
+	// Read the exact review file agent-host referenced (best-effort). Reused for
+	// both the authoritative verdict (#624) and the severity finding counts.
+	const readReviewFile = (reviewPath?: string): string | null => {
+		if (!reviewPath) return null;
 		try {
 			const abs = join(unit.packet.reviewsDir, basename(reviewPath));
-			if (!existsSync(abs)) return {};
-			return parseFindingCounts(readFileSync(abs, "utf-8"), reviewSeverityLabels);
+			if (!existsSync(abs)) return null;
+			return readFileSync(abs, "utf-8");
 		} catch {
-			return {};
+			return null;
 		}
 	};
 	// Fire an actionable review-intervention escalation. Delivery is set to steer
@@ -700,12 +703,6 @@ export async function executeTaskV2(
 		) {
 			return;
 		}
-		const engineType: EngineEventType =
-			evt.type === "review_requested"
-				? "review_started"
-				: evt.type === "review_completed"
-					? "review_completed"
-					: "review_failed";
 		const payload = (evt.payload ?? {}) as {
 			step?: unknown;
 			reviewType?: unknown;
@@ -714,9 +711,28 @@ export async function executeTaskV2(
 		};
 		const stepNum = typeof payload.step === "number" ? payload.step : undefined;
 		const reviewType = typeof payload.reviewType === "string" ? payload.reviewType : undefined;
-		const disposition =
+		const payloadDisposition =
 			typeof payload.disposition === "string" ? (payload.disposition as ReviewDisposition) : undefined;
 		const reviewPath = typeof payload.reviewPath === "string" ? payload.reviewPath : undefined;
+		const isEnd = evt.type !== "review_requested";
+
+		// #624: the review FILE's `## Verdict:` is the authoritative disposition,
+		// overriding the upstream tool-return parse (which can miss on structured
+		// results). Read the file ONCE here; reused for finding counts below.
+		const reviewMd = isEnd ? readReviewFile(reviewPath) : null;
+		const fileVerdict = parseReviewVerdict(reviewMd);
+		const disposition = fileVerdict ?? payloadDisposition;
+
+		// Classify by the RESOLVED disposition: only a genuine UNAVAILABLE / total
+		// parse-miss (no verdict in the tool return AND none on disk) is
+		// review_failed. A real verdict — including one recovered from the file — is
+		// review_completed. This is what prevents the spurious "Reviewer
+		// unavailable" on every successful review (#624).
+		const engineType: EngineEventType = !isEnd
+			? "review_started"
+			: disposition === "UNAVAILABLE" || disposition === "UNKNOWN" || disposition === undefined
+				? "review_failed"
+				: "review_completed";
 
 		const engineEvent: EngineEvent = {
 			timestamp: new Date().toISOString(),
@@ -734,9 +750,9 @@ export async function executeTaskV2(
 		};
 
 		// Detection + enrichment on END boundaries (completed/failed) with a step.
-		if (evt.type !== "review_requested" && stepNum !== undefined) {
+		if (isEnd && stepNum !== undefined) {
 			const state = getReviewState(`${taskId}:${stepNum}`);
-			const counts = readFindingCounts(reviewPath);
+			const counts = reviewMd ? parseFindingCounts(reviewMd, reviewSeverityLabels) : {};
 			const hasCounts = Object.keys(counts).length > 0;
 			// Trend compares the PRIOR round's counts to this round's, so compute it
 			// BEFORE advancing the streak (which overwrites lastCounts). Semantics:

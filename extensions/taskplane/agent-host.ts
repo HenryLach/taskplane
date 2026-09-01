@@ -241,6 +241,37 @@ function extractAssistantText(message: Record<string, unknown>): string {
 	return "";
 }
 
+/**
+ * Extract text from a Pi RPC `tool_execution_end` result, which — like message
+ * content — may be a plain string, an array of `{type:"text",text}` blocks, or
+ * an object with a `content` field (the shape tool handlers return). The old
+ * `typeof event.result === "string" ? ... : String(event.output)` extraction
+ * silently produced an empty/garbage string for structured results, which made
+ * review_step verdicts unparseable and mis-fired "Reviewer unavailable" (#624).
+ */
+export function extractToolResultText(event: { result?: unknown; output?: unknown }): string {
+	const fromValue = (val: unknown): string | null => {
+		if (typeof val === "string") return val;
+		if (Array.isArray(val)) {
+			const texts = val
+				.filter(
+					(b: unknown): b is { type: string; text: string } =>
+						typeof b === "object" &&
+						b !== null &&
+						(b as { type?: unknown }).type === "text" &&
+						typeof (b as { text?: unknown }).text === "string",
+				)
+				.map((b) => b.text);
+			if (texts.length > 0) return texts.join("\n");
+		}
+		if (val && typeof val === "object" && "content" in val) {
+			return extractAssistantText(val as Record<string, unknown>);
+		}
+		return null;
+	};
+	return fromValue(event.result) ?? fromValue(event.output) ?? "";
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 /**
@@ -884,15 +915,18 @@ export function spawnAgent(
 						break;
 					}
 					case "tool_execution_end": {
-						// TP-111: Include bounded result summary for dashboard display
-						const fullResult =
-							typeof event.result === "string" ? event.result : event.output ? String(event.output) : "";
+						// #624: extract robustly — tool results are often structured content
+						// arrays, not plain strings; the old extraction produced "" for those.
+						const fullResult = extractToolResultText(event);
 						const toolResultSummary = fullResult.slice(0, 200);
 						emitEvent("tool_result", { tool: event.toolName, summary: toolResultSummary });
 						// Review-boundary notification: the review END. Normalize the reviewer
 						// verdict and emit review_completed (APPROVE/REVISE/RETHINK/REFUSED) or
-						// review_failed (UNAVAILABLE / unparseable — the "reviewer broken"
-						// signal, which the supervisor treats separately from the spiral).
+						// review_failed. Only a GENUINE UNAVAILABLE (reviewer subprocess failed
+						// / produced no output) is the "broken reviewer" signal. A parse miss
+						// (UNKNOWN) must NOT masquerade as a broken reviewer (#624) — emit it as
+						// review_completed; lane-runner authoritatively resolves the verdict from
+						// the review file on disk.
 						if (event.toolName === "review_step") {
 							const disposition = normalizeReviewDisposition(fullResult);
 							const reviewFields = {
@@ -904,7 +938,7 @@ export function spawnAgent(
 								// return; surfacing it lets lane-runner read the EXACT review file.
 								reviewPath: extractReviewPath(fullResult),
 							};
-							if (disposition === "UNAVAILABLE" || disposition === "UNKNOWN") {
+							if (disposition === "UNAVAILABLE") {
 								emitEvent("review_failed", reviewFields);
 							} else {
 								emitEvent("review_completed", reviewFields);

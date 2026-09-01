@@ -15,6 +15,7 @@ import {
 	parseFindingCounts,
 	computeFindingTrend,
 	parseReviewLabelFromPath,
+	parseReviewVerdict,
 	advanceReviewStreak,
 	reconstructReviewStreaks,
 	freshReviewStreakState,
@@ -363,6 +364,28 @@ describe("review-analysis — sanitizeSpiralConfig", () => {
 		expect(sanitizeSpiralConfig({ enabled: false }).enabled).toBe(false);
 		// Absent enabled (e.g. partial config) defaults to true.
 		expect(sanitizeSpiralConfig({ threshold: 4 }).enabled).toBe(true);
+	});
+});
+
+describe("review-analysis — parseReviewVerdict (#624 authoritative file verdict)", () => {
+	it("parses ## Verdict and ### Verdict headings, case-insensitively", () => {
+		expect(parseReviewVerdict("## Verdict: REVISE\n### Summary\n…")).toBe("REVISE");
+		expect(parseReviewVerdict("### Verdict: APPROVE")).toBe("APPROVE");
+		expect(parseReviewVerdict("#### Verdict: RETHINK — reconsider")).toBe("RETHINK");
+		expect(parseReviewVerdict("## verdict: revise")).toBe("REVISE");
+	});
+
+	it("tolerates the [APPROVE | REVISE | RETHINK] template placeholder being replaced", () => {
+		const md =
+			"## Code Review: Step 1\n\n### Verdict: REVISE\n\n### Issues Found\n1. **[a:1]** critical — x\n";
+		expect(parseReviewVerdict(md)).toBe("REVISE");
+	});
+
+	it("returns undefined when no verdict heading is present (empty/aborted review)", () => {
+		expect(parseReviewVerdict("just some prose, no verdict")).toBe(undefined);
+		expect(parseReviewVerdict("")).toBe(undefined);
+		expect(parseReviewVerdict(null)).toBe(undefined);
+		expect(parseReviewVerdict(undefined)).toBe(undefined);
 	});
 });
 

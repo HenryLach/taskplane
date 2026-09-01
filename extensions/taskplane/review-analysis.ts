@@ -347,6 +347,25 @@ export function shouldFireOrderViolation(
 }
 
 /**
+ * Parse the reviewer's verdict directly from the review markdown file — the
+ * authoritative source of truth (the reviewer always writes
+ * `## Verdict: APPROVE|REVISE|RETHINK` to disk). Used by lane-runner to resolve
+ * the disposition robustly even when the tool-return extraction upstream is
+ * empty/ambiguous (#624). Matches the executor's verdict parser
+ * (task-executor-core.ts).
+ *
+ * Returns the verdict as a {@link ReviewDisposition}, or undefined if no
+ * recognizable `Verdict:` heading is present (e.g. an empty/aborted review).
+ */
+export function parseReviewVerdict(
+	markdown: string | undefined | null,
+): ReviewDisposition | undefined {
+	if (!markdown || typeof markdown !== "string") return undefined;
+	const m = markdown.match(/#{2,4}\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
+	return m ? (m[1].toUpperCase() as ReviewDisposition) : undefined;
+}
+
+/**
  * Extract the review round label (e.g. "R008-code-step4") from a review file
  * path like ".reviews/R008-code-step4.md". Returns undefined if the path does
  * not match the expected R{NNN}-{type}-step{N} naming.
