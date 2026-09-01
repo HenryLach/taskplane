@@ -73,6 +73,14 @@ import {
 
 const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Interval (ms) for the live worker-outbox poll during a running worker
+ * (mail-recognition fix). Surfaces reply/escalate mail to the supervisor
+ * mid-run instead of only after the worker exits. 3s balances responsiveness
+ * against fs churn; the post-exit final drain catches any last stragglers.
+ */
+const OUTBOX_LIVE_POLL_INTERVAL_MS = 3_000;
+
 // ── Segment Scoping Helpers (Phase A, TP-174) ────────────────────────
 
 /**
@@ -380,6 +388,91 @@ export async function executeTaskV2(
 	const taskId = unit.taskId;
 	const segmentId = unit.segmentId;
 	const workerAgentId = buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker");
+
+	// ── Live outbox surfacing (mail-recognition fix) ─────────────────
+	// Worker reply/escalate mail (notify_supervisor / escalate_to_supervisor
+	// → *.msg.json) must reach the supervisor WHILE the worker is still
+	// running — e.g. a worker asking for help to break a review spiral. The
+	// original code only read the outbox AFTER the worker subprocess exited
+	// (post-exit block below), so mid-run mail sat unread until exit and the
+	// supervisor "woke up" too late. This helper surfaces + acks each pending
+	// reply/escalate message; it runs on a live timer during the worker run
+	// (see the interval around `await spawned.promise`) AND once more after
+	// exit as a final drain. Acking (ackOutboxMessage) moves each message to
+	// processed/, so the live timer and the post-exit drain never
+	// double-surface the same message. Re-entrancy guarded so a slow cycle
+	// can't overlap the next tick.
+	let outboxDraining = false;
+	const drainAndSurfaceOutbox = (): void => {
+		if (outboxDraining) return;
+		outboxDraining = true;
+		try {
+			const outboxMessages = readOutbox(config.stateRoot, config.batchId, workerAgentId);
+			for (const msg of outboxMessages) {
+				const sanitized = msg.content.replace(/\r?\n/g, " / ").slice(0, 200);
+				logExecution(statusPath, `Agent ${msg.type}`, sanitized);
+
+				if (msg.type === "reply" || msg.type === "escalate") {
+					appendAgentEvent(config.stateRoot, config.batchId, workerAgentId, {
+						batchId: config.batchId,
+						agentId: workerAgentId,
+						role: "worker",
+						laneNumber: config.laneNumber,
+						taskId,
+						repoId: config.repoId,
+						ts: Date.now(),
+						type: msg.type === "reply" ? "reply_sent" : "escalation_sent",
+						payload: {
+							messageId: msg.id,
+							replyTo: msg.replyTo ?? null,
+							content: sanitized,
+						},
+					});
+
+					appendMailboxAuditEvent(config.stateRoot, config.batchId, {
+						type: msg.type === "reply" ? "message_replied" : "message_escalated",
+						from: workerAgentId,
+						to: "supervisor",
+						messageId: msg.id,
+						messageType: msg.type,
+						contentPreview: sanitized,
+					});
+
+					if (config.onSupervisorAlert) {
+						const isEscalation = msg.type === "escalate";
+						try {
+							config.onSupervisorAlert({
+								category: "agent-message",
+								summary:
+									`${isEscalation ? "\uD83D\uDEA8" : "\uD83D\uDCE8"} Agent ${isEscalation ? "escalation" : "reply"} from ${workerAgentId}\n` +
+									`  Task: ${taskId}\n` +
+									`  Lane: lane-${config.laneNumber}\n` +
+									`  Message: ${sanitized}`,
+								context: {
+									taskId,
+									laneId: `lane-${config.laneNumber}`,
+									laneNumber: config.laneNumber,
+									agentId: workerAgentId,
+									messageId: msg.id,
+									exitReason: `${isEscalation ? "agent_escalation" : "agent_reply"}: ${sanitized}`,
+								},
+							});
+						} catch {
+							/* best effort */
+						}
+					}
+				}
+
+				// Consume outbox message to prevent duplicate processing by the
+				// next live tick or the post-exit final drain.
+				ackOutboxMessage(config.stateRoot, config.batchId, workerAgentId, msg.id);
+			}
+		} catch {
+			/* best effort */
+		} finally {
+			outboxDraining = false;
+		}
+	};
 
 	// ── 1. Ensure STATUS.md exists ──────────────────────────────────
 	if (!existsSync(statusPath)) {
@@ -1090,11 +1183,17 @@ export async function executeTaskV2(
 			}
 		}, 1000);
 
+		// Live outbox surfacing during the worker run (mail-recognition fix):
+		// poll the worker's outbox on a timer so reply/escalate mail reaches the
+		// supervisor mid-run, not only after the worker exits.
+		const outboxLivePoll = setInterval(drainAndSurfaceOutbox, OUTBOX_LIVE_POLL_INTERVAL_MS);
+
 		let workerResult: AgentHostResult;
 		try {
 			workerResult = await spawned.promise;
 		} finally {
 			clearInterval(reviewerRefresh);
+			clearInterval(outboxLivePoll);
 		}
 
 		// TP-115: Update lastTelemetry with definitive final values from AgentHostResult
@@ -1116,70 +1215,11 @@ export async function executeTaskV2(
 			workerResult.cacheReadTokens +
 			workerResult.cacheWriteTokens;
 
-		// ── TP-106: Poll worker outbox for replies/escalations ─────
-		try {
-			const outboxMessages = readOutbox(config.stateRoot, config.batchId, workerAgentId);
-			for (const msg of outboxMessages) {
-				const sanitized = msg.content.replace(/\r?\n/g, " / ").slice(0, 200);
-				logExecution(statusPath, `Agent ${msg.type}`, sanitized);
-
-				if (msg.type === "reply" || msg.type === "escalate") {
-					appendAgentEvent(config.stateRoot, config.batchId, workerAgentId, {
-						batchId: config.batchId,
-						agentId: workerAgentId,
-						role: "worker",
-						laneNumber: config.laneNumber,
-						taskId,
-						repoId: config.repoId,
-						ts: Date.now(),
-						type: msg.type === "reply" ? "reply_sent" : "escalation_sent",
-						payload: {
-							messageId: msg.id,
-							replyTo: msg.replyTo ?? null,
-							content: sanitized,
-						},
-					});
-
-					appendMailboxAuditEvent(config.stateRoot, config.batchId, {
-						type: msg.type === "reply" ? "message_replied" : "message_escalated",
-						from: workerAgentId,
-						to: "supervisor",
-						messageId: msg.id,
-						messageType: msg.type,
-						contentPreview: sanitized,
-					});
-
-					if (config.onSupervisorAlert) {
-						const isEscalation = msg.type === "escalate";
-						try {
-							config.onSupervisorAlert({
-								category: "agent-message",
-								summary:
-									`${isEscalation ? "🚨" : "📨"} Agent ${isEscalation ? "escalation" : "reply"} from ${workerAgentId}\n` +
-									`  Task: ${taskId}\n` +
-									`  Lane: lane-${config.laneNumber}\n` +
-									`  Message: ${sanitized}`,
-								context: {
-									taskId,
-									laneId: `lane-${config.laneNumber}`,
-									laneNumber: config.laneNumber,
-									agentId: workerAgentId,
-									messageId: msg.id,
-									exitReason: `${isEscalation ? "agent_escalation" : "agent_reply"}: ${sanitized}`,
-								},
-							});
-						} catch {
-							/* best effort */
-						}
-					}
-				}
-
-				// Consume outbox message to prevent duplicate processing in later iterations.
-				ackOutboxMessage(config.stateRoot, config.batchId, workerAgentId, msg.id);
-			}
-		} catch {
-			/* best effort */
-		}
+		// ── TP-106 / mail-recognition: final outbox drain ────────────
+		// Surface any reply/escalate mail written between the last live poll and
+		// worker exit. Live-surfaced messages were already acked, so this never
+		// double-surfaces them.
+		drainAndSurfaceOutbox();
 
 		// ── Steering annotation ─────────────────────────────────────
 		try {
