@@ -4033,6 +4033,11 @@ interface ParsedEvent {
 	suggestion?: string;
 	affectedTaskIds?: string[];
 	message?: string;
+	// ── Review-boundary optional fields ──────────────────────────
+	agentId?: string;
+	reviewStep?: number;
+	reviewType?: string;
+	disposition?: string;
 }
 
 /**
@@ -4057,6 +4062,11 @@ const SIGNIFICANT_EVENT_TYPES = new Set<UnifiedEventType>([
 	"batch_complete",
 	"batch_paused",
 	"tier0_escalation",
+	// Review boundaries: surfaced at EVERY start/end so the supervisor can
+	// adjudicate each revision case-by-case (not coalesced into digests).
+	"review_started",
+	"review_completed",
+	"review_failed",
 ]);
 
 /**
@@ -4298,6 +4308,18 @@ export function parseJsonlLines(data: string, partialLine: string): [ParsedEvent
  *
  * @since TP-041
  */
+/**
+ * Compact "where" descriptor for a review-boundary notification: task, step,
+ * and lane so the supervisor can address the right worker when adjudicating.
+ */
+function reviewLocation(event: ParsedEvent): string {
+	const parts: string[] = [];
+	if (event.taskId) parts.push(`task ${event.taskId}`);
+	if (typeof event.reviewStep === "number") parts.push(`step ${event.reviewStep}`);
+	if (typeof event.laneNumber === "number") parts.push(`lane ${event.laneNumber}`);
+	return parts.length > 0 ? parts.join(", ") : "a step";
+}
+
 export function formatEventNotification(
 	event: ParsedEvent,
 	autonomy: SupervisorAutonomyLevel,
@@ -4342,6 +4364,31 @@ export function formatEventNotification(
 			const lane = event.laneNumber !== undefined ? event.laneNumber : "?";
 			const mins = event.stalledMinutes ?? "?";
 			return `🔒 Merge agent on lane ${lane} appears stuck (no output for ${mins} min). Consider killing and retrying.`;
+		}
+		case "review_started": {
+			const loc = reviewLocation(event);
+			const typeLabel = event.reviewType ? `${event.reviewType} ` : "";
+			return `🔍 **Review starting** — ${typeLabel}review of ${loc}.`;
+		}
+		case "review_completed": {
+			const loc = reviewLocation(event);
+			const disp = (event.disposition || "UNKNOWN").toUpperCase();
+			const icon =
+				disp === "APPROVE" ? "✅" : disp === "REFUSED" ? "⛔" : disp === "UNKNOWN" ? "❔" : "🔁";
+			const tail =
+				disp === "APPROVE"
+					? ""
+					: disp === "REFUSED"
+						? " — reviewer refused (step marked complete before review). The worker must revert and re-review."
+						: " — changes requested. Watch for repeated revisions on this step.";
+			return `${icon} **Review ${disp}** — ${loc}.${tail}`;
+		}
+		case "review_failed": {
+			const loc = reviewLocation(event);
+			return (
+				`⚠️ **Reviewer unavailable** — ${loc}. The reviewer subprocess failed or produced no ` +
+				`verdict (not a revision spiral — a broken-reviewer signal). Consider checking reviewer config.`
+			);
 		}
 		case "batch_complete": {
 			const parts: string[] = [];
@@ -4464,14 +4511,22 @@ export function shouldNotify(
 	eventType: UnifiedEventType,
 	autonomy: SupervisorAutonomyLevel,
 ): boolean {
-	// Always notify for terminal/failure events regardless of autonomy
+	// Always notify for terminal/failure events regardless of autonomy.
+	// Review boundaries are included on purpose: the supervisor must be informed
+	// at EVERY review start/end in ALL autonomy levels — in autonomous mode this
+	// is precisely when it adjudicates revisions case-by-case (operator-as-alarm
+	// is the opposite of autonomous execution). Suppressing review_* in
+	// autonomous mode would silently disable the feature where it matters most.
 	if (
 		eventType === "batch_complete" ||
 		eventType === "batch_paused" ||
 		eventType === "merge_failed" ||
 		eventType === "merge_health_dead" ||
 		eventType === "merge_health_stuck" ||
-		eventType === "tier0_escalation"
+		eventType === "tier0_escalation" ||
+		eventType === "review_started" ||
+		eventType === "review_completed" ||
+		eventType === "review_failed"
 	) {
 		return true;
 	}

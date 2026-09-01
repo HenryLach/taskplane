@@ -2028,7 +2028,14 @@ export type EngineEventType =
 	| "merge_health_dead"
 	| "merge_health_stuck"
 	| "batch_complete"
-	| "batch_paused";
+	| "batch_paused"
+	// Review boundaries (review-boundary supervisor notifications). Bridged from
+	// the per-agent RuntimeAgentEvent review_* stream by lane-runner so the
+	// supervisor's live events.jsonl tailer surfaces every review start/end and
+	// can adjudicate revisions case-by-case.
+	| "review_started"
+	| "review_completed"
+	| "review_failed";
 
 /**
  * Structured engine event written to `.pi/supervisor/events.jsonl`.
@@ -2101,6 +2108,17 @@ export interface EngineEvent {
 	healthStatus?: MergeHealthStatus;
 	/** Minutes since last activity (for merge_health_warning, merge_health_stuck) */
 	stalledMinutes?: number;
+
+	// ── Review-boundary fields (review_started/completed/failed) ────
+
+	/** Worker agent ID that owns the review (for review_* events) */
+	agentId?: string;
+	/** Step number under review (for review_* events) */
+	reviewStep?: number;
+	/** Review type, e.g. "plan" | "code" (for review_* events) */
+	reviewType?: string;
+	/** Normalized reviewer verdict (for review_completed, review_failed) */
+	disposition?: ReviewDisposition;
 }
 
 /**
@@ -4210,6 +4228,31 @@ export type RuntimeAgentEventType =
 	| "review_failed"
 	// Exit interception (TP-172)
 	| "exit_intercepted";
+
+/**
+ * Normalized outcome of a `review_step` tool call, extracted from the reviewer
+ * verdict the tool returns to the worker. Used by the review-boundary
+ * notification pipeline (agent-host emits it in `review_completed`; the
+ * supervisor adjudicates on it).
+ *
+ * - `APPROVE`     — reviewer approved the step.
+ * - `REVISE`      — changes requested (spiral-relevant).
+ * - `RETHINK`     — reconsider the approach (spiral-relevant).
+ * - `REFUSED`     — the TP-186 death-spiral guard refused to spawn a reviewer
+ *                   (step prematurely marked Complete). A correctness signal,
+ *                   not a normal verdict.
+ * - `UNAVAILABLE` — the reviewer subprocess failed / produced no output. A
+ *                   "reviewer broken" signal (surfaced as `review_failed`), NOT
+ *                   counted toward the revision spiral.
+ * - `UNKNOWN`     — verdict could not be parsed.
+ */
+export type ReviewDisposition =
+	| "APPROVE"
+	| "REVISE"
+	| "RETHINK"
+	| "REFUSED"
+	| "UNAVAILABLE"
+	| "UNKNOWN";
 
 // ── Runtime V2 Path Helpers (TP-102) ─────────────────────────────────
 

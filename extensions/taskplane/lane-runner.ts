@@ -69,7 +69,19 @@ import {
 	type SupervisorAlertCallback,
 	type StepSegmentMapping,
 	type SegmentScopeMode,
+	type RuntimeAgentEvent,
+	type EngineEvent,
+	type EngineEventType,
+	type ReviewDisposition,
 } from "./types.ts";
+// NOTE: emitEngineEvent is NOT statically imported from ./persistence.ts.
+// persistence.ts imports execLog from ./execution.ts, and execution.ts imports
+// executeTaskV2 from this module — a static import here would form a
+// lane-runner → persistence → execution → lane-runner cycle. Beyond being a
+// smell, that eager cycle pre-binds execution's executeTaskV2 to the real
+// export before tests can mock.module("lane-runner"), defeating the mock. The
+// review-event bridge below loads emitEngineEvent lazily (cached) instead.
+let cachedEmitEngineEvent: ((stateRoot: string, event: EngineEvent) => void) | null = null;
 
 const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -471,6 +483,71 @@ export async function executeTaskV2(
 			/* best effort */
 		} finally {
 			outboxDraining = false;
+		}
+	};
+
+	// ── Review-boundary bridge (review-boundary supervisor notifications) ──
+	// agent-host emits per-agent RuntimeAgentEvents review_requested /
+	// review_completed / review_failed as the worker calls the review_step tool.
+	// Bridge them to the supervisor's live events.jsonl stream (emitEngineEvent)
+	// so the supervisor is notified at EVERY review boundary and can adjudicate
+	// each revision case-by-case — not just when the operator happens to notice.
+	// (Spiral detection + escalation is layered on in a later stage.)
+	const bridgeReviewEvent = (evt: RuntimeAgentEvent): void => {
+		if (
+			evt.type !== "review_requested" &&
+			evt.type !== "review_completed" &&
+			evt.type !== "review_failed"
+		) {
+			return;
+		}
+		const engineType: EngineEventType =
+			evt.type === "review_requested"
+				? "review_started"
+				: evt.type === "review_completed"
+					? "review_completed"
+					: "review_failed";
+		const payload = (evt.payload ?? {}) as {
+			step?: unknown;
+			reviewType?: unknown;
+			disposition?: unknown;
+		};
+		const engineEvent: EngineEvent = {
+			timestamp: new Date().toISOString(),
+			type: engineType,
+			batchId: config.batchId,
+			waveIndex: -1,
+			phase: "executing",
+			taskId,
+			laneNumber: config.laneNumber,
+			agentId: workerAgentId,
+			reviewStep: typeof payload.step === "number" ? payload.step : undefined,
+			reviewType: typeof payload.reviewType === "string" ? payload.reviewType : undefined,
+			disposition:
+				typeof payload.disposition === "string" ? (payload.disposition as ReviewDisposition) : undefined,
+		};
+		const emit = (fn: (stateRoot: string, event: EngineEvent) => void): void => {
+			try {
+				fn(config.stateRoot, engineEvent);
+			} catch {
+				/* best effort — a bridge failure must never break the worker run */
+			}
+		};
+		// Cached lazy import (see the import-cycle note at the top of this file).
+		// Emits synchronously once loaded; on the first boundary the module loads
+		// async and the .then preserves ordering (import() returns the same cached
+		// module and queued callbacks fire in registration order).
+		if (cachedEmitEngineEvent) {
+			emit(cachedEmitEngineEvent);
+		} else {
+			void import("./persistence.ts")
+				.then((m) => {
+					cachedEmitEngineEvent = m.emitEngineEvent;
+					emit(m.emitEngineEvent);
+				})
+				.catch(() => {
+					/* best effort */
+				});
 		}
 	};
 
@@ -1118,7 +1195,7 @@ export async function executeTaskV2(
 		let workerKillReason: "context" | "timer" | null = null;
 		let iterationTelemetry: Partial<AgentHostResult> = {};
 
-		const spawned = spawnAgent(hostOpts, undefined, (telemetry) => {
+		const spawned = spawnAgent(hostOpts, bridgeReviewEvent, (telemetry) => {
 			try {
 				// Context pressure check
 				if (telemetry.contextUsage) {

@@ -1,5 +1,6 @@
 {
   "version": 1,
+<<<<<<< Updated upstream
   "generatedAt": "2026-05-10T17:42:26.235Z",
   "source": "prompt",
   "tasks": {
@@ -7,5 +8,23 @@
     "TP-193": [],
     "TP-194": [],
     "TP-195": []
+=======
+  "generatedAt": "2026-04-13T16:01:07.347Z",
+  "source": "prompt",
+  "tasks": {
+    "TP-173": [],
+    "TP-174": [
+      "TP-173"
+    ],
+    "TP-175": [],
+    "TP-176": [
+      "TP-174"
+    ],
+    "TP-177": [
+      "TP-173",
+      "TP-174",
+      "TP-175"
+    ]
+>>>>>>> Stashed changes
   }
 }

@@ -40,6 +40,7 @@ import type {
 	RuntimeAgentEventType,
 	RuntimeAgentManifest,
 	PacketPaths,
+	ReviewDisposition,
 } from "./types.ts";
 
 import {
@@ -142,6 +143,51 @@ export function buildWorkerToolsAllowlist(userTools: string | undefined | null):
 	const merged = new Set<string>(userList);
 	for (const t of ENGINE_BRIDGE_TOOLS) merged.add(t);
 	return Array.from(merged).join(",");
+}
+
+/**
+ * Normalize the freeform text a `review_step` tool call returns into a
+ * {@link ReviewDisposition}. The tool returns clean leading tokens
+ * (`APPROVE`, `REVISE: …`, `RETHINK — …`, `UNAVAILABLE — …`, `REFUSED: …`),
+ * but this parser is defensive: it matches a leading verdict token
+ * case-insensitively and falls back to a substring scan, returning `UNKNOWN`
+ * when nothing recognizable is present.
+ *
+ * Pure and side-effect-free so it can be unit-tested directly.
+ *
+ * @since review-boundary notifications
+ */
+export function normalizeReviewDisposition(
+	resultText: string | undefined | null,
+): ReviewDisposition {
+	if (!resultText || typeof resultText !== "string") return "UNKNOWN";
+	const text = resultText.trim();
+	if (text.length === 0) return "UNKNOWN";
+	// Leading-token match (the tool's canonical output shape).
+	const lead = text.toUpperCase();
+	if (/^APPROVE\b/.test(lead)) return "APPROVE";
+	if (/^REVISE\b/.test(lead)) return "REVISE";
+	if (/^RETHINK\b/.test(lead)) return "RETHINK";
+	if (/^REFUSED\b/.test(lead)) return "REFUSED";
+	if (/^UNAVAILABLE\b/.test(lead)) return "UNAVAILABLE";
+	// Defensive fallback: scan for the token anywhere, most-specific first, using
+	// word boundaries so substrings inside other words don't false-match.
+	// REFUSED and UNAVAILABLE are checked before REVISE/RETHINK because their
+	// bodies may quote a verdict word.
+	if (/\bREFUSED\b/.test(lead)) return "REFUSED";
+	if (/\bUNAVAILABLE\b/.test(lead)) return "UNAVAILABLE";
+	if (/\bRETHINK\b/.test(lead)) return "RETHINK";
+	if (/\bREVISE\b/.test(lead) || /\bCHANGES REQUESTED\b/.test(lead)) return "REVISE";
+	// Approve only on a clean, non-negated APPROVE token. Reject explicit
+	// negations ("do not approve", "not approved", "disapprove", "unapproved").
+	if (
+		/\bAPPROVE\b/.test(lead) &&
+		!/\bDO NOT APPROVE\b/.test(lead) &&
+		!/\bNOT APPROVE\b/.test(lead)
+	) {
+		return "APPROVE";
+	}
+	return "UNKNOWN";
 }
 
 // ── Conversation Payload Helpers (TP-111) ───────────────────────────────
@@ -396,6 +442,14 @@ export function spawnAgent(
 	let lastTool = "",
 		error: string | null = null;
 	let contextUsage: AgentHostResult["contextUsage"] = null;
+	/**
+	 * In-flight review_step boundary state (review-boundary notifications). Set at
+	 * tool_execution_start so the end event and any crash-abort can carry the
+	 * step/reviewType identity (tool_execution_end does not include the original
+	 * args). review_step calls are sequential within a worker (the worker blocks
+	 * on the verdict), so a single pending slot is sufficient.
+	 */
+	let pendingReview: { step?: number; reviewType?: string } | null = null;
 	let stderrBuffer = "";
 	const STDERR_MAX = 2048;
 	/** Last assistant message text captured from message_end events (TP-172) */
@@ -671,6 +725,19 @@ export function spawnAgent(
 					: exitCode === 0 && agentEnded
 						? "agent_exited"
 						: "agent_crashed";
+			// Review-boundary: if the worker died mid-review, close the dangling
+			// review_started so the supervisor doesn't see an orphaned "review
+			// starting" with no end. Emitted as review_failed (aborted) before the
+			// terminal exit event.
+			if (pendingReview) {
+				emitEvent("review_failed", {
+					step: pendingReview.step,
+					reviewType: pendingReview.reviewType,
+					disposition: "UNKNOWN",
+					summary: `review aborted (${exitEventType})`,
+				});
+				pendingReview = null;
+			}
 			emitEvent(exitEventType, { exitCode, signal, durationMs: result.durationMs, timedOut });
 
 			// Registry integration: update manifest to terminal status
@@ -781,17 +848,52 @@ export function spawnAgent(
 						// TP-111: Bounded payload only — no raw args in durable event log
 						const toolPath = event.args?.path ? String(event.args.path).slice(0, 200) : "";
 						emitEvent("tool_call", { tool: toolName, path: toolPath, argsPreview: argPreview });
+						// Review-boundary notification: the review START. review_step spawns a
+						// reviewer; surfacing this lets the supervisor track review activity
+						// live (see lane-runner onEvent bridge + supervisor tailer).
+						if (toolName === "review_step") {
+							const reviewStep =
+								event.args && typeof event.args === "object"
+									? (event.args as { step?: unknown }).step
+									: undefined;
+							const reviewType =
+								event.args && typeof event.args === "object"
+									? (event.args as { type?: unknown }).type
+									: undefined;
+							const stepNum = typeof reviewStep === "number" ? reviewStep : undefined;
+							const rType = typeof reviewType === "string" ? reviewType : undefined;
+							// Remember identity so the end/abort events can carry step+reviewType
+							// (tool_execution_end omits args).
+							pendingReview = { step: stepNum, reviewType: rType };
+							emitEvent("review_requested", { step: stepNum, reviewType: rType });
+						}
 						break;
 					}
 					case "tool_execution_end": {
 						// TP-111: Include bounded result summary for dashboard display
-						const toolResultSummary =
-							typeof event.result === "string"
-								? event.result.slice(0, 200)
-								: event.output
-									? String(event.output).slice(0, 200)
-									: "";
+						const fullResult =
+							typeof event.result === "string" ? event.result : event.output ? String(event.output) : "";
+						const toolResultSummary = fullResult.slice(0, 200);
 						emitEvent("tool_result", { tool: event.toolName, summary: toolResultSummary });
+						// Review-boundary notification: the review END. Normalize the reviewer
+						// verdict and emit review_completed (APPROVE/REVISE/RETHINK/REFUSED) or
+						// review_failed (UNAVAILABLE / unparseable — the "reviewer broken"
+						// signal, which the supervisor treats separately from the spiral).
+						if (event.toolName === "review_step") {
+							const disposition = normalizeReviewDisposition(fullResult);
+							const reviewFields = {
+								step: pendingReview?.step,
+								reviewType: pendingReview?.reviewType,
+								disposition,
+								summary: toolResultSummary,
+							};
+							if (disposition === "UNAVAILABLE" || disposition === "UNKNOWN") {
+								emitEvent("review_failed", reviewFields);
+							} else {
+								emitEvent("review_completed", reviewFields);
+							}
+							pendingReview = null;
+						}
 						break;
 					}
 					case "auto_retry_start": {
