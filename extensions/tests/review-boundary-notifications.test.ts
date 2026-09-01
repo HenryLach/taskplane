@@ -122,6 +122,27 @@ describe("review-boundary — formatEventNotification", () => {
 		expect(text.toLowerCase()).toContain("revision");
 	});
 
+	it("review_completed surfaces the adjudication signals (round, counts, trend)", () => {
+		const text = formatEventNotification(
+			ev({
+				type: "review_completed",
+				taskId: "TP-9",
+				reviewStep: 4,
+				disposition: "REVISE",
+				reviewRound: 5,
+				findingCounts: { critical: 1, minor: 3 },
+				findingTrend: "dropping",
+				findingMixed: true,
+			}),
+			"autonomous",
+		);
+		expect(text).toContain("round 5");
+		expect(text).toContain("critical:1");
+		expect(text).toContain("minor:3");
+		expect(text).toContain("trend dropping");
+		expect(text).toContain("(mixed)");
+	});
+
 	it("review_completed REFUSED explains the death-spiral-guard refusal", () => {
 		const text = formatEventNotification(
 			ev({ type: "review_completed", taskId: "TP-9", reviewStep: 3, disposition: "REFUSED" }),
@@ -191,6 +212,39 @@ describe("review-boundary — wiring", () => {
 		expect(flat).toContain("spawnAgent(hostOpts, bridgeReviewEvent");
 		// review_requested maps to the engine-side review_started lifecycle event.
 		expect(flat).toContain('"review_started"');
+	});
+
+	it("lane-runner runs spiral detection: advances the streak, gates, and escalates", () => {
+		const src = readSrc("lane-runner.ts");
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain("advanceReviewStreak(state,");
+		expect(flat).toContain("shouldFireSpiral(state, spiralCfg");
+		expect(flat).toContain("shouldFireOrderViolation(state, spiralCfg)");
+		expect(flat).toContain('category: "review-intervention-needed"');
+		// REFUSED is order-violation, not spiral (kept out of the REVISE/RETHINK streak).
+		expect(flat).toContain('fireIntervention("order-violation"');
+		expect(flat).toContain('fireIntervention("revision-spiral"');
+	});
+
+	it("lane-runner reconstructs per-step state from history on resume", () => {
+		const src = readSrc("lane-runner.ts");
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain("seedReviewStateFromHistory(");
+		expect(flat).toContain("reconstructReviewStreaks(events");
+	});
+
+	it("extension.ts delivers review-intervention escalations via steer (routine stays followUp)", () => {
+		const src = readSrc("extension.ts");
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain('alert.category === "review-intervention-needed" ? "steer" : "followUp"');
+	});
+
+	it("config ships a generic severity vocab + spiral defaults (threshold 3)", () => {
+		const src = readSrc("config-schema.ts");
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain('severityLabels: ["critical", "important", "minor"]');
+		expect(flat).toContain("threshold: 3");
+		expect(flat).toContain("treatUnavailableAsNonApprove: false");
 	});
 
 	it("the review event types are registered SIGNIFICANT (surfaced every boundary)", () => {

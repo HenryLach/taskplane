@@ -1928,6 +1928,8 @@ export async function executeWave(
 		thinking?: string;
 		tools?: string;
 		excludeExtensions?: string[];
+		severityLabels?: string[];
+		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	},
 	workerConfig?: {
 		model?: string;
@@ -2758,6 +2760,8 @@ export function buildReviewerEnv(
 		thinking?: string;
 		tools?: string;
 		excludeExtensions?: string[];
+		severityLabels?: string[];
+		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
@@ -2767,6 +2771,17 @@ export function buildReviewerEnv(
 	// TP-180: Forward reviewer extension exclusions as JSON array
 	if (reviewerConfig?.excludeExtensions && reviewerConfig.excludeExtensions.length > 0) {
 		env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS = JSON.stringify(reviewerConfig.excludeExtensions);
+	}
+	// Review-boundary notifications: forward the severity vocabulary + spiral
+	// tuning as one JSON blob so the lane-runner can analyze reviews and detect
+	// spirals. Absent fields fall back to lane-runner defaults.
+	const analysis: Record<string, unknown> = {};
+	if (reviewerConfig?.severityLabels && reviewerConfig.severityLabels.length > 0) {
+		analysis.severityLabels = reviewerConfig.severityLabels;
+	}
+	if (reviewerConfig?.spiral) analysis.spiral = reviewerConfig.spiral;
+	if (Object.keys(analysis).length > 0) {
+		env.TASKPLANE_REVIEW_ANALYSIS = JSON.stringify(analysis);
 	}
 	return env;
 }
@@ -2920,6 +2935,24 @@ export async function executeLaneV2(
 				? (rawAutonomy as LaneRunnerConfig["supervisorAutonomy"])
 				: "autonomous";
 
+		// Review-boundary notifications: parse the severity vocabulary + spiral
+		// tuning forwarded by buildReviewerEnv (best-effort; lane-runner applies
+		// defaults when absent or unparseable).
+		let reviewSeverityLabels: string[] | undefined;
+		let reviewSpiral: import("./config-schema.ts").ReviewSpiralConfig | undefined;
+		if (extraEnvVars?.TASKPLANE_REVIEW_ANALYSIS) {
+			try {
+				const parsed = JSON.parse(extraEnvVars.TASKPLANE_REVIEW_ANALYSIS) as {
+					severityLabels?: string[];
+					spiral?: import("./config-schema.ts").ReviewSpiralConfig;
+				};
+				if (Array.isArray(parsed.severityLabels)) reviewSeverityLabels = parsed.severityLabels;
+				if (parsed.spiral && typeof parsed.spiral === "object") reviewSpiral = parsed.spiral;
+			} catch {
+				/* best effort — fall back to lane-runner defaults */
+			}
+		}
+
 		const laneRunnerConfig: LaneRunnerConfig = {
 			batchId,
 			agentIdPrefix,
@@ -2928,6 +2961,8 @@ export async function executeLaneV2(
 			branch: lane.branch,
 			repoId: lane.repoId ?? "default",
 			stateRoot,
+			reviewSeverityLabels,
+			reviewSpiral,
 			workerModel: extraEnvVars?.TASKPLANE_WORKER_MODEL || "",
 			// TP-184: This is the user-tools default. Engine bridge tools are NOT
 			// added here — buildWorkerToolsAllowlist() at the lane-runner spawn

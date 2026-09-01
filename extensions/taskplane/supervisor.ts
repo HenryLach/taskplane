@@ -4038,6 +4038,13 @@ interface ParsedEvent {
 	reviewStep?: number;
 	reviewType?: string;
 	disposition?: string;
+	reviewRound?: number;
+	reviewLabel?: string;
+	reviewPath?: string;
+	findingCounts?: Record<string, number>;
+	findingTrend?: "dropping" | "flat" | "rising";
+	findingDeltas?: Record<string, number>;
+	findingMixed?: boolean;
 }
 
 /**
@@ -4320,6 +4327,26 @@ function reviewLocation(event: ParsedEvent): string {
 	return parts.length > 0 ? parts.join(", ") : "a step";
 }
 
+/**
+ * Compact adjudication signals for a review notification: round, finding counts,
+ * and severity trend — the three signals an adjudicating supervisor uses to tell
+ * "converging (let it run)" from "circling (intervene)" at a glance.
+ */
+function reviewSignals(event: ParsedEvent): string {
+	const bits: string[] = [];
+	if (typeof event.reviewRound === "number") bits.push(`round ${event.reviewRound}`);
+	if (event.findingCounts && Object.keys(event.findingCounts).length > 0) {
+		const counts = Object.entries(event.findingCounts)
+			.map(([k, v]) => `${k}:${v}`)
+			.join(" ");
+		const trend = event.findingTrend
+			? `, trend ${event.findingTrend}${event.findingMixed ? " (mixed)" : ""}`
+			: "";
+		bits.push(`findings ${counts}${trend}`);
+	}
+	return bits.length > 0 ? ` [${bits.join("; ")}]` : "";
+}
+
 export function formatEventNotification(
 	event: ParsedEvent,
 	autonomy: SupervisorAutonomyLevel,
@@ -4381,7 +4408,7 @@ export function formatEventNotification(
 					: disp === "REFUSED"
 						? " — reviewer refused (step marked complete before review). The worker must revert and re-review."
 						: " — changes requested. Watch for repeated revisions on this step.";
-			return `${icon} **Review ${disp}** — ${loc}.${tail}`;
+			return `${icon} **Review ${disp}** — ${loc}.${reviewSignals(event)}${tail}`;
 		}
 		case "review_failed": {
 			const loc = reviewLocation(event);

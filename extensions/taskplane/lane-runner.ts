@@ -73,7 +73,21 @@ import {
 	type EngineEvent,
 	type EngineEventType,
 	type ReviewDisposition,
+	type ReviewInterventionKind,
+	type SupervisorAlert,
 } from "./types.ts";
+import {
+	parseFindingCounts,
+	computeFindingTrend,
+	parseReviewLabelFromPath,
+	advanceReviewStreak,
+	reconstructReviewStreaks,
+	freshReviewStreakState,
+	shouldFireSpiral,
+	shouldFireOrderViolation,
+	sanitizeSpiralConfig,
+	type ReviewStreakState,
+} from "./review-analysis.ts";
 // NOTE: emitEngineEvent is NOT statically imported from ./persistence.ts.
 // persistence.ts imports execLog from ./execution.ts, and execution.ts imports
 // executeTaskV2 from this module — a static import here would form a
@@ -92,6 +106,85 @@ const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
  * against fs churn; the post-exit final drain catches any last stragglers.
  */
 const OUTBOX_LIVE_POLL_INTERVAL_MS = 3_000;
+
+/** Default severity vocabulary when the reviewer config doesn't override it. */
+const DEFAULT_SEVERITY_LABELS = ["critical", "important", "minor"];
+/** Max recent dispositions retained per step for escalation context. */
+const RECENT_DISPOSITIONS_CAP = 6;
+
+/**
+ * In-memory per-step review-boundary state = the shared streak model plus
+ * live-only escalation cooldown bookkeeping.
+ */
+interface ReviewStepState extends ReviewStreakState {
+	/** Round at which the spiral escalation last fired (for cooldown); null = never. */
+	lastEscalationRound: number | null;
+	/** Round at which an order-violation last escalated (for cooldown); null = never. */
+	lastRefusedRound: number | null;
+}
+
+/**
+ * Resume reconstruction: seed per-step review streak state by replaying a task's
+ * prior review END boundaries from `.pi/supervisor/events.jsonl`. Best-effort
+ * (an optimization, not correctness-critical): any read/parse failure leaves the
+ * map empty and detection simply starts fresh. Escalation cooldown fields reset
+ * to null so an ongoing spiral re-alerts the supervisor after resume.
+ */
+function seedReviewStateFromHistory(
+	target: Map<string, ReviewStepState>,
+	stateRoot: string,
+	batchId: string,
+	taskId: string,
+	treatUnavailableAsNonApprove: boolean,
+): void {
+	try {
+		const eventsPath = join(stateRoot, ".pi", "supervisor", "events.jsonl");
+		if (!existsSync(eventsPath)) return;
+		const raw = readFileSync(eventsPath, "utf-8");
+		const events: Array<{
+			reviewStep?: number;
+			disposition?: string;
+			findingCounts?: Record<string, number> | null;
+		}> = [];
+		for (const line of raw.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			try {
+				const e = JSON.parse(trimmed) as Record<string, unknown>;
+				if (
+					(e.type === "review_completed" || e.type === "review_failed") &&
+					e.batchId === batchId &&
+					e.taskId === taskId
+				) {
+					events.push({
+						reviewStep: typeof e.reviewStep === "number" ? e.reviewStep : undefined,
+						disposition: typeof e.disposition === "string" ? e.disposition : undefined,
+						findingCounts:
+							e.findingCounts && typeof e.findingCounts === "object"
+								? (e.findingCounts as Record<string, number>)
+								: null,
+					});
+				}
+			} catch {
+				/* skip malformed line */
+			}
+		}
+		if (events.length === 0) return;
+		const streaks = reconstructReviewStreaks(events, {
+			treatUnavailableAsNonApprove,
+			recentCap: RECENT_DISPOSITIONS_CAP,
+		});
+		for (const [stepStr, streak] of streaks) {
+			target.set(`${taskId}:${stepStr}`, {
+				...streak,
+				lastEscalationRound: null,
+				lastRefusedRound: null,
+			});
+		}
+	} catch {
+		/* best effort */
+	}
+}
 
 // ── Segment Scoping Helpers (Phase A, TP-174) ────────────────────────
 
@@ -316,6 +409,13 @@ export interface LaneRunnerConfig {
 	 * @since TP-160
 	 */
 	reviewerTools: string;
+	/**
+	 * Ordered severity vocabulary for review finding-count analysis (review-boundary
+	 * notifications). Undefined → lane-runner default (critical/important/minor).
+	 */
+	reviewSeverityLabels?: string[];
+	/** Revision-spiral detection tuning. Undefined → lane-runner defaults. */
+	reviewSpiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	/** Supervisor autonomy level for bridge-tool guards. */
 	supervisorAutonomy?: "interactive" | "supervised" | "autonomous";
 	/** Project name (for review request context) */
@@ -486,13 +586,112 @@ export async function executeTaskV2(
 		}
 	};
 
-	// ── Review-boundary bridge (review-boundary supervisor notifications) ──
+	// ── Review-boundary bridge + spiral detection (supervisor notifications) ──
 	// agent-host emits per-agent RuntimeAgentEvents review_requested /
 	// review_completed / review_failed as the worker calls the review_step tool.
-	// Bridge them to the supervisor's live events.jsonl stream (emitEngineEvent)
-	// so the supervisor is notified at EVERY review boundary and can adjudicate
-	// each revision case-by-case — not just when the operator happens to notice.
-	// (Spiral detection + escalation is layered on in a later stage.)
+	// This handler: (1) bridges every boundary to the supervisor's live
+	// events.jsonl stream (emitEngineEvent) enriched with finding counts + trend
+	// + round, so the supervisor adjudicates each review case-by-case; and
+	// (2) tracks per-step spiral state and fires an actionable escalation
+	// (review-intervention-needed) when a step's reviews circle without
+	// converging, or when the worker trips the order-of-operations guard (REFUSED).
+	const reviewSeverityLabels =
+		config.reviewSeverityLabels && config.reviewSeverityLabels.length > 0
+			? config.reviewSeverityLabels
+			: DEFAULT_SEVERITY_LABELS;
+	// Sanitize (clamp threshold/cooldown >= 1, coerce booleans) so malformed
+	// config threaded via env can't cause escalate-every-review or nag-every-round.
+	// NOTE: `enabled` is the master switch for BOTH spiral and order-violation
+	// STEER escalations. When disabled, REFUSED/spiral still appear as ordinary
+	// per-boundary notifications (formatEventNotification) — just not as urgent
+	// steer interrupts.
+	const spiralCfg = sanitizeSpiralConfig(config.reviewSpiral);
+	const reviewStateByStep = new Map<string, ReviewStepState>();
+	// Resume reconstruction ("maintain the truth"): rebuild per-step streak state
+	// by replaying this task's prior review boundaries from events.jsonl, so a
+	// spiral in progress before a pause/resume isn't silently reset to zero.
+	seedReviewStateFromHistory(
+		reviewStateByStep,
+		config.stateRoot,
+		config.batchId,
+		taskId,
+		spiralCfg.treatUnavailableAsNonApprove,
+	);
+	const getReviewState = (stepKey: string): ReviewStepState => {
+		let st = reviewStateByStep.get(stepKey);
+		if (!st) {
+			st = { ...freshReviewStreakState(), lastEscalationRound: null, lastRefusedRound: null };
+			reviewStateByStep.set(stepKey, st);
+		}
+		return st;
+	};
+	// Read + parse finding counts from the exact review file agent-host referenced.
+	const readFindingCounts = (reviewPath?: string): Record<string, number> => {
+		if (!reviewPath) return {};
+		try {
+			const abs = join(unit.packet.reviewsDir, basename(reviewPath));
+			if (!existsSync(abs)) return {};
+			return parseFindingCounts(readFileSync(abs, "utf-8"), reviewSeverityLabels);
+		} catch {
+			return {};
+		}
+	};
+	// Fire an actionable review-intervention escalation. Delivery is set to steer
+	// (urgent) by category in the IPC handler (extension.ts).
+	const fireIntervention = (
+		kind: ReviewInterventionKind,
+		stepNum: number | undefined,
+		reviewType: string | undefined,
+		state: ReviewStepState,
+		ev: EngineEvent,
+	): void => {
+		if (!config.onSupervisorAlert) return;
+		const loc = `${taskId}${stepNum !== undefined ? ` step ${stepNum}` : ""} (lane ${config.laneNumber})`;
+		const label = ev.reviewLabel ? ` [${ev.reviewLabel}]` : "";
+		const countsStr = ev.findingCounts
+			? Object.entries(ev.findingCounts)
+					.map(([k, v]) => `${k}:${v}`)
+					.join(" ")
+			: "n/a";
+		const summary =
+			kind === "revision-spiral"
+				? `🌀 **Review spiral** — ${loc}${label}: ${state.consecutiveNonApprove} consecutive ` +
+					`non-approve reviews (latest ${ev.disposition ?? "?"}). Findings: ${countsStr}; ` +
+					`severity trend ${ev.findingTrend ?? "?"}${ev.findingMixed ? " (mixed)" : ""}.\n` +
+					`Adjudicate: steer the worker to a resolution — implement the remaining legitimate ` +
+					`findings, or if the reviews are circling the same class, tell it to stop and log a blocker.`
+				: `⛔ **Review order violation** — ${loc}${label}: the worker marked the step complete ` +
+					`before code review ran (REFUSED). Steer it to revert the premature completion and ` +
+					`re-review, or log a blocker.`;
+		const alert: SupervisorAlert = {
+			category: "review-intervention-needed",
+			summary,
+			context: {
+				taskId,
+				laneId: `lane-${config.laneNumber}`,
+				laneNumber: config.laneNumber,
+				agentId: workerAgentId,
+				reviewInterventionKind: kind,
+				reviewStep: stepNum,
+				reviewType,
+				reviewRound: ev.reviewRound,
+				reviewLabel: ev.reviewLabel,
+				disposition: ev.disposition,
+				recentDispositions: [...state.recentDispositions],
+				consecutiveNonApprove: state.consecutiveNonApprove,
+				findingCounts: ev.findingCounts,
+				findingTrend: ev.findingTrend,
+				findingDeltas: ev.findingDeltas,
+				findingMixed: ev.findingMixed,
+			},
+		};
+		try {
+			config.onSupervisorAlert(alert);
+		} catch {
+			/* best effort */
+		}
+	};
+
 	const bridgeReviewEvent = (evt: RuntimeAgentEvent): void => {
 		if (
 			evt.type !== "review_requested" &&
@@ -511,7 +710,14 @@ export async function executeTaskV2(
 			step?: unknown;
 			reviewType?: unknown;
 			disposition?: unknown;
+			reviewPath?: unknown;
 		};
+		const stepNum = typeof payload.step === "number" ? payload.step : undefined;
+		const reviewType = typeof payload.reviewType === "string" ? payload.reviewType : undefined;
+		const disposition =
+			typeof payload.disposition === "string" ? (payload.disposition as ReviewDisposition) : undefined;
+		const reviewPath = typeof payload.reviewPath === "string" ? payload.reviewPath : undefined;
+
 		const engineEvent: EngineEvent = {
 			timestamp: new Date().toISOString(),
 			type: engineType,
@@ -521,11 +727,57 @@ export async function executeTaskV2(
 			taskId,
 			laneNumber: config.laneNumber,
 			agentId: workerAgentId,
-			reviewStep: typeof payload.step === "number" ? payload.step : undefined,
-			reviewType: typeof payload.reviewType === "string" ? payload.reviewType : undefined,
-			disposition:
-				typeof payload.disposition === "string" ? (payload.disposition as ReviewDisposition) : undefined,
+			reviewStep: stepNum,
+			reviewType,
+			disposition,
+			reviewPath,
 		};
+
+		// Detection + enrichment on END boundaries (completed/failed) with a step.
+		if (evt.type !== "review_requested" && stepNum !== undefined) {
+			const state = getReviewState(`${taskId}:${stepNum}`);
+			const counts = readFindingCounts(reviewPath);
+			const hasCounts = Object.keys(counts).length > 0;
+			// Trend compares the PRIOR round's counts to this round's, so compute it
+			// BEFORE advancing the streak (which overwrites lastCounts). Semantics:
+			// a countless round (e.g. APPROVE, or an unparseable review) preserves the
+			// prior lastCounts, so the NEXT counted round trends vs the last COUNTED
+			// round — intentional, so a single missing review file doesn't blank the
+			// severity trend the supervisor relies on.
+			const trendRes = computeFindingTrend(state.lastCounts, counts, reviewSeverityLabels);
+			// Shared streak transition (round++, lastCounts, recentDispositions,
+			// consecutiveNonApprove) — identical to resume reconstruction.
+			advanceReviewStreak(state, {
+				disposition,
+				counts: hasCounts ? counts : null,
+				treatUnavailableAsNonApprove: spiralCfg.treatUnavailableAsNonApprove,
+				recentCap: RECENT_DISPOSITIONS_CAP,
+			});
+			engineEvent.reviewRound = state.round;
+			engineEvent.reviewLabel = parseReviewLabelFromPath(reviewPath);
+			if (hasCounts) {
+				engineEvent.findingCounts = counts;
+				engineEvent.findingTrend = trendRes.trend;
+				engineEvent.findingDeltas = trendRes.deltas;
+				engineEvent.findingMixed = trendRes.mixed;
+			}
+
+			// Live-only escalation (the streak counter was already advanced above).
+			if (disposition === "APPROVE") {
+				state.lastEscalationRound = null; // a fresh streak may escalate again
+			} else if (
+				disposition === "REVISE" ||
+				disposition === "RETHINK" ||
+				(disposition === "UNAVAILABLE" && spiralCfg.treatUnavailableAsNonApprove)
+			) {
+				maybeFireSpiral(stepNum, reviewType, state, engineEvent);
+			} else if (disposition === "REFUSED") {
+				// Orthogonal failure mode: does NOT touch the REVISE/RETHINK streak.
+				maybeFireOrderViolation(stepNum, reviewType, state, engineEvent);
+			}
+			// UNAVAILABLE (not counted) / UNKNOWN → no counter change.
+		}
+
 		const emit = (fn: (stateRoot: string, event: EngineEvent) => void): void => {
 			try {
 				fn(config.stateRoot, engineEvent);
@@ -534,9 +786,6 @@ export async function executeTaskV2(
 			}
 		};
 		// Cached lazy import (see the import-cycle note at the top of this file).
-		// Emits synchronously once loaded; on the first boundary the module loads
-		// async and the .then preserves ordering (import() returns the same cached
-		// module and queued callbacks fire in registration order).
 		if (cachedEmitEngineEvent) {
 			emit(cachedEmitEngineEvent);
 		} else {
@@ -550,6 +799,33 @@ export async function executeTaskV2(
 				});
 		}
 	};
+
+	// Spiral escalation: first fire at threshold; re-fire only if NOT converging
+	// (trend flat/rising) and the cooldown spacing has elapsed.
+	function maybeFireSpiral(
+		stepNum: number | undefined,
+		reviewType: string | undefined,
+		state: ReviewStepState,
+		ev: EngineEvent,
+	): void {
+		if (shouldFireSpiral(state, spiralCfg, ev.findingTrend)) {
+			fireIntervention("revision-spiral", stepNum, reviewType, state, ev);
+			state.lastEscalationRound = state.round;
+		}
+	}
+
+	// Order-violation escalation: actionable each occurrence, throttled by cooldown.
+	function maybeFireOrderViolation(
+		stepNum: number | undefined,
+		reviewType: string | undefined,
+		state: ReviewStepState,
+		ev: EngineEvent,
+	): void {
+		if (shouldFireOrderViolation(state, spiralCfg)) {
+			fireIntervention("order-violation", stepNum, reviewType, state, ev);
+			state.lastRefusedRound = state.round;
+		}
+	}
 
 	// ── 1. Ensure STATUS.md exists ──────────────────────────────────
 	if (!existsSync(statusPath)) {

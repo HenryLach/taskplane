@@ -121,6 +121,23 @@ export interface WorkerConfig {
 }
 
 /** Reviewer agent configuration */
+/**
+ * Revision-spiral detection tuning (review-boundary supervisor notifications).
+ * When a step is reviewed repeatedly without converging, the supervisor is
+ * escalated so it can adjudicate / steer the worker. Detection is notify-based,
+ * not a hard cap on revisions.
+ */
+export interface ReviewSpiralConfig {
+	/** Master switch for spiral escalation (per-boundary notifications are always on). */
+	enabled: boolean;
+	/** Consecutive non-APPROVE reviews on the SAME step before the first escalation. */
+	threshold: number;
+	/** Minimum further non-APPROVE reviews between re-escalations (anti-spam spacing). */
+	cooldownReviews: number;
+	/** Whether UNAVAILABLE reviews count toward the spiral (default false: broken-reviewer signal, not a spiral). */
+	treatUnavailableAsNonApprove: boolean;
+}
+
 export interface ReviewerConfig {
 	/** Reviewer model (empty = inherit session model) */
 	model: string;
@@ -130,6 +147,15 @@ export interface ReviewerConfig {
 	thinking: string;
 	/** Package specifiers to exclude from extension forwarding for reviewer agents (exact match). @since TP-180 */
 	excludeExtensions?: string[];
+	/**
+	 * Ordered severity vocabulary (highest severity first) used to bucket review
+	 * findings for spiral-vs-converging analysis. Core default is generic
+	 * (critical/important/minor); projects whose reviewer emits a different scheme
+	 * (e.g. P0/P1/P2) override this. Never hardcode a project vocabulary in core.
+	 */
+	severityLabels: string[];
+	/** Revision-spiral detection tuning. */
+	spiral: ReviewSpiralConfig;
 }
 
 /** Context/resource limits for task execution */
@@ -598,7 +624,19 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	// bridge tools are appended at the lane-runner spawn site by
 	// `buildWorkerToolsAllowlist()`, not here.
 	worker: { model: "", tools: DEFAULT_WORKER_USER_TOOLS, thinking: "", excludeExtensions: [] },
-	reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on", excludeExtensions: [] },
+	reviewer: {
+		model: "",
+		tools: "read,bash,grep,find,ls",
+		thinking: "on",
+		excludeExtensions: [],
+		severityLabels: ["critical", "important", "minor"],
+		spiral: {
+			enabled: true,
+			threshold: 3,
+			cooldownReviews: 2,
+			treatUnavailableAsNonApprove: false,
+		},
+	},
 	context: {
 		workerContextWindow: 0,
 		warnPercent: 85,

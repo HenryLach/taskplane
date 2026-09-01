@@ -176,7 +176,8 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 		// emit added at the top of the function body. TP-195: widened to 7500
 		// to accommodate the typecheck-cleanup TP-195 comments documenting the
 		// `maxWorkerMinutes`/`projectName` field-name decisions.
-		const bodySection = executionSrc.slice(start, start + 7500);
+		// review-boundary: widened to 8500 for the TASKPLANE_REVIEW_ANALYSIS parse block.
+		const bodySection = executionSrc.slice(start, start + 8500);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});

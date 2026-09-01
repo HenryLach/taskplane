@@ -369,6 +369,10 @@ export interface TaskRunnerConfig {
 		tools: string;
 		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
 		excludeExtensions?: string[];
+		/** Ordered severity vocabulary for review finding-count analysis (review-boundary notifications). */
+		severityLabels?: string[];
+		/** Revision-spiral detection tuning. */
+		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	};
 	/**
 	 * Worker agent model/thinking/tools configuration.
@@ -2119,6 +2123,20 @@ export interface EngineEvent {
 	reviewType?: string;
 	/** Normalized reviewer verdict (for review_completed, review_failed) */
 	disposition?: ReviewDisposition;
+	/** Per-step review round (Nth verdict-producing review of this step) */
+	reviewRound?: number;
+	/** Human/file-correlation label, e.g. "R008-code-step4" */
+	reviewLabel?: string;
+	/** Review file path (relative), for correlation / optional re-parse */
+	reviewPath?: string;
+	/** Finding counts by severity label for this review */
+	findingCounts?: Record<string, number>;
+	/** Converging-vs-circling trend vs the previous round */
+	findingTrend?: "dropping" | "flat" | "rising";
+	/** Per-severity delta (curr - prev) */
+	findingDeltas?: Record<string, number>;
+	/** Whether severities moved in opposing directions */
+	findingMixed?: boolean;
 }
 
 /**
@@ -2163,7 +2181,16 @@ export type SupervisorAlertCategory =
 	| "worker-exit-intercept"
 	| "segment-expansion-requested"
 	| "segment-expansion-approved"
-	| "segment-expansion-rejected";
+	| "segment-expansion-rejected"
+	// Review-boundary supervisor notifications: an actionable escalation when a
+	// step's reviews are spiraling (repeated non-APPROVE) or the worker tripped
+	// the order-of-operations guard (REFUSED). Delivered `steer` (urgent) so the
+	// supervisor can adjudicate mid-run. `context.reviewInterventionKind`
+	// distinguishes the two situations.
+	| "review-intervention-needed";
+
+/** Which review situation triggered a `review-intervention-needed` alert. */
+export type ReviewInterventionKind = "revision-spiral" | "order-violation";
 
 /**
  * Structured context payload for supervisor alerts.
@@ -2233,6 +2260,31 @@ export interface SupervisorAlertContext {
 	messageId?: string;
 	/** Segment expansion request ID (for segment-expansion alerts) */
 	expansionRequestId?: string;
+	// ── Review-intervention fields (review-intervention-needed alerts) ────
+	/** Which review situation triggered the escalation. */
+	reviewInterventionKind?: ReviewInterventionKind;
+	/** Step number under review. */
+	reviewStep?: number;
+	/** Review type ("plan" | "code"). */
+	reviewType?: string;
+	/** Per-step review round (Nth verdict-producing review of this step). */
+	reviewRound?: number;
+	/** Human/file-correlation label, e.g. "R008-code-step4". */
+	reviewLabel?: string;
+	/** Latest normalized disposition. */
+	disposition?: ReviewDisposition;
+	/** Recent disposition history for this step (oldest→newest, bounded). */
+	recentDispositions?: ReviewDisposition[];
+	/** Consecutive non-APPROVE count for this step at escalation time. */
+	consecutiveNonApprove?: number;
+	/** Finding counts by severity label for the latest review. */
+	findingCounts?: Record<string, number>;
+	/** Converging-vs-circling trend vs the previous round. */
+	findingTrend?: "dropping" | "flat" | "rising";
+	/** Per-severity delta (curr - prev) for the latest review. */
+	findingDeltas?: Record<string, number>;
+	/** Whether severities moved in opposing directions. */
+	findingMixed?: boolean;
 	/** Whether partial progress was preserved (for task-failure alerts) */
 	partialProgress?: boolean;
 	/** Batch progress summary */

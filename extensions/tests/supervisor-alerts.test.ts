@@ -406,7 +406,9 @@ describe("4.x — Source-based verification of IPC wiring", () => {
 	it("4.5 — extension.ts calls sendUserMessage for alerts", () => {
 		const src = readSource("extension.ts");
 		expect(src).toContain("sendUserMessage(alert.summary");
-		expect(src).toContain('deliverAs: "followUp"');
+		// review-boundary: delivery is now category-conditional — urgent review
+		// interventions steer (interrupt), routine alerts stay followUp (queue).
+		expect(src).toContain('"steer" : "followUp"');
 	});
 
 	it("4.6 — extension.ts gates alerts on supervisor activation", () => {

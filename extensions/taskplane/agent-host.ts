@@ -157,6 +157,20 @@ export function buildWorkerToolsAllowlist(userTools: string | undefined | null):
  *
  * @since review-boundary notifications
  */
+/**
+ * Extract the review file path from a review_step tool return. The tool appends
+ * "Full review: .reviews/R{NNN}-{type}-step{N}.md" (REVISE) or
+ * "See .reviews/R{NNN}-{type}-step{N}.md" (RETHINK). Returns undefined when no
+ * such reference is present (e.g. APPROVE returns just "APPROVE").
+ */
+export function extractReviewPath(resultText: string | undefined | null): string | undefined {
+	if (!resultText || typeof resultText !== "string") return undefined;
+	const m = resultText.match(/(?:Full review:|See)\s+(\S*R\d+-[a-z]+-step\d+\.md)\b/i);
+	if (m) return m[1];
+	const m2 = resultText.match(/(\S*R\d+-[a-z]+-step\d+\.md)\b/i);
+	return m2 ? m2[1] : undefined;
+}
+
 export function normalizeReviewDisposition(
 	resultText: string | undefined | null,
 ): ReviewDisposition {
@@ -886,6 +900,9 @@ export function spawnAgent(
 								reviewType: pendingReview?.reviewType,
 								disposition,
 								summary: toolResultSummary,
+								// review_step embeds the review file path in its REVISE/RETHINK
+								// return; surfacing it lets lane-runner read the EXACT review file.
+								reviewPath: extractReviewPath(fullResult),
 							};
 							if (disposition === "UNAVAILABLE" || disposition === "UNKNOWN") {
 								emitEvent("review_failed", reviewFields);

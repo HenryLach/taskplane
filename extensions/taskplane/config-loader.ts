@@ -1275,6 +1275,12 @@ export function toTaskRunnerConfig(config: TaskplaneConfig): import("./types.ts"
 			thinking: config.taskRunner.reviewer.thinking,
 			tools: config.taskRunner.reviewer.tools,
 			excludeExtensions: [...(config.taskRunner.reviewer.excludeExtensions ?? [])],
+			...(config.taskRunner.reviewer.severityLabels
+				? { severityLabels: [...config.taskRunner.reviewer.severityLabels] }
+				: {}),
+			...(config.taskRunner.reviewer.spiral
+				? { spiral: { ...config.taskRunner.reviewer.spiral } }
+				: {}),
 		},
 		workerExcludeExtensions: [...(config.taskRunner.worker.excludeExtensions ?? [])],
 	};

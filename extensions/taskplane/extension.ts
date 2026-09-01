@@ -2633,7 +2633,13 @@ export default function (pi: ExtensionAPI) {
 				// would otherwise crash Pi. #597 safeSendMessageFromTimer covers
 				// sendMessage only, so use the general callback guard here.
 				safeCtxCallFromCallback(
-					() => pi.sendUserMessage(alert.summary, { deliverAs: "followUp" }),
+					() =>
+						pi.sendUserMessage(alert.summary, {
+							// #review-boundary: spiral/order escalations are urgent — steer
+							// (interrupt current turn) so the supervisor adjudicates now;
+							// routine alerts stay followUp (queue to next turn boundary).
+							deliverAs: alert.category === "review-intervention-needed" ? "steer" : "followUp",
+						}),
 					"alert.sendUserMessage",
 				);
 			},
@@ -2995,7 +3001,13 @@ export default function (pi: ExtensionAPI) {
 				// would otherwise crash Pi. #597 safeSendMessageFromTimer covers
 				// sendMessage only, so use the general callback guard here.
 				safeCtxCallFromCallback(
-					() => pi.sendUserMessage(alert.summary, { deliverAs: "followUp" }),
+					() =>
+						pi.sendUserMessage(alert.summary, {
+							// #review-boundary: spiral/order escalations are urgent — steer
+							// (interrupt current turn) so the supervisor adjudicates now;
+							// routine alerts stay followUp (queue to next turn boundary).
+							deliverAs: alert.category === "review-intervention-needed" ? "steer" : "followUp",
+						}),
 					"alert.sendUserMessage",
 				);
 			},

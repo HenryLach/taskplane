@@ -7,7 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New
+
+- **Supervisor is now actively notified at every review boundary, with
+  spiral detection and adjudication signals.** Previously the supervisor was
+  never told when worker↔reviewer reviews happened, so it couldn't break the
+  revision spirals that stall complex tasks unless the operator noticed and
+  poked it — the opposite of autonomous execution. Now:
+  - **Every review start/end is surfaced** to the supervisor (all autonomy
+    levels) so it can adjudicate each revision case-by-case, carrying the
+    normalized disposition (APPROVE/REVISE/RETHINK/REFUSED/UNAVAILABLE), the
+    per-step review round, and — when the reviewer emits an `Issues Found`
+    section — finding counts by severity plus a converging-vs-circling
+    severity **trend** (dropping/flat/rising, with a `mixed` flag). These are
+    the signals an adjudicating supervisor uses to tell "healthy deepening,
+    severity dropping (let it run)" from "circling the same class
+    (intervene)" at a glance.
+  - **Revision-spiral escalation:** after a configurable number of
+    consecutive non-APPROVE reviews on the *same step* (default 3), the
+    supervisor gets an urgent, steer-delivered `review-intervention-needed`
+    alert with the disposition history and finding trend, so it can steer the
+    worker to a resolution (implement the remaining legitimate findings, or
+    stop and log a blocker). Re-escalation is trend-gated + cooldown-spaced:
+    a converging spiral is left to run; only a flat/rising one re-interrupts.
+  - **Order-of-operations violations** (a step marked complete before code
+    review ran) escalate immediately as a distinct signal, kept out of the
+    revision-spiral count.
+  - **Reviewer-unavailable** is surfaced as a separate broken-reviewer
+    signal, never counted toward a spiral.
+  - Detection state is **reconstructed from event history on resume**, so an
+    in-progress spiral survives a pause/resume. Severity vocabulary and
+    spiral tuning are configurable under `taskRunner.reviewer`
+    (`severityLabels`, `spiral.{enabled,threshold,cooldownReviews,
+    treatUnavailableAsNonApprove}`); the core default vocabulary is generic
+    (critical/important/minor).
+
 ### Fixed
+
+- **Worker mail to the supervisor was only surfaced after the worker exited,
+  not live during the run.** A worker that mailed the supervisor mid-run
+  (via `notify_supervisor`/`escalate_to_supervisor` — e.g. asking for help to
+  break a review spiral) sat unread in its outbox until it exited, so the
+  supervisor "woke up" too late. The lane-runner now polls the worker outbox
+  on a live timer during the run (in addition to the post-exit drain), acking
+  each surfaced message so nothing is double-delivered. (Segment-expansion
+  requests were already scanned live; reply/escalate mail was not — that
+  asymmetry was the bug.)
 
 - **Engine-worker IPC crashed Pi on a stale extension context (#620,
   reported by @daemons2000):** The asynchronous engine-worker IPC handlers

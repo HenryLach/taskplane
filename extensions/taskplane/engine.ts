@@ -2341,6 +2341,8 @@ async function attemptStaleWorktreeRecovery(
 			thinking: runnerConfig?.reviewer?.thinking || "",
 			tools: runnerConfig?.reviewer?.tools || "",
 			excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
+			severityLabels: runnerConfig?.reviewer?.severityLabels,
+			spiral: runnerConfig?.reviewer?.spiral,
 		},
 		runnerConfig?.worker
 			? {
@@ -3111,6 +3113,8 @@ export async function executeOrchBatch(
 				thinking: runnerConfig?.reviewer?.thinking || "",
 				tools: runnerConfig?.reviewer?.tools || "",
 				excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
+				severityLabels: runnerConfig?.reviewer?.severityLabels,
+				spiral: runnerConfig?.reviewer?.spiral,
 			},
 			runnerConfig?.worker
 				? {
