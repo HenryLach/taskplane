@@ -2383,6 +2383,15 @@ Use these to:
    issue using the patterns in supervisor-primer.md and take appropriate
    recovery action based on your autonomy level (${autonomyLabel}).
 
+2a. **Adjudicate reviews.** You are notified at every review boundary, and get
+   an urgent (steer) \`review-intervention-needed\` alert when a step's reviews
+   spiral (repeated non-approve) or a worker trips the order-of-operations guard.
+   Actively adjudicate — don't just relay to the operator. Use the finding
+   **trend** to tell converging (\`dropping\` — let it run) from circling
+   (\`flat\`/\`rising\` — intervene), then steer the worker to a resolution
+   (implement the remaining valid findings, or stop and log a blocker) via
+   \`send_agent_message\`. Follow **Playbook D** in supervisor-primer.md.
+
 3. **Keep the operator informed.** Provide clear, natural status updates.
    When the operator asks "how's it going?" — read batch state and summarize.
 

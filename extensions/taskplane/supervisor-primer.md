@@ -719,6 +719,7 @@ or check status manually. The engine wakes you up when you're needed.
 | `merge-failure` | ⚠️ | Wave merge failed and batch paused |
 | `batch-complete` | ✅/⚠️ | Batch finished (all waves done, with or without failures) |
 | `worker-exit-intercept` | 🔄 | A worker exited without making progress — session still alive, awaiting instructions |
+| `review-intervention-needed` | 🌀/⛔ | A step's reviews are spiraling (repeated non-approve) or the worker tripped the order-of-operations guard — adjudicate per **Playbook D** |
 
 ### Alert Format
 
@@ -793,6 +794,37 @@ If the engine process itself crashes (process error or unexpected exit), you
 receive a critical alert with category `task-failure` and a 🔴 emoji. These
 indicate an infrastructure-level failure, not a task-level failure. Recovery
 typically requires `orch_resume(force=true)` after checking batch state.
+
+### Review-Boundary Notifications (Active Adjudication)
+
+Beyond the alerts above, you are notified at **every review boundary** — when a
+worker's `review_step` tool starts and completes. These are informational
+(delivered follow-up, they queue to your next turn), but they exist so you can
+adjudicate reviews **case by case** instead of waiting for a spiral to fully
+form. Each review-completed notification carries:
+
+- **Disposition** — `APPROVE` / `REVISE` / `RETHINK` / `REFUSED` / `UNAVAILABLE`.
+- **Round** — how many times this step has been reviewed (e.g. `round 4`).
+- **Findings + trend** (when the reviewer emits an `Issues Found` section) —
+  counts by severity (the project's configured `severityLabels`, e.g.
+  critical/important/minor or P0/P1/P2) and a **trend**: `dropping` (converging —
+  severity falling round over round), `flat`, or `rising`, plus a `mixed` flag
+  when severities move in opposite directions.
+
+**Reading the signal — converging vs circling (the core judgment):**
+
+- **Let it run:** disposition `REVISE`/`RETHINK` but trend `dropping` — the
+  worker is making the reviewer progressively happier; this is healthy
+  deepening. Do not interfere.
+- **Intervene:** trend `flat`/`rising` across rounds, or the same finding class
+  recurring — the loop is circling, not converging. Adjudicate (see Playbook D).
+
+When the deterministic threshold is crossed (default **3 consecutive
+non-approve on the same step**) you additionally get an **urgent
+`review-intervention-needed` alert** delivered as a *steer* — it interrupts your
+current turn. Act on it per Playbook D. `REFUSED` (order-of-operations
+violation) and `UNAVAILABLE` (broken reviewer) are surfaced as distinct signals,
+not counted toward the revision spiral.
 
 ---
 
@@ -996,6 +1028,67 @@ BATCH COMPLETE: {batchId}
 │           Skipped tasks: {list}. Ready to integrate."
 │         → Suggest: orch_integrate()
 ```
+
+### Playbook D: Review Spiral / Adjudication
+
+**Trigger:** a `review-intervention-needed` alert, OR your own read of the
+review-boundary notifications (see "Review-Boundary Notifications" in §13a).
+Alert context includes `reviewInterventionKind` (`revision-spiral` |
+`order-violation`), `taskId`, `reviewStep`, `laneNumber`, `agentId`,
+`disposition`, `recentDispositions`, `consecutiveNonApprove`, `reviewRound`,
+`findingCounts`, `findingTrend`.
+
+```
+REVIEW INTERVENTION: {taskId} step {reviewStep} (lane {laneNumber})
+│
+├─ kind = "order-violation"  (disposition REFUSED)
+│   The worker marked the step complete BEFORE code review ran.
+│   → Steer the worker (send_agent_message to {agentId}) to:
+│       1. Revert the step's Status to In Progress in STATUS.md
+│       2. Re-run review_step for that step, THEN mark it complete
+│   → Report: "Order-of-operations violation on {taskId} step {N} —
+│     instructed the worker to revert and re-review."
+│
+└─ kind = "revision-spiral"  (3+ consecutive non-approve on the same step)
+    │
+    ├─ 1. Read findingTrend + recentDispositions in the alert:
+    │     │
+    │     ├─ trend = "dropping" (CONVERGING)
+    │     │   → Usually LET IT RUN one or two more rounds — the worker is
+    │     │     resolving real findings and severity is falling. Only step in
+    │     │     if the round count is very high (diminishing returns).
+    │     │
+    │     └─ trend = "flat" / "rising" (CIRCLING)
+    │         │
+    │         ├─ 2. Read the latest review file
+    │         │     (.reviews/R{NNN}-{type}-step{N}.md) and the worker's
+    │         │     STATUS.md to judge WHY it's stuck:
+    │         │     │
+    │         │     ├─ Findings are legitimate but the worker keeps missing
+    │         │     │   them → steer with CONCRETE, specific instructions on
+    │         │     │   exactly what to implement (quote the finding).
+    │         │     │
+    │         │     ├─ Findings are subjective / diminishing returns / the
+    │         │     │   reviewer is over-strict → tell the worker the step is
+    │         │     │   good enough; instruct it to proceed.
+    │         │     │
+    │         │     └─ The task is genuinely too hard / underspecified →
+    │         │         tell the worker to STOP, log a clear blocker in
+    │         │         STATUS.md, and exit. Then escalate to the operator
+    │         │         with the blocker text.
+    │         │
+    │         └─ 3. Report your decision AND why (cite the trend + round,
+    │             e.g. "step 4 at round 6, criticals flat — steering the
+    │             worker to implement the two outstanding findings").
+```
+
+Steer the worker with `send_agent_message(to, content)` using the `agentId`
+from the alert context. **Your judgment IS the adjudication** — the goal is to
+keep the task converging on the project's real goals, not to let a review loop
+burn indefinitely nor to rubber-stamp incomplete work. Log the decision to the
+audit trail. Re-escalations are trend-gated (you won't be nagged while a spiral
+is converging), so a fresh `review-intervention-needed` after you've acted means
+it is still NOT converging — consider a firmer intervention (stop + blocker).
 
 ### Quick Reference: Recovery Action Matrix
 

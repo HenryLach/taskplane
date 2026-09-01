@@ -478,6 +478,26 @@ describe("4.x — Source-based verification of IPC wiring", () => {
 		expect(src).toContain("Response Protocol");
 	});
 
+	it("4.16a — supervisor-primer.md documents review-boundary adjudication (Playbook D)", () => {
+		const src = readFileSync(join(__dirname, "..", "taskplane", "supervisor-primer.md"), "utf-8");
+		// The new alert category is listed and has a playbook.
+		expect(src).toContain("review-intervention-needed");
+		expect(src).toContain("Playbook D");
+		expect(src).toContain("Review-Boundary Notifications");
+		// The core converging-vs-circling judgment is spelled out.
+		expect(src).toContain("converging");
+		expect(src).toContain("circling");
+		expect(src).toContain("order-violation");
+	});
+
+	it("4.16b — supervisor system prompt has an Adjudicate reviews standing order", () => {
+		// The primer is read on demand; the standing order (always in context)
+		// ensures the supervisor ACTS on review notifications rather than relaying.
+		const src = readSource("supervisor.ts");
+		expect(src).toContain("Adjudicate reviews");
+		expect(src).toContain("Playbook D");
+	});
+
 	it("4.17 — extension.ts sends critical alert on engine process death", () => {
 		const src = readSource("extension.ts");
 		// Engine process error path
