@@ -361,8 +361,50 @@ export function parseReviewVerdict(
 	markdown: string | undefined | null,
 ): ReviewDisposition | undefined {
 	if (!markdown || typeof markdown !== "string") return undefined;
-	const m = markdown.match(/#{2,4}\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
-	return m ? (m[1].toUpperCase() as ReviewDisposition) : undefined;
+	const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+	// A verdict line starts with optional heading hashes and/or bold markers, then
+	// the word "Verdict". Reviewer LLMs vary the format: '## Verdict: REVISE',
+	// '**Verdict:** REVISE', 'Verdict - APPROVE', '#### Verdict — RETHINK',
+	// '## Verdict: [REVISE]', or the token on the following line. The old
+	// '/#{2,4}\\s*Verdict[:\\s]*(...)/' missed most variants, and the old caller
+	// (review_step) fell back to an approve-biased substring scan — flipping
+	// REVISE reviews to APPROVE (#624 severity upgrade: workers advanced past
+	// REVISE verdicts and nearly shipped unreviewed code).
+	const markerRe = /^\s*(?:#{1,4}\s*)?(?:\*{1,2}\s*)?Verdict\b/i;
+	const tokenRe = /\b(APPROVE|REVISE|RETHINK)\b/gi;
+	// After 'Verdict', only separators/decoration may precede the token — prose
+	// like 'Verdict criteria: APPROVE means…' must NOT match.
+	const firstTokenRe = /^[\s:\-—–*_[\]]*\b(APPROVE|REVISE|RETHINK)\b/i;
+
+	const resolveFrom = (text: string): ReviewDisposition | undefined => {
+		const tokens = [...text.matchAll(tokenRe)].map((t) => t[1].toUpperCase());
+		const distinct = new Set(tokens);
+		// 2+ distinct verdict words = the template placeholder
+		// ('[APPROVE | REVISE | RETHINK]') or criteria prose — not a verdict.
+		if (distinct.size !== 1) return undefined;
+		const m = text.match(firstTokenRe);
+		return m ? (m[1].toUpperCase() as ReviewDisposition) : undefined;
+	};
+
+	for (let i = 0; i < lines.length; i++) {
+		const marker = lines[i].match(markerRe);
+		if (!marker) continue;
+		const rest = lines[i].slice((marker.index ?? 0) + marker[0].length);
+		const fromLine = resolveFrom(rest);
+		if (fromLine) return fromLine;
+		// Token may sit on the next non-empty line ('## Verdict\nREVISE').
+		if ([...rest.matchAll(tokenRe)].length === 0) {
+			for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+				const next = lines[j].trim();
+				if (!next) continue;
+				const fromNext = resolveFrom(next);
+				if (fromNext) return fromNext;
+				break; // only the first non-empty line counts
+			}
+		}
+		// Placeholder or prose — keep scanning for a later real verdict line.
+	}
+	return undefined;
 }
 
 /**

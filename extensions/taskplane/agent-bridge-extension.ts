@@ -30,6 +30,7 @@ import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import { randomBytes } from "crypto";
 import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.ts";
+import { parseReviewVerdict } from "./review-analysis.ts";
 
 /**
  * Resolve the outbox directory from environment variables.
@@ -944,13 +945,23 @@ export default function (pi: ExtensionAPI) {
 				// Read review output and extract verdict
 				if (existsSync(outputPath)) {
 					const reviewContent = readFileSync(outputPath, "utf-8");
-					const verdictMatch = reviewContent.match(/###?\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
-					let verdict = verdictMatch ? verdictMatch[1].toUpperCase() : "UNKNOWN";
+					// #624 (severity upgrade): robust, FAIL-CLOSED verdict extraction. The
+					// old regex ('###?\s*Verdict[:\s]*…') missed common reviewer format
+					// variants, and its fallback checked the substring "approve" FIRST — so
+					// a REVISE review whose body merely contained "approve" (e.g. "cannot
+					// approve") was returned to the worker as APPROVE. Workers then marked
+					// steps complete and advanced past unaddressed findings. The review
+					// gate must NEVER fail open: APPROVE is only ever taken from an
+					// explicit Verdict line (parseReviewVerdict handles heading/bold/plain/
+					// dash/bracket variants and skips the template placeholder). The body
+					// fallback below may only produce fail-closed guesses (REVISE/RETHINK).
+					const parsedVerdict = parseReviewVerdict(reviewContent);
+					let verdict: string = parsedVerdict ?? "UNKNOWN";
 					if (verdict === "UNKNOWN") {
 						const lower = reviewContent.toLowerCase();
-						if (lower.includes("approve") && !lower.includes("do not approve")) verdict = "APPROVE";
-						else if (lower.includes("revise") || lower.includes("changes requested")) verdict = "REVISE";
-						else if (lower.includes("rethink")) verdict = "RETHINK";
+						if (/\brevise\b/.test(lower) || lower.includes("changes requested")) verdict = "REVISE";
+						else if (/\brethink\b/.test(lower)) verdict = "RETHINK";
+						// NO approve fallback — an approval must be explicit.
 					}
 
 					// Log review in STATUS.md execution log
@@ -986,7 +997,13 @@ export default function (pi: ExtensionAPI) {
 					} else {
 						return {
 							content: [
-								{ type: "text" as const, text: `Review complete (verdict unclear). See ${reviewFile}` },
+								{
+									type: "text" as const,
+									text:
+										`Review complete (verdict unclear). Read ${reviewFile} and follow its ` +
+										`Verdict line — do NOT treat this as an approval or mark the step complete ` +
+										`without an explicit APPROVE.`,
+								},
 							],
 							details: undefined,
 						};

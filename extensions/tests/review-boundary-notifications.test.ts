@@ -197,6 +197,22 @@ describe("review-boundary — #624 tool-result extraction + verdict authority", 
 		expect(flat).not.toContain('disposition === "UNAVAILABLE" || disposition === "UNKNOWN"');
 	});
 
+	it("review_step tool (worker-facing gate) uses the robust parser and NEVER fail-opens to APPROVE", () => {
+		// #624 severity upgrade: the old tool-side parse used a brittle regex and
+		// an approve-FIRST substring fallback — REVISE reviews whose body contained
+		// 'approve' were returned to the worker as APPROVE, so workers marked steps
+		// complete past unaddressed findings. The gate must fail CLOSED.
+		const src = readSrc("agent-bridge-extension.ts");
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain("parseReviewVerdict(reviewContent)");
+		// The approve-biased fallback must be gone from the verdict path.
+		expect(flat).not.toContain('lower.includes("approve")');
+		// Only fail-closed body guesses remain (REVISE / RETHINK), no approve guess.
+		expect(flat).toContain("NO approve fallback");
+		// The unclear-verdict return must warn the worker not to self-approve.
+		expect(flat).toContain("do NOT treat this as an approval");
+	});
+
 	it("lane-runner treats the review file's verdict as authoritative and classifies accordingly", () => {
 		const src = readSrc("lane-runner.ts");
 		const flat = src.replace(/\s+/g, " ");

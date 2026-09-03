@@ -387,6 +387,51 @@ describe("review-analysis — parseReviewVerdict (#624 authoritative file verdic
 		expect(parseReviewVerdict(null)).toBe(undefined);
 		expect(parseReviewVerdict(undefined)).toBe(undefined);
 	});
+
+	// ── #624 severity upgrade: reviewer format variants (workers advanced past
+	// REVISE because the old parser missed these and fell back approve-biased) ──
+
+	it("parses bold, plain, dash, and bracket verdict formats", () => {
+		expect(parseReviewVerdict("**Verdict:** REVISE\nbody")).toBe("REVISE");
+		expect(parseReviewVerdict("Verdict: APPROVE")).toBe("APPROVE");
+		expect(parseReviewVerdict("## Verdict — RETHINK")).toBe("RETHINK");
+		expect(parseReviewVerdict("### Verdict - REVISE")).toBe("REVISE");
+		expect(parseReviewVerdict("## Verdict: [REVISE]")).toBe("REVISE");
+		expect(parseReviewVerdict("## Verdict: **APPROVE**")).toBe("APPROVE");
+	});
+
+	it("parses a verdict on the line after a bare Verdict heading", () => {
+		expect(parseReviewVerdict("## Verdict\nREVISE: needs the null check fixed")).toBe("REVISE");
+		expect(parseReviewVerdict("## Verdict\n\n  APPROVE")).toBe("APPROVE");
+	});
+
+	it("skips the template placeholder and finds the real verdict later", () => {
+		const md = "### Verdict: [APPROVE | REVISE | RETHINK]\n\n## Verdict: REVISE\n";
+		expect(parseReviewVerdict(md)).toBe("REVISE");
+		// A placeholder alone is NOT a verdict.
+		expect(parseReviewVerdict("### Verdict: [APPROVE | REVISE | RETHINK]")).toBe(undefined);
+	});
+
+	it("does not misread criteria prose as a verdict", () => {
+		expect(parseReviewVerdict("Verdict criteria: APPROVE means the step passes")).toBe(undefined);
+	});
+
+	it("TP-2022 regression class: variant-format REVISE with 'approve' in the body is REVISE, never APPROVE", () => {
+		const md = [
+			"## Code Review: Step 1",
+			"",
+			"**Verdict:** REVISE",
+			"",
+			"### Summary",
+			"I cannot approve this yet — the trusted coordinate is forgeable and the",
+			"resolver claims Key Vault custody it does not have. Approval is blocked",
+			"until the P1 findings below are addressed.",
+			"",
+			"### Issues Found",
+			"1. **[src/coord.ts:42]** P1 — forgeable trusted coordinate",
+		].join("\n");
+		expect(parseReviewVerdict(md)).toBe("REVISE");
+	});
 });
 
 describe("review-analysis — parseReviewLabelFromPath", () => {
