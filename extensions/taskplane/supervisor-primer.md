@@ -202,7 +202,10 @@ merge_health_stuck) are also written here when merge agents stall or die.
 
 **Audit trail:** `.pi/supervisor/actions.jsonl`
 
-Every recovery action you take is logged here as JSONL. Destructive actions
+Every recovery action you take is logged here as JSONL — **always via the
+`log_recovery_action` tool**, which stamps `ts` and `batchId` in code. Never
+append to this file by hand (your clock is unreliable; hand-written entries
+carry fabricated timestamps). Destructive actions
 must be logged *before* execution (with result="pending"), then again after
 (with actual result). This file is read during takeover rehydration.
 
@@ -701,7 +704,9 @@ When you're unsure:
 - Good for overnight/unattended batches
 - The operator trusts you to make reasonable decisions
 
-In ALL modes, you log every action to the audit trail.
+In ALL modes, you log every action to the audit trail via the
+`log_recovery_action` tool (never a hand-written append — timestamps must be
+code-stamped).
 
 ---
 
@@ -783,6 +788,7 @@ If the batch is actively running, call `orch_pause()` first.
 - `read_agent_status(lane?)` — Read STATUS.md + telemetry for a lane (step, progress, context %, cost, elapsed). Omit lane for all lanes.
 - `trigger_wrap_up(lane)` — Write `.task-wrap-up` signal to gracefully stop a worker on a lane.
 - `read_lane_logs(lane)` — Read stderr/crash logs and exit diagnostics for a lane.
+- `log_recovery_action(action, classification, context, command, result, detail, …)` — Append an audit-trail entry (ts/batchId code-stamped). The ONLY correct way to write `actions.jsonl`.
 - `list_active_agents()` — List active worker/reviewer/merge agents with role, lane, task, context %, elapsed, cost.
 
 Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
@@ -1081,6 +1087,14 @@ REVIEW INTERVENTION: {taskId} step {reviewStep} (lane {laneNumber})
     │             e.g. "step 4 at round 6, criticals flat — steering the
     │             worker to implement the two outstanding findings").
 ```
+
+**kind = "unresolved-verdict"** (finalize refused): the task tried to complete
+while some gate's LATEST review file still reads REVISE/RETHINK — the runtime
+refused `.DONE` and marked the task failed instead of letting it merge
+unreviewed. Adjudicate: have the worker address the findings and re-run
+`review_step` (then `orch_retry_task` + `orch_resume(force=true)`), or — for an
+operator-ratified override — record the ruling as the next R-numbered review
+file with an explicit APPROVE verdict, then retry the task.
 
 Steer the worker with `send_agent_message(to, content)` using the `agentId`
 from the alert context. **Your judgment IS the adjudication** — the goal is to

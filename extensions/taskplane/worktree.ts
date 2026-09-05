@@ -716,10 +716,48 @@ export function runWindowsCmdRd(absolutePath: string): {
  * @throws WorktreeError with WORKTREE_REMOVE_FAILED for terminal (non-retriable) errors
  * @throws WorktreeError with WORKTREE_BRANCH_DELETE_FAILED if branch cleanup fails
  */
+/**
+ * #628: does this worktree have uncommitted changes? Returns the count, 0 for
+ * clean, or null when it CANNOT be assessed — e.g. the path is a corrupted or
+ * orphaned worktree whose git context resolves to the PARENT repo (running
+ * `git status` there would report the parent's state, a false positive).
+ * Callers treat null as "proceed with removal" so corruption-recovery paths
+ * keep working; only a confirmed-dirty, functioning worktree refuses.
+ */
+function worktreeUncommittedCount(worktreePath: string): number | null {
+	const top = runGit(["rev-parse", "--show-toplevel"], worktreePath);
+	if (!top.ok) return null;
+	const norm = (p: string) => {
+		// realpathSync.native expands Windows 8.3 short names (HENRYL~1 → HenryLach)
+		// so git's long-form output compares equal to a short-form input path.
+		let r: string;
+		try {
+			r = realpathSync.native(p.trim());
+		} catch {
+			r = resolve(p.trim());
+		}
+		r = r.replace(/[\\/]+/g, "/");
+		return process.platform === "win32" ? r.toLowerCase() : r;
+	};
+	if (norm(top.stdout) !== norm(worktreePath)) return null; // not this dir's own repo context
+	const st = runGit(["status", "--porcelain"], worktreePath);
+	if (!st.ok) return null;
+	const t = st.stdout.trim();
+	return t.length === 0 ? 0 : t.split(/\r?\n/).length;
+}
+
 export function removeWorktree(
 	worktree: WorktreeInfo,
 	repoRoot: string,
 	targetBranch?: string,
+	options?: {
+		/**
+		 * #628: permit removal even when the worktree has uncommitted changes.
+		 * Only pass true when the caller has ALREADY preserved progress (commit,
+		 * stash, or progress branch). Default false = refuse when dirty.
+		 */
+		allowDirty?: boolean;
+	},
 ): RemoveWorktreeResult {
 	const { path: worktreePath, branch } = worktree;
 
@@ -753,6 +791,33 @@ export function removeWorktree(
 			savedBranch: branchResult.savedBranch,
 			unmergedCount: branchResult.unmergedCount,
 		};
+	}
+
+	// ── #628: uncommitted-work guard ────────────────────────────
+	// Removal uses `git worktree remove --force`, which destroys uncommitted
+	// changes. In the reported incident a takeover path removed a held lane's
+	// worktree and the worker's uncommitted files were lost (recovered only via
+	// dangling objects). Safety invariant: NEVER remove a worktree with
+	// uncommitted changes unless the caller explicitly opts in after preserving
+	// progress. Refusal is non-fatal — callers already handle removed:false.
+	if (pathExists && !options?.allowDirty) {
+		const dirtyFileCount = worktreeUncommittedCount(worktreePath);
+		if (dirtyFileCount !== null && dirtyFileCount > 0) {
+			execLog(
+				"cleanup",
+				"worktree",
+				`REFUSED to remove worktree with ${dirtyFileCount} uncommitted change(s) — commit/stash or pass allowDirty after preserving progress (#628)`,
+				{ path: worktreePath, branch },
+			);
+			return {
+				removed: false,
+				alreadyRemoved: false,
+				branchDeleted: false,
+				branchPreserved: true,
+				refusedDirty: true,
+				dirtyFileCount,
+			};
+		}
 	}
 
 	// ── Attempt removal with retry/backoff ───────────────────────
@@ -2105,8 +2170,30 @@ export function forceCleanupWorktree(
 	worktree: WorktreeInfo,
 	repoRoot: string,
 	batchId: string,
+	options?: {
+		/** #628: permit force-removal even with uncommitted changes. Only after preserving progress. */
+		allowDirty?: boolean;
+	},
 ): void {
 	const { path: worktreePath, branch, laneNumber } = worktree;
+
+	// ── #628: uncommitted-work guard (same invariant as removeWorktree) ───
+	// This is the raw-rmSync last resort — without the guard it silently
+	// destroys uncommitted worker files (e.g. batch-start cleanup of a prior
+	// batch's held lane). "Force" here means stubborn-removal MECHANICS
+	// (Windows reserved names), not overriding the data-safety invariant.
+	if (existsSync(worktreePath) && !options?.allowDirty) {
+		const dirtyFileCount = worktreeUncommittedCount(worktreePath);
+		if (dirtyFileCount !== null && dirtyFileCount > 0) {
+			execLog(
+				"cleanup",
+				`lane-${laneNumber}`,
+				`REFUSED force-cleanup: worktree has ${dirtyFileCount} uncommitted change(s) — preserve progress first (#628)`,
+				{ path: worktreePath, branch, batchId },
+			);
+			return;
+		}
+	}
 
 	// Step 1: Force-remove the directory
 	if (existsSync(worktreePath)) {

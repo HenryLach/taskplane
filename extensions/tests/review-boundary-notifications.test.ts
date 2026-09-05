@@ -213,6 +213,55 @@ describe("review-boundary — #624 tool-result extraction + verdict authority", 
 		expect(flat).toContain("do NOT treat this as an approval");
 	});
 
+	it("#626 minimal: lane-runner refuses .DONE over an outstanding REVISE/RETHINK", () => {
+		const src = readSrc("lane-runner.ts");
+		const flat = src.replace(/\s+/g, " ");
+		// The finalize gate scans the LATEST review per gate and blocks on
+		// REVISE/RETHINK, deleting any worker-written .DONE and failing the task
+		// instead of letting the wave merge unreviewed work (TP-2037/TP-2039).
+		expect(flat).toContain("latestReviewFilesPerGate(readdirSync(reviewsDir))");
+		expect(flat).toContain('verdict === "REVISE" || verdict === "RETHINK"');
+		expect(flat).toContain("blockingGates");
+		expect(flat).toContain('reviewInterventionKind: "unresolved-verdict"');
+		// The refusal must precede .DONE creation.
+		const gateIdx = src.indexOf("#626 minimal finalize gate");
+		const doneIdx = src.indexOf("Create .DONE if not already present");
+		expect(gateIdx).toBeGreaterThan(-1);
+		expect(doneIdx).toBeGreaterThan(gateIdx);
+	});
+
+	it("#628: dirty-refusal is surfaced to the cleanup gate, not treated as success (Sage blocker)", () => {
+		// removeWorktree's refusal path does NOT throw — callers must check the
+		// result. Both reset-failure cleanup paths track a refused worktree in
+		// failedRemovalWorktrees and must never force-clean it (that would destroy
+		// the uncommitted work the refusal is protecting).
+		for (const f of ["engine.ts", "resume.ts"]) {
+			const src = readSrc(f);
+			const flat = src.replace(/\s+/g, " ");
+			expect(flat).toContain("rm.refusedDirty");
+			expect(flat).toContain("worktree removal REFUSED for lane");
+		}
+		// The refusal branch must feed failedRemovalWorktrees in both files.
+		const engine = readSrc("engine.ts").replace(/\s+/g, " ");
+		const engineRefusal = engine.slice(engine.indexOf("rm.refusedDirty"));
+		expect(engineRefusal.slice(0, 900)).toContain("failedRemovalWorktrees");
+	});
+
+	it("#625: log_recovery_action tool is registered and the bash-append instruction is gone", () => {
+		const ext = readSrc("extension.ts");
+		const extFlat = ext.replace(/\s+/g, " ");
+		expect(extFlat).toContain('name: "log_recovery_action"');
+		expect(extFlat).toContain("logRecoveryAction(stateRoot, batchId");
+		const sup = readSrc("supervisor.ts");
+		// The system prompt must direct the supervisor to the tool and must no
+		// longer contain the echo-append example that caused fabricated timestamps.
+		expect(sup).toContain("log_recovery_action");
+		// Avoid a literal ${...} in the assertion string (noTemplateCurlyInString):
+		// match the echo-append fragment via regex instead.
+		expect(sup).not.toMatch(/' >> \$\{actionsPath\}/);
+		expect(sup).toContain("NEVER hand-write");
+	});
+
 	it("lane-runner treats the review file's verdict as authoritative and classifies accordingly", () => {
 		const src = readSrc("lane-runner.ts");
 		const flat = src.replace(/\s+/g, " ");

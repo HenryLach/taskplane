@@ -16,6 +16,7 @@ import {
 	computeFindingTrend,
 	parseReviewLabelFromPath,
 	parseReviewVerdict,
+	latestReviewFilesPerGate,
 	advanceReviewStreak,
 	reconstructReviewStreaks,
 	freshReviewStreakState,
@@ -431,6 +432,39 @@ describe("review-analysis — parseReviewVerdict (#624 authoritative file verdic
 			"1. **[src/coord.ts:42]** P1 — forgeable trusted coordinate",
 		].join("\n");
 		expect(parseReviewVerdict(md)).toBe("REVISE");
+	});
+});
+
+describe("review-analysis — latestReviewFilesPerGate (#626 finalize gate)", () => {
+	it("returns the highest R-number file per (type, step) gate", () => {
+		const m = latestReviewFilesPerGate([
+			"R001-plan-step1.md",
+			"R002-code-step1.md",
+			"R003-code-step1.md",
+			"R004-code-step5.md",
+			"R005-code-step1.md",
+		]);
+		expect(m.get("plan-step1")).toBe("R001-plan-step1.md");
+		expect(m.get("code-step1")).toBe("R005-code-step1.md");
+		expect(m.get("code-step5")).toBe("R004-code-step5.md");
+		expect(m.size).toBe(3);
+	});
+
+	it("ignores non-review filenames and is case-tolerant", () => {
+		const m = latestReviewFilesPerGate(["notes.md", ".gitkeep", "R010-CODE-step2.md"]);
+		expect(m.get("code-step2")).toBe("R010-CODE-step2.md");
+		expect(m.size).toBe(1);
+	});
+
+	it("TP-2037 scenario: latest code gate REVISE is identified as the blocking file", () => {
+		// R004-code-step5 was the outstanding REVISE that merged anyway.
+		const m = latestReviewFilesPerGate([
+			"R001-plan-step1.md",
+			"R002-code-step5.md",
+			"R003-code-step5.md",
+			"R004-code-step5.md",
+		]);
+		expect(m.get("code-step5")).toBe("R004-code-step5.md");
 	});
 });
 

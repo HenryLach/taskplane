@@ -565,6 +565,13 @@ export class WorktreeError extends Error {
  * catching errors for expected idempotent scenarios.
  */
 export interface RemoveWorktreeResult {
+	/**
+	 * #628: removal was refused because the worktree has uncommitted changes and
+	 * the caller did not pass allowDirty. The worktree and branch are preserved.
+	 */
+	refusedDirty?: boolean;
+	/** Number of uncommitted paths found when refusedDirty is true. */
+	dirtyFileCount?: number;
 	/** Whether the worktree directory was removed in this call */
 	removed: boolean;
 	/** Whether the worktree was already absent (idempotent no-op) */
@@ -2190,7 +2197,12 @@ export type SupervisorAlertCategory =
 	| "review-intervention-needed";
 
 /** Which review situation triggered a `review-intervention-needed` alert. */
-export type ReviewInterventionKind = "revision-spiral" | "order-violation";
+export type ReviewInterventionKind =
+	| "revision-spiral"
+	| "order-violation"
+	// #626 minimal cut: a task attempted to finalize (.DONE) while a step's
+	// LATEST review verdict is still REVISE/RETHINK — finalization was refused.
+	| "unresolved-verdict";
 
 /**
  * Structured context payload for supervisor alerts.

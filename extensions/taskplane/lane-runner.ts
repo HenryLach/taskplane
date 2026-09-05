@@ -87,6 +87,7 @@ import {
 	shouldFireOrderViolation,
 	sanitizeSpiralConfig,
 	parseReviewVerdict,
+	latestReviewFilesPerGate,
 	type ReviewStreakState,
 } from "./review-analysis.ts";
 // NOTE: emitEngineEvent is NOT statically imported from ./persistence.ts.
@@ -1893,6 +1894,94 @@ export async function executeTaskV2(
 			"succeeded",
 			startTime,
 			`Segment completed (${suppressionReason} — .DONE suppressed)`,
+			false,
+			totalIterations,
+			cumulativeCostUsd,
+			cumulativeTokens,
+			config,
+			statusPath,
+			reviewerStatePath,
+			lastTelemetry,
+			snapshotSegmentCtx,
+		);
+	}
+
+	// ── #626 minimal finalize gate: no .DONE over an outstanding REVISE ───
+	// Two live incidents merged unreviewed code: a worker self-released past a
+	// REVISE cap and wrote .DONE (TP-2037), and this very checkbox heuristic
+	// wrote .DONE for a correctly-holding worker (TP-2039). The gate: for each
+	// review gate ({type}-step{N}), the LATEST review file's verdict must not be
+	// REVISE/RETHINK. A re-review (higher R number) with APPROVE — or an
+	// operator ratification recorded as the next R-numbered review file — clears
+	// it. Steps with no reviews at all are not blocked here (full coverage gate
+	// is #626's designed follow-up).
+	const blockingGates: string[] = [];
+	try {
+		const reviewsDir = unit.packet.reviewsDir;
+		if (existsSync(reviewsDir)) {
+			const latest = latestReviewFilesPerGate(readdirSync(reviewsDir));
+			for (const [gate, filename] of latest) {
+				try {
+					const verdict = parseReviewVerdict(readFileSync(join(reviewsDir, filename), "utf-8"));
+					if (verdict === "REVISE" || verdict === "RETHINK") {
+						blockingGates.push(`${gate} (${filename}: ${verdict})`);
+					}
+				} catch {
+					/* unreadable review file — not a blocker */
+				}
+			}
+		}
+	} catch {
+		/* best effort — a gate-scan failure must not corrupt finalization */
+	}
+
+	if (blockingGates.length > 0) {
+		// Remove any worker-written .DONE (precedent: premature-.DONE removal in
+		// the non-final-segment path above).
+		if (existsSync(donePath)) {
+			try {
+				unlinkSync(donePath);
+			} catch {
+				/* best effort */
+			}
+		}
+		const gateList = blockingGates.join("; ");
+		logExecution(
+			statusPath,
+			"Finalize refused",
+			`Review gate: latest verdict is not APPROVE — ${gateList}`,
+		);
+		if (config.onSupervisorAlert) {
+			try {
+				config.onSupervisorAlert({
+					category: "review-intervention-needed",
+					summary:
+						`⛔ **Finalize refused** — ${taskId} (lane ${config.laneNumber}) attempted to ` +
+						`complete with an outstanding non-APPROVE review: ${gateList}.\n` +
+						`The task is marked failed instead of finalizing over the unresolved verdict. ` +
+						`Adjudicate: have the worker address the findings and re-run review_step ` +
+						`(orch_retry_task + orch_resume), or record an operator ratification as the ` +
+						`next R-numbered review file with an explicit APPROVE verdict.`,
+					context: {
+						taskId,
+						laneId: `lane-${config.laneNumber}`,
+						laneNumber: config.laneNumber,
+						agentId: workerAgentId,
+						reviewInterventionKind: "unresolved-verdict",
+						exitReason: `finalize refused: ${gateList}`,
+					},
+				});
+			} catch {
+				/* best effort */
+			}
+		}
+		return makeResult(
+			taskId,
+			segmentId,
+			workerAgentId,
+			"failed",
+			startTime,
+			`Review gate: cannot finalize — latest review verdict is not APPROVE (${gateList})`,
 			false,
 			totalIterations,
 			cumulativeCostUsd,

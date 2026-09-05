@@ -408,6 +408,32 @@ export function parseReviewVerdict(
 }
 
 /**
+ * Group review filenames by gate (`{type}-step{N}`) and return the LATEST
+ * (highest R-number) filename per gate. Filenames must follow the
+ * `R{NNN}-{type}-step{N}.md` convention; non-matching names are ignored.
+ *
+ * Used by the #626 minimal finalize gate: a task must not finalize while any
+ * gate's latest review verdict is still REVISE/RETHINK — a later re-review
+ * (higher R number) with APPROVE clears the gate.
+ *
+ * Pure: operates on filename strings only.
+ */
+export function latestReviewFilesPerGate(filenames: string[]): Map<string, string> {
+	const latest = new Map<string, { round: number; filename: string }>();
+	for (const name of filenames) {
+		const m = name.match(/^R(\d+)-([a-z]+)-step(\d+)\.md$/i);
+		if (!m) continue;
+		const round = Number.parseInt(m[1], 10);
+		const gate = `${m[2].toLowerCase()}-step${m[3]}`;
+		const existing = latest.get(gate);
+		if (!existing || round > existing.round) {
+			latest.set(gate, { round, filename: name });
+		}
+	}
+	return new Map([...latest.entries()].map(([gate, v]) => [gate, v.filename]));
+}
+
+/**
  * Extract the review round label (e.g. "R008-code-step4") from a review file
  * path like ".reviews/R008-code-step4.md". Returns undefined if the path does
  * not match the expected R{NNN}-{type}-step{N} naming.

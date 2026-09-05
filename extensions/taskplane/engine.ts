@@ -4919,12 +4919,28 @@ export async function executeOrchBatch(
 						});
 						// If reset fails, remove this worktree so the next wave can recreate it cleanly.
 						try {
-							removeWorktree(wt, perRepoRoot);
-							execLog(
-								"batch",
-								batchState.batchId,
-								`removed unrecoverable worktree for lane ${wt.laneNumber}`,
-							);
+							const rm = removeWorktree(wt, perRepoRoot);
+							if (rm.refusedDirty) {
+								// #628: refusal is NOT success — the worktree still exists with
+								// uncommitted work. Track it for the cleanup gate and surface loudly;
+								// do NOT force-clean (that would destroy the work being protected).
+								execLog(
+									"batch",
+									batchState.batchId,
+									`worktree removal REFUSED for lane ${wt.laneNumber}: ${rm.dirtyFileCount} uncommitted change(s) — preserve progress before cleanup (#628)`,
+									{ path: wt.path },
+								);
+								if (!failedRemovalWorktrees.has(perRepoRoot)) {
+									failedRemovalWorktrees.set(perRepoRoot, { repoId: perRepoId, paths: [] });
+								}
+								failedRemovalWorktrees.get(perRepoRoot)!.paths.push(wt.path);
+							} else {
+								execLog(
+									"batch",
+									batchState.batchId,
+									`removed unrecoverable worktree for lane ${wt.laneNumber}`,
+								);
+							}
 						} catch (removeErr: unknown) {
 							execLog(
 								"batch",

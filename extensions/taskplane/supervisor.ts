@@ -2439,24 +2439,23 @@ ${autonomyGuidance}
 
 ## Audit Trail
 
-Log every recovery action to \`${actionsPath}\` as a single-line JSON entry.
+Log every recovery action with the **\`log_recovery_action\` tool** — it appends
+to \`${actionsPath}\` with a **code-stamped timestamp and batchId**.
 
-**Format** (one JSON object per line):
-\`\`\`json
-{"ts":"<ISO 8601>","action":"<action_name>","classification":"<diagnostic|tier0_known|destructive>","context":"<why>","command":"<what>","result":"<pending|success|failure|skipped>","detail":"<outcome>","batchId":"${batchState.batchId || "BATCH_ID"}"}
-\`\`\`
+**NEVER hand-write \`actions.jsonl\`** (no bash \`echo >>\`): you have no reliable
+clock, so hand-written entries carry fabricated timestamps and break the audit
+trail's integrity as evidence.
 
 **Rules:**
-1. For **destructive** actions: write a "pending" entry BEFORE executing, then
-   write a result entry AFTER with "success" or "failure" and detail.
-2. For **diagnostic** and **tier0_known** actions: write a single result entry
-   AFTER execution.
-3. Include optional fields when relevant: \`waveIndex\`, \`laneNumber\`, \`taskId\`, \`durationMs\`.
-4. Use the \`bash\` tool to append entries. Example:
-   \`echo '{"ts":"...","action":"merge_retry","classification":"tier0_known","context":"merge timeout on wave 2","command":"git merge --no-ff task/lane-2","result":"success","detail":"merged with 0 conflicts","batchId":"..."}' >> ${actionsPath}\`
+1. For **destructive** actions: call \`log_recovery_action(..., result="pending")\`
+   BEFORE executing, then call again AFTER with \`"success"\` or \`"failure"\` and detail.
+2. For **diagnostic** and **tier0_known** actions: one call AFTER execution.
+3. Include \`waveIndex\`, \`laneNumber\`, \`taskId\` when relevant.
+4. Stick to the schema fields — do not invent ad-hoc field names.
 
 **Why this matters:** When you're taken over by another session or the operator
-asks "what did you do?", the audit trail is the definitive record.
+asks "what did you do?", the audit trail is the definitive record — and its
+timestamps are only trustworthy because code stamps them.
 
 ## Operational Knowledge
 

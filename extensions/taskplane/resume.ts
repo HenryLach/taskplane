@@ -3140,17 +3140,32 @@ export async function resumeOrchBatch(
 
 						const resetResult = safeResetWorktree(wt, targetBranch, perRepoRoot);
 						if (!resetResult.success) {
-							try {
-								removeWorktree(wt, perRepoRoot);
-							} catch {
-								forceCleanupWorktree(wt, perRepoRoot, batchState.batchId);
-								// Track this worktree for the cleanup gate — it may still be registered
+							// Track for the cleanup gate on ANY non-removal outcome: throw,
+							// OR a #628 dirty refusal (refusal is NOT success — the worktree
+							// still exists, preserving uncommitted work; never force-clean it).
+							const trackFailedRemoval = () => {
 								const perRepoId =
 									perRepoRoot === repoRoot ? undefined : resolveRepoIdFromRoot(perRepoRoot, workspaceConfig);
 								if (!failedRemovalWorktrees.has(perRepoRoot)) {
 									failedRemovalWorktrees.set(perRepoRoot, { repoId: perRepoId, paths: [] });
 								}
 								failedRemovalWorktrees.get(perRepoRoot)!.paths.push(wt.path);
+							};
+							try {
+								const rm = removeWorktree(wt, perRepoRoot);
+								if (rm.refusedDirty) {
+									execLog(
+										"batch",
+										batchState.batchId,
+										`worktree removal REFUSED for lane ${wt.laneNumber}: ${rm.dirtyFileCount} uncommitted change(s) — preserve progress before cleanup (#628)`,
+										{ path: wt.path },
+									);
+									trackFailedRemoval();
+								}
+							} catch {
+								forceCleanupWorktree(wt, perRepoRoot, batchState.batchId);
+								// Track this worktree for the cleanup gate — it may still be registered
+								trackFailedRemoval();
 							}
 						}
 					}

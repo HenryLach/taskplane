@@ -120,6 +120,7 @@ import {
 	resolveModelFromString,
 	isStaleExtensionCtx,
 	safeCtxCallFromCallback,
+	logRecoveryAction,
 } from "./supervisor.ts";
 import { SupervisorNoticeGate } from "./supervisor-dispatch.ts";
 import { repairToolResultOrdering } from "./context-repair.ts";
@@ -5333,6 +5334,86 @@ export default function (pi: ExtensionAPI) {
 
 		return lines.join("\n");
 	}
+
+	// ── #625: Audit-trail tool ───────────────────────────────────
+	// The supervisor's audit trail (.pi/supervisor/actions.jsonl) was previously
+	// hand-appended via bash per the system-prompt instructions — the LLM invented
+	// the `ts` values (5+ hours off, non-monotonic, crossing calendar days).
+	// logRecoveryAction() existed but nothing exposed it. This tool code-stamps
+	// ts and batchId so the audit trail is trustworthy.
+	pi.registerTool({
+		name: "log_recovery_action",
+		label: "Log Recovery Action",
+		description:
+			"Append an entry to the supervisor audit trail (.pi/supervisor/actions.jsonl). " +
+			"Timestamps and batchId are stamped by code — never hand-write the file.",
+		promptSnippet:
+			"log_recovery_action(action, classification, context, command, result, detail, …) — append audit-trail entry",
+		promptGuidelines: [
+			"Use log_recovery_action for EVERY audit-trail entry — never append to actions.jsonl with bash.",
+			"Timestamps and batchId are stamped automatically; do not supply them.",
+			'For destructive actions: log result="pending" BEFORE executing, then log the real result after.',
+			"classification: diagnostic | tier0_known | destructive.",
+		],
+		parameters: Type.Object({
+			action: Type.String({ description: 'Action identifier, e.g. "merge_retry", "kill_session"' }),
+			classification: Type.Union(
+				[Type.Literal("diagnostic"), Type.Literal("tier0_known"), Type.Literal("destructive")],
+				{ description: "Recovery action classification" },
+			),
+			context: Type.String({ description: "Why this action was taken" }),
+			command: Type.String({ description: "Command or operation executed" }),
+			result: Type.Union(
+				[
+					Type.Literal("pending"),
+					Type.Literal("success"),
+					Type.Literal("failure"),
+					Type.Literal("skipped"),
+				],
+				{ description: "Outcome (pending = before a destructive action)" },
+			),
+			detail: Type.String({ description: "Result detail — error on failure, summary on success" }),
+			waveIndex: Type.Optional(Type.Number({ description: "Wave index if wave-scoped" })),
+			laneNumber: Type.Optional(Type.Number({ description: "Lane number if lane-scoped" })),
+			taskId: Type.Optional(Type.String({ description: "Task ID if task-scoped" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const stateRoot = resolveToolStateRoot(ctx);
+				const batchId = orchBatchState.batchId || supervisorState.batchId || "unknown";
+				logRecoveryAction(stateRoot, batchId, {
+					action: params.action,
+					classification: params.classification,
+					context: params.context,
+					command: params.command,
+					result: params.result,
+					detail: params.detail,
+					...(params.waveIndex !== undefined ? { waveIndex: params.waveIndex } : {}),
+					...(params.laneNumber !== undefined ? { laneNumber: params.laneNumber } : {}),
+					...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
+				});
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Audit entry logged: ${params.action} (${params.classification}, ${params.result})`,
+						},
+					],
+					details: undefined,
+				};
+			} catch (err) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error logging audit entry: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
+					details: undefined,
+				};
+			}
+		},
+	});
 
 	pi.registerTool({
 		name: "trigger_wrap_up",
