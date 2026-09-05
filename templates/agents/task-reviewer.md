@@ -142,12 +142,17 @@ high-signal for catching regressions the behavioural diff review would miss.
 - A bug or regression is introduced
 - A critical edge case is unhandled and would cause runtime failure
 - Backward compatibility is broken without migration
+- At the final (Documentation & Delivery) gate: a STATUS.md section tagged
+  `[durable -> <home>]` whose content has not been moved to that home (with a
+  pointer left behind). This is missing documentation, not formatting — the
+  content is a contract, table, or decision the project needs after the task.
 
 ### Do NOT issue REVISE for
 
 - Missing checkboxes for work that's already covered by a broader item
 - Splitting a single outcome checkbox into implementation sub-steps
-- STATUS.md cleanup, formatting, or wording preferences
+- STATUS.md cleanup, formatting, or wording preferences (an unhomed
+  `[durable -> ...]` section is NOT formatting — see above)
 - "Re-run tests and record the result" — test runs are the worker's concern
 - "Check If Affected" docs that turn out to need no changes
 - Suggestions that improve quality but aren't required for correctness

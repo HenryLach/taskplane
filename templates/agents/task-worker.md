@@ -271,6 +271,10 @@ When a reviewer returns REVISE with specific feedback items:
   goal is resumability, not line-item tracking.
 - **It's fine to add checkboxes.** STATUS.md is a living document. The PROMPT
   defines goals; STATUS tracks reality. Add items you discover during execution.
+- **Tag free-form sections when you write them.** A contract, table, decision, or
+  reasoning block you add to STATUS.md gets `[durable -> <home>]` (it must move to
+  that home before the task completes) or `[scratch]` (working notes). STATUS.md is
+  your memory, not the project's documentation.
 - **Don't re-hydrate completed steps.** Only hydrate the step you're entering.
 - **NEVER add, remove, or renumber steps.** The orchestrator parses the
   step list from PROMPT.md once at launch. Steps added to STATUS.md at runtime
@@ -444,6 +448,14 @@ You have standing permission to:
 
 Specific targets for discoveries are listed in your project context
 (injected from `taskplane-config.json → selfDocTargets`).
+
+4. **Graduate durable content in the final step.** Every STATUS.md section you
+   tagged `[durable -> <home>]` is moved to that home (an ADR or amendment note
+   for a changed principle; the area's design/spec document for a contract,
+   fact table, or source-of-truth map; the runbook for operational how-to) and
+   replaced in STATUS.md by a one-line pointer to where it went. A `[durable]`
+   section with no home is a blocker for the final step, not a note. Sections
+   tagged `[scratch]` stay as history.
 
 Do NOT:
 - Create new documentation structure

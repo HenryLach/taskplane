@@ -111,6 +111,7 @@ Review Level 0 is ONLY for trivial changes. Most M+ tasks need Level ≥1.
 >
 > - [ ] "Must Update" docs modified
 > - [ ] Discoveries logged in STATUS.md
+> - [ ] Durable content graduated (see the single-repo step above)
 > ```
 >
 > Rules:
@@ -134,6 +135,8 @@ Review Level 0 is ONLY for trivial changes. Most M+ tasks need Level ≥1.
 - [ ] "Must Update" docs modified
 - [ ] "Check If Affected" docs reviewed
 - [ ] Discoveries logged in STATUS.md
+- [ ] Durable content graduated: every STATUS.md section tagged `[durable -> <home>]` has been moved to
+      its named home and replaced by a one-line pointer; every remaining free-form section is `[scratch]`
 
 ## Documentation Requirements
 
@@ -199,6 +202,9 @@ this from PROMPT.md.
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
 > changes. Workers expand steps when runtime discoveries warrant it — aim for
 > 2-5 outcome-level items per step, not exhaustive implementation scripts.
+> Free-form sections you add here (contracts, tables, decisions) are tagged
+> `[durable -> <home>]` or `[scratch]` when written; STATUS.md is working memory,
+> not documentation — durable content graduates to its home in the final step.
 
 ---
 
@@ -248,6 +254,7 @@ this from PROMPT.md.
 - [ ] "Must Update" docs modified
 - [ ] "Check If Affected" docs reviewed
 - [ ] Discoveries logged
+- [ ] Durable content graduated (`[durable -> <home>]` sections moved, pointers left; the rest `[scratch]`)
 
 ---
 

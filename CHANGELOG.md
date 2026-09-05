@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Durable-content graduation for STATUS.md.** Workers tag free-form STATUS.md
+  sections `[durable -> <home>]` or `[scratch]` when written; the PROMPT/STATUS
+  templates carry a "Durable content graduated" checkbox in the final step; the
+  base worker prompt moves tagged content to its home (ADR, design/spec doc,
+  runbook, CONTEXT tech debt, PROMPT amendments) and leaves a pointer; the base
+  reviewer treats an unhomed `[durable]` section at the final gate as a
+  substantive REVISE item. Closes the gap where plan-gate contracts and fact
+  tables written into STATUS.md were lost when the task finished.
+
 ## [0.30.5] - 2026-08-27
 
 ### Fixed

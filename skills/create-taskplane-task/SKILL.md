@@ -319,6 +319,43 @@ hydrate them) over many narrow steps that might need restructuring.
 
 ---
 
+### Graduating Durable Content Out of STATUS.md
+
+STATUS.md is the worker's working memory, not documentation. Workers routinely
+write real design into it while executing — a contract agreed at a plan gate, a
+table mapping every field to its source of truth, a decision and its reasoning.
+That content is valuable and, left in STATUS.md, is lost: nobody reopens a
+finished task's STATUS.md, and it goes stale the moment the code moves.
+
+**The rule:** any free-form section a worker adds to STATUS.md is tagged when it
+is written, and the task's final step moves the durable ones to a permanent home.
+
+| Tag | Meaning |
+|---|---|
+| `[durable -> <home>]` | Must be moved to `<home>` before the task completes; STATUS.md keeps a one-line pointer |
+| `[scratch]` | Working notes; stays in STATUS.md as history, never referenced by later work |
+
+**Where durable content goes** (name the kind of home, not a file — each project
+maps kinds to files in its own agent overlay or `taskplane-config.json`):
+
+| Kind of content | Home |
+|---|---|
+| A decision that changes a stated principle or architecture rule | An ADR (new, or an amendment note on the existing one) |
+| A contract, fact table, source-of-truth map, or interface agreement | The project's design/spec document for that area |
+| Operational how-to (commands, environment quirks, recovery steps) | The operations runbook |
+| Follow-up work discovered but out of scope | The area `CONTEXT.md` tech-debt list (existing convention) |
+| An incident or ruling that changed the task mid-flight | The PROMPT.md `## Amendments` section + the area `CONTEXT.md` landed note |
+| Everything else (dialogue, reasoning traces, intermediate results) | `[scratch]` — stays in STATUS.md |
+
+**How it is enforced:**
+- The PROMPT and STATUS templates carry a "Durable content graduated" checkbox in
+  the final Documentation & Delivery step.
+- The reviewer treats an unhomed `[durable -> ...]` section at the final gate as a
+  substantive REVISE item (it is missing documentation, not formatting).
+- Task creators add the `[durable -> ...]` tag themselves when a PROMPT asks the
+  worker to produce a table or contract in STATUS.md at a plan checkpoint, so
+  the home is decided at authoring time, not discovered at the end.
+
 ## PROMPT.md Amendment Policy
 
 The template includes an `## Amendments` placeholder at the bottom of PROMPT.md.
@@ -369,6 +406,7 @@ Verify every task against this before reporting the launch command:
   - [ ] "Must Update" and "Check If Affected" doc lists
   - [ ] `## Git Commit Convention` section (from template)
   - [ ] `## Amendments` placeholder at bottom
+  - [ ] Final step carries the "Durable content graduated" checkbox; any table/contract the PROMPT asks the worker to write in STATUS.md names its `[durable -> <home>]`
 - [ ] STATUS.md created with matching step structure
   - [ ] Checkboxes match PROMPT.md granularity (1:1 where items are known)
   - [ ] `⚠️ Hydrate` markers for discovery-dependent steps
