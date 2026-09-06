@@ -50,6 +50,12 @@ import {
 	rename as fsRename,
 } from "fs/promises";
 import { execFileSync } from "child_process";
+import { assessEngineLiveness } from "./engine-identity.ts";
+import {
+	isProcessAlive as registryIsProcessAlive,
+	isTerminalStatus as registryIsTerminalStatus,
+	readRegistrySnapshot,
+} from "./process-registry.ts";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
 import type {
@@ -3571,8 +3577,12 @@ export function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
-	} catch {
-		return false;
+	} catch (err: unknown) {
+		// #631: only ESRCH (no such process) is "dead". EPERM = exists without
+		// signal permission; unknown errors fail closed (alive) — this feeds the
+		// lock-takeover ownership decision.
+		const code = (err as { code?: string } | null)?.code;
+		return code !== "ESRCH";
 	}
 }
 
@@ -3704,6 +3714,59 @@ export function buildTakeoverSummary(stateRoot: string, batchState: PersistedBat
 	lines.push(
 		`**Tasks:** ${succeeded} succeeded, ${failed} failed, ${running} running, ${pending} pending`,
 	);
+
+	// #631: ownership evidence — is the previous ENGINE still running? A dead
+	// supervisor pid does not imply a dead engine (forked child). This line is
+	// what tells the replacement operator whether orch_resume can proceed.
+	const activePhase =
+		batchState.phase === "executing" ||
+		batchState.phase === "launching" ||
+		batchState.phase === "merging" ||
+		batchState.phase === "planning";
+	const liveness = assessEngineLiveness(stateRoot, batchState.batchId);
+	if (liveness.status === "alive") {
+		lines.push(
+			`**Engine:** ⚠️ PID ${liveness.identity!.pid} is still ALIVE (forked by supervisor PID ${liveness.identity!.supervisorPid}). ` +
+				`This session has no engine attached; recovery tools will refuse until it exits (it pauses itself on supervisor disconnect) or is terminated.`,
+		);
+	} else if (liveness.status === "dead" || liveness.status === "exited") {
+		lines.push(
+			`**Engine:** PID ${liveness.identity!.pid} is ${liveness.status}${liveness.identity!.exitReason ? ` (${liveness.identity!.exitReason})` : ""}` +
+				(activePhase
+					? ` — persisted phase "${batchState.phase}" is an orphan; orch_resume(force=true) reconciles and re-drives it.`
+					: "."),
+		);
+	} else if (activePhase) {
+		lines.push(
+			`**Engine:** no identity recorded for this batch (pre-#631 engine or never forked). Recovery tools decide from the previous supervisor's liveness.`,
+		);
+	}
+
+	// #631/#630: workers the registry still calls "running" whose process is gone.
+	// Operators should NOT hand-edit registry.json for these — resume's liveness
+	// check (`!terminal && isProcessAlive(pid)`) already treats them as dead.
+	try {
+		const registry = readRegistrySnapshot(stateRoot, batchState.batchId);
+		if (registry) {
+			const deadRunning = Object.values(registry.agents).filter(
+				(m) => !registryIsTerminalStatus(m.status) && !registryIsProcessAlive(m.pid),
+			);
+			if (deadRunning.length > 0) {
+				lines.push("");
+				lines.push(
+					`**Dead agents still marked ${deadRunning[0].status} in the registry** (${deadRunning.length}):`,
+				);
+				for (const m of deadRunning) {
+					lines.push(
+						`  - ${m.agentId} (${m.role}${m.taskId ? `, ${m.taskId}` : ""}) PID ${m.pid} — process gone; registry last updated ${new Date(registry.updatedAt).toISOString()}. ` +
+							`No registry edit needed: orch_resume reconciles it (re-execute in the existing worktree).`,
+					);
+				}
+			}
+		}
+	} catch {
+		/* best effort */
+	}
 
 	// Recent actions from audit trail (using readAuditTrail helper)
 	const recentActions = readAuditTrail(stateRoot, { limit: 5 });

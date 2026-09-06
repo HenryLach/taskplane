@@ -344,6 +344,8 @@ When operating as the supervisor (during `/orch` execution), these tools are ava
 | `read_agent_status(lane?)` | Lane number or omit for all | Read STATUS.md + telemetry for a lane |
 | `list_active_agents()` | No params | Show all running agent sessions |
 | `trigger_wrap_up(lane)` | Lane number | Signal a worker to finish and exit |
+| `log_recovery_action(action, classification, context, command, result, detail, …)` | Field set | Append an audit-trail entry (`ts`/`batchId` code-stamped). The only correct way to write `actions.jsonl` |
+| `orch_confirm_engine_shutdown(note, batchId?)` | Verification note, optional exact batch id | Record operator-verified engine shutdown for an inherited batch with no engine identity; unblocks recovery tools via the verified path |
 | `read_lane_logs(lane)` | Lane number | Read stderr/crash logs for a lane |
 
 ---

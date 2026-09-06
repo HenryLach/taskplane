@@ -9,7 +9,8 @@ import { join, basename, resolve } from "path";
 import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
+import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError, runtimeRoot } from "./types.ts";
+import { assessEngineLiveness } from "./engine-identity.ts";
 import type {
 	AllocatedLane,
 	BulkWorktreeError,
@@ -2702,6 +2703,33 @@ export interface StaleBranchCleanupResult {
 	deletedSavedBranches: string[];
 	/** Branches that failed to delete (best-effort) */
 	failedDeletes: string[];
+	/**
+	 * #631: branches of OTHER batches that were kept because that batch's engine
+	 * is alive, or its ownership is unknown (runtime dir present, no identity).
+	 */
+	skippedOwnedBranches?: string[];
+}
+
+/**
+ * #631: may a lane branch belonging to ANOTHER batch be swept as an orphan?
+ * The TP-051 operator-wide sweep is kept (orphans from finished batches do
+ * accumulate), but never for a batch whose engine is alive, nor for one whose
+ * ownership is unknown (a runtime dir exists with no engine identity — a
+ * pre-#631 engine of unknown state). No runtime dir at all = no engine
+ * evidence anywhere → a pure leftover → sweepable.
+ */
+function otherBatchBranchSweepable(ownershipRoot: string, otherBatchId: string): boolean {
+	const liveness = assessEngineLiveness(ownershipRoot, otherBatchId);
+	if (liveness.status === "alive") return false;
+	if (liveness.status === "none" && existsSync(runtimeRoot(ownershipRoot, otherBatchId)))
+		return false;
+	return true;
+}
+
+/** `task/{opId}-lane-{N}-{batchId}` / `saved/task/…-{batchId}` → batchId (last dash segment). */
+function laneBranchBatchId(branch: string): string | null {
+	const m = /-lane-\d+-([A-Za-z0-9._]+)$/.exec(branch);
+	return m ? m[1] : null;
 }
 
 /**
@@ -2732,10 +2760,34 @@ export function deleteStaleBranches(
 	repoRoot: string,
 	opId: string,
 	batchId: string,
+	/**
+	 * #631: root under which `.pi/runtime/<batchId>/engine.json` lives (workspace
+	 * root in workspace mode). Defaults to repoRoot.
+	 */
+	ownershipRoot: string = repoRoot,
 ): StaleBranchCleanupResult {
 	const deletedTaskBranches: string[] = [];
 	const deletedSavedBranches: string[] = [];
 	const failedDeletes: string[] = [];
+	const skippedOwnedBranches: string[] = [];
+	// #631: a lane branch of another batch is only swept when that batch's engine
+	// is verifiably gone and its ownership is not unknown.
+	const guardOtherBatch = (branch: string): boolean => {
+		const other = laneBranchBatchId(branch);
+		if (!other || other === batchId) return true;
+		if (otherBatchBranchSweepable(ownershipRoot, other)) return true;
+		skippedOwnedBranches.push(branch);
+		execLog(
+			"cleanup",
+			batchId,
+			`kept lane branch of another batch (engine alive or ownership unknown, #631)`,
+			{
+				branch,
+				otherBatchId: other,
+			},
+		);
+		return false;
+	};
 
 	// 1. Delete task/{opId}-lane-* branches
 	const taskBranchResult = runGit(["branch", "--list", `task/${opId}-lane-*`], repoRoot);
@@ -2746,6 +2798,7 @@ export function deleteStaleBranches(
 			.filter(Boolean);
 
 		for (const branch of branches) {
+			if (!guardOtherBatch(branch)) continue;
 			const deleted = deleteBranchBestEffort(branch, repoRoot);
 			if (deleted) {
 				deletedTaskBranches.push(branch);
@@ -2764,6 +2817,7 @@ export function deleteStaleBranches(
 			.filter(Boolean);
 
 		for (const branch of branches) {
+			if (!guardOtherBatch(branch)) continue;
 			const deleted = deleteBranchBestEffort(branch, repoRoot);
 			if (deleted) {
 				deletedSavedBranches.push(branch);
@@ -2808,5 +2862,5 @@ export function deleteStaleBranches(
 		});
 	}
 
-	return { deletedTaskBranches, deletedSavedBranches, failedDeletes };
+	return { deletedTaskBranches, deletedSavedBranches, failedDeletes, skippedOwnedBranches };
 }

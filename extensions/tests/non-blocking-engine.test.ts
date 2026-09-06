@@ -578,12 +578,18 @@ describe("5.x — Launch-window command behavior with 'launching' phase", () => 
 			extSource.indexOf("function doOrchResume("),
 			extSource.indexOf("function doOrchAbort("),
 		);
-		// Resume must explicitly check for "launching" as an active phase
-		expect(resumeHelper).toContain('"launching"');
-		// It should be in the active-batch guard that prevents resume
-		const guardStart = resumeHelper.indexOf('orchBatchState.phase === "launching"');
-		const guardSection = resumeHelper.substring(guardStart, guardStart + 400);
-		expect(guardSection).toContain("Cannot resume");
+		// #631: doOrchResume runs the single ownership gate against the resolved
+		// target; case 1 of the gate refuses while an engine is attached to this
+		// process in ANY active phase (launching included) — the double-start guard.
+		expect(resumeHelper.replace(/\s+/g, " ")).toContain('recoveryOwnershipGate("orch_resume"');
+		const gate = extSource.substring(
+			extSource.indexOf("function recoveryOwnershipGate("),
+			extSource.indexOf("function recoveryOwnershipGate(") + 1800,
+		);
+		expect(gate).toContain("engineAttached: engineAttachedHere(),");
+		// The refusal wording lives in the pure decision function (engine-identity.ts).
+		const identitySrc = readSource("engine-identity.ts");
+		expect(/Cannot \$\{operation\} while batch/.test(identitySrc)).toBe(true);
 	});
 
 	it("5.5: engine transitions from 'launching' to 'planning' (preserving startedAt)", () => {

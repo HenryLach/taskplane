@@ -33,21 +33,97 @@ import { readRegistrySnapshot, isTerminalStatus, isProcessAlive } from "./proces
  * Per Runtime V2 spec §7.3: detect + terminate + rehydrate.
  * Prevents duplicate concurrent agents for the same lane/task on resume.
  */
-function terminateAliveV2Agents(stateRoot: string, batchId: string, sessionName: string): void {
+/** #631: how long to wait for SIGTERM, then SIGKILL, before declaring termination unconfirmed. */
+const TERMINATE_GRACE_MS = 5_000;
+const TERMINATE_KILL_MS = 3_000;
+const TERMINATE_POLL_MS = 200;
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((r) => setTimeout(r, ms));
+}
+
+async function waitForExit(pids: number[], timeoutMs: number): Promise<number[]> {
+	const deadline = Date.now() + timeoutMs;
+	let survivors = pids.filter((pid) => isProcessAlive(pid));
+	while (survivors.length > 0 && Date.now() < deadline) {
+		await sleep(TERMINATE_POLL_MS);
+		survivors = survivors.filter((pid) => isProcessAlive(pid));
+	}
+	return survivors;
+}
+
+/**
+ * Terminate the lane's still-alive V2 agents (worker/reviewer) before this
+ * resume re-executes the lane in the SAME worktree.
+ *
+ * #631: termination is VERIFIED, not fire-and-forget. SIGTERM → bounded wait →
+ * SIGKILL → bounded wait. If any agent is still alive after that, THROW: a
+ * signal-resistant or permission-protected worker would otherwise keep writing
+ * the worktree alongside its replacement. The callers' existing catch blocks
+ * mark the task failed with this reason instead of re-executing.
+ */
+async function terminateAliveV2Agents(
+	stateRoot: string,
+	batchId: string,
+	sessionName: string,
+): Promise<void> {
 	const registry = readRegistrySnapshot(stateRoot, batchId);
 	if (!registry) return;
+	const targets: Array<{ key: string; pid: number }> = [];
 	for (const suffix of ["-worker", "-reviewer", ""]) {
 		const key = `${sessionName}${suffix}`;
 		const manifest = registry.agents[key];
 		if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) {
-			try {
-				process.kill(manifest.pid, "SIGTERM");
-				execLog("resume", key, `terminated alive V2 agent (PID ${manifest.pid}) before re-execute`);
-			} catch {
-				/* already dead */
-			}
+			targets.push({ key, pid: manifest.pid });
 		}
 	}
+	if (targets.length === 0) return;
+
+	for (const t of targets) {
+		try {
+			process.kill(t.pid, "SIGTERM");
+			execLog("resume", t.key, `SIGTERM sent to alive V2 agent (PID ${t.pid}) before re-execute`);
+		} catch {
+			/* already dead or not signalable — verified below */
+		}
+	}
+	let survivors = await waitForExit(
+		targets.map((t) => t.pid),
+		TERMINATE_GRACE_MS,
+	);
+	if (survivors.length > 0) {
+		for (const pid of survivors) {
+			try {
+				process.kill(pid, "SIGKILL");
+				execLog(
+					"resume",
+					sessionName,
+					`SIGKILL sent to V2 agent PID ${pid} (did not exit within ${TERMINATE_GRACE_MS}ms)`,
+				);
+			} catch {
+				/* verified below */
+			}
+		}
+		survivors = await waitForExit(survivors, TERMINATE_KILL_MS);
+	}
+	if (survivors.length > 0) {
+		const list = targets
+			.filter((t) => survivors.includes(t.pid))
+			.map((t) => `${t.key} (PID ${t.pid})`)
+			.join(", ");
+		throw new Error(
+			`cannot confirm termination of ${list} after SIGTERM+SIGKILL — refusing to re-execute the lane alongside a live agent (#631). ` +
+				`Terminate the process manually and resume again.`,
+		);
+	}
+	execLog(
+		"resume",
+		sessionName,
+		`verified termination of ${targets.length} V2 agent(s) before re-execute`,
+		{
+			pids: targets.map((t) => t.pid).join(","),
+		},
+	);
 }
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
@@ -1269,6 +1345,22 @@ export async function resumeOrchBatch(
 			batchState.phase = "idle";
 			return;
 		}
+		// #631: the parent gated engine ownership for a SPECIFIC batch. If the
+		// deterministic reconstruction picked a different one, refuse BEFORE any
+		// write — persisting reconstructed state for an ungated batch is itself an
+		// unauthorized recovery mutation.
+		if (batchState.batchId && reconstruction.batchId !== batchState.batchId) {
+			const msg =
+				`resume target mismatch: this engine was authorized for batch ${batchState.batchId} but reconstruction ` +
+				`selected ${reconstruction.batchId}. Refusing without writing (ownership of ${reconstruction.batchId} was never verified).`;
+			execLog("resume", batchState.batchId, msg);
+			onNotify(`❌ ${msg}`, "error");
+			batchState.phase = "failed";
+			batchState.endedAt = Date.now();
+			batchState.errors.push(msg);
+			return;
+		}
+
 		// Successful reconstruction: persist so the rest of resumeOrchBatch
 		// proceeds with a normal on-disk batch-state.json picture.
 		onNotify(
@@ -1293,6 +1385,22 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 2. Check eligibility ─────────────────────────────────────
+	// #631: the parent gated engine ownership against a specific target and
+	// published this engine's identity for it. Never resume a DIFFERENT batch
+	// than the one authorized (e.g. reconstruction selecting another runtime
+	// dir) — that batch's engine was never checked.
+	if (batchState.batchId && persistedState.batchId !== batchState.batchId) {
+		const msg =
+			`resume target mismatch: this engine was authorized for batch ${batchState.batchId} but the ` +
+			`persisted/reconstructed state is ${persistedState.batchId}. Refusing (ownership of ${persistedState.batchId} was never verified).`;
+		execLog("resume", batchState.batchId, msg);
+		onNotify(`❌ ${msg}`, "error");
+		batchState.phase = "failed";
+		batchState.endedAt = Date.now();
+		batchState.errors.push(msg);
+		return;
+	}
+
 	const eligibility = checkResumeEligibility(persistedState, force);
 	if (!eligibility.eligible) {
 		onNotify(
@@ -1684,8 +1792,8 @@ export async function resumeOrchBatch(
 			execLog("resume", task.taskId, "V2 reconnect: terminate + rehydrate via lane-runner", {
 				repoId: laneRecord.repoId ?? "(default)",
 			});
-			terminateAliveV2Agents(stateRoot, persistedState.batchId, laneRecord.laneSessionId);
 			try {
+				await terminateAliveV2Agents(stateRoot, persistedState.batchId, laneRecord.laneSessionId);
 				const laneResult = await executeLaneV2(
 					lane,
 					orchConfig,
@@ -1781,7 +1889,7 @@ export async function resumeOrchBatch(
 
 			try {
 				// TP-112: Runtime V2 re-execution.
-				terminateAliveV2Agents(stateRoot, batchState.batchId, laneRecord.laneSessionId);
+				await terminateAliveV2Agents(stateRoot, batchState.batchId, laneRecord.laneSessionId);
 				const laneResult = await executeLaneV2(
 					lane,
 					orchConfig,

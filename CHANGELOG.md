@@ -44,6 +44,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`orch_retry_task` could not re-drive a v2 batch after a finalize-gate
+  refusal** (#629). On the segment runtime `segments[]` is authoritative —
+  resume re-derives task status from it — so a retry that reset only the task
+  record was silently undone: the wave was counted done and `orch_resume`
+  no-op'd. Retry/skip now update the segment records too (worktree identity
+  preserved so resume re-executes in place); resume's re-execute path
+  transitions the *executed* segment on success/failure, treats a pause as
+  still-pending (not failed/unretryable-skipped), and keeps the real lane
+  outcome. Also from the same incident:
+  - **Review-gate remediation spawn.** With every checkbox already checked
+    the lane never launched a worker after retry, so the alert's "have the
+    worker address the findings" remedy was unreachable. The lane now spawns
+    a bounded (2) remediation iteration focused on the outstanding gate's
+    step; `review_step`'s complete-step guard exempts a re-review whose
+    latest verdict is REVISE/RETHINK.
+  - New exit classification `review_gate_refusal` (exit code 0) — a
+    governance refusal is no longer recorded as a worker crash, and tier-0
+    auto-retry never retries it.
+  - Diagnostic reports are no longer clobbered by a no-op resume ($55/1h42m
+    reported as $0/0s): field-wise evidence merge with the prior report; cost
+    now comes from outcome telemetry.
+  - `skip-dependents` no longer names tasks outside the batch (the dependency
+    graph is repo-wide; blocked IDs are now scoped to the wave plan).
+- **A replacement supervisor could not resume the batch it inherited** (#631).
+  Takeover imported `phase: executing` into memory and every recovery tool
+  refused, although persisted `executing` means "orchestrator disconnected"
+  and is resumable. The engine is a forked child that can outlive its
+  supervisor, so the fix verifies engine shutdown instead of inferring it:
+  - Every engine publishes an identity (`.pi/runtime/<batchId>/engine.json`:
+    pid, supervisor pid, start/exit) **before it starts**; the batch id is
+    preallocated by the supervisor and the engine refuses to resume any other
+    batch. Exit marking is pid-scoped (a stale callback cannot mark a newer
+    engine exited).
+  - **One ownership gate** for `orch_resume`, `orch_retry_task`,
+    `orch_skip_task`, `orch_force_merge`, `orch_pause` (inherited),
+    `orch_abort`, `orch_integrate` and a fresh `/orch`: refused while an
+    engine is attached to this session (running *or still exiting*); refused
+    while the target's recorded engine is alive elsewhere; refused when no
+    identity is recorded; allowed once verified dead/exited. `force` never
+    bypasses it. The gate runs against the batch that would actually be acted
+    on (persisted, or reconstructed on force-resume), never a cached phase.
+  - `orch_pause` on an inherited batch with a verified-dead engine performs an
+    **administrative pause** (persists `paused`) — the non-destructive stop
+    that previously required hand-editing `batch-state.json`.
+  - Abort verifies the local engine has actually exited (grace → SIGTERM →
+    SIGKILL) before persisting/deleting state, and refuses otherwise; agents
+    still alive before a lane re-executes are terminated with verification.
+  - An orphaned engine (supervisor gone) winds itself down as `paused`
+    instead of running headless; IPC after the channel closes no longer
+    crashes it.
+  - New `orch_confirm_engine_shutdown(note)` tool /
+    `/orch-confirm-engine-shutdown <note>` command: the explicit, audited
+    path for batches with **no** engine identity (pre-0.30.6). **Migration
+    note:** the first recovery/start against a pre-0.30.6 batch requires this
+    one-time confirmation after verifying no engine process exists.
+  - The takeover summary now reports engine liveness and dead-but-"running"
+    registry agents (no registry hand-edit needed; resume reconciles them).
+  - `isProcessAlive` treats only ESRCH as dead (EPERM/unknown fail closed).
+
 - **Worker mail to the supervisor was only surfaced after the worker exited,
   not live during the run.** A worker that mailed the supervisor mid-run
   (via `notify_supervisor`/`escalate_to_supervisor` — e.g. asking for help to

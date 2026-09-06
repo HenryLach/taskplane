@@ -317,7 +317,9 @@ describe("4.x — Extension worker thread integration", () => {
 		const abortStart = src.indexOf("function doOrchAbort(");
 		const nextFn = src.indexOf("\n\tfunction ", abortStart + 1);
 		const abortBody = src.substring(abortStart, nextFn > 0 ? nextFn : abortStart + 3000);
-		expect(abortBody).toContain("activeWorker.kill()");
+		// #631: the handle is retained (`const child = activeWorker`) and exit is VERIFIED before cleanup.
+		expect(abortBody).toContain("child.kill()");
+		expect(abortBody).toContain("await waitForChildExit(child, 5_000)");
 		expect(abortBody).toContain('{ type: "pause" }');
 	});
 

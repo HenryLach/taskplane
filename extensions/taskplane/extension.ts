@@ -26,6 +26,7 @@ import {
 	StateFileError,
 	WorkspaceConfigError,
 	freshOrchBatchState,
+	generateBatchId,
 } from "./types.ts";
 import type {
 	AbortMode,
@@ -44,6 +45,7 @@ import {
 	loadBatchState,
 	saveBatchState,
 	detectOrphanSessions,
+	reconstructBatchStateFromRuntime,
 	updateBatchHistoryIntegration,
 } from "./persistence.ts";
 import {
@@ -56,6 +58,7 @@ import {
 import {
 	batchTaskScope,
 	computeTransitiveDependents,
+	execLog,
 	resolveCanonicalTaskPaths,
 } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
@@ -107,6 +110,14 @@ import {
 	isProcessAlive as registryIsProcessAlive,
 	isTerminalStatus,
 } from "./process-registry.ts";
+import {
+	assessEngineLiveness,
+	decideRecoveryOwnership,
+	findBatchesForOrchBranch,
+	markEngineExited,
+	recordOperatorConfirmedShutdown,
+	writeEngineIdentity,
+} from "./engine-identity.ts";
 import type { MailboxMessageType } from "./types.ts";
 import {
 	activateSupervisor,
@@ -344,6 +355,17 @@ export function resolveIntegrationContext(
 
 	// Source 2: CLI positional branch arg overrides or fills in
 	if (parsed.orchBranchArg) {
+		// #631: an explicit branch that differs from the persisted batch's branch
+		// must NOT inherit that batch's id — cleanup/history/ownership would then
+		// target an unrelated batch. The batch behind the selected branch (if any)
+		// is looked up from runtime artifacts by the caller.
+		if (orchBranch && batchId && orchBranch !== parsed.orchBranchArg) {
+			notices.push(
+				`ℹ️ Persisted batch ${batchId} belongs to ${orchBranch}; integrating ${parsed.orchBranchArg} instead — ` +
+					`batch-scoped cleanup/history will use the batch associated with that branch, if any.`,
+			);
+			batchId = "";
+		}
 		orchBranch = parsed.orchBranchArg;
 	}
 
@@ -1127,6 +1149,55 @@ function resolveEngineWorkerPath(): string {
  *
  * @since TP-071
  */
+/** #631: true while a main-thread fallback engine is running in this process. */
+let fallbackEngineActive = false;
+export function isFallbackEngineActive(): boolean {
+	return fallbackEngineActive;
+}
+
+/**
+ * #631: delete `batch-state.json` at `stateRoot` ONLY when it belongs to the
+ * integrated batch (same batchId) or branch (same orchBranch). Returns true when
+ * deleted, false when an unrelated batch's checkpoint was preserved, null when
+ * nothing was persisted.
+ */
+export function deleteBatchStateIfOwned(
+	stateRoot: string,
+	batchId: string,
+	orchBranch: string,
+): boolean | null {
+	let persisted: PersistedBatchState | null = null;
+	try {
+		persisted = loadBatchState(stateRoot);
+	} catch {
+		// Unreadable state: ownership cannot be established — preserve it (a corrupt
+		// checkpoint is still evidence an operator may need).
+		return false;
+	}
+	if (!persisted) return null;
+	const owned =
+		(batchId && persisted.batchId === batchId) || (orchBranch && persisted.orchBranch === orchBranch);
+	if (!owned) return false;
+	deleteBatchState(stateRoot);
+	return true;
+}
+
+/** #631: resolve true once the child has actually terminated, false on timeout. */
+export function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+	if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => {
+			child.off("exit", onExit);
+			resolve(false);
+		}, timeoutMs);
+		const onExit = () => {
+			clearTimeout(timer);
+			resolve(true);
+		};
+		child.once("exit", onExit);
+	});
+}
+
 export function startBatchInWorker(
 	wkData: EngineWorkerData,
 	batchState: import("./types.ts").OrchBatchRuntimeState,
@@ -1219,7 +1290,38 @@ export function startBatchInWorker(
 							null, // onLaneTerminated — main-thread fallback path
 							null, // onLaneRespawned — main-thread fallback path
 						);
-		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
+		// #631: the fallback runs the engine IN THIS PROCESS. It must be just as
+		// visible/ownable as a forked engine: publish an identity with our own pid
+		// and mark it exited when the run settles. If identity cannot be
+		// published, refuse to start (ownership invariant) instead of running an
+		// invisible engine.
+		const fbStateRoot = wkData.workspaceRoot ?? wkData.cwd;
+		const fbBatchId = wkData.authorizedBatchId ?? null;
+		if (
+			!fbBatchId ||
+			!writeEngineIdentity(fbStateRoot, {
+				batchId: fbBatchId,
+				pid: process.pid,
+				supervisorPid: process.pid,
+				startedAt: Date.now(),
+			})
+		) {
+			batchState.phase = "failed";
+			batchState.endedAt = Date.now();
+			batchState.errors.push(
+				"Engine start refused: fallback engine could not publish its identity (#631)",
+			);
+			updateWidget();
+			onTerminal?.();
+			return null;
+		}
+		batchState.batchId = fbBatchId; // engine adopts it (fresh) / resume verifies the target (resume)
+		fallbackEngineActive = true;
+		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, () => {
+			fallbackEngineActive = false;
+			markEngineExited(fbStateRoot, fbBatchId, { pid: process.pid, exitReason: "fallback-settled" });
+			onTerminal?.();
+		});
 		return null;
 	}
 
@@ -1296,6 +1398,76 @@ export function startBatchInWorker(
 	});
 
 	// Send workerData as first IPC message
+	// #631: publish the engine's identity (pid) BEFORE the engine is told to
+	// start. A replacement supervisor uses it to VERIFY an orphaned engine is
+	// dead before touching an inherited batch (a dead supervisor pid does not
+	// imply a dead engine). The batchId is preallocated by the caller for BOTH
+	// modes (fresh: the engine adopts it; resume: the gated target), so there is
+	// no window in which this engine runs without a current identity record.
+	// Publication is REQUIRED: if it cannot be written, the batch cannot be
+	// owned verifiably — kill the child and fail closed (no fallback).
+	// Exit marking is ATTEMPT-SCOPED (pid-matched): a delayed exit callback from
+	// an old parent cannot mark a newer live engine as exited.
+	const engineStateRoot = wkData.workspaceRoot ?? wkData.cwd;
+	const enginePid = typeof child.pid === "number" ? child.pid : null;
+	const engineIdentityBatchId = wkData.authorizedBatchId ?? null;
+	if (!engineIdentityBatchId || enginePid === null) {
+		try {
+			child.kill();
+		} catch {
+			/* best effort */
+		}
+		const why = !engineIdentityBatchId
+			? "no authorized batchId was preallocated"
+			: "child has no pid";
+		batchState.phase = "failed";
+		batchState.endedAt = Date.now();
+		batchState.errors.push(`Engine start refused: ${why} (#631 ownership invariant)`);
+		safeCtxCallFromCallback(
+			() => ctx.ui.notify(`❌ Engine start refused: ${why}.`, "error"),
+			"spawn.identity.notify",
+		);
+		updateWidget();
+		onTerminal?.();
+		return null;
+	}
+	const published = writeEngineIdentity(engineStateRoot, {
+		batchId: engineIdentityBatchId,
+		pid: enginePid,
+		supervisorPid: process.pid,
+		startedAt: Date.now(),
+	});
+	if (!published) {
+		try {
+			child.kill();
+		} catch {
+			/* best effort */
+		}
+		batchState.phase = "failed";
+		batchState.endedAt = Date.now();
+		batchState.errors.push(
+			`Engine start refused: could not publish engine identity to ${engineStateRoot}/.pi/runtime/${engineIdentityBatchId}/engine.json (#631)`,
+		);
+		safeCtxCallFromCallback(
+			() =>
+				ctx.ui.notify(
+					`❌ Engine start refused: could not write engine identity under .pi/runtime/ — fix the filesystem and retry.`,
+					"error",
+				),
+			"spawn.identity.notify",
+		);
+		updateWidget();
+		onTerminal?.();
+		return null;
+	}
+	child.on("exit", (code: number | null) => {
+		markEngineExited(engineStateRoot, engineIdentityBatchId, {
+			pid: enginePid,
+			exitCode: code,
+			exitReason: "child-exit",
+		});
+	});
+
 	child.send({ type: "init", data: wkData });
 
 	// Terminal settlement guard (R001 §3): ensures onTerminal fires at most once.
@@ -1586,8 +1758,10 @@ export function buildIntegrationExecutor(
 				}
 			},
 			deleteBatchState: () => {
+				// #631: only delete the checkpoint of the batch actually integrated — never
+				// an unrelated persisted batch (whose engine may still be alive).
 				try {
-					deleteBatchState(stateRoot ?? repoRoot);
+					deleteBatchStateIfOwned(stateRoot ?? repoRoot, context.batchId, context.orchBranch);
 				} catch {
 					/* best effort */
 				}
@@ -1611,7 +1785,7 @@ export function buildIntegrationExecutor(
 		// as the manual /orch-integrate handler.
 		if (result.success && result.integratedLocally && context.batchId && opId) {
 			try {
-				deleteStaleBranches(repoRoot, opId, context.batchId);
+				deleteStaleBranches(repoRoot, opId, context.batchId, stateRoot ?? repoRoot);
 				dropBatchAutostash(repoRoot, context.batchId);
 			} catch {
 				/* best effort — don't fail integration for cleanup errors */
@@ -1648,7 +1822,21 @@ export function buildIntegrationExecutor(
  *
  * @since TP-043
  */
-export function buildCiDeps(repoRoot: string, stateRoot?: string): CiDeps {
+export function buildCiDeps(
+	repoRoot: string,
+	stateRoot?: string,
+	/**
+	 * #631: the IMMUTABLE identity of the batch whose PR this CI lifecycle belongs
+	 * to. Post-PR cleanup runs asynchronously (after CI passes and the PR merges)
+	 * — by then a NEWER batch may have persisted its checkpoint; deletion is
+	 * bound to this identity so it can never erase that one.
+	 */
+	owned?: { batchId: string; orchBranch: string },
+): CiDeps {
+	// Capture primitives now: a caller mutating its object later cannot change
+	// which batch this lifecycle is allowed to clean up.
+	const ownedBatchId = owned?.batchId;
+	const ownedOrchBranch = owned?.orchBranch;
 	return {
 		runCommand: (cmd: string, cmdArgs: string[]) => {
 			try {
@@ -1671,7 +1859,13 @@ export function buildCiDeps(repoRoot: string, stateRoot?: string): CiDeps {
 		runGit: (gitArgs: string[]) => runGit(gitArgs, repoRoot),
 		deleteBatchState: () => {
 			try {
-				deleteBatchState(stateRoot ?? repoRoot);
+				if (ownedBatchId !== undefined && ownedOrchBranch !== undefined) {
+					deleteBatchStateIfOwned(stateRoot ?? repoRoot, ownedBatchId, ownedOrchBranch);
+					return;
+				}
+				// No identity supplied (legacy caller): refuse rather than delete blindly.
+				execLog("supervisor", "none", "CI cleanup skipped: no owned batch identity supplied (#631)");
+				return;
 			} catch {
 				/* best effort */
 			}
@@ -1874,6 +2068,130 @@ export default function (pi: ExtensionAPI) {
 	// Tracked so pause/abort can send control messages to the engine.
 	let activeWorker: ChildProcess | null = null;
 
+	// ── #631: inherited-batch ownership evidence ──
+	// Set by supervisor lock takeover when this session imports a batch it did
+	// not start. `activeWorker` answers "is an engine attached to THIS process";
+	// this answers "what do we know about the previous owner" so the active-
+	// phase guards can decide whether an inherited "executing" batch is a
+	// disconnected orphan (resumable) or still being driven elsewhere (refuse).
+	let priorSupervisor: { pid: number; alive: boolean } | null = null;
+
+	/**
+	 * Is an engine running IN THIS PROCESS? Covers the forked child (until it has
+	 * actually terminated — exitCode/signalCode are set by Node on termination;
+	 * `killed` only means a signal was dispatched) and the main-thread fallback.
+	 */
+	function engineAttachedHere(): boolean {
+		if (isFallbackEngineActive()) return true;
+		return (
+			activeWorker !== null && activeWorker.exitCode === null && activeWorker.signalCode === null
+		);
+	}
+
+	/**
+	 * #631: THE ownership gate for every recovery mutation (resume / retry /
+	 * skip / force-merge / administrative pause). One rule, applied against the
+	 * ACTUAL persisted (or reconstructed) target — never against a phase this
+	 * session happens to have cached:
+	 *
+	 *   1. an engine is attached to THIS process (running or still exiting)
+	 *        → refuse: wait for it to exit (or pause it) — even when the cached
+	 *          phase already reads paused/failed: teardown is still in flight.
+	 *   2. the target's recorded engine is ALIVE elsewhere → refuse (double-drive).
+	 *   3. no identity recorded (or unreadable) → refuse: unknown ownership is not
+	 *        confirmed shutdown; the audited orch_confirm_engine_shutdown path exists.
+	 *   4. recorded engine dead/exited (incl. operator-confirmed) → proceed; the
+	 *        persisted-state eligibility rules take over.
+	 *
+	 * `force` never enters this decision. Returns a refusal message or null.
+	 */
+	function recoveryOwnershipGate(
+		operation: string,
+		stateRoot: string,
+		target: { batchId: string; phase: string },
+	): string | null {
+		const decision = decideRecoveryOwnership({
+			operation,
+			local: {
+				engineAttached: engineAttachedHere(),
+				phase: orchBatchState.phase,
+				batchId: orchBatchState.batchId,
+				pid: activeWorker?.pid ?? (isFallbackEngineActive() ? process.pid : null),
+			},
+			target,
+			liveness: assessEngineLiveness(stateRoot, target.batchId),
+			priorSupervisor,
+		});
+		execLog("supervisor", target.batchId, `ownership gate: ${operation}`, {
+			proceed: decision.proceed,
+			reason: decision.reason.slice(0, 200),
+		});
+		return decision.proceed ? null : decision.reason;
+	}
+
+	/**
+	 * #631: the ONE root every ownership decision AND every state mutation must
+	 * use. The engine persists at `workspaceRoot ?? cwd`; a gate that authorizes
+	 * the workspace-root batch while the mutation loads the repo-root batch (or
+	 * vice versa) protects the wrong target. When the two roots differ and BOTH
+	 * hold a persisted batch with different ids, that is a conflict — refuse
+	 * rather than pick one.
+	 */
+	function canonicalStateRoot(fallbackCwd: string): string {
+		return execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? fallbackCwd;
+	}
+	function conflictingRootsRefusal(operation: string, fallbackCwd: string): string | null {
+		const canonical = canonicalStateRoot(fallbackCwd);
+		const repo = execCtx?.repoRoot ?? fallbackCwd;
+		if (canonical === repo) return null;
+		let a: PersistedBatchState | null = null;
+		let b: PersistedBatchState | null = null;
+		try {
+			a = loadBatchState(canonical);
+		} catch {
+			/* reported elsewhere */
+		}
+		try {
+			b = loadBatchState(repo);
+		} catch {
+			/* reported elsewhere */
+		}
+		if (a && b && a.batchId !== b.batchId) {
+			return (
+				`❌ Cannot ${operation}: conflicting batch state — workspace root holds ${a.batchId} (${a.phase}) ` +
+				`while the repo root holds ${b.batchId} (${b.phase}). Ownership can only be verified for one target; ` +
+				`remove or archive the stale one (${repo}/.pi/batch-state.json is not the canonical location in workspace mode).`
+			);
+		}
+		return null;
+	}
+
+	/**
+	 * #631: resolve the batch a recovery operation would act on, BEFORE
+	 * authorizing it. Persisted state first; on force-resume with no state file,
+	 * the same deterministic reconstruction the engine performs (so the parent
+	 * gates the very batch the child will resume — the child verifies the match).
+	 */
+	function resolveRecoveryTarget(
+		stateRoot: string,
+		allowReconstruction: boolean,
+	): { batchId: string; phase: string } | null {
+		try {
+			const persisted = loadBatchState(stateRoot);
+			if (persisted) return { batchId: persisted.batchId, phase: persisted.phase };
+		} catch {
+			/* the engine reports load errors with full context */
+		}
+		if (!allowReconstruction) return null;
+		try {
+			const r = reconstructBatchStateFromRuntime(stateRoot);
+			if (r.ok) return { batchId: r.batchId, phase: r.state.phase };
+		} catch {
+			/* nothing to reconstruct */
+		}
+		return null;
+	}
+
 	// ── Supervisor State (TP-041) ────────────────────────────────────
 	let supervisorState = freshSupervisorState();
 	let supervisorConfig: SupervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
@@ -1930,7 +2248,10 @@ export default function (pi: ExtensionAPI) {
 				mode,
 				execCtx!.repoRoot,
 				buildIntegrationExecutor(execCtx!.repoRoot, opId, execCtx!.workspaceRoot),
-				buildCiDeps(execCtx!.repoRoot, execCtx!.workspaceRoot),
+				buildCiDeps(execCtx!.repoRoot, execCtx!.workspaceRoot, {
+					batchId: orchBatchState.batchId,
+					orchBranch: orchBatchState.orchBranch,
+				}),
 				sDeps,
 			);
 			return;
@@ -2468,8 +2789,55 @@ export default function (pi: ExtensionAPI) {
 
 		const { repoRoot } = execCtx;
 
+		// #631: a fresh start deletes stale state and launches a NEW engine. That
+		// must never happen under an engine that is still alive — ours (cached
+		// completed/failed but the child has not terminated yet) or another
+		// process's (inherited terminal phase whose engine is still running).
+		// Ownership is checked against the persisted target, not the cached phase.
+		{
+			const startStateRoot = canonicalStateRoot(repoRoot);
+			const conflict = conflictingRootsRefusal("orch_start", repoRoot);
+			if (conflict) return { message: conflict, error: true };
+			if (engineAttachedHere()) {
+				return {
+					message: `⏳ This session's engine (PID ${activeWorker?.pid ?? process.pid}) for batch ${orchBatchState.batchId} is still shutting down — starting a new batch now would race its teardown. Retry in a moment.`,
+					error: true,
+				};
+			}
+			const existing = resolveRecoveryTarget(startStateRoot, false);
+			if (existing) {
+				const liveness = assessEngineLiveness(startStateRoot, existing.batchId);
+				// Same rule as every recovery mutation: alive or UNKNOWN ownership refuses.
+				// (.DONE files and terminal phases are not shutdown evidence — the engine
+				// persists again after cleanup.) Pre-#631 batches: one-time
+				// orch_confirm_engine_shutdown before the first fresh start.
+				{
+					const decision = decideRecoveryOwnership({
+						operation: "orch_start",
+						local: {
+							engineAttached: false,
+							phase: orchBatchState.phase,
+							batchId: orchBatchState.batchId,
+							pid: null,
+						},
+						target: existing,
+						liveness,
+						priorSupervisor,
+					});
+					execLog("supervisor", existing.batchId, "ownership gate: orch_start", {
+						proceed: decision.proceed,
+						status: liveness.status,
+						pid: liveness.identity?.pid,
+					});
+					if (!decision.proceed) return { message: decision.reason, error: true };
+				}
+			}
+		}
+
 		// Orphan detection
-		const orphanResult = detectOrphanSessions(orchConfig.orchestrator.sessionPrefix, repoRoot);
+		// #631: orphan/stale-state handling at the SAME root the gate authorized.
+		const orphanStateRoot = canonicalStateRoot(repoRoot);
+		const orphanResult = detectOrphanSessions(orchConfig.orchestrator.sessionPrefix, orphanStateRoot);
 
 		switch (orphanResult.recommendedAction) {
 			case "resume": {
@@ -2478,7 +2846,7 @@ export default function (pi: ExtensionAPI) {
 				const hasOrphans = orphanResult.orphanSessions.length > 0;
 				if (!hasOrphans && !resumablePhases.includes(phase)) {
 					try {
-						deleteBatchState(repoRoot);
+						deleteBatchState(orphanStateRoot);
 					} catch {
 						/* best effort */
 					}
@@ -2494,7 +2862,7 @@ export default function (pi: ExtensionAPI) {
 				return { message: orphanResult.userMessage, error: true };
 			case "cleanup-stale":
 				try {
-					deleteBatchState(repoRoot);
+					deleteBatchState(orphanStateRoot);
 				} catch {
 					/* best effort */
 				}
@@ -2568,6 +2936,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Reset batch state for new execution
 		orchBatchState = freshOrchBatchState();
+		priorSupervisor = null; // #631: this session now owns the engine it is about to fork
 		latestMonitorState = null;
 
 		// #621: a new batch supersedes any epilogue still deferred from the
@@ -2581,12 +2950,18 @@ export default function (pi: ExtensionAPI) {
 		orchBatchState.startedAt = Date.now();
 		updateOrchWidget();
 
+		// #631: preallocate the batchId so the engine identity is published BEFORE
+		// the engine starts (the engine adopts it instead of generating its own).
+		const authorizedBatchId = generateBatchId();
+		orchBatchState.batchId = authorizedBatchId;
+
 		// Non-blocking engine launch in worker thread (TP-071)
 		activeWorker = startBatchInWorker(
 			{
 				engineWorker: true,
 				mode: "execute",
 				args: trimmedTarget,
+				authorizedBatchId,
 				orchConfig,
 				runnerConfig,
 				cwd: repoRoot,
@@ -2909,6 +3284,56 @@ export default function (pi: ExtensionAPI) {
 		if (orchBatchState.phase === "paused" || orchBatchState.pauseSignal.paused) {
 			return ORCH_MESSAGES.pauseAlreadyPaused(orchBatchState.batchId);
 		}
+
+		// #631: no engine attached to THIS process (phase inherited at takeover).
+		// A pauseSignal here is inert — nothing runs in-process to honor it. Decide
+		// from verified engine liveness:
+		//   - orphan engine confirmed gone → ADMINISTRATIVE pause: persist
+		//     phase=paused on disk (the non-destructive stop the operator otherwise
+		//     had to hand-edit). Surviving worker processes, if any, are reconciled
+		//     by orch_resume (registry pid liveness), not by this call.
+		//   - engine alive elsewhere → we cannot signal it; report, do not lie.
+		if (!engineAttachedHere()) {
+			const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? process.cwd();
+			const refusal = recoveryOwnershipGate("orch_pause (administrative)", stateRoot, {
+				batchId: orchBatchState.batchId,
+				phase: orchBatchState.phase,
+			});
+			if (refusal) {
+				return (
+					`⚠️ Batch ${orchBatchState.batchId} is "${orchBatchState.phase}" but no engine is attached to this session — ` +
+					`a pause signal here would be inert.\n${refusal}`
+				);
+			}
+			const decision = { reason: "recorded engine verified gone" };
+			try {
+				const persisted = loadBatchState(stateRoot);
+				if (!persisted) return "❌ No persisted batch state found to pause.";
+				if (persisted.batchId !== orchBatchState.batchId) {
+					return `❌ Persisted batch (${persisted.batchId}) does not match the inherited batch (${orchBatchState.batchId}); refusing to pause.`;
+				}
+				const prevPhase = persisted.phase;
+				persisted.phase = "paused";
+				persisted.updatedAt = Date.now();
+				persisted.errors.push(
+					`Administrative pause by replacement supervisor (PID ${process.pid}) — inherited phase "${prevPhase}" with no live engine (${decision.reason.slice(0, 160)})`,
+				);
+				saveBatchState(JSON.stringify(persisted, null, 2), stateRoot);
+				orchBatchState.phase = "paused";
+				orchBatchState.pauseSignal.paused = true;
+				updateOrchWidget();
+				return (
+					`⏸️ Batch ${orchBatchState.batchId} administratively paused (was "${prevPhase}"; ${decision.reason}).
+` +
+					`   No engine was running to honor a live pause; state is now resumable on disk. ` +
+					`Any worker processes that outlived the engine are reconciled by orch_resume(force=true) ` +
+					`(registry pid liveness → re-execute in the existing worktree).`
+				);
+			} catch (err) {
+				return `❌ Administrative pause failed: ${err instanceof Error ? err.message : String(err)}`;
+			}
+		}
+
 		orchBatchState.pauseSignal.paused = true;
 		// TP-071: Forward pause to engine process (its pauseSignal is separate)
 		activeWorker?.send({ type: "pause" });
@@ -2932,21 +3357,29 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
-		// Prevent resume if a batch is actively running
-		if (
-			orchBatchState.phase === "launching" ||
-			orchBatchState.phase === "executing" ||
-			orchBatchState.phase === "merging" ||
-			orchBatchState.phase === "planning"
-		) {
-			return {
-				message: `⚠️ A batch is currently ${orchBatchState.phase} (${orchBatchState.batchId}). Cannot resume.`,
-				error: true,
-			};
+		// #631: resolve the ACTUAL target (persisted, or reconstructed on force with
+		// no state file) and run the single ownership gate against it — never
+		// against a cached phase. The resolved batchId is also the id the new
+		// engine is authorized for (identity published before it starts).
+		const resumeStateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+		const resumeTarget = resolveRecoveryTarget(resumeStateRoot, force);
+		if (!resumeTarget) {
+			if (engineAttachedHere()) {
+				return {
+					message: `❌ Cannot orch_resume: this session's engine for batch ${orchBatchState.batchId} is still running.`,
+					error: true,
+				};
+			}
+			// No target to gate: let the engine produce the canonical "no state" error.
+		} else {
+			const refusal = recoveryOwnershipGate("orch_resume", resumeStateRoot, resumeTarget);
+			if (refusal) return { message: refusal, error: true };
 		}
+		const resumeTargetBatchId = resumeTarget?.batchId ?? null;
 
 		// Reset batch state for resume
 		orchBatchState = freshOrchBatchState();
+		priorSupervisor = null; // #631: this session now owns the engine it is about to fork
 		latestMonitorState = null;
 
 		// #621: a resume supersedes any epilogue still deferred from the previous
@@ -2970,6 +3403,7 @@ export default function (pi: ExtensionAPI) {
 				engineWorker: true,
 				mode: "resume",
 				args: "",
+				authorizedBatchId: resumeTargetBatchId ?? undefined,
 				orchConfig,
 				runnerConfig,
 				cwd: execCtx!.repoRoot,
@@ -3069,7 +3503,13 @@ export default function (pi: ExtensionAPI) {
 		const mode: AbortMode = hard ? "hard" : "graceful";
 		const prefix = orchConfig.orchestrator.sessionPrefix;
 
-		const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
+		// #631: state is read, persisted and deleted at the CANONICAL root — the same
+		// root the ownership gate below authorizes against.
+		const stateRoot = canonicalStateRoot(ctx.cwd);
+		{
+			const conflict = conflictingRootsRefusal("orch_abort", ctx.cwd);
+			if (conflict) return conflict;
+		}
 		const messages: string[] = [`🛑 Abort requested (${mode} mode, prefix: ${prefix})...`];
 
 		// Step 1: Write abort signal file
@@ -3093,16 +3533,84 @@ export default function (pi: ExtensionAPI) {
 			orchBatchState.pauseSignal.paused = true;
 			messages.push("  ✓ Pause signal set on in-memory batch state");
 		}
-		// TP-071: Forward pause to engine and kill on hard abort
-		if (activeWorker) {
-			activeWorker.send({ type: "pause" });
-			if (hard) {
-				activeWorker.kill();
-				activeWorker = null;
-				messages.push("  ✓ Engine process killed (hard abort)");
-			} else {
-				messages.push("  ✓ Pause signal forwarded to engine process");
+		// ── #631: ownership + verified shutdown BEFORE any destructive step ──
+		// Abort persists `stopped` and deletes batch state. That may only happen
+		// once no engine can still be writing that state:
+		//   - engine attached HERE → cooperatively pause, then VERIFY it has exited
+		//     (graceful: within the grace period, then escalate; hard: kill now);
+		//     the main-thread fallback must have settled. Unverified → refuse cleanup.
+		//   - engine elsewhere → same rule as every recovery mutation: alive or
+		//     unknown (no identity) → refuse; verified dead/exited → proceed.
+		const ownershipRoot = stateRoot;
+		if (!engineAttachedHere()) {
+			const target = resolveRecoveryTarget(ownershipRoot, false);
+			if (target) {
+				const decision = decideRecoveryOwnership({
+					operation: "orch_abort",
+					local: {
+						engineAttached: false,
+						phase: orchBatchState.phase,
+						batchId: orchBatchState.batchId,
+						pid: null,
+					},
+					target,
+					liveness: assessEngineLiveness(ownershipRoot, target.batchId),
+					priorSupervisor,
+				});
+				if (!decision.proceed) {
+					try {
+						unlinkSync(abortSignalFile);
+					} catch {}
+					return `${decision.reason}\n   (abort here cannot stop that engine; it would only delete state underneath it)`;
+				}
 			}
+		} else if (activeWorker) {
+			// Forked engine in this session.
+			const child = activeWorker;
+			child.send({ type: "pause" });
+			const graceMs = Math.max(0, orchConfig.failure.abort_grace_period * 1000);
+			let exited = false;
+			if (!hard) {
+				messages.push(
+					`  ✓ Pause signal forwarded to engine process — waiting up to ${Math.round(graceMs / 1000)}s for it to checkpoint and exit`,
+				);
+				exited = await waitForChildExit(child, graceMs);
+			}
+			if (!exited) {
+				child.kill();
+				exited = await waitForChildExit(child, 5_000);
+			}
+			if (!exited) {
+				try {
+					child.kill("SIGKILL");
+				} catch {}
+				exited = await waitForChildExit(child, 3_000);
+			}
+			if (!exited) {
+				return (
+					`❌ Abort: engine process (PID ${child.pid}) is still alive after pause${hard ? "" : ` (${Math.round(graceMs / 1000)}s grace)`}, SIGTERM and SIGKILL. ` +
+					`Refusing to persist/delete batch state underneath a live engine. Terminate it manually and re-run orch_abort.`
+				);
+			}
+			activeWorker = null;
+			messages.push(
+				`  ✓ Engine process exit verified (PID ${child.pid}${hard ? ", hard abort" : ""})`,
+			);
+		} else {
+			// Main-thread fallback engine: it shares orchBatchState, so the pause
+			// signal above reaches it directly; wait for it to settle.
+			const graceMs = Math.max(2_000, orchConfig.failure.abort_grace_period * 1000);
+			const deadline = Date.now() + graceMs;
+			while (isFallbackEngineActive() && Date.now() < deadline) {
+				await new Promise((r) => setTimeout(r, 250));
+			}
+			if (isFallbackEngineActive()) {
+				return (
+					`❌ Abort: the in-process (fallback) engine has not settled within ${Math.round(graceMs / 1000)}s of the pause signal. ` +
+					`Refusing to persist/delete batch state underneath it. Wait for it to pause, then re-run orch_abort.`
+				);
+			}
+			messages.push("  ✓ In-process engine settled");
 		}
 
 		const hasActiveBatch =
@@ -3297,12 +3805,6 @@ export default function (pi: ExtensionAPI) {
 	 * The engine picks up the state change on its next poll cycle.
 	 */
 	function doOrchRetryTask(taskId: string, ctx: ExtensionContext): string {
-		// TP-077 R001-1: Reject while engine is actively running (no IPC retry path)
-		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
-		if (activePhases.has(orchBatchState.phase)) {
-			return `❌ Cannot retry task while batch is ${orchBatchState.phase}. Pause or wait for the current operation to finish first.`;
-		}
-
 		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
 
 		// Load persisted state
@@ -3315,6 +3817,16 @@ export default function (pi: ExtensionAPI) {
 
 		if (!state) {
 			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// #631: single ownership gate against the PERSISTED target (TP-077 R001-1's
+		// "reject while the engine is running" is case 1 of the gate).
+		{
+			const refusal = recoveryOwnershipGate("orch_retry_task", stateRoot, {
+				batchId: state.batchId,
+				phase: state.phase,
+			});
+			if (refusal) return refusal;
 		}
 
 		// Find the task
@@ -3423,12 +3935,6 @@ export default function (pi: ExtensionAPI) {
 	 * The engine picks up the state change on its next poll cycle.
 	 */
 	function doOrchSkipTask(taskId: string, ctx: ExtensionContext): string {
-		// TP-077 R001-1: Reject while engine is actively running (no IPC skip path)
-		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
-		if (activePhases.has(orchBatchState.phase)) {
-			return `❌ Cannot skip task while batch is ${orchBatchState.phase}. Pause or wait for the current operation to finish first.`;
-		}
-
 		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
 
 		// Load persisted state
@@ -3441,6 +3947,16 @@ export default function (pi: ExtensionAPI) {
 
 		if (!state) {
 			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// #631: single ownership gate against the PERSISTED target (TP-077 R001-1's
+		// "reject while the engine is running" is case 1 of the gate).
+		{
+			const refusal = recoveryOwnershipGate("orch_skip_task", stateRoot, {
+				batchId: state.batchId,
+				phase: state.phase,
+			});
+			if (refusal) return refusal;
 		}
 
 		// Find the task
@@ -3576,12 +4092,6 @@ export default function (pi: ExtensionAPI) {
 		skipFailed: boolean,
 		ctx: ExtensionContext,
 	): string {
-		// Reject while engine is actively running
-		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
-		if (activePhases.has(orchBatchState.phase)) {
-			return `❌ Cannot force merge while batch is ${orchBatchState.phase}. Pause or wait for the current operation to finish first.`;
-		}
-
 		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
 
 		// Load persisted state
@@ -3594,6 +4104,16 @@ export default function (pi: ExtensionAPI) {
 
 		if (!state) {
 			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// #631: single ownership gate against the PERSISTED target (TP-077 R001-1's
+		// "reject while the engine is running" is case 1 of the gate).
+		{
+			const refusal = recoveryOwnershipGate("orch_force_merge", stateRoot, {
+				batchId: state.batchId,
+				phase: state.phase,
+			});
+			if (refusal) return refusal;
 		}
 
 		// Force-merge is a recovery action for non-running failed/paused batches.
@@ -3801,8 +4321,14 @@ export default function (pi: ExtensionAPI) {
 		// Resolve integration context
 		const { repoRoot } = execCtx!;
 		const stateRoot = execCtx!.workspaceRoot;
+		// #631: batch state is resolved at the CANONICAL root (workspace root in
+		// workspace mode) — the same root the ownership gate authorizes against.
+		{
+			const conflict = conflictingRootsRefusal("orch_integrate", repoRoot);
+			if (conflict) return { message: conflict, error: true };
+		}
 		const resolution = resolveIntegrationContext(parsed, {
-			loadBatchState: () => loadBatchState(repoRoot),
+			loadBatchState: () => loadBatchState(stateRoot ?? repoRoot),
 			getCurrentBranch: () => getCurrentBranch(repoRoot),
 			listOrchBranches: () => {
 				const result = runGit(["branch", "--list", "orch/*"], repoRoot);
@@ -3823,10 +4349,82 @@ export default function (pi: ExtensionAPI) {
 			return { message: resolution.error, error: severity !== "info" };
 		}
 
-		const { orchBranch, baseBranch, batchId, currentBranch, notices } =
-			resolution as IntegrationContext;
+		const { orchBranch, baseBranch, currentBranch, notices } = resolution as IntegrationContext;
+		let batchId = (resolution as IntegrationContext).batchId;
 		const outputLines: string[] = [];
 		let hasWarning = false;
+
+		// #631: integration merges and cleans up the orch branch. A "completed"
+		// phase on disk is not proof the engine has finished tearing down (or that
+		// an inherited batch's engine is gone). Refuse while it is verifiably alive.
+		// (dead/exited/none proceed — integration does not drive the engine.)
+		{
+			if (engineAttachedHere()) {
+				return {
+					message: `⏳ This session's engine (PID ${activeWorker?.pid ?? process.pid}) is still running/shutting down — integrate after it exits.`,
+					error: true,
+				};
+			}
+			// Ownership is looked up BY THE SELECTED BRANCH at the canonical state root —
+			// not by whichever batch happens to be persisted or reconstructable. The
+			// batch behind `orchBranch` may have no batch-state.json (aborted) and may
+			// not be reconstructable (worker manifests gone) while its engine identity
+			// still records a live pid. Every associated batch must pass the full rule
+			// (alive/none → refuse; dead/exited → proceed). Persisted state for the same
+			// branch is included; a persisted batch for a DIFFERENT branch is irrelevant.
+			const integRoot = stateRoot ?? repoRoot;
+			const associated = new Map<
+				string,
+				{ batchId: string; phase: string; liveness: ReturnType<typeof assessEngineLiveness> }
+			>();
+			for (const b of findBatchesForOrchBranch(integRoot, orchBranch)) {
+				associated.set(b.batchId, { batchId: b.batchId, phase: "unknown", liveness: b.liveness });
+			}
+			try {
+				const persisted = loadBatchState(integRoot);
+				if (persisted && (persisted.orchBranch === orchBranch || persisted.batchId === batchId)) {
+					associated.set(persisted.batchId, {
+						batchId: persisted.batchId,
+						phase: persisted.phase,
+						liveness: assessEngineLiveness(integRoot, persisted.batchId),
+					});
+				}
+			} catch {
+				/* reported elsewhere */
+			}
+			if (batchId && !associated.has(batchId)) {
+				associated.set(batchId, {
+					batchId,
+					phase: "completed",
+					liveness: assessEngineLiveness(integRoot, batchId),
+				});
+			}
+			for (const target of associated.values()) {
+				const decision = decideRecoveryOwnership({
+					operation: "orch_integrate",
+					local: {
+						engineAttached: false,
+						phase: orchBatchState.phase,
+						batchId: orchBatchState.batchId,
+						pid: null,
+					},
+					target: { batchId: target.batchId, phase: target.phase },
+					liveness: target.liveness,
+					priorSupervisor,
+				});
+				if (!decision.proceed) return { message: decision.reason, error: true };
+			}
+			// No batch is associated with this branch (pure branch integration):
+			// nothing an engine could be driving — proceed.
+
+			// Bind cleanup/history to the batch behind THIS branch. The resolver
+			// leaves batchId empty when an explicit branch differs from persisted
+			// state; a unique associated runtime batch fills it in. Ambiguous (>1)
+			// → leave empty: batch-scoped cleanup is skipped rather than guessed.
+			if (!batchId && associated.size === 1) {
+				batchId = [...associated.values()][0].batchId;
+			}
+		}
 
 		for (const notice of notices) {
 			outputLines.push(notice);
@@ -3962,7 +4560,7 @@ export default function (pi: ExtensionAPI) {
 
 		const branchCleanupLines: string[] = [];
 		for (const repo of allRepos) {
-			const branchCleanup = deleteStaleBranches(repo.root, opId, batchId);
+			const branchCleanup = deleteStaleBranches(repo.root, opId, batchId, stateRoot ?? repoRoot);
 			const totalDeleted =
 				branchCleanup.deletedTaskBranches.length + branchCleanup.deletedSavedBranches.length;
 			if (totalDeleted > 0 || branchCleanup.failedDeletes.length > 0) {
@@ -4018,8 +4616,16 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
+		// #631: delete persisted state ONLY if it belongs to the integrated branch/batch.
+		// An explicit branch integration must not erase an unrelated batch's recovery
+		// checkpoint (its engine may even still be alive).
 		try {
-			deleteBatchState(stateRoot);
+			const deleted = deleteBatchStateIfOwned(stateRoot ?? repoRoot, batchId, orchBranch);
+			if (deleted === false) {
+				outputLines.push(
+					`ℹ️ Persisted batch state belongs to a different batch/branch — left in place (not part of this integration).`,
+				);
+			}
 		} catch {
 			/* best effort */
 		}
@@ -4260,6 +4866,14 @@ export default function (pi: ExtensionAPI) {
 
 					ctx.ui.notify(`🔄 **${reason}** Activating supervisor.\n\n` + summary, "info");
 
+					// #631: record what we know about the previous owner. The engine of a
+					// batch we did not start is NOT attached to this process; the active-
+					// phase guards use this + engine.json to decide whether an inherited
+					// "executing" phase is a resumable orphan.
+					priorSupervisor =
+						"lock" in lockResult && lockResult.lock
+							? { pid: lockResult.lock.pid, alive: isProcessAlive(lockResult.lock.pid) }
+							: null;
 					// Populate orchBatchState from persisted state
 					orchBatchState.batchId = batchState.batchId;
 					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
@@ -4306,6 +4920,14 @@ export default function (pi: ExtensionAPI) {
 						"warning",
 					);
 
+					// #631: record what we know about the previous owner. The engine of a
+					// batch we did not start is NOT attached to this process; the active-
+					// phase guards use this + engine.json to decide whether an inherited
+					// "executing" phase is a resumable orphan.
+					priorSupervisor =
+						"lock" in lockResult && lockResult.lock
+							? { pid: lockResult.lock.pid, alive: isProcessAlive(lockResult.lock.pid) }
+							: null;
 					// Populate orchBatchState from persisted state
 					orchBatchState.batchId = batchState.batchId;
 					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
@@ -5354,6 +5976,108 @@ export default function (pi: ExtensionAPI) {
 		return lines.join("\n");
 	}
 
+	/**
+	 * #631: record operator-verified engine shutdown for the current/persisted
+	 * batch. Shared by the supervisor tool and the /orch-confirm-engine-shutdown
+	 * command. Always audited.
+	 */
+	function doOrchConfirmEngineShutdown(
+		note: string,
+		stateRoot: string,
+		explicitBatchId?: string,
+	): string {
+		// Target: an EXPLICIT batchId (exactly the batch a refusal named — works for
+		// meta-only legacy batches that are not reconstructable), else the same
+		// target the recovery gates use: persisted → reconstructed → cached.
+		const explicit = (explicitBatchId ?? "").trim();
+		if (explicit && !/^[A-Za-z0-9._-]+$/.test(explicit)) {
+			return `❌ Invalid batchId "${explicit}".`;
+		}
+		const target = explicit ? null : resolveRecoveryTarget(stateRoot, true);
+		const batchId =
+			explicit || target?.batchId || orchBatchState.batchId || supervisorState.batchId || "";
+		if (!batchId) {
+			return (
+				"❌ No batch to confirm shutdown for (no batch on disk, nothing reconstructable, nothing in memory). " +
+				"Pass the batchId named by the refusal explicitly."
+			);
+		}
+		if (!note || note.trim().length < 8) {
+			return "❌ A verification note is required (what you checked and how) — it is written to engine.json and the audit trail.";
+		}
+		const result = recordOperatorConfirmedShutdown(stateRoot, batchId, {
+			supervisorPid: process.pid,
+			note,
+		});
+		logRecoveryAction(stateRoot, batchId, {
+			action: "confirm_engine_shutdown",
+			classification: "destructive",
+			context: `operator-verified engine shutdown for inherited batch: ${note.slice(0, 300)}`,
+			command: "orch_confirm_engine_shutdown",
+			result: result.ok ? "success" : "failure",
+			detail: result.reason,
+		});
+		return result.ok
+			? `✅ ${result.reason}. Recovery tools (orch_resume(force=true), retry/skip/force_merge) will now proceed via the verified path. Audit entry written.`
+			: `❌ Not recorded: ${result.reason}`;
+	}
+
+	pi.registerCommand("orch-confirm-engine-shutdown", {
+		description:
+			"Record operator-verified engine shutdown for a batch with no engine identity (#631): /orch-confirm-engine-shutdown [--batch <batchId>] <what you verified>",
+		handler: async (args, ctx) => {
+			// Syntax: /orch-confirm-engine-shutdown [--batch <batchId>] <note>
+			let raw = (args ?? "").trim();
+			let explicitBatchId: string | undefined;
+			const m = /(?:^|\s)--batch\s+(\S+)/.exec(raw);
+			if (m) {
+				explicitBatchId = m[1];
+				raw = raw.replace(m[0], " ").trim();
+			}
+			const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+			const result = doOrchConfirmEngineShutdown(raw, stateRoot, explicitBatchId);
+			ctx.ui.notify(result, result.startsWith("✅") ? "info" : "warning");
+		},
+	});
+
+	// ── #631: explicit, audited legacy shutdown confirmation ──
+	// For a batch with NO engine identity (pre-#631 engine, or one that never
+	// published), recovery tools fail closed: unknown ownership is not confirmed
+	// shutdown. The operator verifies out-of-band that no engine process exists,
+	// then records it here. The record is an `exited` identity (so every gate
+	// proceeds through the normal verified path) AND an audit-trail entry.
+	pi.registerTool({
+		name: "orch_confirm_engine_shutdown",
+		label: "Confirm Engine Shutdown",
+		description:
+			"Record that the operator verified NO engine process is running for the inherited batch (used only when " +
+			"no engine identity is recorded, so the runtime cannot verify it). Unblocks orch_resume/retry/skip/force_merge. " +
+			"Refuses when a real engine identity exists — that path is pid-verified and cannot be overridden.",
+		promptSnippet:
+			"orch_confirm_engine_shutdown(note) — record operator-verified engine shutdown for a batch with no engine identity",
+		promptGuidelines: [
+			"Only after verifying out-of-band that no engine process exists for this repo (e.g. Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'engine-worker' } on Windows; pgrep -af engine-worker on POSIX).",
+			"Never use this to override a refusal that names a live engine PID — wait for it or terminate it.",
+			"The note should say what you checked; it is written to engine.json and the audit trail.",
+		],
+		parameters: Type.Object({
+			note: Type.String({
+				description:
+					"What was verified and how (e.g. 'no engine-worker processes in Get-CimInstance output at 21:32')",
+			}),
+			batchId: Type.Optional(
+				Type.String({
+					description:
+						"Exact batchId to confirm (the one named by the refusal). Omit to use the persisted/reconstructed batch.",
+				}),
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const text = doOrchConfirmEngineShutdown(params.note, resolveToolStateRoot(ctx), params.batchId);
+			return { content: [{ type: "text" as const, text }], details: undefined };
+		},
+	});
+
 	// ── #625: Audit-trail tool ───────────────────────────────────
 	// The supervisor's audit trail (.pi/supervisor/actions.jsonl) was previously
 	// hand-appended via bash per the system-prompt instructions — the LLM invented
@@ -5953,6 +6677,14 @@ export default function (pi: ExtensionAPI) {
 						"info",
 					);
 
+					// #631: record what we know about the previous owner. The engine of a
+					// batch we did not start is NOT attached to this process; the active-
+					// phase guards use this + engine.json to decide whether an inherited
+					// "executing" phase is a resumable orphan.
+					priorSupervisor =
+						"lock" in lockResult && lockResult.lock
+							? { pid: lockResult.lock.pid, alive: isProcessAlive(lockResult.lock.pid) }
+							: null;
 					// Populate orchBatchState from persisted state for the supervisor
 					// prompt rebuild. We copy the key fields used by the system prompt.
 					orchBatchState.batchId = batchState.batchId;
@@ -6004,6 +6736,11 @@ export default function (pi: ExtensionAPI) {
 
 					// Store the live lock info so the /orch handler can detect it
 					// (preventing a second /orch from starting a concurrent batch).
+					// #631: the other session's engine is live and NOT ours — record it.
+					priorSupervisor =
+						"lock" in lockResult && lockResult.lock
+							? { pid: lockResult.lock.pid, alive: isProcessAlive(lockResult.lock.pid) }
+							: null;
 					orchBatchState.batchId = batchState.batchId;
 					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
 					orchBatchState.baseBranch = batchState.baseBranch;

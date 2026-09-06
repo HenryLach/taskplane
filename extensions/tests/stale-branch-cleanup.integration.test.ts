@@ -16,6 +16,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 
 import { deleteStaleBranches } from "../taskplane/worktree.ts";
+import { markEngineExited, writeEngineIdentity } from "../taskplane/engine-identity.ts";
 import type { StaleBranchCleanupResult } from "../taskplane/worktree.ts";
 import { runGit } from "../taskplane/git.ts";
 import { syncTaskOutcomesFromMonitor } from "../taskplane/persistence.ts";
@@ -130,6 +131,34 @@ describe("deleteStaleBranches — TP-051", () => {
 		expect(result.deletedTaskBranches).toContain("task/henrylach-lane-1-20260308T111750");
 		// Other operator's branch should still exist
 		expect(branchExists(repoRoot, "task/otherop-lane-1-20260308T111750")).toBe(true);
+	});
+
+	it("#631: keeps another batch's lane branches while that batch's engine is ALIVE or its ownership is unknown", () => {
+		// Current batch B integrates; A is another batch of the same operator.
+		createBranch(repoRoot, "task/henrylach-lane-1-B");
+		createBranch(repoRoot, "task/henrylach-lane-1-A");
+		createBranch(repoRoot, "saved/task/henrylach-lane-1-A");
+		createBranch(repoRoot, "task/henrylach-lane-1-C"); // C: runtime dir, NO identity (unknown)
+		createBranch(repoRoot, "task/henrylach-lane-1-D"); // D: no runtime evidence at all (pure leftover)
+		// A's engine is alive (this very process stands in for it).
+		writeEngineIdentity(repoRoot, { batchId: "A", pid: process.pid, supervisorPid: 1, startedAt: 1 });
+		mkdirSync(join(repoRoot, ".pi", "runtime", "C"), { recursive: true });
+
+		const result = deleteStaleBranches(repoRoot, "henrylach", "B");
+
+		expect(result.deletedTaskBranches).toContain("task/henrylach-lane-1-B");
+		expect(result.deletedTaskBranches).toContain("task/henrylach-lane-1-D"); // sweepable leftover
+		expect(branchExists(repoRoot, "task/henrylach-lane-1-A")).toBe(true); // alive → kept
+		expect(branchExists(repoRoot, "saved/task/henrylach-lane-1-A")).toBe(true);
+		expect(branchExists(repoRoot, "task/henrylach-lane-1-C")).toBe(true); // unknown → kept
+		expect(result.skippedOwnedBranches).toContain("task/henrylach-lane-1-A");
+		expect(result.skippedOwnedBranches).toContain("task/henrylach-lane-1-C");
+
+		// Once A's engine is recorded exited, its refs become sweepable.
+		markEngineExited(repoRoot, "A", { pid: process.pid, exitReason: "child-exit" });
+		const again = deleteStaleBranches(repoRoot, "henrylach", "B");
+		expect(again.deletedTaskBranches).toContain("task/henrylach-lane-1-A");
+		expect(branchExists(repoRoot, "task/henrylach-lane-1-A")).toBe(false);
 	});
 
 	it("does NOT delete orch/* branches", () => {

@@ -2548,7 +2548,9 @@ export async function executeOrchBatch(
 
 	// ── Phase 1: Planning ────────────────────────────────────────
 	batchState.phase = "planning";
-	batchState.batchId = generateBatchId();
+	// #631: honour a parent-preallocated (authorized) batchId so the engine
+	// identity could be published before this process started.
+	batchState.batchId = batchState.batchId || generateBatchId();
 	// Preserve startedAt if set during "launching" phase (TP-040)
 	if (!batchState.startedAt) batchState.startedAt = Date.now();
 	// Preserve pauseSignal if already set during "launching" phase (TP-040)

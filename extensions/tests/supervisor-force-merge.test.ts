@@ -615,10 +615,13 @@ describe("6.x — doOrchForceMerge implementation verification", () => {
 	it("6.1 — doOrchForceMerge checks for active batch phases", () => {
 		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
 		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
-		expect(fnBlock).toContain("activePhases");
-		expect(fnBlock).toContain("launching");
-		expect(fnBlock).toContain("executing");
-		expect(fnBlock).toContain("merging");
+		// #631: delegated to the single ownership gate (refuses while an engine is
+		// attached to this process — launching/executing/merging included).
+		expect(fnBlock).toContain('recoveryOwnershipGate("orch_force_merge"');
+		const gateStart = extensionSource.indexOf("function recoveryOwnershipGate(");
+		expect(extensionSource.slice(gateStart, gateStart + 1800)).toContain(
+			"engineAttached: engineAttachedHere(),",
+		);
 	});
 
 	it("6.2 — doOrchForceMerge loads persisted batch state", () => {

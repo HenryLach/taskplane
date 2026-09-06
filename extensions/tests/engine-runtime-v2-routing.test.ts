@@ -439,7 +439,8 @@ describe("11.x: Merge V2 liveness + abort correctness", () => {
 	it("11.8: /orch-abort helper delegates to executeAbort without tmux kill-session", () => {
 		const fnIdx = extensionSrc.indexOf("function doOrchAbort(");
 		expect(fnIdx).toBeGreaterThan(-1);
-		const block = extensionSrc.slice(fnIdx, fnIdx + 2600);
+		// #631 added an ownership gate + verified engine exit ahead of executeAbort; widen the window.
+		const block = extensionSrc.slice(fnIdx, fnIdx + 6000);
 		expect(block).toContain("await executeAbort(");
 		expect(block).toContain("ORCH_MESSAGES.abortNoBatch()");
 		expect(block).not.toContain("tmux list-sessions");

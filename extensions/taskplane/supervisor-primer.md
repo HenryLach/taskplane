@@ -488,6 +488,57 @@ grep -c "^<<<<<<<" {file}  # count conflicts per file
 to take effect. Alternatively, you (the supervisor) can read the config file
 directly and apply the relevant value when executing recovery.
 
+### Pattern 9: You Inherited an "executing" Batch (Replacement Supervisor)
+
+**Symptom:** You took over the supervisor lock (previous session died, wedged,
+or was replaced). `orch_status` says the batch is `executing`, but nothing is
+happening: the registry's `updatedAt` is frozen, `orch_pause` is accepted but
+inert, workers may be dead but still marked `running`.
+
+**Cause:** The engine is a forked child of the *previous* supervisor's
+process. Your session has no engine attached. Persisted `executing` means
+"the orchestrator disconnected mid-batch" — which `orch_resume` is designed
+to recover — but only once it is VERIFIED that the old engine is gone (a dead
+supervisor pid does not prove a dead engine).
+
+**What the runtime does for you (#631):**
+- The takeover summary prints an **Engine:** line from
+  `.pi/runtime/<batchId>/engine.json`: `alive` (pid), `dead`/`exited`, or no
+  identity recorded. It also lists **dead agents still marked running** — do
+  NOT hand-edit `registry.json` for those; resume reconciles them.
+- An orphaned engine pauses itself when its supervisor disconnects (finishes
+  in-flight lanes, persists `paused`, exits). Give it a moment.
+- `orch_resume`, `orch_retry_task`, `orch_skip_task`, `orch_force_merge`
+  decide from that evidence: engine **dead/exited** → proceed via the normal
+  persisted-state eligibility; engine **alive** → refuse and name the pid
+  (`force` does NOT bypass this — double-driving corrupts state). The check
+  runs against the PERSISTED batch regardless of what phase you have cached.
+- **No identity recorded** (pre-#631 engine) → the tools **refuse**: unknown
+  ownership is not confirmed shutdown, and a dead supervisor pid does not prove
+  a dead engine. Verify out-of-band that no engine process exists
+  (`Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match
+  "engine-worker" }` / `pgrep -af engine-worker`), then record it with
+  `orch_confirm_engine_shutdown(note)` — written to `engine.json` and the
+  audit trail — and re-run the tool. Never use it to override a refusal that
+  names a LIVE pid.
+- `orch_pause` with no engine attached performs an **administrative pause**
+  (persists `phase: paused` on disk) when the engine is confirmed gone. This is
+  the non-destructive stop; you never need to hand-edit `batch-state.json`.
+
+**Recovery:**
+1. Read the takeover summary's Engine line.
+2. Engine alive → wait for it to wind down (or, if the operator agrees, terminate
+   that pid explicitly) and re-check.
+3. Engine dead/exited → `orch_resume(force=true)`. Dead workers reconcile as
+   `re-execute` in their existing worktrees; committed work survives. Any
+   worker still alive is terminated with VERIFICATION (SIGTERM → wait →
+   SIGKILL → wait) before its lane re-executes; if termination cannot be
+   confirmed the task fails with that reason instead of running two agents in
+   one worktree.
+3b. No identity → verify, `orch_confirm_engine_shutdown(note)`, then step 3.
+4. Never `supervisor_takeover` or `orch_abort` here — both are destructive for
+   an inherited paused/held lane (see #628).
+
 ---
 
 ## 8. Batch State Editing Guide
@@ -789,6 +840,7 @@ If the batch is actively running, call `orch_pause()` first.
 - `trigger_wrap_up(lane)` — Write `.task-wrap-up` signal to gracefully stop a worker on a lane.
 - `read_lane_logs(lane)` — Read stderr/crash logs and exit diagnostics for a lane.
 - `log_recovery_action(action, classification, context, command, result, detail, …)` — Append an audit-trail entry (ts/batchId code-stamped). The ONLY correct way to write `actions.jsonl`.
+- `orch_confirm_engine_shutdown(note, batchId?)` — Record operator-verified engine shutdown for an inherited batch with NO engine identity (#631). Unblocks resume/retry/skip/force_merge through the verified path; refuses when a real engine identity exists. Audited.
 - `list_active_agents()` — List active worker/reviewer/merge agents with role, lane, task, context %, elapsed, cost.
 
 Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`

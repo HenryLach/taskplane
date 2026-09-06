@@ -107,6 +107,8 @@ describe("#620 behavioral — startBatchInWorker IPC handler survives a stale ct
 				orchConfig: {},
 				runnerConfig: {},
 				args: "",
+				// #631: real callers always preallocate; identity is published before init.
+				authorizedBatchId: "tp-behavioral-batch",
 			} as never;
 
 			let threw: unknown = null;
@@ -164,6 +166,8 @@ describe("#620 behavioral — startBatchInWorker IPC handler survives a stale ct
 				orchConfig: {},
 				runnerConfig: {},
 				args: "",
+				// #631: real callers always preallocate; identity is published before init.
+				authorizedBatchId: "tp-behavioral-batch",
 			} as never;
 
 			let threw: unknown = null;

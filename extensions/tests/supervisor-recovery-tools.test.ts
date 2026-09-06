@@ -710,20 +710,17 @@ describe("5.x — Implementation correctness (source-based)", () => {
 	it("5.12 — doOrchRetryTask rejects while batch is in active phase", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
 		const block = extensionSource.slice(idx, idx + 2500);
-		// Should check for active phases and reject
-		expect(block).toContain("launching");
-		expect(block).toContain("executing");
-		expect(block).toContain("merging");
-		expect(block).toContain("planning");
+		// #631: rejection while the engine runs is case 1 of the single ownership gate.
+		expect(block).toContain('recoveryOwnershipGate("orch_retry_task"');
+		const g = extensionSource.indexOf("function recoveryOwnershipGate(");
+		expect(extensionSource.slice(g, g + 1800)).toContain("engineAttached: engineAttachedHere(),");
 	});
 
 	it("5.13 — doOrchSkipTask rejects while batch is in active phase", () => {
 		const idx = extensionSource.indexOf("function doOrchSkipTask(");
 		const block = extensionSource.slice(idx, idx + 4000);
-		expect(block).toContain("launching");
-		expect(block).toContain("executing");
-		expect(block).toContain("merging");
-		expect(block).toContain("planning");
+		// #631: rejection while the engine runs is case 1 of the single ownership gate.
+		expect(block).toContain('recoveryOwnershipGate("orch_skip_task"');
 	});
 
 	it("5.14 — doOrchRetryTask transitions failed phase to stopped", () => {
