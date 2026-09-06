@@ -70,6 +70,8 @@
 | 2026-09-06 20:41 | Task started | Runtime V2 lane-runner execution |
 | 2026-09-06 20:41 | Step 0 started | Preflight |
 | 2026-09-06 | Steps 1-3 completed | All 5 output files created; task complete |
+| 2026-09-06 20:43 | Worker iter 1 | done in 145s, tools: 28 |
+| 2026-09-06 20:43 | Task complete | .DONE created |
 
 ---
 
