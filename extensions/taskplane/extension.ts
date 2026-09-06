@@ -2228,6 +2228,23 @@ export default function (pi: ExtensionAPI) {
 	// individual sends) also protects the completed->triggerSupervisorIntegration
 	// branch, whose progress/result messages are the same splice hazard.
 	function runSupervisorBatchEndEpilogue(): void {
+		// #610: re-resolve at DISPATCH time. If this batch was already integrated
+		// (manually, or by auto-integration) — or its orch branch is simply gone —
+		// the "ready for integration" banners are stale and must not be shown.
+		if (orchBatchState.integratedAt) return;
+		if (orchBatchState.phase === "completed" && orchBatchState.orchBranch && execCtx) {
+			const branchExists = runGit(
+				["rev-parse", "--verify", `refs/heads/${orchBatchState.orchBranch}`],
+				execCtx.repoRoot,
+			).ok;
+			if (!branchExists) {
+				process.stderr.write(
+					`[taskplane] batch-end epilogue skipped: orch branch ${orchBatchState.orchBranch} no longer exists (already integrated) (#610)
+`,
+				);
+				return;
+			}
+		}
 		const mode = orchConfig.orchestrator.integration;
 		const opId = resolveOperatorId(orchConfig);
 		const sDeps: SummaryDeps = {
@@ -2247,7 +2264,19 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				mode,
 				execCtx!.repoRoot,
-				buildIntegrationExecutor(execCtx!.repoRoot, opId, execCtx!.workspaceRoot),
+				// #610: record integration in memory on success so any later epilogue
+				// dispatch for this batch short-circuits instead of re-prompting.
+				((mode, context) => {
+					const r = buildIntegrationExecutor(
+						execCtx!.repoRoot,
+						opId,
+						execCtx!.workspaceRoot,
+					)(mode, context);
+					if (r.success && r.integratedLocally && orchBatchState.batchId === context.batchId) {
+						orchBatchState.integratedAt = Date.now();
+					}
+					return r;
+				}) satisfies IntegrationExecutor,
 				buildCiDeps(execCtx!.repoRoot, execCtx!.workspaceRoot, {
 					batchId: orchBatchState.batchId,
 					orchBranch: orchBatchState.orchBranch,
@@ -4606,6 +4635,17 @@ export default function (pi: ExtensionAPI) {
 		if (cleanupResult.notifyLevel === "warning") {
 			hasWarning = true;
 		}
+
+		// #610: the batch is integrated. Any batch-end epilogue still DEFERRED behind
+		// this turn (the engine finished while the supervisor was mid-turn, #621)
+		// would fire at agent_settled with stale content — "Ready for integration /
+		// run orch_integrate()" or the supervised "Integration Plan … merge commit"
+		// prompt for an orch branch that no longer exists. Supersede it now, and mark
+		// the in-memory batch integrated so a not-yet-deferred dispatch also skips.
+		if (orchBatchState.batchId === batchId || !batchId) {
+			orchBatchState.integratedAt = Date.now();
+		}
+		supersedeDeferredEpilogue();
 
 		// TP-179: Write integratedAt to batch history before deleting state
 		if (batchId) {

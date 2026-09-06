@@ -67,6 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     now comes from outcome telemetry.
   - `skip-dependents` no longer names tasks outside the batch (the dependency
     graph is repo-wide; blocked IDs are now scoped to the wave plan).
+- **Stale "Ready for integration" banner and supervised "Integration Plan"
+  prompt after the batch was already integrated** (#610). When the engine
+  finished while the supervisor was mid-turn, the batch-end epilogue was
+  deferred (#621); if the supervisor integrated within that turn, the deferred
+  epilogue still fired at settle with content computed for an orch branch that
+  no longer existed. Integration (manual and auto) now supersedes the deferred
+  epilogue and marks the batch integrated; the epilogue also re-resolves at
+  dispatch time and skips when the orch branch is gone.
 - **A worker that held for a supervisor ruling was relaunched with the
   "work continuously" nag, or died silently** (#630). `escalate_to_supervisor`
   is fire-and-forget; a correctly-holding worker ends its turn and exits. The

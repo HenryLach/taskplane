@@ -1211,6 +1211,14 @@ export interface OrchBatchRuntimeState {
 	baseBranch: string;
 	/** Orchestrator-managed branch name (e.g., 'orch/henry-20260318T140000'). Empty = legacy mode (merge into baseBranch directly). */
 	orchBranch: string;
+	/**
+	 * #610: epoch ms when this batch was integrated (manual or auto). Set in
+	 * memory by the integration path so a batch-end epilogue that was DEFERRED
+	 * behind the integrating turn is skipped instead of showing stale "ready for
+	 * integration" banners. Not persisted (the persisted checkpoint is deleted
+	 * on integration; batch-history carries its own integratedAt).
+	 */
+	integratedAt?: number;
 	/** Workspace execution mode (v2). Defaults to "repo" for backward compatibility. */
 	mode: WorkspaceMode;
 	/** Shared pause signal — set by /orch-pause, read by executeLane/executeWave */

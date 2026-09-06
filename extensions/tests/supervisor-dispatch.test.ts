@@ -159,3 +159,50 @@ describe("#621 — SupervisorNoticeGate", () => {
 		expect(staleRuns).toBe(0);
 	});
 });
+
+// ── #610: stale "ready for integration" epilogue after the batch was integrated ──
+//
+// Sequence that produced it on every promptly-integrated batch: the engine
+// finishes while the supervisor is mid-turn → the batch-end epilogue is
+// DEFERRED (#621) → the supervisor integrates within that same turn → the turn
+// settles → the deferred epilogue fires with stale content ("Ready for
+// integration / run orch_integrate()" and the supervised "Integration Plan …
+// merge commit" prompt) for an orch branch that no longer exists.
+describe("#610 — integration supersedes the deferred batch-end epilogue", () => {
+	it("gate model: an epilogue deferred before integration does not fire after supersede()", () => {
+		const gate = new SupervisorNoticeGate();
+		let fired = 0;
+		// Engine finished while the supervisor was busy → deferred under generation 1.
+		gate.runOrDefer(false, 1, () => fired++);
+		expect(fired).toBe(0);
+		// Integration happened in the same turn → supersedeDeferredEpilogue():
+		// generation++ and invalidate().
+		gate.invalidate();
+		// Turn settles → nothing stale fires.
+		gate.onSettled(true, 2);
+		expect(fired).toBe(0);
+	});
+
+	it("wiring: manual integrate supersedes + marks integratedAt; auto executor marks integratedAt; epilogue re-resolves at dispatch", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { dirname, join } = await import("node:path");
+		const { fileURLToPath } = await import("node:url");
+		const here = dirname(fileURLToPath(import.meta.url));
+		const src = readFileSync(join(here, "..", "taskplane", "extension.ts"), "utf-8");
+		const flat = src.replace(/\s+/g, " ");
+		// Manual path: right where integration has succeeded, before history/state cleanup.
+		expect(flat).toContain(
+			"orchBatchState.integratedAt = Date.now(); } supersedeDeferredEpilogue(); // TP-179: Write integratedAt",
+		);
+		// Auto path: the executor wrapper records success for the current batch.
+		expect(flat).toContain(
+			"if (r.success && r.integratedLocally && orchBatchState.batchId === context.batchId) { orchBatchState.integratedAt = Date.now(); }",
+		);
+		// Epilogue: dispatch-time short-circuit on integratedAt OR a vanished orch branch.
+		const epi = src.slice(src.indexOf("function runSupervisorBatchEndEpilogue("));
+		expect(epi).toContain("if (orchBatchState.integratedAt) return;");
+		expect(epi.replace(/\s+/g, " ")).toContain("no longer exists (already integrated) (#610)");
+		const types = readFileSync(join(here, "..", "taskplane", "types.ts"), "utf-8");
+		expect(types).toContain("integratedAt?: number;");
+	});
+});
