@@ -1,7 +1,7 @@
 # TP-114: Single Task Test — Status
 
 **Current Step:** Step 3: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-09-06
 **Review Level:** 0
 **Review Counter:** 0
@@ -35,9 +35,23 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Log completion in STATUS.md
+- [x] Log completion in STATUS.md
+
+**Completion Summary — files created in this task folder:**
+
+- `hello.txt` — contains "Runtime V2 works!"
+- `fibonacci.txt` — first 20 Fibonacci numbers (0..4181), one per line
+- `summary.txt` — 3-paragraph summary of Runtime V2, based on
+  docs/specifications/framework/taskplane-runtime-v2/01-architecture.md
+- `analysis.txt` — lane-runner.ts exported functions: count = 10
+  (getStepsForRepoId, getSegmentCheckboxes, isSegmentComplete,
+  computeSegmentScopeMode, shouldSkipSpawnForCompleteSegment, executeTaskV2,
+  hasPendingExpansionRequestFiles, mapLaneTaskStatusToTerminalSnapshotStatus,
+  mapLaneSnapshotStatusToWorkerStatus, readReviewerTelemetrySnapshot)
+- `events.txt` — agent-host.ts emitEvent() event types: 17 distinct
+  (13 string-literal + 4 exitEventType lifecycle values)
 
 ---
 
@@ -55,6 +69,7 @@
 | 2026-05-03 | Task reset | Ready for next regression run |
 | 2026-09-06 20:41 | Task started | Runtime V2 lane-runner execution |
 | 2026-09-06 20:41 | Step 0 started | Preflight |
+| 2026-09-06 | Steps 1-3 completed | All 5 output files created; task complete |
 
 ---
 
