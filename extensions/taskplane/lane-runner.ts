@@ -76,6 +76,7 @@ import {
 	type ReviewInterventionKind,
 	type SupervisorAlert,
 } from "./types.ts";
+import type { TaskExitDiagnostic } from "./diagnostics.ts";
 import {
 	parseFindingCounts,
 	computeFindingTrend,
@@ -108,6 +109,60 @@ const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
  * against fs churn; the post-exit final drain catches any last stragglers.
  */
 const OUTBOX_LIVE_POLL_INTERVAL_MS = 3_000;
+
+/**
+ * #629: how many worker iterations the lane may spend REMEDIATING an
+ * outstanding non-APPROVE review gate when all checkboxes are already
+ * checked. Without this path, retry+resume after a finalize refusal never
+ * spawns a worker (the loop breaks on "no remaining steps") and the gate
+ * refuses again immediately — the alert's promised remedy was unreachable.
+ * Bounded so an unresolvable REVISE cannot loop forever.
+ */
+const MAX_REVIEW_REMEDIATION_ITERATIONS = 2;
+
+/** A review gate whose LATEST review file carries a non-APPROVE verdict. */
+interface BlockingReviewGate {
+	/** `{type}-step{N}` gate key */
+	gate: string;
+	/** Latest review filename for that gate */
+	filename: string;
+	verdict: "REVISE" | "RETHINK";
+}
+
+/**
+ * Scan a reviews directory and return every gate whose latest review file
+ * reads REVISE/RETHINK (#626 minimal finalize gate). Unreadable files are
+ * never blockers; a scan failure yields an empty list (fail-safe for
+ * finalization, which must not be corrupted by an fs hiccup).
+ */
+function findBlockingReviewGates(reviewsDir: string): BlockingReviewGate[] {
+	const blocking: BlockingReviewGate[] = [];
+	try {
+		if (!existsSync(reviewsDir)) return blocking;
+		const latest = latestReviewFilesPerGate(readdirSync(reviewsDir));
+		for (const [gate, filename] of latest) {
+			try {
+				const verdict = parseReviewVerdict(readFileSync(join(reviewsDir, filename), "utf-8"));
+				if (verdict === "REVISE" || verdict === "RETHINK") blocking.push({ gate, filename, verdict });
+			} catch {
+				/* unreadable review file — not a blocker */
+			}
+		}
+	} catch {
+		/* best effort */
+	}
+	return blocking;
+}
+
+/** `code-step4` → 4; null when the gate key has no step suffix. */
+function parseGateStepNumber(gate: string): number | null {
+	const m = /-step(\d+)$/i.exec(gate);
+	return m ? Number(m[1]) : null;
+}
+
+function formatBlockingGates(gates: BlockingReviewGate[]): string {
+	return gates.map((g) => `${g.gate} (${g.filename}: ${g.verdict})`).join("; ");
+}
 
 /** Default severity vocabulary when the reviewer config doesn't override it. */
 const DEFAULT_SEVERITY_LABELS = ["critical", "important", "minor"];
@@ -879,6 +934,20 @@ export async function executeTaskV2(
 
 	// ── 2. Iteration loop ───────────────────────────────────────────
 	let noProgressCount = 0;
+	// TP-145: Is this a non-final segment of a multi-segment task? If more
+	// segments follow, .DONE creation is suppressed after the loop so the engine
+	// can advance the segment frontier. Loop-invariant; also consulted by the
+	// #629 remediation spawn (the finalize gate never applies to a non-final
+	// segment).
+	const isNonFinalSegment =
+		segmentId != null &&
+		Array.isArray(unit.task.segmentIds) &&
+		unit.task.segmentIds.length > 1 &&
+		unit.task.segmentIds[unit.task.segmentIds.length - 1] !== segmentId;
+	/** #629: review-gate remediation iterations spent (bounded). */
+	let remediationIterations = 0;
+	/** #629: gates the CURRENT iteration was spawned to remediate (empty = normal iteration). */
+	let remediationGates: BlockingReviewGate[] = [];
 	let totalIterations = 0;
 	let cumulativeCostUsd = 0;
 	let cumulativeTokens = 0;
@@ -938,7 +1007,7 @@ export async function executeTaskV2(
 		// TP-174: Read STATUS.md content once for segment-scoped checks
 		const iterStatusContent = readFileSync(statusPath, "utf-8");
 
-		const remainingSteps = parsed.steps.filter((step) => {
+		let remainingSteps = parsed.steps.filter((step) => {
 			// TP-174: When segment-scoped, only show steps that have work for this repoId
 			if (repoStepNumbers && !repoStepNumbers.has(step.number)) return false;
 			// TP-174: Use segment-scoped completion check in segment mode
@@ -949,7 +1018,45 @@ export async function executeTaskV2(
 			return !isStepComplete(ss);
 		});
 
-		if (remainingSteps.length === 0) break; // All done
+		// ── #629: review-gate remediation spawn ─────────────────────
+		// All checkboxes checked, but would the finalize gate refuse? If a gate's
+		// latest review is REVISE/RETHINK, breaking here means retry+resume never
+		// launches a worker and the refusal simply repeats. Spawn a bounded
+		// remediation iteration instead: the worker addresses the findings and
+		// re-runs review_step to obtain an APPROVE. Segment-scoped iterations
+		// (non-final segments) never finalize, so the gate does not apply there.
+		remediationGates = [];
+		if (remainingSteps.length === 0) {
+			const isFinalizingIteration = !isNonFinalSegment;
+			const blocking = isFinalizingIteration ? findBlockingReviewGates(unit.packet.reviewsDir) : [];
+			if (blocking.length === 0) break; // All done
+			if (remediationIterations >= MAX_REVIEW_REMEDIATION_ITERATIONS) {
+				logExecution(
+					statusPath,
+					"Review remediation exhausted",
+					`${remediationIterations} remediation iteration(s) did not clear: ${formatBlockingGates(blocking)}`,
+				);
+				break; // fall through to the finalize gate, which refuses with the alert
+			}
+			remediationIterations++;
+			remediationGates = blocking;
+			// Give the iteration an explicit focus step — the step of the first
+			// blocking gate (falling back to the last step) — so every downstream
+			// `remainingSteps[0]` consumer (Current Step field, prompt, checkbox
+			// counting) has a real step to point at. The step is NOT re-marked
+			// in-progress and its checkboxes are untouched.
+			const focusStepNumber = parseGateStepNumber(blocking[0].gate);
+			const focusStep =
+				parsed.steps.find((st) => st.number === focusStepNumber) ??
+				parsed.steps[parsed.steps.length - 1];
+			remainingSteps = focusStep ? [focusStep] : [];
+			if (remainingSteps.length === 0) break; // task has no parseable steps — nothing to remediate
+			logExecution(
+				statusPath,
+				"Review remediation",
+				`all checkboxes complete but latest review is not APPROVE — spawning remediation iteration ${remediationIterations}/${MAX_REVIEW_REMEDIATION_ITERATIONS}: ${formatBlockingGates(blocking)}`,
+			);
+		}
 
 		// TP-196 / #508: Pre-spawn segment-completion check.
 		//
@@ -963,7 +1070,10 @@ export async function executeTaskV2(
 		//      `repoStepNumbers` diverge (e.g., legacy/partial-marker tasks).
 		//   3. Gives behavioural tests a clean assertion target (via the pure
 		//      helper `shouldSkipSpawnForCompleteSegment`).
-		if (shouldSkipSpawnForCompleteSegment(iterStatusContent, repoStepNumbers, currentRepoId)) {
+		if (
+			remediationGates.length === 0 &&
+			shouldSkipSpawnForCompleteSegment(iterStatusContent, repoStepNumbers, currentRepoId)
+		) {
 			logExecution(
 				statusPath,
 				"Pre-spawn segment-completion check",
@@ -976,14 +1086,17 @@ export async function executeTaskV2(
 		updateStatusField(
 			statusPath,
 			"Current Step",
-			`Step ${remainingSteps[0].number}: ${remainingSteps[0].name}`,
+			remediationGates.length > 0
+				? `Review remediation — Step ${remainingSteps[0].number}: ${remainingSteps[0].name}`
+				: `Step ${remainingSteps[0].number}: ${remainingSteps[0].name}`,
 		);
 		updateStatusField(statusPath, "Iteration", `${totalIterations}`);
 
-		// Mark first incomplete step as in-progress
+		// Mark first incomplete step as in-progress (not during remediation: the
+		// focus step is already complete; its checkboxes/status stay untouched)
 		const firstStep = remainingSteps[0];
 		const firstStepStatus = currentStatus.steps.find((s) => s.number === firstStep.number);
-		if (firstStepStatus?.status !== "in-progress") {
+		if (remediationGates.length === 0 && firstStepStatus?.status !== "in-progress") {
 			updateStepStatus(statusPath, firstStep.number, "in-progress");
 			logExecution(statusPath, `Step ${firstStep.number} started`, firstStep.name);
 		}
@@ -1142,7 +1255,26 @@ export async function executeTaskV2(
 			}
 		}
 
-		if (totalIterations > 1 && remainingSteps.length > 0) {
+		if (remediationGates.length > 0) {
+			promptLines.push(
+				``,
+				`⛔ REVIEW GATE OUTSTANDING — this task cannot finalize yet.`,
+				`All step checkboxes are checked, but the LATEST review for the following gate(s) is not APPROVE:`,
+				...remediationGates.map(
+					(g) =>
+						`  - ${g.gate}: ${g.filename} → ${g.verdict} (see ${join(unit.packet.reviewsDir, g.filename)})`,
+				),
+				``,
+				`Your job in this iteration: read each listed review file, address EVERY finding it raises`,
+				`(fix code, update docs/tests as required), commit, then call review_step for that step again`,
+				`to obtain a fresh review. Repeat until the latest review for each gate is APPROVE.`,
+				`Do NOT write .DONE and do NOT declare the task complete while any gate's latest verdict`,
+				`is REVISE or RETHINK — the runtime will refuse to finalize. Do NOT un-check or re-check`,
+				`step checkboxes. If a finding cannot be addressed, escalate_to_supervisor with specifics.`,
+			);
+		}
+
+		if (remediationGates.length === 0 && totalIterations > 1 && remainingSteps.length > 0) {
 			const remainingSet = new Set(remainingSteps.map((s) => s.number));
 			const completedSteps = parsed.steps.filter((s) => !remainingSet.has(s.number));
 			promptLines.push(
@@ -1668,6 +1800,16 @@ export async function executeTaskV2(
 					`Iteration ${totalIterations}: 0 new checkboxes but uncommitted source changes detected — not counting as stall`,
 				);
 				noProgressCount = 0;
+			} else if (remediationGates.length > 0) {
+				// #629: a review-remediation iteration checks 0 new boxes BY DESIGN
+				// (its output is a fresh review file, not a checkbox). It is bounded
+				// separately by MAX_REVIEW_REMEDIATION_ITERATIONS — do not count it
+				// toward the no-progress stall limit.
+				logExecution(
+					statusPath,
+					"Remediation iteration",
+					`Iteration ${totalIterations}: review-gate remediation — not counted toward stall`,
+				);
 			} else {
 				noProgressCount++;
 				logExecution(
@@ -1768,7 +1910,18 @@ export async function executeTaskV2(
 				return isStepComplete(ss);
 			});
 		}
-		if (allComplete) break;
+		if (allComplete) {
+			// #629: all boxes checked — but if a finalizing task still has an
+			// outstanding non-APPROVE gate and remediation budget remains, loop
+			// back so the top-of-loop check spawns a remediation iteration
+			// instead of falling straight into the finalize refusal.
+			// (The top-of-loop check owns the budget decision and the
+			// "exhausted" log, so defer to it whenever a gate is outstanding.)
+			if (!isNonFinalSegment && findBlockingReviewGates(unit.packet.reviewsDir).length > 0) {
+				continue;
+			}
+			break;
+		}
 	}
 
 	// ── 3. Post-loop completion check ───────────────────────────────
@@ -1835,15 +1988,10 @@ export async function executeTaskV2(
 		);
 	}
 
-	// TP-145: Determine if this is a non-final segment of a multi-segment task.
-	// If more segments remain after this one, suppress .DONE creation so that
-	// the engine can advance the segment frontier and execute subsequent segments.
-	// .DONE must only exist when ALL segments of a multi-segment task are complete.
-	const isNonFinalSegment =
-		segmentId != null &&
-		Array.isArray(unit.task.segmentIds) &&
-		unit.task.segmentIds.length > 1 &&
-		unit.task.segmentIds[unit.task.segmentIds.length - 1] !== segmentId;
+	// TP-145: `isNonFinalSegment` (hoisted above the iteration loop) — if more
+	// segments remain after this one, suppress .DONE creation so the engine can
+	// advance the segment frontier. .DONE must only exist when ALL segments of
+	// a multi-segment task are complete.
 
 	// TP-165: Check for pending expansion requests in the worker's outbox.
 	// If the worker filed expansion requests, more segments may be added by the
@@ -1915,25 +2063,7 @@ export async function executeTaskV2(
 	// operator ratification recorded as the next R-numbered review file — clears
 	// it. Steps with no reviews at all are not blocked here (full coverage gate
 	// is #626's designed follow-up).
-	const blockingGates: string[] = [];
-	try {
-		const reviewsDir = unit.packet.reviewsDir;
-		if (existsSync(reviewsDir)) {
-			const latest = latestReviewFilesPerGate(readdirSync(reviewsDir));
-			for (const [gate, filename] of latest) {
-				try {
-					const verdict = parseReviewVerdict(readFileSync(join(reviewsDir, filename), "utf-8"));
-					if (verdict === "REVISE" || verdict === "RETHINK") {
-						blockingGates.push(`${gate} (${filename}: ${verdict})`);
-					}
-				} catch {
-					/* unreadable review file — not a blocker */
-				}
-			}
-		}
-	} catch {
-		/* best effort — a gate-scan failure must not corrupt finalization */
-	}
+	const blockingGates = findBlockingReviewGates(unit.packet.reviewsDir);
 
 	if (blockingGates.length > 0) {
 		// Remove any worker-written .DONE (precedent: premature-.DONE removal in
@@ -1945,7 +2075,7 @@ export async function executeTaskV2(
 				/* best effort */
 			}
 		}
-		const gateList = blockingGates.join("; ");
+		const gateList = formatBlockingGates(blockingGates);
 		logExecution(
 			statusPath,
 			"Finalize refused",
@@ -1975,7 +2105,7 @@ export async function executeTaskV2(
 				/* best effort */
 			}
 		}
-		return makeResult(
+		const refusal = makeResult(
 			taskId,
 			segmentId,
 			workerAgentId,
@@ -1992,6 +2122,25 @@ export async function executeTaskV2(
 			lastTelemetry,
 			snapshotSegmentCtx,
 		);
+		// #629 side-effect 1: a governance refusal is NOT a crash. Attach a
+		// structured diagnostic so tier-0 auto-retry, reports and the dashboard
+		// can tell it apart (the worker exited cleanly; the review file must
+		// change before a retry can succeed).
+		const refusalDiagnostic: TaskExitDiagnostic = {
+			classification: "review_gate_refusal",
+			exitCode: 0,
+			errorMessage: `finalize refused: ${gateList}`,
+			tokensUsed: null,
+			contextPct: null,
+			partialProgressCommits: 0,
+			partialProgressBranch: null,
+			durationSec: Math.round((Date.now() - startTime) / 1000),
+			lastKnownStep: null,
+			lastKnownCheckbox: null,
+			repoId: config.repoId ?? "default",
+		};
+		refusal.outcome.exitDiagnostic = refusalDiagnostic;
+		return refusal;
 	}
 
 	// Create .DONE if not already present (final segment or single-segment/whole-task execution)

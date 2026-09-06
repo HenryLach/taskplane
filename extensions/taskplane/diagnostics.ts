@@ -53,6 +53,7 @@ export interface SessionTokenCounts {
  * | `stall_timeout`      | No STATUS.md progress for stall_timeout minutes      |
  * | `user_killed`        | User manually killed the session (e.g., forced process kill) |
  * | `spawn_failure`      | Worker process never spawned (e.g., Pi CLI not findable, worktree provisioning) |
+ * | `review_gate_refusal`| Governance refusal: finalize blocked by an outstanding REVISE/RETHINK review verdict (#626/#629). The worker exited cleanly — NOT a crash, never auto-retried (the review file must change first) |
  * | `unknown`            | Could not determine cause                            |
  *
  * Note: `spawn_failure` (TP-190, #561) is set BEFORE any agent process exists —
@@ -72,6 +73,7 @@ export type ExitClassification =
 	| "stall_timeout"
 	| "user_killed"
 	| "spawn_failure"
+	| "review_gate_refusal"
 	| "unknown";
 
 /**
@@ -88,6 +90,7 @@ export const EXIT_CLASSIFICATIONS: readonly ExitClassification[] = [
 	"stall_timeout",
 	"user_killed",
 	"spawn_failure",
+	"review_gate_refusal",
 	"unknown",
 ] as const;
 

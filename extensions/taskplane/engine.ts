@@ -10,6 +10,7 @@ import {
 	buildReviewerEnv,
 	buildWorkerEnv,
 	buildWorkerExcludeEnv,
+	batchTaskScope,
 	computeTransitiveDependents,
 	execLog,
 	executeLaneV2,
@@ -1577,6 +1578,18 @@ async function attemptWorkerCrashRetry(
 				"batch",
 				batchState.batchId,
 				`tier0: task ${taskId} spawn_failure — operator action required, NOT auto-retrying (TP-190)`,
+			);
+			continue;
+		}
+
+		// #629: a finalize refusal over an outstanding REVISE/RETHINK is a
+		// governance outcome, not a fault. Re-running the same worker without
+		// the review file changing cannot succeed; the supervisor adjudicates.
+		if (classification === "review_gate_refusal") {
+			execLog(
+				"batch",
+				batchState.batchId,
+				`tier0: task ${taskId} review_gate_refusal — awaiting adjudication, NOT auto-retrying (#629)`,
 			);
 			continue;
 		}
@@ -3247,7 +3260,11 @@ export async function executeOrchBatch(
 			if (modelFallbackOutcome.succeededRetries.length > 0) {
 				// Recompute blocked tasks after model fallback successes
 				if (waveResult.policyApplied === "skip-dependents" && waveResult.failedTaskIds.length > 0) {
-					const recomputed = computeTransitiveDependents(new Set(waveResult.failedTaskIds), depGraph);
+					const recomputed = computeTransitiveDependents(
+						new Set(waveResult.failedTaskIds),
+						depGraph,
+						batchTaskScope(wavePlan),
+					);
 					waveResult.blockedTaskIds = [...recomputed].sort();
 				} else if (waveResult.failedTaskIds.length === 0) {
 					waveResult.blockedTaskIds = [];
@@ -3289,7 +3306,11 @@ export async function executeOrchBatch(
 				// attemptWorkerCrashRetry already updated waveResult.failedTaskIds
 				// and waveResult.succeededTaskIds in-place.
 				if (waveResult.policyApplied === "skip-dependents" && waveResult.failedTaskIds.length > 0) {
-					const recomputed = computeTransitiveDependents(new Set(waveResult.failedTaskIds), depGraph);
+					const recomputed = computeTransitiveDependents(
+						new Set(waveResult.failedTaskIds),
+						depGraph,
+						batchTaskScope(wavePlan),
+					);
 					waveResult.blockedTaskIds = [...recomputed].sort();
 				} else if (waveResult.failedTaskIds.length === 0) {
 					// All failures recovered — no blocked tasks
@@ -3752,9 +3773,14 @@ export async function executeOrchBatch(
 		batchState.failedTasks += waveResult.failedTaskIds.length;
 		batchState.skippedTasks += waveResult.skippedTaskIds.length;
 
-		// Add newly blocked tasks (after retry so recovered tasks don't block dependents)
-		for (const blocked of waveResult.blockedTaskIds) {
-			batchState.blockedTaskIds.add(blocked);
+		// Add newly blocked tasks (after retry so recovered tasks don't block dependents).
+		// #629: the dependency graph is repo-wide — only record IDs that belong to
+		// this batch (the blockedTasks counter is already wave-scoped).
+		{
+			const scope = batchTaskScope(wavePlan);
+			for (const blocked of waveResult.blockedTaskIds) {
+				if (scope.has(blocked)) batchState.blockedTaskIds.add(blocked);
+			}
 		}
 
 		// ── TP-040: Emit task_complete / task_failed events ──────

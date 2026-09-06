@@ -23,14 +23,22 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
-import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
+import {
+	writeFileSync,
+	readFileSync,
+	readdirSync,
+	existsSync,
+	mkdirSync,
+	renameSync,
+	unlinkSync,
+} from "fs";
 import { join, dirname } from "path";
 import { spawn as nodeSpawn } from "child_process";
 import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import { randomBytes } from "crypto";
 import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.ts";
-import { parseReviewVerdict } from "./review-analysis.ts";
+import { latestReviewFilesPerGate, parseReviewVerdict } from "./review-analysis.ts";
 
 /**
  * Resolve the outbox directory from environment variables.
@@ -175,6 +183,28 @@ function writeSegmentExpansionRequest(request: SegmentExpansionRequest): string 
  * @param stepNum the step number being reviewed
  * @returns true iff the step is marked Complete in STATUS.md
  */
+/**
+ * #629: does the LATEST review file for `{type}-step{N}` read REVISE/RETHINK?
+ * Used to exempt a remediation re-review from the TP-186 complete-step guard.
+ * Fail-closed: unreadable dir/file → false (guard stays in force).
+ */
+export function hasOutstandingNonApproveReview(
+	reviewsDir: string,
+	reviewType: string,
+	stepNum: number,
+): boolean {
+	try {
+		if (!existsSync(reviewsDir)) return false;
+		const latest = latestReviewFilesPerGate(readdirSync(reviewsDir));
+		const filename = latest.get(`${reviewType.toLowerCase()}-step${stepNum}`);
+		if (!filename) return false;
+		const verdict = parseReviewVerdict(readFileSync(join(reviewsDir, filename), "utf-8"));
+		return verdict === "REVISE" || verdict === "RETHINK";
+	} catch {
+		return false;
+	}
+}
+
 export function isStepMarkedComplete(statusPath: string, stepNum: number): boolean {
 	let content: string;
 	try {
@@ -823,7 +853,18 @@ export default function (pi: ExtensionAPI) {
 			// violated the Order of Operations contract; the only safe path
 			// is to revert STATUS first, then re-call review_step. Plan
 			// reviews are exempt because they fire BEFORE implementation.
-			if (reviewType !== "plan" && isStepMarkedComplete(statusPath, stepNum)) {
+			//
+			// #629 exemption: when the step is Complete but the LATEST review for
+			// this gate is REVISE/RETHINK, the runtime's finalize gate has refused
+			// (or will refuse) the task and spawned a remediation iteration whose
+			// whole purpose is to re-run this review. That state IS the anomaly
+			// being repaired — a re-review is the correct action, not an order
+			// violation. Refusing here would make the documented remedy unreachable.
+			if (
+				reviewType !== "plan" &&
+				isStepMarkedComplete(statusPath, stepNum) &&
+				!hasOutstandingNonApproveReview(reviewsDir, reviewType, stepNum)
+			) {
 				const taskIdMatch = statusPath.match(/[\\/]([A-Z]{2,}-\d+)[^\\/]*[\\/]STATUS\.md$/);
 				const taskId = taskIdMatch ? taskIdMatch[1] : "<TASK-ID>";
 				const refusal = [

@@ -10,7 +10,7 @@
  *
  * @module orch/diagnostic-reports
  */
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import { execLog } from "./execution.ts";
@@ -92,6 +92,12 @@ export interface DiagnosticReportInput {
 	totalTasks: number;
 	/** State root path where `.pi/` lives */
 	stateRoot: string;
+	/**
+	 * #629: per-task cost (USD) from outcome telemetry for the CURRENT pass.
+	 * `diagnostics.taskExits` is not populated by the v2 runtime, so without
+	 * this every report read $0.00. Optional for backward compatibility.
+	 */
+	taskCostUsd?: Record<string, number>;
 }
 
 // ── Diagnostics Directory ────────────────────────────────────────────
@@ -140,8 +146,8 @@ export function buildDiagnosticEvents(input: DiagnosticReportInput): DiagnosticE
 			classification = task.exitDiagnostic.classification;
 		}
 
-		// Cost: from taskExits, else 0
-		const cost = exitSummary?.cost ?? 0;
+		// Cost: from taskExits, else this pass's outcome telemetry, else 0
+		const cost = exitSummary?.cost ?? input.taskCostUsd?.[task.taskId] ?? 0;
 
 		// Duration: from taskExits, else compute from timestamps, else 0
 		let durationSec = 0;
@@ -176,6 +182,79 @@ export function buildDiagnosticEvents(input: DiagnosticReportInput): DiagnosticE
 }
 
 // ── JSONL Generation ─────────────────────────────────────────────────
+
+// ── Cross-pass evidence preservation (#629 side-effect 2) ──
+
+/**
+ * Does this event carry any execution evidence? A task that was not executed
+ * in the current pass (e.g. a no-op resume) produces an evidence-empty event
+ * that would otherwise CLOBBER the prior pass's record when the report is
+ * rewritten (observed: a $55 / 1h42m run reported as $0 / 0s after two
+ * no-op resumes).
+ */
+export function hasExecutionEvidence(evt: DiagnosticEvent): boolean {
+	return (
+		(evt.classification !== "unknown" && evt.classification !== "") ||
+		evt.cost > 0 ||
+		evt.durationSec > 0 ||
+		evt.retries > 0 ||
+		evt.startedAt !== null ||
+		evt.endedAt !== null
+	);
+}
+
+/**
+ * Merge the previous report's events into the current pass's events.
+ *
+ * Rule: CURRENT STATE always comes from the new pass (`status`, `phase`,
+ * `mode`, `batchId`) — a legitimate retry or skip must be reflected. Execution
+ * EVIDENCE is merged FIELD-WISE: each evidence field takes the new pass's
+ * value when it is present/non-zero, else the previous value. This matters
+ * because resume's reconciliation synthesizes outcomes for tasks it did NOT
+ * execute that still carry the persisted classification and a fresh
+ * `endTime` — an all-or-nothing rule would treat those as "evidence" and
+ * erase the prior cost. Cost is never summed across passes (each pass's
+ * telemetry is that attempt's cost; no double counting). Tasks present only
+ * in the previous report are dropped (the new wave plan is authoritative for
+ * membership). Pure; deterministic order follows `next`.
+ */
+export function mergeDiagnosticEvents(
+	previous: DiagnosticEvent[],
+	next: DiagnosticEvent[],
+): DiagnosticEvent[] {
+	const prevByTask = new Map<string, DiagnosticEvent>();
+	for (const p of previous) prevByTask.set(p.taskId, p);
+	return next.map((n) => {
+		const p = prevByTask.get(n.taskId);
+		if (!p) return n;
+		const knownClass = n.classification && n.classification !== "unknown";
+		return {
+			...n,
+			classification: knownClass ? n.classification : p.classification,
+			cost: n.cost > 0 ? n.cost : p.cost,
+			durationSec: n.durationSec > 0 ? n.durationSec : p.durationSec,
+			retries: n.retries > 0 ? n.retries : p.retries,
+			exitReason: n.exitReason || p.exitReason,
+			startedAt: n.startedAt ?? p.startedAt,
+			endedAt: n.endedAt ?? p.endedAt,
+		};
+	});
+}
+
+/** Parse a previously written events JSONL file (tolerant: bad lines skipped). */
+export function parseEventsJsonl(content: string): DiagnosticEvent[] {
+	const out: DiagnosticEvent[] = [];
+	for (const line of content.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		try {
+			const obj = JSON.parse(line) as Partial<DiagnosticEvent>;
+			if (typeof obj.taskId === "string") out.push(obj as DiagnosticEvent);
+		} catch {
+			/* skip malformed */
+		}
+	}
+	return out;
+}
 
 /**
  * Serialize diagnostic events to JSONL format (one JSON object per line).
@@ -222,7 +301,12 @@ export function buildMarkdownReport(
 	const { succeededTasks, failedTasks, skippedTasks, blockedTasks, totalTasks } = input;
 
 	const batchDurationSec = endedAt ? Math.round((endedAt - startedAt) / 1000) : 0;
-	const batchCost = diagnostics.batchCost ?? 0;
+	// #629: header cost from batch diagnostics when populated, else the sum of
+	// per-task evidence (which survives no-op passes via mergeDiagnosticEvents).
+	const batchCost =
+		diagnostics.batchCost && diagnostics.batchCost > 0
+			? diagnostics.batchCost
+			: events.reduce((sum, e) => sum + (Number.isFinite(e.cost) ? e.cost : 0), 0);
 
 	const lines: string[] = [];
 
@@ -337,10 +421,21 @@ export function emitDiagnosticReports(input: DiagnosticReportInput): void {
 		const opId = resolveOperatorId(input.orchConfig);
 		const dir = ensureDiagnosticsDir(input.stateRoot);
 
-		const events = buildDiagnosticEvents(input);
+		const jsonlPath = join(dir, `${opId}-${input.batchId}-events.jsonl`);
+
+		// #629: preserve prior-pass execution evidence for tasks this pass did
+		// not execute (state fields still come from this pass).
+		let events = buildDiagnosticEvents(input);
+		if (existsSync(jsonlPath)) {
+			try {
+				const previous = parseEventsJsonl(readFileSync(jsonlPath, "utf-8"));
+				events = mergeDiagnosticEvents(previous, events);
+			} catch {
+				/* unreadable prior report — proceed with this pass's events */
+			}
+		}
 
 		// ── JSONL event log ──
-		const jsonlPath = join(dir, `${opId}-${input.batchId}-events.jsonl`);
 		const jsonlContent = eventsToJsonl(events);
 		writeFileSync(jsonlPath, jsonlContent, "utf-8");
 
@@ -471,5 +566,13 @@ export function assembleDiagnosticInput(
 		blockedTasks: batchState.blockedTasks,
 		totalTasks: batchState.totalTasks,
 		stateRoot,
+		taskCostUsd: (() => {
+			const costs: Record<string, number> = {};
+			for (const [taskId, outcome] of outcomeByTaskId) {
+				const c = outcome.telemetry?.costUsd;
+				if (typeof c === "number" && Number.isFinite(c) && c > 0) costs[taskId] = c;
+			}
+			return costs;
+		})(),
 	};
 }

@@ -12,10 +12,12 @@ import {
 	resolveDisplayWaveNumber,
 	buildSpawnFailureAlertExtras,
 } from "./engine.ts";
+import { applyReExecutionOutcomeToSegments, taskSegmentsAllSucceeded } from "./segment-recovery.ts";
 import {
 	buildReviewerEnv,
 	buildWorkerEnv,
 	buildWorkerExcludeEnv,
+	batchTaskScope,
 	computeTransitiveDependents,
 	execLog,
 	executeLaneV2,
@@ -1730,6 +1732,10 @@ export async function resumeOrchBatch(
 	// ── 8b. Handle re-execute tasks (dead session + existing worktree) ──
 	const reExecuteTasks = reconciledTasks.filter((t) => t.action === "re-execute");
 	const reExecuteFinalStatus = new Map<string, LaneTaskStatus>();
+	// #629: the REAL lane outcome of a re-executed task (telemetry, exit
+	// diagnostic, timestamps). Previously discarded — the synthesized outcome
+	// below carried the persisted (already-cleared) diagnostic instead.
+	const reExecuteOutcome = new Map<string, LaneTaskOutcome>();
 	const reExecAllocatedLanes: AllocatedLane[] = [];
 
 	if (reExecuteTasks.length > 0) {
@@ -1796,8 +1802,69 @@ export async function resumeOrchBatch(
 					exitReason: taskResult?.exitReason ?? "V2 re-execution completed",
 					doneFileFound: taskResult?.doneFileFound ?? false,
 				};
+				// #629: a PAUSE during re-execution surfaces as `skipped` from
+				// executeLaneV2. That is not a terminal outcome: leave the task and
+				// its segments pending/re-executable (the previous code marked the
+				// task failed; treating the real outcome verbatim would make it an
+				// unretryable `skipped`). Nothing else changes; the next resume
+				// reconciles it again.
+				if (pollResult.status === "skipped") {
+					reExecuteFinalStatus.set(task.taskId, "pending");
+					execLog(
+						"resume",
+						task.taskId,
+						"re-execution paused — task remains pending for the next resume",
+					);
+					continue;
+				}
+				if (taskResult) reExecuteOutcome.set(task.taskId, taskResult);
 
-				if (pollResult.status === "succeeded") {
+				// #629: keep SEGMENT authority — transition the EXECUTED segment record
+				// to the re-execution result. Re-execution runs the unit built from the
+				// task's activeSegmentId, i.e. ONE segment (segmentId null = whole
+				// single-segment/legacy task). Without this a successful retry persisted
+				// task=succeeded / segment=pending and the next resume normalized the
+				// task straight back to pending.
+				const segFinal: "succeeded" | "failed" =
+					pollResult.status === "succeeded" ? "succeeded" : "failed";
+				const executedSegmentId =
+					taskResult?.segmentId ??
+					persistedState.tasks.find((t) => t.taskId === task.taskId)?.activeSegmentId ??
+					null;
+				const touchedSegments = applyReExecutionOutcomeToSegments(
+					batchState.segments,
+					task.taskId,
+					segFinal,
+					{
+						startTime: taskResult?.startTime,
+						endTime: taskResult?.endTime,
+						exitReason: pollResult.exitReason,
+						exitDiagnostic: taskResult?.exitDiagnostic,
+					},
+					executedSegmentId,
+				);
+				if (touchedSegments.length > 0) {
+					execLog("resume", task.taskId, `re-execution: segment records → ${segFinal}`, {
+						segments: touchedSegments.join(","),
+						executedSegmentId: executedSegmentId ?? "(whole task)",
+					});
+				}
+
+				// Task completion is derived from the segment FRONTIER, not from one
+				// segment's success: a non-final segment succeeding leaves the task
+				// pending with downstream segments still to run.
+				const frontierComplete = taskSegmentsAllSucceeded(batchState.segments, task.taskId);
+				if (pollResult.status === "succeeded" && frontierComplete === false) {
+					reExecuteFinalStatus.set(task.taskId, "pending");
+					reExecuteOutcome.delete(task.taskId); // not a task-level outcome yet
+					reExecuteTaskSet.delete(task.taskId);
+					reExecAllocatedLanes.push(lane);
+					execLog(
+						"resume",
+						task.taskId,
+						`re-executed segment ${executedSegmentId} succeeded — task has further segments pending`,
+					);
+				} else if (pollResult.status === "succeeded") {
 					reExecuteFinalStatus.set(task.taskId, "succeeded");
 					completedTaskSet.add(task.taskId);
 					failedTaskSet.delete(task.taskId);
@@ -1825,6 +1892,9 @@ export async function resumeOrchBatch(
 				batchState.failedTasks++;
 				const msg = err instanceof Error ? err.message : String(err);
 				execLog("resume", task.taskId, `re-execution error: ${msg}`);
+				applyReExecutionOutcomeToSegments(batchState.segments, task.taskId, "failed", {
+					exitReason: `re-execution error: ${msg}`,
+				});
 			}
 		}
 	}
@@ -1959,6 +2029,22 @@ export async function resumeOrchBatch(
 		const persistedTask = persistedState.tasks.find((t) => t.taskId === task.taskId);
 		const reconnectStatus = reconnectFinalStatus.get(task.taskId);
 		const reExecuteStatus = reExecuteFinalStatus.get(task.taskId);
+		// #629: a re-executed task has a REAL outcome — use it verbatim (telemetry,
+		// diagnostic, timestamps) rather than synthesizing one from stale state.
+		const realOutcome = task.action === "re-execute" ? reExecuteOutcome.get(task.taskId) : undefined;
+		if (realOutcome && (realOutcome.status === "succeeded" || realOutcome.status === "failed")) {
+			allTaskOutcomes.push({
+				...realOutcome,
+				laneNumber: realOutcome.laneNumber ?? persistedTask?.laneNumber,
+				// Preserve persisted partial-progress metadata when the fresh outcome
+				// did not set it (recovery metadata; the stale diagnostic is NOT restored).
+				partialProgressCommits:
+					realOutcome.partialProgressCommits ?? persistedTask?.partialProgressCommits,
+				partialProgressBranch:
+					realOutcome.partialProgressBranch ?? persistedTask?.partialProgressBranch,
+			});
+			continue;
+		}
 		const status =
 			task.action === "reconnect"
 				? reconnectStatus || "running"
@@ -2006,7 +2092,11 @@ export async function resumeOrchBatch(
 	// (mark-failed) or resolved during reconnect/re-execute must propagate
 	// to their transitive dependents BEFORE the wave loop begins.
 	if (orchConfig.failure.on_task_failure === "skip-dependents" && failedTaskSet.size > 0) {
-		const reconciledBlocked = computeTransitiveDependents(failedTaskSet, depGraph);
+		const reconciledBlocked = computeTransitiveDependents(
+			failedTaskSet,
+			depGraph,
+			batchTaskScope(wavePlan),
+		);
 		for (const taskId of reconciledBlocked) {
 			batchState.blockedTaskIds.add(taskId);
 		}
@@ -2403,8 +2493,12 @@ export async function resumeOrchBatch(
 			reconnectTaskSet.delete(taskId);
 		}
 
-		for (const blocked of waveResult.blockedTaskIds) {
-			batchState.blockedTaskIds.add(blocked);
+		{
+			// #629: scope to batch tasks (dependency graph is repo-wide)
+			const scope = batchTaskScope(wavePlan);
+			for (const blocked of waveResult.blockedTaskIds) {
+				if (scope.has(blocked)) batchState.blockedTaskIds.add(blocked);
+			}
 		}
 
 		// ── TP-076: Emit supervisor alerts for task failures ────

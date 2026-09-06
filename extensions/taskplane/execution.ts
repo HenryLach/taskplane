@@ -1521,15 +1521,25 @@ export async function monitorLanes(
  * The failed tasks themselves are NOT included in the output — only their
  * downstream dependents.
  *
+ * #629 side-effect 3: the dependency graph is REPO-WIDE (built from all
+ * discovered tasks), so without a scope the result can name tasks that are
+ * not in the batch at all ("blocked=TP-2047" for a single-task batch). When
+ * `scope` is given, traversal still walks THROUGH out-of-scope nodes (a
+ * transitive dependent reached via one is still blocked) but only in-scope
+ * task IDs are REPORTED.
+ *
  * @param failedTaskIds     - Set of task IDs that failed
  * @param dependencyGraph   - Dependency graph with dependents map
+ * @param scope             - Optional batch task set; only these IDs are reported
  * @returns Set of task IDs transitively blocked (excludes the failed tasks themselves)
  */
 export function computeTransitiveDependents(
 	failedTaskIds: Set<string>,
 	dependencyGraph: DependencyGraph,
+	scope?: Set<string>,
 ): Set<string> {
 	const blocked = new Set<string>();
+	const visited = new Set<string>(); // traversal set — distinct from the reported set
 	const queue = [...failedTaskIds];
 
 	while (queue.length > 0) {
@@ -1540,14 +1550,22 @@ export function computeTransitiveDependents(
 		const sortedDependents = [...dependents].sort();
 
 		for (const dep of sortedDependents) {
-			if (blocked.has(dep)) continue;
+			if (visited.has(dep)) continue;
 			if (failedTaskIds.has(dep)) continue; // Don't re-add failed tasks
-			blocked.add(dep);
+			visited.add(dep);
+			if (!scope || scope.has(dep)) blocked.add(dep);
 			queue.push(dep); // Continue BFS for transitive closure
 		}
 	}
 
 	return blocked;
+}
+
+/** Flatten a wave plan into the set of task IDs that belong to the batch. */
+export function batchTaskScope(wavePlan: string[][] | undefined | null): Set<string> {
+	const scope = new Set<string>();
+	for (const wave of wavePlan ?? []) for (const id of wave) scope.add(id);
+	return scope;
 }
 
 // ── Pre-flight: Commit Untracked Task Files ─────────────────────────

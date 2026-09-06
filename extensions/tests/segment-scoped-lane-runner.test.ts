@@ -550,10 +550,11 @@ describe("10.x: Pre-spawn segment-completion early-exit (TP-196 / #508)", () => 
 	});
 
 	it("10.1: pre-spawn check exists between remainingSteps guard and iteration counter", () => {
-		// The TP-196 / #508 pre-spawn check must live AFTER the existing
-		// `if (remainingSteps.length === 0) break;` and BEFORE `totalIterations++`,
-		// so a fully-complete segment skips the spawn without incrementing iterations.
-		const breakIdx = laneRunnerSrc.indexOf("if (remainingSteps.length === 0) break;");
+		// The TP-196 / #508 pre-spawn check must live AFTER the no-remaining-steps
+		// guard (#629: now `if (remainingSteps.length === 0) { ... break; }` with a
+		// review-gate remediation branch) and BEFORE `totalIterations++`, so a
+		// fully-complete segment skips the spawn without incrementing iterations.
+		const breakIdx = laneRunnerSrc.indexOf("if (blocking.length === 0) break; // All done");
 		expect(breakIdx).toBeGreaterThan(-1);
 		const checkIdx = laneRunnerSrc.indexOf(
 			"TP-196 / #508: Pre-spawn segment-completion check",
@@ -579,7 +580,9 @@ describe("10.x: Pre-spawn segment-completion early-exit (TP-196 / #508)", () => 
 		const block = laneRunnerSrc.slice(checkIdx, checkIdx + 1200);
 		// Logs the decision and breaks out of the iteration loop on `true`.
 		expect(block).toContain("Pre-spawn segment-completion check");
-		const ifCallIdx = block.indexOf("if (shouldSkipSpawnForCompleteSegment(");
+		// #629: the guard is now conjoined with `remediationGates.length === 0` so a
+		// review-remediation spawn is not pre-empted; the helper call still leads to `break`.
+		const ifCallIdx = block.indexOf("shouldSkipSpawnForCompleteSegment(iterStatusContent");
 		expect(ifCallIdx).toBeGreaterThan(-1);
 		const breakIdx = block.indexOf("break;", ifCallIdx);
 		expect(breakIdx).toBeGreaterThan(ifCallIdx);

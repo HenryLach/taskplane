@@ -53,7 +53,11 @@ import {
 	formatPreflightResults,
 	runPreflight,
 } from "./worktree.ts";
-import { computeTransitiveDependents, resolveCanonicalTaskPaths } from "./execution.ts";
+import {
+	batchTaskScope,
+	computeTransitiveDependents,
+	resolveCanonicalTaskPaths,
+} from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
@@ -67,6 +71,7 @@ import {
 } from "./config.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { reconstructAllocatedLanes, resumeOrchBatch } from "./resume.ts";
+import { markTaskSegmentsSkipped, resetTaskSegmentsForRetry } from "./segment-recovery.ts";
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
@@ -3336,6 +3341,12 @@ export default function (pi: ExtensionAPI) {
 		taskRecord.partialProgressCommits = undefined;
 		taskRecord.partialProgressBranch = undefined;
 
+		// #629: on the v2 runtime the SEGMENT record is authoritative — resume's
+		// reconstructSegmentFrontier() re-derives task status from segments, so a
+		// task-only reset is silently undone and the wave is counted as done.
+		// Reset the failed/stalled segments too (worktree identity preserved).
+		const segmentReset = resetTaskSegmentsForRetry(state, taskId);
+
 		// Adjust counters: only decrement failedTasks if the task was in a failure state
 		if (prevStatus === "failed" || prevStatus === "stalled") {
 			state.failedTasks = Math.max(0, state.failedTasks - 1);
@@ -3353,6 +3364,7 @@ export default function (pi: ExtensionAPI) {
 			const newBlocked = computeTransitiveDependents(
 				remainingFailures,
 				orchBatchState.dependencyGraph,
+				batchTaskScope(state.wavePlan),
 			);
 			state.blockedTaskIds = [...newBlocked].sort();
 			state.blockedTasks = newBlocked.size;
@@ -3396,6 +3408,9 @@ export default function (pi: ExtensionAPI) {
 		return (
 			`✅ Task "${taskId}" reset to pending for re-execution.\n` +
 			`   Previous status: ${prevStatus}\n` +
+			(segmentReset.resetSegmentIds.length > 0
+				? `   Segments reset: ${segmentReset.resetSegmentIds.join(", ")}${segmentReset.preservedSegmentIds.length > 0 ? ` (preserved: ${segmentReset.preservedSegmentIds.join(", ")})` : ""}\n`
+				: "") +
 			`   Batch phase: ${state.phase} | Failed: ${state.failedTasks}/${state.totalTasks}\n` +
 			`   ${resumeHint}`
 		);
@@ -3451,6 +3466,8 @@ export default function (pi: ExtensionAPI) {
 		taskRecord.status = "skipped";
 		taskRecord.exitReason = "Skipped by supervisor";
 		taskRecord.endedAt = Date.now();
+		// #629: keep segment records in agreement (segment authority on v2).
+		markTaskSegmentsSkipped(state, taskId, taskRecord.endedAt);
 
 		// Adjust counters
 		state.skippedTasks = (state.skippedTasks ?? 0) + 1;
@@ -3476,6 +3493,7 @@ export default function (pi: ExtensionAPI) {
 			const newBlocked = computeTransitiveDependents(
 				remainingFailures,
 				orchBatchState.dependencyGraph,
+				batchTaskScope(state.wavePlan),
 			);
 
 			// Find tasks that were blocked but are now unblocked
@@ -3688,6 +3706,7 @@ export default function (pi: ExtensionAPI) {
 				const newBlocked = computeTransitiveDependents(
 					remainingFailures,
 					orchBatchState.dependencyGraph,
+					batchTaskScope(state.wavePlan),
 				);
 				state.blockedTaskIds = [...newBlocked].sort();
 				state.blockedTasks = newBlocked.size;
