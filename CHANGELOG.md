@@ -67,6 +67,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     now comes from outcome telemetry.
   - `skip-dependents` no longer names tasks outside the batch (the dependency
     graph is repo-wide; blocked IDs are now scoped to the wave plan).
+- **A worker that held for a supervisor ruling was relaunched with the
+  "work continuously" nag, or died silently** (#630). `escalate_to_supervisor`
+  is fire-and-forget; a correctly-holding worker ends its turn and exits. The
+  lane now recognises a clean exit after an unanswered escalation as a HOLD
+  exit: not a stall, relaunched with a hold-resume prompt (act on a delivered
+  ruling; never proceed past the hold / self-approve / `.DONE`), bounded to 3
+  relaunches, then the task fails with an explicit `Hold unresolved` reason and
+  supervisor alert instead of a frozen `running` lane. A ruling delivered as a
+  steer, or consumed by the exit-intercept, releases the hold (reply watermark
+  by message timestamp). `send_agent_message` to a dead-pid agent now returns a
+  distinct error (pid, last registry update, resume guidance). The in-tool
+  wait / first-class `held` state is the #627 follow-up.
 - **A replacement supervisor could not resume the batch it inherited** (#631).
   Takeover imported `phase: executing` into memory and every recovery tool
   refused, although persisted `executing` means "orchestrator disconnected"

@@ -232,7 +232,8 @@ describe("3.x: Rate limiting", () => {
 
 	it("3.8: direct send emits rate-limit audit event (TP-092)", () => {
 		const fnIdx = extensionSrc.indexOf("function doSendAgentMessage(");
-		const block = extensionSrc.slice(fnIdx, fnIdx + 3000);
+		// #630 added a dead-pid diagnostic block ahead of validation; widen the window.
+		const block = extensionSrc.slice(fnIdx, fnIdx + 5500);
 		expect(block).toContain("message_rate_limited");
 		expect(block).toContain("appendMailboxAuditEvent");
 	});
@@ -252,7 +253,8 @@ describe("4.x: Registry-backed supervisor tool contracts", () => {
 
 	it("4.2: send_agent_message applies rate limiting", () => {
 		const fnIdx = extensionSrc.indexOf("function doSendAgentMessage(");
-		const block = extensionSrc.slice(fnIdx, fnIdx + 3500);
+		// #630 added a dead-pid diagnostic block ahead of validation; widen the window.
+		const block = extensionSrc.slice(fnIdx, fnIdx + 5500);
 		expect(block).toContain("checkRateLimit(to)");
 		expect(block).toContain("recordSend(to)");
 		expect(block).toContain("Rate limited");

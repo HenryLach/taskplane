@@ -5531,6 +5531,29 @@ export default function (pi: ExtensionAPI) {
 			return `❌ Batch ${state.batchId} is in terminal phase (${state.phase}). Start or resume a batch before sending messages.`;
 		}
 
+		// #630: a registry agent still marked running whose PROCESS is gone gets a
+		// distinct, actionable error (pid, last-seen, what to do) instead of the
+		// generic "unknown session" that collectKnownAgentIds would otherwise
+		// produce after filtering dead pids. This is the #630 incident: the worker
+		// died after an unanswered escalation; registry stayed `running` frozen.
+		try {
+			const registry = readRegistrySnapshot(stateRoot, state.batchId);
+			const manifest = registry?.agents[to];
+			if (manifest && !isTerminalStatus(manifest.status) && !registryIsProcessAlive(manifest.pid)) {
+				const lastSeen = new Date(registry!.updatedAt).toISOString();
+				return (
+					`❌ Agent "${to}" is DEAD: its process (PID ${manifest.pid}) no longer exists, but the registry still ` +
+					`marks it "${manifest.status}" (last registry update ${lastSeen}${manifest.taskId ? `, task ${manifest.taskId}` : ""}). ` +
+					`No live consumer can receive this message.\n` +
+					`   Do NOT hand-edit registry.json. orch_resume(force=true) reconciles the dead worker ` +
+					`(re-execute in its existing worktree; committed work survives) — if the batch is inherited, ` +
+					`the ownership gate must pass first (see the takeover summary's Engine line).`
+				);
+			}
+		} catch {
+			/* registry unreadable — fall through to the normal validation */
+		}
+
 		// Build valid runtime agent IDs (registry-first, legacy fallback).
 		const validSessions = new Set<string>(collectKnownAgentIds(stateRoot, state));
 

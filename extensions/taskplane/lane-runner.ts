@@ -120,6 +120,16 @@ const OUTBOX_LIVE_POLL_INTERVAL_MS = 3_000;
  */
 const MAX_REVIEW_REMEDIATION_ITERATIONS = 2;
 
+/**
+ * #630: how many times the lane relaunches a worker that exited while HOLDING
+ * for a supervisor ruling (an `escalate_to_supervisor` with no reply delivered
+ * since). Each relaunch re-checks for the ruling; beyond this the task fails
+ * with an explicit "hold unresolved" reason so the supervisor sees a dead
+ * lane as a governance signal, not as silence. (A first-class `held` state
+ * with an in-tool wait is the #627 design follow-up.)
+ */
+const MAX_HOLD_RELAUNCHES = 3;
+
 /** A review gate whose LATEST review file carries a non-APPROVE verdict. */
 interface BlockingReviewGate {
 	/** `{type}-step{N}` gate key */
@@ -607,6 +617,15 @@ export async function executeTaskV2(
 						contentPreview: sanitized,
 					});
 
+					if (msg.type === "escalate" && msg.timestamp > lastSupervisorReplyTs) {
+						// #630: the worker is now waiting for a ruling. Remember it so an
+						// exit before a reply is treated as a hold, not a premature stop.
+						// Causal timestamp = the message's own creation time (a reply created after
+						// the escalation but before this drain must still count as a ruling).
+						// An escalation older than the last reply we saw was already answered
+						// (e.g. consumed by the exit-intercept before this drain) — no hold.
+						pendingEscalation = { id: msg.id, ts: msg.timestamp, preview: sanitized };
+					}
 					if (config.onSupervisorAlert) {
 						const isEscalation = msg.type === "escalate";
 						try {
@@ -946,6 +965,21 @@ export async function executeTaskV2(
 		unit.task.segmentIds[unit.task.segmentIds.length - 1] !== segmentId;
 	/** #629: review-gate remediation iterations spent (bounded). */
 	let remediationIterations = 0;
+	/**
+	 * #630: the most recent escalation the worker filed that has NOT yet been
+	 * answered by a steer (set when surfaced; cleared when a steer is delivered
+	 * after it). While set, a clean worker exit is a HOLD exit, not a stall.
+	 */
+	let pendingEscalation: { id: string; ts: number; preview: string } | null = null;
+	/** #630: relaunches spent re-checking for a ruling (bounded). */
+	let holdRelaunches = 0;
+	/**
+	 * #630: creation timestamp of the most recent supervisor reply we have seen
+	 * (a steer delivered to the worker, or an instructional reply consumed by the
+	 * exit-intercept). An escalation drained LATER but CREATED before this reply
+	 * was already answered — it must not (re)create a hold.
+	 */
+	let lastSupervisorReplyTs = 0;
 	/** #629: gates the CURRENT iteration was spawned to remediate (empty = normal iteration). */
 	let remediationGates: BlockingReviewGate[] = [];
 	let totalIterations = 0;
@@ -1274,7 +1308,22 @@ export async function executeTaskV2(
 			);
 		}
 
-		if (remediationGates.length === 0 && totalIterations > 1 && remainingSteps.length > 0) {
+		if (pendingEscalation && totalIterations > 1) {
+			// #630: the previous session exited while HOLDING for a ruling. The
+			// generic "you exited prematurely — work continuously" nag is the WRONG
+			// prompt here: it pushes a correctly-holding worker toward self-release
+			// (the TP-2037 class). Give a hold-resume prompt instead.
+			const ago = Math.max(1, Math.round((Date.now() - pendingEscalation.ts) / 60_000));
+			promptLines.push(
+				``,
+				`⏸️ YOU ARE ON HOLD awaiting a supervisor ruling.`,
+				`You escalated ${ago} min ago (escalation ${pendingEscalation.id}: "${pendingEscalation.preview.slice(0, 160)}").`,
+				`If a supervisor reply is delivered to you at the start of this session (as a steering message), act on it.`,
+				`If NO reply has arrived: do NOT proceed past the hold, do NOT self-approve or write .DONE, and do NOT`,
+				`re-send the escalation. You may add a one-line status note with notify_supervisor(replyTo="${pendingEscalation.id}")`,
+				`and then end your turn; the runtime will relaunch you to re-check (bounded).`,
+			);
+		} else if (remediationGates.length === 0 && totalIterations > 1 && remainingSteps.length > 0) {
 			const remainingSet = new Set(remainingSteps.map((s) => s.number));
 			const completedSteps = parsed.steps.filter((s) => !remainingSet.has(s.number));
 			promptLines.push(
@@ -1518,6 +1567,7 @@ export async function executeTaskV2(
 						const SUPERVISOR_REPLY_TIMEOUT_MS = 60_000;
 						const POLL_INTERVAL_MS = 2_000;
 						const escalationTimestamp = Date.now();
+						let acceptedReplyTs = 0;
 						const inboxDir = sessionInboxDir(config.stateRoot, config.batchId, workerAgentId);
 
 						const supervisorReply = await new Promise<string | null>((resolve) => {
@@ -1539,6 +1589,7 @@ export async function executeTaskV2(
 											} catch {
 												/* best effort */
 											}
+											acceptedReplyTs = message.timestamp;
 											resolve(message.content);
 											return;
 										}
@@ -1592,6 +1643,11 @@ export async function executeTaskV2(
 							"Exit intercept reprompt",
 							`Supervisor provided instructions (${supervisorReply.length} chars) — reprompting worker`,
 						);
+						// #630: a supervisor reply consumed HERE never reaches .steering-pending
+						// (it is returned as the next prompt). It is the ruling: release the hold.
+						lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, acceptedReplyTs || Date.now());
+						pendingEscalation = null;
+						holdRelaunches = 0;
 						return supervisorReply;
 					}
 				: undefined,
@@ -1733,6 +1789,13 @@ export async function executeTaskV2(
 						const sanitized = entry.content.replace(/\r?\n/g, " / ").replace(/\|/g, "\\|").slice(0, 200);
 						const ts = new Date(entry.ts).toISOString().slice(0, 16).replace("T", " ");
 						logExecution(statusPath, "⚠️ Steering", sanitized);
+						// #630: a steer delivered AFTER the escalation counts as the ruling
+						// (delivery, not content, is what we can observe here).
+						lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, entry.ts);
+						if (pendingEscalation && entry.ts >= pendingEscalation.ts) {
+							pendingEscalation = null;
+							holdRelaunches = 0;
+						}
 					} catch {
 						/* skip malformed */
 					}
@@ -1769,6 +1832,71 @@ export async function executeTaskV2(
 		const progressDelta = afterTotalChecked - prevTotalChecked;
 
 		if (progressDelta <= 0) {
+			// #630: a clean exit while HOLDING for a supervisor ruling is evaluated
+			// FIRST — before the cumulative soft-progress check, which would otherwise
+			// let pre-existing uncommitted work mask every hold exit as "progress" and
+			// defeat the bounded relaunch contract.
+			if (pendingEscalation && workerResult.exitCode === 0 && !workerResult.killed) {
+				// #630: the worker exited cleanly while HOLDING for a supervisor ruling
+				// (escalation surfaced, no steer delivered since). That is governance,
+				// not a stall: do not count it toward the no-progress limit. Bounded by
+				// MAX_HOLD_RELAUNCHES; each relaunch re-checks for the ruling.
+				holdRelaunches++;
+				logExecution(
+					statusPath,
+					"Hold exit",
+					`Iteration ${totalIterations}: worker exited while awaiting a ruling for escalation ${pendingEscalation.id} (relaunch ${holdRelaunches}/${MAX_HOLD_RELAUNCHES}) — not counted toward stall`,
+				);
+				if (holdRelaunches > MAX_HOLD_RELAUNCHES) {
+					const reason = `Hold unresolved: escalation ${pendingEscalation.id} ("${pendingEscalation.preview.slice(0, 120)}") received no supervisor reply across ${MAX_HOLD_RELAUNCHES} relaunches`;
+					logExecution(statusPath, "Task blocked", reason);
+					updateStatusField(statusPath, "Status", "⏸️ Held — ruling outstanding");
+					if (config.onSupervisorAlert) {
+						try {
+							config.onSupervisorAlert({
+								category: "task-failure",
+								summary:
+									`⏸️ **Hold unresolved** — ${taskId} (lane ${config.laneNumber}) escalated for a ruling ` +
+									`(${pendingEscalation.id}: "${pendingEscalation.preview.slice(0, 160)}") and no reply reached it across ` +
+									`${MAX_HOLD_RELAUNCHES} relaunches. The lane is stopping with the work preserved in its worktree.\n` +
+									`Rule on the escalation, then orch_retry_task + orch_resume(force=true) to relaunch the worker ` +
+									`(it will receive your reply as a steer at start).`,
+								context: {
+									taskId,
+									laneId: `lane-${config.laneNumber}`,
+									laneNumber: config.laneNumber,
+									agentId: workerAgentId,
+									messageId: pendingEscalation.id,
+									exitReason: reason,
+								},
+							});
+						} catch {
+							/* best effort */
+						}
+					}
+					return makeResult(
+						taskId,
+						segmentId,
+						workerAgentId,
+						"failed",
+						startTime,
+						reason,
+						false,
+						totalIterations,
+						cumulativeCostUsd,
+						cumulativeTokens,
+						config,
+						statusPath,
+						reviewerStatePath,
+						lastTelemetry,
+						snapshotSegmentCtx,
+					);
+				}
+
+				// Not exhausted: this exit is accounted as a hold, not as progress or a stall.
+				continue;
+			}
+
 			// Check for soft progress: uncommitted changes in the worktree
 			// indicate the worker is actively editing code even if no checkbox
 			// was checked yet. This avoids false stall detection on complex
