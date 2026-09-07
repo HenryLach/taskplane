@@ -64,6 +64,7 @@ function makeState(overrides: Partial<PersistedBatchState> = {}): PersistedBatch
 		resilience: defaultResilienceState(),
 		diagnostics: defaultBatchDiagnostics(),
 		segments: [],
+		holds: [],
 		...overrides,
 	};
 }
@@ -176,6 +177,7 @@ describe("TP-135 resume segment fallback behavior", () => {
 				},
 			],
 			segments: [],
+			holds: [],
 		});
 
 		reconstructSegmentFrontier(state);
@@ -494,6 +496,7 @@ describe("TP-135 resume segment fallback behavior", () => {
 				},
 			],
 			segments: [],
+			holds: [],
 		});
 
 		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
@@ -517,6 +520,7 @@ describe("TP-135 resume segment fallback behavior", () => {
 				},
 			],
 			segments: [],
+			holds: [],
 		});
 
 		const frontier = reconstructSegmentFrontier(state);

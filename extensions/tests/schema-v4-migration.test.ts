@@ -128,7 +128,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 			const v3 = makeValidV3();
 			const result = validatePersistedState(v3);
 
-			expect(result.schemaVersion).toBe(4);
+			expect(result.schemaVersion).toBe(5);
 			expect(result.segments).toEqual([]);
 		});
 
@@ -149,7 +149,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 
 			const result = validatePersistedState(v3);
 
-			expect(result.schemaVersion).toBe(4);
+			expect(result.schemaVersion).toBe(5);
 			expect(result.phase).toBe("executing");
 			expect(result.batchId).toBe("20260328T010000");
 			expect(result.resilience.resumeForced).toBe(true);
@@ -179,7 +179,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 			const v4 = makeValidV4();
 			const result = validatePersistedState(v4);
 
-			expect(result.schemaVersion).toBe(4);
+			expect(result.schemaVersion).toBe(5);
 			expect(result.segments).toEqual([]);
 			expect(result.tasks).toHaveLength(1);
 		});
@@ -602,7 +602,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 			const result = validatePersistedState(v1);
 
 			// v4
-			expect(result.schemaVersion).toBe(4);
+			expect(result.schemaVersion).toBe(5);
 			// v2 defaults
 			expect(result.mode).toBe("repo");
 			expect(result.baseBranch).toBe("");
@@ -734,7 +734,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 			const json = serializeBatchState(runtimeState, wavePlan, lanes, outcomes);
 			const reParsed = JSON.parse(json);
 
-			expect(reParsed.schemaVersion).toBe(4);
+			expect(reParsed.schemaVersion).toBe(5);
 			expect(reParsed.segments).toHaveLength(2);
 			expect(reParsed.segments[0].segmentId).toBe("TP-001::api");
 			expect(reParsed.segments[0].status).toBe("succeeded");
@@ -765,7 +765,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 			const v3 = makeValidV3();
 			const validated = validatePersistedState(v3);
 
-			expect(validated.schemaVersion).toBe(4);
+			expect(validated.schemaVersion).toBe(5);
 			expect(validated.segments).toEqual([]);
 
 			const { runtimeState, wavePlan, lanes, outcomes } = buildRuntimeFromPersisted(validated);
@@ -773,12 +773,12 @@ describe("Schema v4 Migration (TP-081)", () => {
 			const reParsed = JSON.parse(json);
 
 			// Serialized output is v4
-			expect(reParsed.schemaVersion).toBe(4);
+			expect(reParsed.schemaVersion).toBe(5);
 			expect(reParsed.segments).toEqual([]);
 
 			// Validates as v4
 			const reValidated = validatePersistedState(reParsed);
-			expect(reValidated.schemaVersion).toBe(4);
+			expect(reValidated.schemaVersion).toBe(5);
 			expect(reValidated.segments).toEqual([]);
 		});
 	});
@@ -788,19 +788,19 @@ describe("Schema v4 Migration (TP-081)", () => {
 	// ═════════════════════════════════════════════════════════════════
 
 	describe("version rejection", () => {
-		it("rejects unsupported future version 5", () => {
-			const v5 = makeValidV4();
-			v5.schemaVersion = 5;
+		it("rejects unsupported future version 6", () => {
+			const v6 = makeValidV4();
+			v6.schemaVersion = 6;
 
-			expect(() => validatePersistedState(v5)).toThrow(/5/);
+			expect(() => validatePersistedState(v6)).toThrow(/6/);
 		});
 
-		it("accepts v1, v2, v3, and v4", () => {
+		it("accepts v1, v2, v3, v4 (all upconverted to v5)", () => {
 			// v4 clean
-			expect(validatePersistedState(makeValidV4()).schemaVersion).toBe(4);
+			expect(validatePersistedState(makeValidV4()).schemaVersion).toBe(5);
 
 			// v3 upconvert
-			expect(validatePersistedState(makeValidV3()).schemaVersion).toBe(4);
+			expect(validatePersistedState(makeValidV3()).schemaVersion).toBe(5);
 		});
 	});
 
@@ -809,8 +809,8 @@ describe("Schema v4 Migration (TP-081)", () => {
 	// ═════════════════════════════════════════════════════════════════
 
 	describe("schema version constant", () => {
-		it("BATCH_STATE_SCHEMA_VERSION is 4", () => {
-			expect(BATCH_STATE_SCHEMA_VERSION).toBe(4);
+		it("BATCH_STATE_SCHEMA_VERSION is 5", () => {
+			expect(BATCH_STATE_SCHEMA_VERSION).toBe(5);
 		});
 	});
 });

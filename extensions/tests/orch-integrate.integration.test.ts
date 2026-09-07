@@ -301,6 +301,7 @@ function makeBatchState(overrides: Partial<PersistedBatchState> = {}): Persisted
 		resilience: defaultResilienceState(),
 		diagnostics: defaultBatchDiagnostics(),
 		segments: [],
+		holds: [],
 		...overrides,
 	};
 }

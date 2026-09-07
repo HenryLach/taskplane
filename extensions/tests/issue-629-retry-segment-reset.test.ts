@@ -135,6 +135,7 @@ function makeIncidentState(overrides: Partial<PersistedBatchState> = {}): Persis
 		resilience: defaultResilienceState(),
 		diagnostics: defaultBatchDiagnostics(),
 		segments: [makeSegment()],
+		holds: [],
 		...overrides,
 	};
 }

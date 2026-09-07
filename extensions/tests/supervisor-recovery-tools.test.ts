@@ -92,6 +92,7 @@ function buildTestPersistedState(overrides?: Partial<PersistedBatchState>): Pers
 			batchCost: 0,
 		},
 		segments: [],
+		holds: [],
 		...overrides,
 	};
 }

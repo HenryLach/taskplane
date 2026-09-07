@@ -126,6 +126,12 @@ export interface WorkerConfig {
 	 * Bounded to 15..1800.
 	 */
 	exitInterceptTimeoutSec?: number;
+	/**
+	 * Minutes an escalation hold may stay open before the batch parks with pause
+	 * cause `hold-timeout` (#627). Acknowledgements never extend it. Default 240;
+	 * bounded to 5..10080 (7 days).
+	 */
+	holdTimeoutMinutes?: number;
 }
 
 /** Reviewer agent configuration */

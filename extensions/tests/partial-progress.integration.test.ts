@@ -164,6 +164,7 @@ function makePersistedState(
 
 	return {
 		schemaVersion: BATCH_STATE_SCHEMA_VERSION,
+		holds: [],
 		phase: "failed",
 		batchId: "20260319T140000",
 		baseBranch: "main",

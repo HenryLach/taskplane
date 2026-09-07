@@ -2742,6 +2742,7 @@ export function resolveRuntimeStateRoot(repoRoot: string, workspaceRoot?: string
 // ── Runtime V2 Lane Execution (TP-105) ────────────────────────────
 
 import { executeTaskV2, type LaneRunnerConfig, type LaneRunnerTaskResult } from "./lane-runner.ts";
+import { normalizeHoldTimeoutMinutes } from "./hold-state.ts";
 import { DEFAULT_WORKER_USER_TOOLS } from "./agent-host.ts";
 
 /**
@@ -2832,6 +2833,7 @@ export function buildWorkerEnv(
 		tools?: string;
 		excludeExtensions?: string[];
 		exitInterceptTimeoutSec?: number;
+		holdTimeoutMinutes?: number;
 	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
@@ -2844,6 +2846,14 @@ export function buildWorkerEnv(
 	) {
 		env.TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC = String(
 			Math.min(1800, Math.max(15, Math.round(workerConfig.exitInterceptTimeoutSec))),
+		);
+	}
+	if (
+		typeof workerConfig?.holdTimeoutMinutes === "number" &&
+		Number.isFinite(workerConfig.holdTimeoutMinutes)
+	) {
+		env.TASKPLANE_HOLD_TIMEOUT_MIN = String(
+			normalizeHoldTimeoutMinutes(workerConfig.holdTimeoutMinutes),
 		);
 	}
 

@@ -747,7 +747,7 @@ describe("sweepStaleArtifacts — mailbox stale sweep", () => {
 
 describe("MAILBOX_MESSAGE_TYPES", () => {
 	it("contains all expected types", () => {
-		const expectedTypes = ["steer", "query", "abort", "info", "reply", "escalate"];
+		const expectedTypes = ["steer", "query", "abort", "info", "reply", "escalate", "ruling"];
 		for (const t of expectedTypes) {
 			expect(MAILBOX_MESSAGE_TYPES.has(t)).toBe(true);
 		}

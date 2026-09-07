@@ -390,6 +390,8 @@ export interface TaskRunnerConfig {
 		excludeExtensions?: string[];
 		/** Exit-intercept supervisor-reply window in seconds (default 60; 15..1800). */
 		exitInterceptTimeoutSec?: number;
+		/** Minutes a hold may stay open before the batch parks (`hold-timeout`). Default 240; 5..10080. @since #627 */
+		holdTimeoutMinutes?: number;
 	};
 	/** Worker agent extension exclusion list. @since TP-180 */
 	workerExcludeExtensions?: string[];
@@ -823,7 +825,15 @@ export interface AllocatedLane {
  *                     → stalled
  *   pending → skipped  (pause/abort before task starts, or prior task failed)
  */
-export type LaneTaskStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
+export type LaneTaskStatus =
+	| "pending"
+	| "running"
+	| "succeeded"
+	| "failed"
+	| "stalled"
+	| "skipped"
+	/** Awaiting a supervisor/operator ruling; no worker process; non-terminal (#627). */
+	| "held";
 
 /**
  * Embedded telemetry attached to a lane task outcome.
@@ -1005,7 +1015,15 @@ export interface TaskMonitorSnapshot {
 	/** Task ID (e.g., "TO-014") */
 	taskId: string;
 	/** Resolved monitoring status */
-	status: "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped" | "unknown";
+	status:
+		| "pending"
+		| "running"
+		| "succeeded"
+		| "failed"
+		| "stalled"
+		| "skipped"
+		| "held"
+		| "unknown";
 	/** Current step name (e.g., "Implement Service Layer"), null if not parsed */
 	currentStepName: string | null;
 	/** Current step number, null if not parsed */
@@ -1222,7 +1240,7 @@ export type OrchBatchPhase =
  */
 export interface PauseSignal {
 	paused: boolean;
-	cause?: "operator" | "stop-wave" | "abort" | "merge-failure";
+	cause?: "operator" | "stop-wave" | "abort" | "merge-failure" | "hold-timeout";
 }
 
 export interface OrchBatchRuntimeState {
@@ -1304,6 +1322,8 @@ export interface OrchBatchRuntimeState {
 	 * and repo-mode batches.
 	 */
 	segments?: PersistedSegmentRecord[];
+	/** Durable hold records (#627). Authoritative; task/segment `held` statuses are projections. */
+	holds?: import("./hold-state.ts").HoldRecord[];
 	/**
 	 * Unknown top-level fields from loaded persisted state.
 	 * Carried forward so they survive serialization roundtrips.
@@ -2836,7 +2856,7 @@ export function defaultBatchDiagnostics(): BatchDiagnostics {
  *   - saveBatchState() always writes v4.
  *   - Schema versions > 4 are rejected with STATE_SCHEMA_INVALID.
  */
-export const BATCH_STATE_SCHEMA_VERSION = 4;
+export const BATCH_STATE_SCHEMA_VERSION = 5;
 
 /**
  * Canonical file path for persisted batch state.
@@ -3005,7 +3025,8 @@ export type PersistedSegmentStatus =
 	| "succeeded"
 	| "failed"
 	| "stalled"
-	| "skipped";
+	| "skipped"
+	| "held";
 
 /**
  * Persisted record of a single segment's execution state.
@@ -3182,7 +3203,7 @@ export interface PersistedRepoMergeOutcome {
  *   fields as `undefined`.
  */
 export interface PersistedBatchState {
-	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 4) */
+	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 5) */
 	schemaVersion: number;
 	/** Current batch execution phase */
 	phase: OrchBatchPhase;
@@ -3259,6 +3280,12 @@ export interface PersistedBatchState {
 	 * Required in v4. Migration from v1/v2/v3 fills empty array.
 	 */
 	segments: PersistedSegmentRecord[];
+	/**
+	 * Durable hold records (#627, schema v5). Empty for batches that never
+	 * escalated. Survives pause/crash/resume/retry; a hold is closed only by a
+	 * typed ruling, an abort, or a completed delivery — never by retry.
+	 */
+	holds: import("./hold-state.ts").HoldRecord[];
 	/**
 	 * Unknown top-level fields captured during deserialization.
 	 * Preserved on roundtrip to avoid data loss from future schema extensions
@@ -3896,7 +3923,15 @@ export const MAILBOX_MAX_CONTENT_BYTES = 4096;
  *
  * @since TP-089
  */
-export type MailboxMessageType = "steer" | "query" | "abort" | "info" | "reply" | "escalate";
+export type MailboxMessageType =
+	| "steer"
+	| "query"
+	| "abort"
+	| "info"
+	| "reply"
+	| "escalate"
+	/** Typed ruling that releases a hold (#627). Requires `replyTo` = escalation id and a trusted `actor`. */
+	| "ruling";
 
 /**
  * Set of valid mailbox message types for runtime validation.
@@ -3909,6 +3944,7 @@ export const MAILBOX_MESSAGE_TYPES: ReadonlySet<string> = new Set<MailboxMessage
 	"info",
 	"reply",
 	"escalate",
+	"ruling",
 ]);
 
 /**
@@ -3941,6 +3977,12 @@ export interface MailboxMessage {
 	expectsReply?: boolean;
 	/** Reference to a previous message ID for threading (default: null) */
 	replyTo?: string | null;
+	/**
+	 * Trusted actor stamp for `ruling` messages (#627). Set ONLY by the issuing
+	 * path (supervisor tool → "supervisor"; explicit operator command →
+	 * "operator"). A role supplied by a model is not authority.
+	 */
+	actor?: import("./hold-state.ts").RulingActor;
 }
 
 /**
@@ -3962,6 +4004,8 @@ export interface WriteMailboxMessageOpts {
 	expectsReply?: boolean;
 	/** Reference to a previous message ID for threading (default: null) */
 	replyTo?: string | null;
+	/** Trusted actor stamp for `ruling` messages (#627). */
+	actor?: import("./hold-state.ts").RulingActor;
 }
 
 // ── Runtime V2 Contracts (TP-102) ────────────────────────────────────

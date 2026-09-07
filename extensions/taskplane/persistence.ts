@@ -27,6 +27,7 @@ import {
 	runtimeManifestPath,
 } from "./types.ts";
 import type { BatchHistorySummary, RuntimeAgentManifest } from "./types.ts";
+import { isValidHoldRecord } from "./hold-state.ts";
 import type {
 	AllocatedLane,
 	DiscoveryResult,
@@ -297,6 +298,7 @@ export function syncTaskOutcomesFromMonitor(
 				failed: "failed",
 				stalled: "stalled",
 				skipped: "skipped",
+				held: "held",
 				unknown: existing?.status || "running",
 			};
 			const mappedStatus = monitorToLane[snap.status];
@@ -447,6 +449,7 @@ export const VALID_TASK_STATUSES: ReadonlySet<string> = new Set([
 	"failed",
 	"stalled",
 	"skipped",
+	"held",
 ]);
 
 /** All valid merge result statuses for persisted state. */
@@ -530,6 +533,18 @@ export function upconvertV3toV4(obj: Record<string, unknown>): void {
 }
 
 /**
+ * Upconvert a v4 state object to v5 in-place (#627 held state).
+ *
+ * v5 adds the top-level `holds` table (durable escalation holds). A v4 batch
+ * never had runtime-tracked holds, so the table starts empty. Idempotent.
+ */
+export function upconvertV4toV5(obj: Record<string, unknown>): void {
+	if ((obj.schemaVersion as number) >= 5) return;
+	obj.schemaVersion = 5;
+	if (!Array.isArray(obj.holds)) obj.holds = [];
+}
+
+/**
  * Validate a parsed JSON object as a PersistedBatchState.
  *
  * Checks:
@@ -559,7 +574,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 	}
 	// Accept v1 (auto-upconvert to v2→v3→v4), v2 (upconvert to v3→v4), v3 (upconvert to v4), and v4 (current).
 	// Reject anything else — including future versions from newer runtimes.
-	const ACCEPTED_VERSIONS = [1, 2, 3, BATCH_STATE_SCHEMA_VERSION];
+	const ACCEPTED_VERSIONS = [1, 2, 3, 4, BATCH_STATE_SCHEMA_VERSION];
 	if (!ACCEPTED_VERSIONS.includes(obj.schemaVersion as number)) {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",
@@ -945,6 +960,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 	upconvertV1toV2(obj);
 	upconvertV2toV3(obj);
 	upconvertV3toV4(obj);
+	upconvertV4toV5(obj);
 
 	// ── Validate v3 resilience section ───────────────────────────
 	// After upconversion, resilience must be a valid object with correct types.
@@ -1266,6 +1282,31 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
+	// ── Holds (v5, #627) ─────────────────────────────────────────
+	if (!Array.isArray(obj.holds)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing or invalid "holds" field (expected array, got ${typeof obj.holds})`,
+		);
+	}
+	const holdIds = new Set<string>();
+	for (let i = 0; i < (obj.holds as unknown[]).length; i++) {
+		const h = (obj.holds as unknown[])[i];
+		if (!isValidHoldRecord(h)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`holds[${i}] is not a valid hold record (escalationId, unit identity, phase, deliveryState and — when released — a correlated ruling with a trusted actor are required)`,
+			);
+		}
+		if (holdIds.has(h.escalationId)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`holds[${i}] duplicates escalation id ${h.escalationId}`,
+			);
+		}
+		holdIds.add(h.escalationId);
+	}
+
 	// ── Capture unknown top-level fields for roundtrip preservation ──
 	// Any fields not in the known schema are preserved so they survive
 	// serialization. This protects against data loss from future schema
@@ -1297,6 +1338,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		"resilience",
 		"diagnostics",
 		"segments",
+		"holds",
 		"_extraFields",
 	]);
 	const extraFields: Record<string, unknown> = {};
@@ -1497,6 +1539,7 @@ export function serializeBatchState(
 		resilience: state.resilience ?? defaultResilienceState(),
 		diagnostics: state.diagnostics ?? defaultBatchDiagnostics(),
 		segments: state.segments ?? [],
+		holds: (state.holds ?? []).map((h) => ({ ...h })),
 	};
 
 	// Merge unknown fields from loaded state to preserve roundtrip fidelity.
@@ -2594,6 +2637,11 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 			blockedTaskIds: [],
 			errors: [],
 			segments: [],
+			// Reconstruction has no access to hold records; a reconstructed batch
+			// is refused for resume when the runtime mailbox shows unrecorded
+			// escalations (resume.ts hold-first replay), so an empty table here is
+			// conservative, not lossy.
+			holds: [],
 			lastError: null,
 			resilience: { ...defaultResilienceState(), resumeForced: true },
 			diagnostics: defaultBatchDiagnostics(),

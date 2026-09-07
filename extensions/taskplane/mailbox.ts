@@ -145,6 +145,7 @@ export function writeMailboxMessage(
 		content: opts.content,
 		expectsReply: opts.expectsReply ?? false,
 		replyTo: opts.replyTo ?? null,
+		...(opts.type === "ruling" && opts.actor ? { actor: { ...opts.actor } } : {}),
 	};
 
 	// Determine inbox directory
