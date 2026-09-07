@@ -26,7 +26,7 @@
 ---
 
 ### Step 1: `ratification.ts` — record, validation, staleness (pure module)
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] `GateRatification` type + filename/link helpers + `parseRatificationLink`
 - [ ] `validateRatification` with every rejection code from PROMPT.md (injected `isAncestor`)
@@ -115,4 +115,11 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Step 1 design decisions (for plan review)
+
+- **Review file naming:** existing convention is `R{NNN}-{type}-step{N}.md`, gate key = `{type}-step{N}` (from `latestReviewFilesPerGate`). Ratification filename: `ratificationFilename(gate, reviewNumber)` → `R{NNN}-{gate}.ratification.json` (e.g. `R004-code-step3.ratification.json`), NNN zero-padded to 3.
+- **Review number derivation for `writeRatification(reviewsDir, record)`:** the record has no explicit reviewNumber field (spec shape fixed). Derive it as (R-number parsed from `supersededReview.path` basename) + 1 — the ratification authorises the NEXT review file after the one it supersedes.
+- **`validateRatification` rejection codes:** `unknown-ruling` (no hold whose `ruling.id` === rulingId), `ruling-not-released` (that hold.phase !== "released"), `unknown-escalation` (a closedEscalationId not in holdsForTask), `invalid-ratifier-role` (role not supervisor|operator), `superseded-review-mismatch` (sha256(readFile(path)) !== supersededReview.sha256), `empty-findings`, `no-revision-proof` (proofSet has no kind==="revision"), `revision-not-ancestor` (headRevision given AND !isAncestor(revisionRef, headRevision)). ctx = { holds, reviewsDir, taskId, segmentId, headRevision, readFile, isAncestor }.
+- **`isRatificationStale`:** find the APPROVE review file whose content links this record id; stale=true if any higher-numbered review file for the same gate exists (covers "no longer latest" AND "higher REVISE/RETHINK"), or if the link file can't be located (can't confirm freshness → fail safe). ctx = { reviewFilenames, readReview }.
+- **sha256:** node `crypto.createHash("sha256")` over file content (utf-8).
+- **atomic write:** tmp file + `renameSync`, `JSON.stringify(record, null, 2)`.
