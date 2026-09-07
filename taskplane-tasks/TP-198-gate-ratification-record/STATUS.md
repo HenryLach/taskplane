@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** L
 
@@ -115,11 +115,14 @@
 
 ## Notes
 
-### Step 1 design decisions (for plan review)
+### Step 1 design decisions (revised after R001-plan-step1 REVISE)
 
-- **Review file naming:** existing convention is `R{NNN}-{type}-step{N}.md`, gate key = `{type}-step{N}` (from `latestReviewFilesPerGate`). Ratification filename: `ratificationFilename(gate, reviewNumber)` → `R{NNN}-{gate}.ratification.json` (e.g. `R004-code-step3.ratification.json`), NNN zero-padded to 3.
-- **Review number derivation for `writeRatification(reviewsDir, record)`:** the record has no explicit reviewNumber field (spec shape fixed). Derive it as (R-number parsed from `supersededReview.path` basename) + 1 — the ratification authorises the NEXT review file after the one it supersedes.
-- **`validateRatification` rejection codes:** `unknown-ruling` (no hold whose `ruling.id` === rulingId), `ruling-not-released` (that hold.phase !== "released"), `unknown-escalation` (a closedEscalationId not in holdsForTask), `invalid-ratifier-role` (role not supervisor|operator), `superseded-review-mismatch` (sha256(readFile(path)) !== supersededReview.sha256), `empty-findings`, `no-revision-proof` (proofSet has no kind==="revision"), `revision-not-ancestor` (headRevision given AND !isAncestor(revisionRef, headRevision)). ctx = { holds, reviewsDir, taskId, segmentId, headRevision, readFile, isAncestor }.
-- **`isRatificationStale`:** find the APPROVE review file whose content links this record id; stale=true if any higher-numbered review file for the same gate exists (covers "no longer latest" AND "higher REVISE/RETHINK"), or if the link file can't be located (can't confirm freshness → fail safe). ctx = { reviewFilenames, readReview }.
+- **Review file naming:** existing convention is `R{NNN}-{type}-step{N}.md`, gate key = `{type}-step{N}` (from `latestReviewFilesPerGate`). R numbers are **globally allocated** from `**Review Counter:**` in STATUS.md (see `agent-bridge-extension.ts:900`), NOT per-gate. Ratification filename: `ratificationFilename(gate, reviewNumber)` → `R{NNN}-{gate}.ratification.json`, NNN zero-padded to 3.
+- **[R001 issue 2] Review number is a single allocation owned by the tool (Step 2), NOT derived from `supersededReview+1`.** Step 2 reads `**Review Counter:**`, increments, persists it back, and uses that one N for BOTH `R{N}-{gate}.md` (APPROVE markdown) and the ratification JSON. To keep the number consistent between the two files, `writeRatification(reviewsDir, record, reviewNumber)` takes the allocated number explicitly (a documented deviation from the PROMPT's `(reviewsDir, record)` signature — recorded as an Amendment — required to avoid the collision the reviewer flagged).
+- **[R001 issue 1] Scope binding — `validateRatification` rejection codes:** `malformed-record` (structural guard fails), `wrong-task` (record.taskId !== ctx.taskId), `wrong-segment` ((record.segmentId ?? null) !== (ctx.segmentId ?? null)), `unknown-ruling` (no hold whose `ruling.id` === rulingId **among holds that bind this unit** via `holdsForUnit`), `ruling-not-released` (that hold.phase !== "released"), `unknown-escalation` (a closedEscalationId not in `holdsForTask`), `invalid-ratifier-role` (role not supervisor|operator), `superseded-review-out-of-scope` (path is absolute/contains `..`, or basename doesn't match `R\d+-{record.gate}.md`), `superseded-review-mismatch` (sha256(readFile(join(reviewsDir,path))) !== supersededReview.sha256), `empty-findings`, `no-revision-proof` (proofSet has no kind==="revision"), `revision-not-ancestor` (headRevision given AND !isAncestor(revisionRef, headRevision)). `supersededReview.path` is stored **relative to reviewsDir** (a filename), keeping it portable. ctx = { holds, reviewsDir, taskId, segmentId, headRevision, readFile, isAncestor }.
+- **[R001 issue 3] Structural decoding:** `isValidGateRatification(obj): obj is GateRatification` validates every field type (arrays are arrays, proofSet has revision shape, etc.). `readRatifications` throws on BOTH invalid JSON AND structurally-invalid JSON. `validateRatification` runs the guard first and returns `malformed-record` rather than casting a bad shape.
+- **[R001 suggestion] `isRatificationStale`:** locate the review file for `record.gate` whose content `parseRatificationLink === record.id` AND `parseReviewVerdict === APPROVE`. Missing / ambiguous / wrong-gate / non-APPROVE link → stale (fail-closed). Otherwise stale=true iff any higher-numbered `R\d+-{gate}.md` review file exists (covers "no longer latest" AND "higher REVISE/RETHINK"). ctx = { reviewFilenames, readReview }.
 - **sha256:** node `crypto.createHash("sha256")` over file content (utf-8).
 - **atomic write:** tmp file + `renameSync`, `JSON.stringify(record, null, 2)`.
+- **New Step 1 tests (from R001 Missing Items):** wrong-task & wrong-segment ruling references rejected; superseded-review wrong-gate / path-traversal rejected; structurally-valid-JSON-but-bad-shape read throws (in addition to invalid-JSON). Interleaved-gate numbering/collision + subsequent ordinary review allocation is a Step 2 test (global counter) — tracked there.
+| 2026-09-07 23:53 | Review R001 | plan Step 1: REVISE |
