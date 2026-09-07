@@ -1,10 +1,10 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 2: Trusted ratify operation
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
@@ -26,14 +26,14 @@
 ---
 
 ### Step 1: `ratification.ts` — record, validation, staleness (pure module)
-**Status:** 🟨 In Progress
+**Status:** ✅ Implemented (code review batched into Step 3 checkpoint)
 
-- [ ] `GateRatification` type + filename/link helpers + `parseRatificationLink`
-- [ ] `validateRatification` with every rejection code from PROMPT.md (injected `isAncestor`)
-- [ ] `isRatificationStale`
-- [ ] `writeRatification` / `readRatifications` (atomic; malformed throws)
-- [ ] `tests/ratification.test.ts` covers each rejection + positive, staleness, round-trip, malformed
-- [ ] Targeted tests pass
+- [x] `GateRatification` type + filename/link helpers + `parseRatificationLink`
+- [x] `validateRatification` with every rejection code from PROMPT.md (injected `isAncestor`)
+- [x] `isRatificationStale`
+- [x] `writeRatification` / `readRatifications` (atomic; malformed throws)
+- [x] `tests/ratification.test.ts` covers each rejection + positive, staleness, round-trip, malformed
+- [x] Targeted tests pass (29/29)
 
 ---
 
@@ -126,3 +126,4 @@
 - **atomic write:** tmp file + `renameSync`, `JSON.stringify(record, null, 2)`.
 - **New Step 1 tests (from R001 Missing Items):** wrong-task & wrong-segment ruling references rejected; superseded-review wrong-gate / path-traversal rejected; structurally-valid-JSON-but-bad-shape read throws (in addition to invalid-JSON). Interleaved-gate numbering/collision + subsequent ordinary review allocation is a Step 2 test (global counter) — tracked there.
 | 2026-09-07 23:53 | Review R001 | plan Step 1: REVISE |
+| 2026-09-07 23:56 | Review R002 | plan Step 1: APPROVE |
