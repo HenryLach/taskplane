@@ -690,6 +690,6 @@ describe("#629 — review-gate remediation spawn (the retry+resume remedy must b
 	it("the finalize gate and the pre-spawn check share one scanner (no drift)", () => {
 		const src = readSrc("lane-runner.ts");
 		const occurrences = src.split("findBlockingReviewGates(").length - 1;
-		expect(occurrences).toBe(4); // definition + finalize + pre-spawn + post-iteration re-check
+		expect(occurrences).toBe(5); // definition + finalize + pre-spawn + post-iteration re-check + step-completion gate
 	});
 });

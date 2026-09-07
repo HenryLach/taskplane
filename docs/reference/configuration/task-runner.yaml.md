@@ -86,6 +86,7 @@ If a task path matches a configured task area, that area's override applies.
 | `worker.tools` | string | `"read,write,edit,bash,grep,find,ls"` | Tool allowlist passed to worker agent invocations. |
 | `worker.thinking` | string | `""` | Thinking mode for worker agent. Empty string (or explicit `"inherit"`) = inherit active session thinking. |
 | `worker.spawn_mode` | `"subprocess"` \| `"tmux"` | commented in template | Optional spawn mode override for task-runner. |
+| `worker.exit_intercept_timeout_sec` | number | `60` (15..1800) | How long the lane waits for a supervisor reply when it intercepts a worker's premature exit before letting the session close. Raise it when the supervisor is often inside long tool calls (a blocking `--wait` cannot answer in 60 s). |
 
 Notes:
 - `spawn_mode` defaults to `subprocess` when not set.

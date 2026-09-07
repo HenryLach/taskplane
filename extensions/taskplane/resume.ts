@@ -1859,6 +1859,7 @@ export async function resumeOrchBatch(
 					!!workspaceConfig,
 					{
 						ORCH_BATCH_ID: batchState.batchId,
+						...buildWorkerEnv(runnerConfig.worker),
 						...buildReviewerEnv(runnerConfig.reviewer),
 						...buildWorkerExcludeEnv(runnerConfig.workerExcludeExtensions),
 					},
@@ -1958,6 +1959,7 @@ export async function resumeOrchBatch(
 					!!workspaceConfig,
 					{
 						ORCH_BATCH_ID: batchState.batchId,
+						...buildWorkerEnv(runnerConfig.worker),
 						...buildReviewerEnv(runnerConfig.reviewer),
 						...buildWorkerExcludeEnv(runnerConfig.workerExcludeExtensions),
 					},

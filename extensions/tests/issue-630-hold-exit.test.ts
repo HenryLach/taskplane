@@ -642,3 +642,33 @@ describe("#630 — wiring", () => {
 		expect(flat).toContain('if (acceptedReplyType === "info" && pendingEscalation) {');
 	});
 });
+
+describe("#630 — configurable exit-intercept window (feedback #3 item 5)", () => {
+	it("taskRunner.worker.exitInterceptTimeoutSec threads config → env → lane-runner → agent-host safety race", async () => {
+		const { buildWorkerEnv } = await import("../taskplane/execution.ts");
+		expect(
+			buildWorkerEnv({ exitInterceptTimeoutSec: 300 }).TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC,
+		).toBe("300");
+		expect(buildWorkerEnv({ exitInterceptTimeoutSec: 5 }).TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC).toBe(
+			"15",
+		); // floor
+		expect(
+			buildWorkerEnv({ exitInterceptTimeoutSec: 99999 }).TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC,
+		).toBe("1800"); // cap
+		expect(buildWorkerEnv({}).TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC).toBe(undefined);
+		const exec = readSrc("execution.ts").replace(/\s+/g, " ");
+		expect(exec).toContain("return Number.isFinite(n) && n >= 15 ? Math.min(1800, n) : 60;");
+		const lr = readSrc("lane-runner.ts").replace(/\s+/g, " ");
+		expect(lr).toContain(
+			"Math.min(1800, Math.max(15, config.exitInterceptTimeoutSec ?? 60)) * 1000;",
+		);
+		expect(lr).toContain(
+			"exitInterceptSafetyMs: (Math.min(1800, Math.max(15, config.exitInterceptTimeoutSec ?? 60)) + 60) * 1000,",
+		);
+		const host = readSrc("agent-host.ts").replace(/\s+/g, " ");
+		expect(host).toContain("const INTERCEPTION_TIMEOUT_MS = opts.exitInterceptSafetyMs ?? 120_000;");
+		expect(readSrc("config-loader.ts")).toContain(
+			"exitInterceptTimeoutSec: config.taskRunner.worker.exitInterceptTimeoutSec",
+		);
+	});
+});

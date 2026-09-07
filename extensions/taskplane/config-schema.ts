@@ -118,6 +118,14 @@ export interface WorkerConfig {
 	spawnMode?: "subprocess";
 	/** Package specifiers to exclude from extension forwarding for worker agents (exact match). @since TP-180 */
 	excludeExtensions?: string[];
+	/**
+	 * How long (seconds) the lane waits for a supervisor reply when it intercepts a
+	 * worker's premature exit, before letting the session close. Default 60. Raise
+	 * it when the supervisor is often inside long tool calls (a blocking
+	 * `--wait` mid-tool-call cannot answer in 60s — penster feedback #3, item 5).
+	 * Bounded to 15..1800.
+	 */
+	exitInterceptTimeoutSec?: number;
 }
 
 /** Reviewer agent configuration */

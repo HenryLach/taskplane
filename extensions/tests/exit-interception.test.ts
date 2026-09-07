@@ -89,7 +89,8 @@ describe("1.x: Agent-host exit interception (TP-172)", () => {
 	});
 
 	it("1.10: interception has bounded timeout (2 minutes)", () => {
-		expect(agentHostSrc).toContain("INTERCEPTION_TIMEOUT_MS = 120_000");
+		// Configurable safety race (defaults to 120s; lane passes window + 60s).
+		expect(agentHostSrc).toContain("INTERCEPTION_TIMEOUT_MS = opts.exitInterceptSafetyMs ?? 120_000");
 		expect(agentHostSrc).toContain("Promise.race([interceptPromise, timeoutPromise])");
 	});
 
@@ -149,7 +150,10 @@ describe("2.x: Lane-runner supervisor escalation (TP-172)", () => {
 	});
 
 	it("2.7: supervisor reply polling has 60s timeout", () => {
-		expect(laneRunnerSrc).toContain("SUPERVISOR_REPLY_TIMEOUT_MS = 60_000");
+		// Window is configurable (taskRunner.worker.exitInterceptTimeoutSec; default 60s, 15..1800).
+		expect(laneRunnerSrc.replace(/\s+/g, " ")).toContain(
+			"SUPERVISOR_REPLY_TIMEOUT_MS = Math.min(1800, Math.max(15, config.exitInterceptTimeoutSec ?? 60)) * 1000;",
+		);
 	});
 
 	it("2.8: supervisor reply polling uses 2s interval", () => {

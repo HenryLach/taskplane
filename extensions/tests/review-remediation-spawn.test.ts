@@ -336,6 +336,33 @@ describe("#629 — review-gate remediation spawn (behavioural)", () => {
 		expect(status).toContain("Duplicate review boundary");
 	});
 
+	it("7. step-completion heuristic does NOT flip a REVISE'd step to ✅ Complete (phantom STATUS edit, feedback #3 item 4)", async () => {
+		// All checkboxes checked, step still In Progress (worker reverted it per the recovery
+		// recipe), latest code review REVISE. The worker's spawn "does" a re-review → still REVISE.
+		writeFileSync(
+			join(taskFolder, "STATUS.md"),
+			STATUS_MD_ALL_COMPLETE.replace(
+				"### Step 1: Implement thing\n**Status:** ✅ Complete",
+				"### Step 1: Implement thing\n**Status:** 🟨 In Progress",
+			),
+		);
+		mkdirSync(reviewsDir, { recursive: true });
+		writeFileSync(join(reviewsDir, "R001-code-step1.md"), REVISE_REVIEW);
+		onSpawn = (i) => writeFileSync(join(reviewsDir, `R00${i + 2}-code-step1.md`), REVISE_REVIEW);
+		const { unit, config } = buildUnitAndConfig();
+		await executeTaskV2(
+			unit as Parameters<typeof executeTaskV2>[0],
+			config as unknown as Parameters<typeof executeTaskV2>[1],
+			{ paused: false },
+		);
+		const status = readFileSync(join(taskFolder, "STATUS.md"), "utf-8");
+		// The step block must still read In Progress — never flipped by the runtime.
+		const stepBlock = status.slice(status.indexOf("### Step 1"), status.indexOf("## Reviews"));
+		expect(stepBlock).toContain("**Status:** 🟨 In Progress");
+		expect(stepBlock).not.toContain("**Status:** ✅ Complete");
+		expect(status).toContain("Step completion withheld");
+	});
+
 	it("3. no reviews at all → zero spawns, succeeded (pre-#629 behaviour preserved)", async () => {
 		const { unit, config, packet } = buildUnitAndConfig();
 		const result = await executeTaskV2(

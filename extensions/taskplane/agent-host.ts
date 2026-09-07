@@ -341,6 +341,11 @@ export interface AgentHostOptions {
 	 * @since TP-172
 	 */
 	maxExitInterceptions?: number;
+	/**
+	 * Upper bound (ms) for one onPrematureExit intercept before the host stops
+	 * waiting. Must exceed the lane's supervisor-reply window; default 120s.
+	 */
+	exitInterceptSafetyMs?: number;
 }
 
 /**
@@ -997,7 +1002,7 @@ export function spawnAgent(
 						const shouldIntercept = opts.onPrematureExit && exitInterceptionCount < maxExitInterceptions;
 						if (shouldIntercept) {
 							exitInterceptionCount++;
-							const INTERCEPTION_TIMEOUT_MS = 120_000; // 2 minute safety timeout
+							const INTERCEPTION_TIMEOUT_MS = opts.exitInterceptSafetyMs ?? 120_000; // safety timeout (> lane window)
 							// Wrap in Promise.resolve().then() to catch synchronous throws
 							const interceptPromise = Promise.resolve().then(() =>
 								opts.onPrematureExit!(lastAssistantMessage),

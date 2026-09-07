@@ -2831,12 +2831,21 @@ export function buildWorkerEnv(
 		thinking?: string;
 		tools?: string;
 		excludeExtensions?: string[];
+		exitInterceptTimeoutSec?: number;
 	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
 	if (workerConfig?.model) env.TASKPLANE_WORKER_MODEL = workerConfig.model;
 	if (workerConfig?.thinking) env.TASKPLANE_WORKER_THINKING = workerConfig.thinking;
 	if (workerConfig?.tools) env.TASKPLANE_WORKER_TOOLS = workerConfig.tools;
+	if (
+		typeof workerConfig?.exitInterceptTimeoutSec === "number" &&
+		Number.isFinite(workerConfig.exitInterceptTimeoutSec)
+	) {
+		env.TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC = String(
+			Math.min(1800, Math.max(15, Math.round(workerConfig.exitInterceptTimeoutSec))),
+		);
+	}
 
 	return env;
 }
@@ -3002,6 +3011,10 @@ export async function executeLaneV2(
 			// site appends ENGINE_BRIDGE_TOOLS exactly once, regardless of source.
 			workerTools: extraEnvVars?.TASKPLANE_WORKER_TOOLS || DEFAULT_WORKER_USER_TOOLS,
 			workerThinking: extraEnvVars?.TASKPLANE_WORKER_THINKING || "",
+			exitInterceptTimeoutSec: (() => {
+				const n = Number.parseInt(extraEnvVars?.TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC ?? "", 10);
+				return Number.isFinite(n) && n >= 15 ? Math.min(1800, n) : 60;
+			})(),
 			workerSystemPrompt,
 			workerSegmentPrompt,
 			reviewerModel: extraEnvVars?.TASKPLANE_REVIEWER_MODEL || "",

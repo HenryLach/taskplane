@@ -388,6 +388,8 @@ export interface TaskRunnerConfig {
 		tools: string;
 		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
 		excludeExtensions?: string[];
+		/** Exit-intercept supervisor-reply window in seconds (default 60; 15..1800). */
+		exitInterceptTimeoutSec?: number;
 	};
 	/** Worker agent extension exclusion list. @since TP-180 */
 	workerExcludeExtensions?: string[];

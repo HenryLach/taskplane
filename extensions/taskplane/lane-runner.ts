@@ -496,6 +496,8 @@ export interface LaneRunnerConfig {
 	maxIterations: number;
 	/** No-progress stall limit */
 	noProgressLimit: number;
+	/** Exit-intercept supervisor-reply window (seconds; default 60; 15..1800). */
+	exitInterceptTimeoutSec?: number;
 	/** Max worker time in minutes per iteration */
 	maxWorkerMinutes: number;
 	/** Context pressure warn threshold (0-100) */
@@ -1437,6 +1439,9 @@ export async function executeTaskV2(
 			thinking: config.workerThinking || undefined,
 			mailboxDir,
 			steeringPendingPath,
+			// Safety race for one intercept must exceed the configured reply window.
+			exitInterceptSafetyMs:
+				(Math.min(1800, Math.max(15, config.exitInterceptTimeoutSec ?? 60)) + 60) * 1000,
 			eventsPath,
 			exitSummaryPath: eventsPath.replace(/\.jsonl$/, "-exit.json"),
 			timeoutMs: config.maxWorkerMinutes * 60_000,
@@ -1603,8 +1608,11 @@ export async function executeTaskV2(
 							/* best effort — don't block on alert failure */
 						}
 
-						// Poll worker mailbox inbox for supervisor reply (60s timeout)
-						const SUPERVISOR_REPLY_TIMEOUT_MS = 60_000;
+						// Poll worker mailbox inbox for supervisor reply. Window is configurable
+						// (taskRunner.worker.exitInterceptTimeoutSec, default 60s): a supervisor
+						// inside a long tool call cannot answer in 60s (penster feedback #3).
+						const SUPERVISOR_REPLY_TIMEOUT_MS =
+							Math.min(1800, Math.max(15, config.exitInterceptTimeoutSec ?? 60)) * 1000;
 						const POLL_INTERVAL_MS = 2_000;
 						const escalationTimestamp = Date.now();
 						let acceptedReplyTs = 0;
@@ -2075,23 +2083,43 @@ export async function executeTaskV2(
 		// Mark completed steps
 		// TP-174: When segment-scoped, mark step complete when the segment's
 		// checkboxes are all checked (not the full step which may have other segments).
+		//
+		// Review-gated (penster 20260906T194514 feedback #3, item 4): a step whose
+		// LATEST review is REVISE/RETHINK must NOT be flipped to ✅ Complete just
+		// because its checkboxes are checked — the worker correctly reverts it to
+		// In Progress per the recovery recipe, this heuristic flipped it back on
+		// every relaunch (a phantom uncommitted STATUS edit "never authored by the
+		// worker"), and the flip trips review_step's complete-step guard. Same rule
+		// as the finalize gate.
+		const reviewBlockedSteps = new Set(
+			findBlockingReviewGates(unit.packet.reviewsDir)
+				.map((g) => parseGateStepNumber(g.gate))
+				.filter((n): n is number => n !== null),
+		);
+		const markComplete = (stepNum: number) => {
+			if (reviewBlockedSteps.has(stepNum)) {
+				logExecution(
+					statusPath,
+					"Step completion withheld",
+					`Step ${stepNum}: checkboxes complete but latest review is REVISE/RETHINK — not marking ✅ Complete`,
+				);
+				return;
+			}
+			updateStepStatus(statusPath, stepNum, "complete");
+		};
 		if (repoStepNumbers && currentRepoId) {
 			for (const stepNum of repoStepNumbers) {
 				if (isSegmentComplete(afterStatusContent, stepNum, currentRepoId)) {
 					// Only mark step complete in STATUS.md if ALL segments in that step
 					// are complete (not just ours). But for loop exit, we only care about ours.
 					const ss = afterStatus.steps.find((s) => s.number === stepNum);
-					if (isStepComplete(ss)) {
-						updateStepStatus(statusPath, stepNum, "complete");
-					}
+					if (isStepComplete(ss)) markComplete(stepNum);
 				}
 			}
 		} else {
 			for (const step of parsed.steps) {
 				const ss = afterStatus.steps.find((s) => s.number === step.number);
-				if (isStepComplete(ss)) {
-					updateStepStatus(statusPath, step.number, "complete");
-				}
+				if (isStepComplete(ss)) markComplete(step.number);
 			}
 		}
 
