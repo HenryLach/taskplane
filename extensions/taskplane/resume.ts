@@ -2006,6 +2006,21 @@ export async function resumeOrchBatch(
 		),
 		completed: new Map(),
 	} as unknown as import("./types.ts").DiscoveryResult;
+	/**
+	 * Merge fresh discovery WITH the persisted fallback (Sage review round 3):
+	 * discovery.pending only lists tasks still to run, so a checkpoint that
+	 * relied on it alone wrote taskFolder "" for every completed/archived task
+	 * — durable metadata loss on crash, and merge artifact staging skips tasks
+	 * with no folder. Fresh entries win; persisted entries fill the gaps.
+	 */
+	const withPersistedFallback = (
+		fresh: import("./types.ts").DiscoveryResult | null,
+	): import("./types.ts").DiscoveryResult => {
+		if (!fresh) return preWaveDiscovery;
+		const pending = new Map(preWaveDiscovery.pending);
+		for (const [id, task] of fresh.pending) pending.set(id, task);
+		return { ...fresh, pending } as import("./types.ts").DiscoveryResult;
+	};
 	const preWaveLanes = reconstructAllocatedLanes(persistedState.lanes, persistedState.tasks);
 	const holdPersistCtx: {
 		wavePlan: () => string[][];
@@ -2081,7 +2096,7 @@ export async function resumeOrchBatch(
 		useDependencyCache: orchConfig.dependencies.cache,
 		workspaceConfig: workspaceConfig ?? null,
 	});
-	holdPersistCtx.discovery = () => discovery;
+	holdPersistCtx.discovery = () => withPersistedFallback(discovery);
 
 	// Build dependency graph for skip-dependents policy
 	const depGraph = buildDependencyGraph(discovery.pending, discovery.completed);
@@ -2741,7 +2756,7 @@ export async function resumeOrchBatch(
 	holdPersistCtx.wavePlan = () => wavePlan;
 	holdPersistCtx.lanes = () => latestAllocatedLanes;
 	holdPersistCtx.outcomes = () => allTaskOutcomes;
-	holdPersistCtx.discovery = () => discovery ?? null;
+	holdPersistCtx.discovery = () => withPersistedFallback(discovery ?? null);
 
 	// Build outcomes from reconciled tasks
 	for (const task of reconciledTasks) {

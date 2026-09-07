@@ -22,6 +22,9 @@ import {
 import { reconstructHoldsFromMailbox } from "../taskplane/hold-state.ts";
 import { quarantineUnauthorizedDoneMarkers } from "../taskplane/resume.ts";
 import { readOutboxStrict } from "../taskplane/mailbox.ts";
+import { loadBatchState, persistRuntimeStateStrict } from "../taskplane/persistence.ts";
+import { createHoldStore } from "../taskplane/hold-state.ts";
+import { defaultBatchDiagnostics, defaultResilienceState } from "../taskplane/types.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { drainAgentOutbox, writeOutboxMessage, sessionOutboxDir } from "../taskplane/mailbox.ts";
 import { applyRuling, createHoldRecord, type HoldRecord } from "../taskplane/hold-state.ts";
@@ -693,5 +696,176 @@ describe("#627 — Sage round 2 regressions", () => {
 		expect(readSrc("resume.ts")).toContain(
 			"readOutboxStrict(stateRoot, persistedState.batchId, agentId)",
 		);
+	});
+});
+
+describe("#627 — Sage round 3: strict checkpoint keeps every task's folder and recovery metadata", () => {
+	let root: string;
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "tp627-r3-"));
+		mkdirSync(join(root, ".pi"), { recursive: true });
+	});
+	afterEach(() => {
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("a hold checkpoint during resume (fresh discovery lists only the held task) preserves the completed task's folder, partial-progress and diagnostic fields", () => {
+		// Persisted table: TP-D completed (absent from fresh discovery), TP-H held.
+		const tasks = [
+			{
+				taskId: "TP-D",
+				laneNumber: 1,
+				sessionName: "orch-op-lane-1",
+				status: "succeeded",
+				taskFolder: join(root, "tasks", "TP-D"),
+				startedAt: 1,
+				endedAt: 2,
+				doneFileFound: true,
+				exitReason: "done",
+				partialProgressCommits: 3,
+				partialProgressBranch: "pp/TP-D",
+				exitDiagnostic: {
+					classification: "clean_exit",
+					exitCode: 0,
+					errorMessage: null,
+					tokensUsed: 1,
+					contextPct: 1,
+					partialProgressCommits: 3,
+					partialProgressBranch: "pp/TP-D",
+					durationSec: 1,
+					lastKnownStep: null,
+					lastKnownCheckbox: null,
+					repoId: "default",
+				},
+			},
+			{
+				taskId: "TP-H",
+				laneNumber: 2,
+				sessionName: "orch-op-lane-2",
+				status: "held",
+				taskFolder: join(root, "tasks", "TP-H"),
+				startedAt: 3,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		];
+		const lanes = [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "orch-op-lane-1",
+				worktreePath: join(root, "wt1"),
+				branch: "b1",
+				taskIds: ["TP-D"],
+			},
+			{
+				laneNumber: 2,
+				laneId: "lane-2",
+				laneSessionId: "orch-op-lane-2",
+				worktreePath: join(root, "wt2"),
+				branch: "b2",
+				taskIds: ["TP-H"],
+			},
+		];
+		const batchState: any = {
+			phase: "paused",
+			batchId: "b",
+			baseBranch: "main",
+			orchBranch: "orch/x",
+			mode: "repo",
+			pauseSignal: { paused: false },
+			waveResults: [],
+			currentWaveIndex: 0,
+			totalWaves: 1,
+			blockedTaskIds: new Set(),
+			startedAt: 1,
+			endedAt: null,
+			totalTasks: 2,
+			succeededTasks: 1,
+			failedTasks: 0,
+			skippedTasks: 0,
+			blockedTasks: 0,
+			errors: [],
+			currentLanes: [],
+			dependencyGraph: null,
+			mergeResults: [],
+			segments: [],
+			holds: [],
+			resilience: defaultResilienceState(),
+			diagnostics: defaultBatchDiagnostics(),
+		};
+		// Exactly what resume builds: pre-wave outcomes from the persisted table + synthetic discovery
+		// merged under fresh discovery (which only knows the held task).
+		const preWaveOutcomes = tasks.map((t: any) => ({
+			taskId: t.taskId,
+			status: t.status,
+			segmentId: null,
+			startTime: t.startedAt,
+			endTime: t.endedAt,
+			exitReason: t.exitReason,
+			sessionName: t.sessionName,
+			doneFileFound: t.doneFileFound,
+			laneNumber: t.laneNumber,
+			...(t.partialProgressCommits !== undefined
+				? { partialProgressCommits: t.partialProgressCommits }
+				: {}),
+			...(t.partialProgressBranch !== undefined
+				? { partialProgressBranch: t.partialProgressBranch }
+				: {}),
+			...(t.exitDiagnostic !== undefined ? { exitDiagnostic: t.exitDiagnostic } : {}),
+		}));
+		const synthetic = {
+			pending: new Map(tasks.map((t) => [t.taskId, { taskId: t.taskId, taskFolder: t.taskFolder }])),
+			completed: new Map(),
+		};
+		const fresh = {
+			pending: new Map([["TP-H", { taskId: "TP-H", taskFolder: join(root, "tasks", "TP-H") }]]),
+			completed: new Map(),
+		};
+		const merged = { ...fresh, pending: new Map([...synthetic.pending, ...fresh.pending]) };
+		const allocated = lanes.map((l) => ({
+			...l,
+			tasks: l.taskIds.map((id) => ({
+				taskId: id,
+				order: 0,
+				task: { taskId: id },
+				estimatedMinutes: 0,
+			})),
+			strategy: "round-robin",
+			estimatedLoad: 0,
+			estimatedMinutes: 0,
+		}));
+		const store = createHoldStore(batchState, (reason) =>
+			persistRuntimeStateStrict(
+				reason,
+				batchState,
+				[["TP-D", "TP-H"]],
+				allocated as never,
+				preWaveOutcomes as never,
+				merged as never,
+				root,
+			),
+		);
+		store.open(hold({ taskId: "TP-H", laneNumber: 2, agentId: "orch-op-lane-2-worker" }));
+
+		const reloaded = loadBatchState(root)!;
+		const d = reloaded.tasks.find((t) => t.taskId === "TP-D")!;
+		const h = reloaded.tasks.find((t) => t.taskId === "TP-H")!;
+		expect(d.taskFolder).toBe(join(root, "tasks", "TP-D"));
+		expect(d.partialProgressCommits).toBe(3);
+		expect(d.partialProgressBranch).toBe("pp/TP-D");
+		expect(d.exitDiagnostic?.classification).toBe("clean_exit");
+		expect(d.status).toBe("succeeded");
+		expect(h.taskFolder).toBe(join(root, "tasks", "TP-H"));
+		expect(h.status).toBe("held");
+		expect(reloaded.holds.length).toBe(1);
+
+		// and the resume source keeps the fallback for EVERY checkpoint, not just pre-wave
+		const src = readSrc("resume.ts");
+		expect(
+			(src.match(/holdPersistCtx\.discovery = \(\) => withPersistedFallback\(/g) ?? []).length,
+		).toBe(2);
+		expect(src).toContain("discovery: () => preWaveDiscovery,");
 	});
 });
