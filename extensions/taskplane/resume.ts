@@ -12,7 +12,11 @@ import {
 	resolveDisplayWaveNumber,
 	buildSpawnFailureAlertExtras,
 } from "./engine.ts";
-import { applyReExecutionOutcomeToSegments, taskSegmentsAllSucceeded } from "./segment-recovery.ts";
+import {
+	advanceActiveSegment,
+	applyReExecutionOutcomeToSegments,
+	taskSegmentsAllSucceeded,
+} from "./segment-recovery.ts";
 import {
 	buildReviewerEnv,
 	buildWorkerEnv,
@@ -125,7 +129,7 @@ async function terminateAliveV2Agents(
 		},
 	);
 }
-import { getCurrentBranch, runGit } from "./git.ts";
+import { getCurrentBranch, runGit, describeOrchBranchStateAcrossRepos } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
 import {
 	applyMergeRetryLoop,
@@ -206,6 +210,41 @@ import {
  * @param workspaceConfig  - Workspace configuration (null in repo mode)
  * @returns Array of unique absolute repo root paths
  */
+/**
+ * Catch-up merge eligibility (resume step 8d), pure: which persisted lanes hold
+ * succeeded-but-unmerged work? A lane qualifies when ALL its tasks are
+ * `succeeded`, none were re-executed in this resume pass, and the (LAST) wave
+ * of every task has no `succeeded` merge record. Branch existence is checked by
+ * the caller (needs git).
+ */
+export function selectCatchUpLanes(
+	persistedState: Pick<PersistedBatchState, "lanes" | "tasks" | "mergeResults">,
+	wavePlan: string[][],
+	reExecutedTaskIds: ReadonlySet<string>,
+): PersistedBatchState["lanes"] {
+	// LATEST merge status per wave (the same rule computeResumePoint uses) — an
+	// older succeeded record must not mask a later failure (success → failure
+	// while a third task was still pending left succeeded work permanently
+	// unmerged).
+	const waveMerged = (w: number) =>
+		getMergeStatusForWave(persistedState.mergeResults ?? [], w) === "succeeded";
+	const waveOfTask = new Map<string, number>();
+	wavePlan.forEach((wave, i) => {
+		for (const id of wave) waveOfTask.set(id, i);
+	});
+	const succeededById = new Map(
+		persistedState.tasks.map((t) => [t.taskId, t.status === "succeeded"]),
+	);
+	return persistedState.lanes.filter((laneRecord) => {
+		if (laneRecord.taskIds.length === 0) return false;
+		if (!laneRecord.taskIds.every((id) => succeededById.get(id))) return false;
+		if (laneRecord.taskIds.some((id) => reExecutedTaskIds.has(id))) return false;
+		const waves = laneRecord.taskIds.map((id) => waveOfTask.get(id));
+		if (waves.some((w) => w === undefined || waveMerged(w))) return false;
+		return true;
+	});
+}
+
 export function collectRepoRoots(
 	persistedState: PersistedBatchState,
 	defaultRepoRoot: string,
@@ -1667,6 +1706,23 @@ export async function resumeOrchBatch(
 	// v3: Carry forward resilience and diagnostics from persisted state
 	batchState.resilience = persistedState.resilience;
 	batchState.diagnostics = persistedState.diagnostics;
+	// Carry forward merge HISTORY. The runtime starts fresh on every resume, so
+	// without this the next checkpoint serialized only the merges appended by
+	// this pass and earlier waves' records were dropped — a later resume then
+	// re-flagged already-merged waves for retry (and catch-up re-selected their
+	// lanes). Persisted records are 0-based; runtime is 1-based (converted once
+	// here, back once in serializeBatchState). Order preserved (latest-wins reads).
+	batchState.mergeResults = (persistedState.mergeResults ?? []).map(
+		(mr) =>
+			({
+				waveIndex: mr.waveIndex + 1,
+				status: mr.status,
+				laneResults: [],
+				failedLane: mr.failedLane,
+				failureReason: mr.failureReason,
+				totalDurationMs: 0,
+			}) as MergeWaveResult,
+	);
 	// v4: Carry forward segment records (including dynamically expanded segments)
 	batchState.segments = [...(persistedState.segments ?? [])];
 	// Carry forward unknown fields for roundtrip preservation
@@ -1839,6 +1895,9 @@ export async function resumeOrchBatch(
 
 	// ── 8b. Handle re-execute tasks (dead session + existing worktree) ──
 	const reExecuteTasks = reconciledTasks.filter((t) => t.action === "re-execute");
+	// Worktree preservation flag (declared before 8c/8d so a merge failure on
+	// resume can set it; consumed by terminal cleanup).
+	let preserveWorktreesForResume = false;
 	const reExecuteFinalStatus = new Map<string, LaneTaskStatus>();
 	// #629: the REAL lane outcome of a re-executed task (telemetry, exit
 	// diagnostic, timestamps). Previously discarded — the synthesized outcome
@@ -1916,7 +1975,10 @@ export async function resumeOrchBatch(
 				// task failed; treating the real outcome verbatim would make it an
 				// unretryable `skipped`). Nothing else changes; the next resume
 				// reconciles it again.
-				if (pollResult.status === "skipped") {
+				if (
+					pollResult.status === "pending" ||
+					(pollResult.status === "skipped" && /paused/i.test(pollResult.exitReason))
+				) {
 					reExecuteFinalStatus.set(task.taskId, "pending");
 					execLog(
 						"resume",
@@ -1967,6 +2029,14 @@ export async function resumeOrchBatch(
 					reExecuteOutcome.delete(task.taskId); // not a task-level outcome yet
 					reExecuteTaskSet.delete(task.taskId);
 					reExecAllocatedLanes.push(lane);
+					// Advance the frontier so the next execution runs the NEXT segment (on
+					// both the persisted record and the parsed task the wave loop will use).
+					const nextSeg = advanceActiveSegment(
+						{ tasks: persistedState.tasks, segments: batchState.segments } as never,
+						task.taskId,
+					);
+					const parsedForFrontier = discovery.pending.get(task.taskId);
+					if (parsedForFrontier) parsedForFrontier.activeSegmentId = nextSeg;
 					execLog(
 						"resume",
 						task.taskId,
@@ -2097,13 +2167,206 @@ export async function resumeOrchBatch(
 					}
 				}
 			} else {
+				// Fail closed (mirrors 8d): a re-executed task that succeeded but whose
+				// branch did not merge must not let the batch proceed to a state that
+				// reads as complete with its work unmerged. Pause (resumable), preserve
+				// worktrees; the next resume re-executes nothing for it (it is succeeded)
+				// but 8d's catch-up merge picks its lane up.
 				onNotify(
-					`⚠️ Re-executed branch merge ${reExecMergeResult.status}: ${reExecMergeResult.failureReason || "unknown"}`,
+					`⚠️ Re-executed branch merge ${reExecMergeResult.status}: ${reExecMergeResult.failureReason || "unknown"} — batch paused with worktrees preserved; fix the conflict and orch_resume() to retry the merge.`,
 					"warning",
 				);
+				batchState.pauseSignal.paused = true;
+				batchState.pauseSignal.cause = "merge-failure";
+				preserveWorktreesForResume = true;
+				emitAlert({
+					category: "merge-failure",
+					summary:
+						`🔴 Merge of re-executed task(s) ${succeededReExecTaskIds.join(", ")} failed on resume: ${reExecMergeResult.failureReason || "unknown"}
+` +
+						`  The work remains on the lane branch(es); the batch is paused with worktrees preserved.
+` +
+						`  Resolve the conflict, then orch_resume() — the catch-up merge re-runs automatically.`,
+					context: {
+						batchProgress: buildBatchProgressSnapshot(batchState),
+						mergeError: reExecMergeResult.failureReason ?? undefined,
+					},
+				});
 			}
 
-			batchState.mergeResults.push(reExecMergeResult);
+			// Attribute the outcome to the ACTUAL original wave(s) of the re-executed
+			// tasks (runtime 1-indexed), not the -1 sentinel: persistence clamps the
+			// sentinel to wave 0, which mis-attributed a second-wave merge failure to
+			// wave 0 and let the real wave keep an older success record.
+			// (LAST wave per task — the same mapping selectCatchUpLanes uses for a
+			// multi-segment task's lane.)
+			const lastWaveOf = new Map<string, number>();
+			runtimeWavePlan.forEach((wave, i) => {
+				for (const id of wave) lastWaveOf.set(id, i);
+			});
+			const reExecWaves = new Set<number>();
+			for (const id of succeededReExecTaskIds) {
+				const w = lastWaveOf.get(id);
+				if (w !== undefined) reExecWaves.add(w);
+			}
+			if (reExecWaves.size === 0) {
+				batchState.mergeResults.push(reExecMergeResult);
+			} else {
+				for (const w of reExecWaves) {
+					batchState.mergeResults.push({ ...reExecMergeResult, waveIndex: w + 1 });
+				}
+			}
+		}
+	}
+
+	// ── 8d. Catch-up merge: succeeded-but-unmerged lane work ─────
+	// A pause (or crash) that lands DURING a wave can leave tasks that succeeded
+	// with their lane branches never merged — the wave's merge step did not run.
+	// On resume the wave loop only merges what it re-executes, so that work was
+	// silently dropped (Sage review of the owned-batch pause fix). Merge every
+	// persisted lane whose tasks are all succeeded and whose wave has no
+	// successful merge record. Idempotent: an already-merged branch is a no-op.
+	// Skipped entirely when 8c already raised a merge-failure pause: a successful
+	// subset catch-up must never certify a wave whose other lane work (the failed
+	// 8c merge) remains unmerged — the next resume retries BOTH via this step.
+	if (batchState.pauseSignal.cause !== "merge-failure") {
+		const waveOfTask = new Map<string, number>();
+		runtimeWavePlan.forEach((wave, i) => {
+			for (const id of wave) waveOfTask.set(id, i);
+		});
+		const catchUpLanes: AllocatedLane[] = [];
+		for (const laneRecord of selectCatchUpLanes(
+			persistedState,
+			runtimeWavePlan,
+			new Set(reExecuteFinalStatus.keys()),
+		)) {
+			const laneRepoRoot = resolveRepoRoot(laneRecord.repoId, repoRoot, workspaceConfig);
+			if (
+				!runGit(["rev-parse", "--verify", "--quiet", `refs/heads/${laneRecord.branch}`], laneRepoRoot)
+					.ok
+			) {
+				continue; // branch gone — nothing to merge
+			}
+			catchUpLanes.push({
+				laneNumber: laneRecord.laneNumber,
+				laneId: laneRecord.laneId,
+				laneSessionId: laneRecord.laneSessionId,
+				worktreePath: laneRecord.worktreePath,
+				branch: laneRecord.branch,
+				tasks: laneRecord.taskIds
+					// A task that succeeded may already be in the completed set (no ParsedTask).
+					// Enrich a stub from the persisted record so merge staging can still find
+					// the task folder (.DONE / STATUS / review artifacts).
+					.map((id) => {
+						const parsed = discovery.pending.get(id);
+						if (parsed) return parsed;
+						const rec = persistedState.tasks.find((t) => t.taskId === id);
+						return {
+							taskId: id,
+							taskName: id,
+							taskFolder: rec?.taskFolder ?? "",
+							promptPath: rec?.taskFolder ? join(rec.taskFolder, "PROMPT.md") : "",
+							fileScope: [],
+							dependencies: [],
+						} as unknown as ParsedTask;
+					})
+					.map((t) => ({ taskId: t.taskId, order: 0, task: t, estimatedMinutes: 0 })),
+				strategy: "round-robin",
+				estimatedLoad: 0,
+				estimatedMinutes: 0,
+				...(laneRecord.repoId !== undefined ? { repoId: laneRecord.repoId } : {}),
+			});
+		}
+		if (catchUpLanes.length > 0) {
+			const ids = catchUpLanes.flatMap((l) => l.tasks.map((t) => t.taskId));
+			onNotify(
+				`🔀 Merging ${catchUpLanes.length} succeeded-but-unmerged lane branch(es) from the interrupted wave (${ids.join(", ")})...`,
+				"info",
+			);
+			const CATCH_UP_WAVE_INDEX = -1;
+			const synthetic: WaveExecutionResult = {
+				waveIndex: CATCH_UP_WAVE_INDEX,
+				startedAt: Date.now(),
+				endedAt: Date.now(),
+				laneResults: catchUpLanes.map((lane) => ({
+					laneNumber: lane.laneNumber,
+					laneId: lane.laneId,
+					tasks: lane.tasks.map((t) => ({
+						taskId: t.taskId,
+						status: "succeeded" as LaneTaskStatus,
+						startTime: Date.now(),
+						endTime: Date.now(),
+						exitReason: "Succeeded before pause; merged on resume",
+						sessionName: lane.laneSessionId,
+						doneFileFound: true,
+						laneNumber: lane.laneNumber,
+					})),
+					overallStatus: "succeeded" as const,
+					startTime: Date.now(),
+					endTime: Date.now(),
+				})),
+				policyApplied: orchConfig.failure.on_task_failure,
+				stoppedEarly: false,
+				failedTaskIds: [],
+				skippedTaskIds: [],
+				succeededTaskIds: ids,
+				blockedTaskIds: [],
+				laneCount: catchUpLanes.length,
+				overallStatus: "succeeded",
+				finalMonitorState: null,
+				allocatedLanes: catchUpLanes,
+			};
+			const catchUp = await mergeWaveByRepo(
+				catchUpLanes,
+				synthetic,
+				CATCH_UP_WAVE_INDEX,
+				orchConfig,
+				repoRoot,
+				batchState.batchId,
+				batchState.orchBranch,
+				workspaceConfig,
+				stateRoot,
+				agentRoot,
+				runnerConfig.testing_commands,
+				undefined,
+				undefined,
+				resumeBackend,
+			);
+			if (catchUp.status === "succeeded") {
+				onNotify(`✅ Catch-up merge complete: ${catchUp.laneResults.length} lane(s) merged`, "info");
+			} else {
+				// Normal merge-failure handling: the batch must NOT proceed to a state
+				// that can read as complete while succeeded work sits unmerged. Pause
+				// (resumable), preserve worktrees, and stop before the wave loop; the
+				// next resume re-runs this catch-up (it is the retry mechanism).
+				onNotify(
+					`⚠️ Catch-up merge ${catchUp.status}: ${catchUp.failureReason || "unknown"} — the succeeded work remains on its lane branch(es). Batch paused; fix the conflict and orch_resume() to retry.`,
+					"warning",
+				);
+				batchState.pauseSignal.paused = true;
+				batchState.pauseSignal.cause = "merge-failure";
+				preserveWorktreesForResume = true;
+				emitAlert({
+					category: "merge-failure",
+					summary:
+						`🔴 Catch-up merge failed on resume for ${ids.join(", ")}: ${catchUp.failureReason || "unknown"}
+` +
+						`  The succeeded work remains on its lane branch(es); the batch is paused with worktrees preserved.
+` +
+						`  Resolve the conflict, then orch_resume() — the catch-up merge re-runs automatically.`,
+					context: {
+						batchProgress: buildBatchProgressSnapshot(batchState),
+						mergeError: catchUp.failureReason ?? undefined,
+					},
+				});
+			}
+			// Record it against the ORIGINAL wave(s) so the wave loop's merge-retry
+			// logic sees those waves as merged (or as needing retry on failure).
+			for (const w of new Set(
+				catchUpLanes.flatMap((l) => l.tasks.map((t) => waveOfTask.get(t.taskId) ?? 0)),
+			)) {
+				batchState.mergeResults.push({ ...catchUp, waveIndex: w + 1 });
+			}
 		}
 	}
 
@@ -2235,7 +2498,6 @@ export async function resumeOrchBatch(
 	// We need to execute remaining waves starting from resumeWaveIndex.
 	// For waves where some tasks are already done, we filter them out.
 
-	let preserveWorktreesForResume = false;
 	const persistedStatusByTaskId = new Map(
 		persistedState.tasks.map((task) => [task.taskId, task.status] as const),
 	);
@@ -2248,6 +2510,7 @@ export async function resumeOrchBatch(
 		// Check pause signal
 		if (batchState.pauseSignal.paused) {
 			batchState.phase = "paused";
+			preserveWorktreesForResume = true; // every pause exit preserves recovery worktrees
 			persistRuntimeState(
 				"pause-before-wave",
 				batchState,
@@ -2680,6 +2943,38 @@ export async function resumeOrchBatch(
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},
 			});
+		}
+
+		// ── Pause finalizer (mirrors engine.ts; penster 20260906T194514) ──
+		// Paused tasks are pending, never skipped; a wave with any is not complete.
+		// Finalize as paused (worktrees preserved, no merge) and stop.
+		{
+			const pausedIds = waveResult.pausedTaskIds ?? [];
+			const notAborting =
+				batchState.pauseSignal.cause !== "abort" && waveResult.overallStatus !== "aborted";
+			const operatorPaused = batchState.pauseSignal.paused && notAborting;
+			if (notAborting && (pausedIds.length > 0 || operatorPaused)) {
+				batchState.phase = "paused";
+				preserveWorktreesForResume = true;
+				execLog("resume", batchState.batchId, `batch paused during wave ${waveIdx + 1}`, {
+					cause: batchState.pauseSignal.cause ?? "operator",
+					pendingTasks: pausedIds.join(",") || "(none)",
+				});
+				persistRuntimeState(
+					"pause-during-wave",
+					batchState,
+					wavePlan,
+					latestAllocatedLanes,
+					allTaskOutcomes,
+					discovery,
+					stateRoot,
+				);
+				onNotify(
+					`⏸️  Batch paused during wave ${waveIdx + 1}: ${pausedIds.length} task(s) remain pending. Worktrees preserved. Use orch_resume() to continue.`,
+					"warning",
+				);
+				break;
+			}
 		}
 
 		persistRuntimeState(
@@ -3625,14 +3920,36 @@ export async function resumeOrchBatch(
 				? `${Math.floor(batchDurationMs / 60000)}m ${Math.round((batchDurationMs % 60000) / 1000)}s`
 				: "unknown";
 		if (batchState.phase === "completed" && batchState.failedTasks === 0) {
+			// Report outcomes and branch state SEPARATELY and truthfully (penster
+			// 20260906T194514 saw "Merged … Ready for integration" on 0/1 succeeded
+			// with an empty orch branch). Never say "merged" unless the orch branch is
+			// verifiably ahead of base; a failed comparison is "unknown", not "nothing".
+			const branchState = describeOrchBranchStateAcrossRepos(
+				batchState.orchBranch,
+				batchState.baseBranch,
+				encounteredRepoRoots.keys(),
+			);
+			const hasSuccess = batchState.succeededTasks > 0;
+			const outcomeLine =
+				`  ${batchState.succeededTasks}/${batchState.totalTasks} tasks succeeded` +
+				(batchState.skippedTasks > 0 ? `, ${batchState.skippedTasks} skipped` : "") +
+				"\n";
+			const nextStep =
+				hasSuccess && branchState.kind === "ahead"
+					? `Ready for integration. Run orch_integrate() or review first.`
+					: branchState.kind === "ahead"
+						? `⚠️ No task succeeded, yet ${branchState.detail} — partial work was merged; inspect before integrating.`
+						: branchState.kind === "unknown"
+							? `⚠️ Could not verify the orch branch (${branchState.detail}). Inspect before integrating.`
+							: `Nothing to integrate: ${branchState.detail}.`;
 			emitAlert({
 				category: "batch-complete",
 				summary:
-					`✅ Batch ${batchState.batchId} completed\n` +
-					`  ${batchState.succeededTasks}/${batchState.totalTasks} tasks succeeded\n` +
+					`${hasSuccess ? "✅" : "⚠️"} Batch ${batchState.batchId} completed\n` +
+					outcomeLine +
 					`  ${batchState.taskLevelWaveCount ?? batchState.totalWaves} wave(s), duration: ${durationStr}\n` +
-					`  Merged to orch branch: ${batchState.orchBranch}\n\n` +
-					`Ready for integration. Run orch_integrate() or review first.`,
+					`  Orch branch ${batchState.orchBranch}: ${branchState.detail}\n\n` +
+					nextStep,
 				context: {
 					batchProgress: buildBatchProgressSnapshot(batchState),
 					batchDurationMs,

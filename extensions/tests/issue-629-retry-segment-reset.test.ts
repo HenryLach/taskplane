@@ -331,8 +331,9 @@ describe("#629 — segment record must follow the task record on retry", () => {
 
 	it("SAGE P2: resume treats a paused re-execution (`skipped`) as still pending — never failed/skipped", () => {
 		const flat = readSrc("resume.ts").replace(/\s+/g, " ");
+		// A pause now surfaces as "pending" (legacy "skipped"-with-paused-reason still tolerated).
 		expect(flat).toContain(
-			'if (pollResult.status === "skipped") { reExecuteFinalStatus.set(task.taskId, "pending");',
+			'pollResult.status === "pending" || (pollResult.status === "skipped" && /paused/i.test(pollResult.exitReason))',
 		);
 		// The real outcome is only adopted for terminal succeeded/failed results.
 		expect(flat).toContain(

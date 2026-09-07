@@ -77,6 +77,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extension sources), and the takeover summary shows them — a local
   pre-release deploy is distinguishable from the published version without
   grepping for tool names.
+- **`orch_pause` on an owned single-wave batch with a holding lane completed
+  the batch 0/1, skipped the task and removed its worktree** (penster
+  20260906T194514). Two writers turned a paused task into `skipped`, and pause
+  was only honoured before the *next* wave. Paused tasks are now `pending`;
+  a wave with paused tasks finalizes the batch as `paused` (worktrees
+  preserved, no merge); pause causes are tracked so Tier-0 recovery can never
+  clear an operator pause. On resume, tasks that succeeded before the pause are
+  merged by a catch-up step; a failed merge on resume pauses again instead of
+  completing with work unmerged. `orch_retry_task` accepts `skipped` tasks and
+  reopens a wrongly-completed batch; provenance branches are reported, not
+  cleared. Hold exits no longer consume the iteration budget (interim until
+  #627). The batch-complete alert reports outcomes and the orch branch state
+  separately and never says "merged" when nothing was (workspace-aware).
 - **Stale "Ready for integration" banner and supervised "Integration Plan"
   prompt after the batch was already integrated** (#610). When the engine
   finished while the supervisor was mid-turn, the batch-end epilogue was

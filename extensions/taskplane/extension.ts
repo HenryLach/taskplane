@@ -3350,6 +3350,7 @@ export default function (pi: ExtensionAPI) {
 				saveBatchState(JSON.stringify(persisted, null, 2), stateRoot);
 				orchBatchState.phase = "paused";
 				orchBatchState.pauseSignal.paused = true;
+				orchBatchState.pauseSignal.cause = "operator";
 				updateOrchWidget();
 				return (
 					`⏸️ Batch ${orchBatchState.batchId} administratively paused (was "${prevPhase}"; ${decision.reason}).
@@ -3364,6 +3365,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		orchBatchState.pauseSignal.paused = true;
+		orchBatchState.pauseSignal.cause = "operator"; // in-process (fallback) engine reads this directly
 		// TP-071: Forward pause to engine process (its pauseSignal is separate)
 		activeWorker?.send({ type: "pause" });
 		updateOrchWidget();
@@ -3560,6 +3562,7 @@ export default function (pi: ExtensionAPI) {
 		// Step 2: Set pause signal and forward to worker
 		if (orchBatchState.pauseSignal) {
 			orchBatchState.pauseSignal.paused = true;
+			orchBatchState.pauseSignal.cause = "abort";
 			messages.push("  ✓ Pause signal set on in-memory batch state");
 		}
 		// ── #631: ownership + verified shutdown BEFORE any destructive step ──
@@ -3762,6 +3765,7 @@ export default function (pi: ExtensionAPI) {
 		const pausablePhases = new Set(["launching", "executing", "merging", "planning"]);
 		if (pausablePhases.has(orchBatchState.phase)) {
 			orchBatchState.pauseSignal.paused = true;
+			orchBatchState.pauseSignal.cause = "operator";
 			activeWorker?.send({ type: "pause" });
 			messages.push(`  ✓ Wave paused (batch ${orchBatchState.batchId})`);
 		} else {
@@ -3865,12 +3869,24 @@ export default function (pi: ExtensionAPI) {
 			return `❌ Task "${taskId}" not found in batch ${state.batchId}.\nKnown tasks: ${knownIds || "(none)"}`;
 		}
 
-		// Validate: only failed or stalled tasks can be retried
-		if (taskRecord.status !== "failed" && taskRecord.status !== "stalled") {
-			return `❌ Cannot retry task "${taskId}" — current status is "${taskRecord.status}". Only failed or stalled tasks can be retried.`;
+		// Validate: failed, stalled or SKIPPED tasks can be retried. Skipped is
+		// included because a runtime defect (pause → skipped, penster
+		// 20260906T194514) left tasks skipped that never ran; the documented
+		// recovery (retry → resume) must be able to start from that state.
+		if (
+			taskRecord.status !== "failed" &&
+			taskRecord.status !== "stalled" &&
+			taskRecord.status !== "skipped"
+		) {
+			return `❌ Cannot retry task "${taskId}" — current status is "${taskRecord.status}". Only failed, stalled or skipped tasks can be retried.`;
 		}
 
 		const prevStatus = taskRecord.status;
+		// Preserve recovery provenance: a saved partial-progress branch is the only
+		// record of work whose worktree may already be gone. Report it instead of
+		// silently clearing it.
+		const preservedBranch = taskRecord.partialProgressBranch;
+		const preservedCommits = taskRecord.partialProgressCommits;
 
 		// Reset task to pending
 		taskRecord.status = "pending";
@@ -3879,8 +3895,9 @@ export default function (pi: ExtensionAPI) {
 		taskRecord.startedAt = null;
 		taskRecord.endedAt = null;
 		taskRecord.exitDiagnostic = undefined;
-		taskRecord.partialProgressCommits = undefined;
-		taskRecord.partialProgressBranch = undefined;
+		// Keep partialProgressBranch/Commits: they are recovery PROVENANCE (a saved
+		// ref may be the only copy of the work); the engine overwrites them when the
+		// re-executed task produces new partial progress.
 
 		// #629: on the v2 runtime the SEGMENT record is authoritative — resume's
 		// reconstructSegmentFrontier() re-derives task status from segments, so a
@@ -3891,6 +3908,8 @@ export default function (pi: ExtensionAPI) {
 		// Adjust counters: only decrement failedTasks if the task was in a failure state
 		if (prevStatus === "failed" || prevStatus === "stalled") {
 			state.failedTasks = Math.max(0, state.failedTasks - 1);
+		} else if (prevStatus === "skipped") {
+			state.skippedTasks = Math.max(0, (state.skippedTasks ?? 0) - 1);
 		}
 
 		// Recompute blocked dependents — the retried task is no longer a failure,
@@ -3919,6 +3938,19 @@ export default function (pi: ExtensionAPI) {
 		if (state.phase === "failed") {
 			state.phase = "stopped";
 		}
+		// A "completed" batch that wrongly skipped a task (the pause→skipped defect)
+		// must be re-openable: retrying a task in a completed batch moves the batch
+		// to "stopped" (resumable with force). The ownership gate above already
+		// verified no engine is driving it; refuse if the batch was integrated.
+		let reopenedCompleted = false;
+		if (state.phase === "completed") {
+			if (orchBatchState.batchId === state.batchId && orchBatchState.integratedAt) {
+				return `❌ Cannot retry "${taskId}": batch ${state.batchId} has already been integrated. Start a new batch for follow-up work.`;
+			}
+			state.phase = "stopped";
+			state.endedAt = null;
+			reopenedCompleted = true;
+		}
 
 		// Update timestamp
 		state.updatedAt = Date.now();
@@ -3946,12 +3978,20 @@ export default function (pi: ExtensionAPI) {
 			state.phase === "stopped"
 				? "Use orch_resume(force=true) to re-execute the batch."
 				: "Use orch_resume() to re-execute the batch.";
+		const provenanceNote = preservedBranch
+			? `   Preserved progress: branch ${preservedBranch}${preservedCommits ? ` (${preservedCommits} commit(s))` : ""} — the worktree may be recreated from the base; inspect/cherry-pick that branch if the work must carry forward.\n`
+			: "";
+		const reopenNote = reopenedCompleted
+			? `   Batch was "completed" — reopened as "stopped" (task ${taskId} had been ${prevStatus}).\n`
+			: "";
 		return (
 			`✅ Task "${taskId}" reset to pending for re-execution.\n` +
 			`   Previous status: ${prevStatus}\n` +
 			(segmentReset.resetSegmentIds.length > 0
 				? `   Segments reset: ${segmentReset.resetSegmentIds.join(", ")}${segmentReset.preservedSegmentIds.length > 0 ? ` (preserved: ${segmentReset.preservedSegmentIds.join(", ")})` : ""}\n`
 				: "") +
+			reopenNote +
+			provenanceNote +
 			`   Batch phase: ${state.phase} | Failed: ${state.failedTasks}/${state.totalTasks}\n` +
 			`   ${resumeHint}`
 		);

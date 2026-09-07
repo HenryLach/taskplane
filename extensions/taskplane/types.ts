@@ -1143,8 +1143,15 @@ export interface WaveExecutionResult {
 	stoppedEarly: boolean;
 	/** Task IDs that failed (including stalled) */
 	failedTaskIds: string[];
-	/** Task IDs that were skipped (due to pause, prior failure, or policy) */
+	/** Task IDs that were skipped (due to prior failure in lane, or policy) */
 	skippedTaskIds: string[];
+	/**
+	 * Task IDs that did NOT run to a terminal state because the batch was PAUSED
+	 * while they were pending/holding. They remain `pending` (not skipped, not
+	 * counted) and re-execute on resume. A wave with any paused task is not
+	 * complete; the engine finalizes the batch as `paused` instead of merging.
+	 */
+	pausedTaskIds?: string[];
 	/** Task IDs that succeeded */
 	succeededTaskIds: string[];
 	/** Task IDs blocked for future waves (transitive dependents of failed tasks) */
@@ -1202,6 +1209,20 @@ export type OrchBatchPhase =
  * - Tracks pauseSignal for /orch-pause
  * - Accumulates wave results for summary
  */
+/**
+ * Shared pause signal (engine ⇄ waves ⇄ lanes).
+ *
+ * `cause` says WHY the batch is paused: `operator` = /orch-pause (or an orphan
+ * engine winding down), `abort` = stop-all failure policy / orch_abort,
+ * `stop-wave` reserved for the stop-wave policy. Tier-0 retry may clear ONLY
+ * a policy cause — one boolean let a successful retry erase an operator's
+ * pause (Sage review of the 20260906T194514 incident).
+ */
+export interface PauseSignal {
+	paused: boolean;
+	cause?: "operator" | "stop-wave" | "abort" | "merge-failure";
+}
+
 export interface OrchBatchRuntimeState {
 	/** Current execution phase */
 	phase: OrchBatchPhase;
@@ -1222,7 +1243,7 @@ export interface OrchBatchRuntimeState {
 	/** Workspace execution mode (v2). Defaults to "repo" for backward compatibility. */
 	mode: WorkspaceMode;
 	/** Shared pause signal — set by /orch-pause, read by executeLane/executeWave */
-	pauseSignal: { paused: boolean };
+	pauseSignal: PauseSignal;
 	/** All wave results in order (grows as waves complete) */
 	waveResults: WaveExecutionResult[];
 	/** Current wave index (0-based into waves array, -1 if not started) */

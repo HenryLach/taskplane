@@ -264,6 +264,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 		const p = batchState.phase;
 		if (p === "completed" || p === "failed" || p === "paused" || p === "stopped") return;
 		batchState.pauseSignal.paused = true;
+		batchState.pauseSignal.cause = "operator";
 		process.stderr.write(
 			`[orch] engine-worker: supervisor disconnected (parent pid gone) — winding down as paused (#631)
 `,
@@ -358,12 +359,15 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 			switch (msg.type) {
 				case "pause":
 					batchState.pauseSignal.paused = true;
+					batchState.pauseSignal.cause = "operator";
 					break;
 				case "resume":
 					batchState.pauseSignal.paused = false;
+					batchState.pauseSignal.cause = undefined;
 					break;
 				case "abort":
 					batchState.pauseSignal.paused = true;
+					batchState.pauseSignal.cause = "abort";
 					break;
 			}
 		});

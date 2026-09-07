@@ -535,7 +535,9 @@ These tools share the same logic as the slash commands. They return text results
 
 The `orch_retry_task`, `orch_skip_task`, and `orch_force_merge` tools enable surgical task-level and wave-level recovery:
 
-- **`orch_retry_task(taskId)`** — Resets a failed or stalled task to `pending` status. Clears exit reason, timing, and diagnostic fields. Decrements failure counters. Transitions batch from `failed` → `stopped` if no failures remain. Use `orch_resume(force=true)` after retrying to re-execute.
+- **`orch_retry_task(taskId)`** — Resets a failed, stalled **or skipped** task to `pending` status (and its v2 segment records). Clears exit reason, timing, and diagnostic fields; **keeps** `partialProgressBranch`/`Commits` as recovery provenance and reports them. Decrements the failure (or skipped) counter. Transitions the batch `failed` → `stopped`, and **reopens a `completed` batch as `stopped`** when a task in it was wrongly skipped (refused if that batch was already integrated). Use `orch_resume(force=true)` after retrying to re-execute.
+
+  **Pause semantics.** `/orch-pause` on a running batch leaves not-yet-terminal tasks **pending** (never `skipped`), finalizes the batch as `paused` with worktrees preserved, and does not merge the interrupted wave. On resume, tasks that succeeded before the pause are merged by a **catch-up merge** before the wave loop; a failed catch-up (or re-executed-branch) merge pauses the batch again with the reason, and the next resume retries it. Tier-0 recovery can clear only a policy-caused pause, never an operator pause.
 
 - **`orch_skip_task(taskId)`** — Marks a failed, stalled, or pending task as `skipped`. Updates counters and recomputes blocked dependents using the dependency graph. Unblocked tasks are reported in the response. Use `orch_resume(force=true)` after skipping to continue.
 

@@ -695,7 +695,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 	it("5.10 — both tools update in-memory orchBatchState for widget sync", () => {
 		const retryIdx = extensionSource.indexOf("function doOrchRetryTask(");
 		// Search a larger block to ensure we capture updateOrchWidget call
-		const retryBlock = extensionSource.slice(retryIdx, retryIdx + 5000);
+		const retryBlock = extensionSource.slice(retryIdx, retryIdx + 8000);
 		expect(retryBlock).toContain("updateOrchWidget()");
 
 		const skipIdx = extensionSource.indexOf("function doOrchSkipTask(");
@@ -756,7 +756,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 
 	it("5.17 — doOrchRetryTask syncs in-memory state gated on batchId match", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
-		const block = extensionSource.slice(idx, idx + 3500);
+		const block = extensionSource.slice(idx, idx + 8000);
 		expect(block).toContain("batchId");
 		expect(block).toContain("orchBatchState.batchId");
 	});

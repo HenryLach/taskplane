@@ -602,7 +602,10 @@ describe("TP-190 #561: engine.ts wire-up for spawn_failure", () => {
 		// 'failed' for this reason.
 		const phaseIdx = engineSrc.indexOf("allFailedAreSpawnFailures");
 		// TP-193: Window increased from 2000 to 3500 to absorb formatter re-wrapping.
-		const phaseBlock = engineSrc.slice(phaseIdx, phaseIdx + 3500);
+		// Bound the window at the pause finalizer that follows this block (it
+		// legitimately sets 'paused' for an OPERATOR pause — a different branch).
+		const endIdx = engineSrc.indexOf("// ── Pause finalizer", phaseIdx);
+		const phaseBlock = engineSrc.slice(phaseIdx, endIdx > 0 ? endIdx : phaseIdx + 3500);
 		// 'paused' must not be the destination phase here.
 		expect(phaseBlock).not.toContain('batchState.phase = "paused"');
 	});

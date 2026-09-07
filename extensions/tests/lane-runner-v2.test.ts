@@ -73,7 +73,8 @@ describe("2.x: Lane-runner execution contract", () => {
 	it("2.1: executeTaskV2 takes ExecutionUnit, LaneRunnerConfig, and pauseSignal", () => {
 		expect(laneRunnerSrc).toContain("unit: ExecutionUnit");
 		expect(laneRunnerSrc).toContain("config: LaneRunnerConfig");
-		expect(laneRunnerSrc).toContain("pauseSignal: { paused: boolean }");
+		// Shared PauseSignal type ({ paused; cause? }) since the owned-batch pause fix.
+		expect(laneRunnerSrc).toContain("pauseSignal: PauseSignal");
 	});
 
 	it("2.2: returns LaneRunnerTaskResult with LaneTaskOutcome", () => {

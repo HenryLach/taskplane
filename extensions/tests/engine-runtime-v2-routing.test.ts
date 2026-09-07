@@ -167,7 +167,10 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 		// doesn't break literal-string indexOf lookups for multi-arg call sites.
 		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
 		const declIdx = normSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
-		const loopIdx = normSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
+		// Productive-iteration loop (hold exits don't consume the budget; see lane-runner).
+		const loopIdx = normSrc.indexOf(
+			"for (; productiveIterations < config.maxIterations; productiveIterations++)",
+		);
 		const postLoopUseIdx = normSrc.lastIndexOf(
 			"config, statusPath, reviewerStatePath, lastTelemetry",
 		);

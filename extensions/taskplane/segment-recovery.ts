@@ -43,10 +43,18 @@ export function resetTaskSegmentsForRetry(
 	const summary: SegmentResetSummary = { resetSegmentIds: [], preservedSegmentIds: [] };
 	for (const seg of state.segments ?? []) {
 		if (seg.taskId !== taskId) continue;
-		if (seg.status === "failed" || seg.status === "stalled" || seg.status === "running") {
+		if (
+			seg.status === "failed" ||
+			seg.status === "stalled" ||
+			seg.status === "running" ||
+			seg.status === "skipped"
+		) {
 			// `running` is included defensively: a segment left `running` by a
 			// dead engine that the operator then retries should re-execute, not
-			// be reconstructed as in-flight forever.
+			// be reconstructed as in-flight forever. `skipped` is included so a
+			// task wrongly skipped by a runtime defect (pause→skipped) re-executes;
+			// an intentionally skipped task is only retried on explicit operator
+			// request, which is what orch_retry_task is.
 			seg.status = "pending";
 			seg.startedAt = null;
 			seg.endedAt = null;
@@ -148,6 +156,31 @@ export function taskSegmentsAllSucceeded(
 	const own = (segments ?? []).filter((s) => s.taskId === taskId);
 	if (own.length === 0) return null;
 	return own.every((s) => s.status === "succeeded" || s.status === "skipped");
+}
+
+/**
+ * Advance a task's `activeSegmentId` to its next non-terminal segment (in
+ * `segmentIds` order) after a segment outcome was applied. Returns the new
+ * active segment id, or null when every segment is terminal. Without this, a
+ * re-executed non-final segment left the task pointing at the segment that
+ * just succeeded, so the next execution re-ran it and mistook that segment's
+ * success for whole-task completion.
+ */
+export function advanceActiveSegment(state: PersistedBatchState, taskId: string): string | null {
+	const task = state.tasks.find((t) => t.taskId === taskId);
+	if (!task) return null;
+	const order = task.segmentIds ?? [];
+	const byId = new Map((state.segments ?? []).map((s) => [s.segmentId, s] as const));
+	for (const id of order) {
+		const seg = byId.get(id);
+		const status = seg?.status ?? "pending";
+		if (status === "pending" || status === "running") {
+			task.activeSegmentId = id;
+			return id;
+		}
+	}
+	task.activeSegmentId = null;
+	return null;
 }
 
 /** Convenience for tests/diagnostics: segment records belonging to a task. */

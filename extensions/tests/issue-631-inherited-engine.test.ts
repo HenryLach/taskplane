@@ -467,7 +467,9 @@ describe("#631 — wiring", () => {
 		expect(flat).toContain(
 			'if (p === "completed" || p === "failed" || p === "paused" || p === "stopped") return;',
 		);
-		expect(flat).toContain("batchState.pauseSignal.paused = true; process.stderr.write(");
+		expect(flat).toContain(
+			'batchState.pauseSignal.paused = true; batchState.pauseSignal.cause = "operator"; process.stderr.write(',
+		);
 		// send() never touches a closed channel (post-disconnect send raises an ASYNC error).
 		expect(flat).toContain(
 			"const send = (msg: WorkerToMainMessage) => { if (!process.connected) return;",

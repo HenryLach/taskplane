@@ -35,6 +35,7 @@ import type {
 	ParsedTask,
 	TaskMonitorSnapshot,
 	WaveExecutionResult,
+	PauseSignal,
 	WorkspaceConfig,
 	ExecutionUnit,
 	PacketPaths,
@@ -1198,7 +1199,7 @@ export async function monitorLanes(
 	lanes: AllocatedLane[],
 	config: OrchestratorConfig,
 	repoRoot: string,
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	waveNumber: number = 1,
 	onUpdate?: MonitorUpdateCallback,
 	isWorkspaceMode?: boolean,
@@ -1932,7 +1933,7 @@ export async function executeWave(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	batchId: string,
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	dependencyGraph: DependencyGraph,
 	orchBranch: string,
 	onMonitorUpdate?: MonitorUpdateCallback,
@@ -2186,6 +2187,7 @@ export async function executeWave(
 	// ── Stage 5: Build WaveExecutionResult ───────────────────────
 	const failedTaskIds: string[] = [];
 	const skippedTaskIds: string[] = [];
+	const pausedTaskIds: string[] = [];
 	const succeededTaskIds: string[] = [];
 
 	for (const lr of laneResults) {
@@ -2196,6 +2198,8 @@ export async function executeWave(
 				failedTaskIds.push(t.taskId);
 			} else if (t.status === "skipped") {
 				skippedTaskIds.push(t.taskId);
+			} else if (t.status === "pending") {
+				pausedTaskIds.push(t.taskId);
 			}
 		}
 	}
@@ -2204,6 +2208,7 @@ export async function executeWave(
 	failedTaskIds.sort();
 	skippedTaskIds.sort();
 	succeededTaskIds.sort();
+	pausedTaskIds.sort();
 
 	// Compute blocked tasks for future waves (skip-dependents policy)
 	let blockedTaskIds: string[] = [];
@@ -2230,6 +2235,10 @@ export async function executeWave(
 	let overallStatus: WaveExecutionResult["overallStatus"];
 	if (policy === "stop-all" && failedTaskIds.length > 0) {
 		overallStatus = "aborted";
+	} else if (pausedTaskIds.length > 0 && failedTaskIds.length === 0) {
+		// Interrupted, not succeeded: a wave with paused (pending) tasks is not
+		// complete. The engine finalizes as `paused` and does not merge.
+		overallStatus = succeededTaskIds.length > 0 ? "partial" : "failed";
 	} else if (failedTaskIds.length === 0) {
 		overallStatus = "succeeded";
 	} else if (succeededTaskIds.length > 0) {
@@ -2245,6 +2254,7 @@ export async function executeWave(
 		succeeded: succeededTaskIds.length,
 		failed: failedTaskIds.length,
 		skipped: skippedTaskIds.length,
+		paused: pausedTaskIds.length,
 		blocked: blockedTaskIds.length,
 		elapsed: `${elapsedSec}s`,
 		stoppedEarly,
@@ -2258,6 +2268,7 @@ export async function executeWave(
 		policyApplied: policy,
 		stoppedEarly,
 		failedTaskIds,
+		pausedTaskIds,
 		skippedTaskIds,
 		succeededTaskIds,
 		blockedTaskIds,
@@ -2289,7 +2300,7 @@ export async function executeWave(
 export async function executeWithStopAll(
 	lanes: AllocatedLane[],
 	lanePromises: Promise<LaneExecutionResult>[],
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	waveIndex: number,
 ): Promise<LaneExecutionResult[]> {
 	// Track results as they complete
@@ -2310,6 +2321,7 @@ export async function executeWithStopAll(
 					// First failure detected — trigger stop-all
 					abortTriggered = true;
 					pauseSignal.paused = true;
+					pauseSignal.cause = "abort";
 
 					// Determine which task failed first for logging
 					const firstFailed = result.tasks
@@ -2345,6 +2357,7 @@ export async function executeWithStopAll(
 			if (!abortTriggered) {
 				abortTriggered = true;
 				pauseSignal.paused = true;
+				pauseSignal.cause = "abort";
 				execLog(
 					"wave",
 					`W${waveIndex}`,
@@ -2846,7 +2859,7 @@ export async function executeLaneV2(
 	lane: AllocatedLane,
 	config: OrchestratorConfig,
 	repoRoot: string,
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	workspaceRoot?: string,
 	isWorkspaceMode?: boolean,
 	extraEnvVars?: Record<string, string>,
@@ -2925,12 +2938,14 @@ export async function executeLaneV2(
 	for (const task of lane.tasks) {
 		const taskSegmentId = task.task.activeSegmentId ?? null;
 		if (shouldSkipRemaining || pauseSignal.paused) {
+			// A pause leaves the remaining lane tasks PENDING (they never ran); only a
+			// prior failure in the lane skips them.
 			const reason = pauseSignal.paused
-				? "Skipped due to pause signal"
+				? "Paused by user"
 				: "Skipped due to prior task failure in lane";
 			outcomes.push({
 				taskId: task.taskId,
-				status: "skipped",
+				status: pauseSignal.paused && !shouldSkipRemaining ? "pending" : "skipped",
 				segmentId: taskSegmentId,
 				startTime: null,
 				endTime: null,

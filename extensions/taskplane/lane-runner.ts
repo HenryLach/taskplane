@@ -75,6 +75,7 @@ import {
 	type ReviewDisposition,
 	type ReviewInterventionKind,
 	type SupervisorAlert,
+	type PauseSignal,
 } from "./types.ts";
 import type { TaskExitDiagnostic } from "./diagnostics.ts";
 import {
@@ -556,7 +557,7 @@ export interface LaneRunnerTaskResult {
 export async function executeTaskV2(
 	unit: ExecutionUnit,
 	config: LaneRunnerConfig,
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 ): Promise<LaneRunnerTaskResult> {
 	const startTime = Date.now();
 	const statusPath = unit.packet.statusPath;
@@ -1024,14 +1025,28 @@ export async function executeTaskV2(
 				})()
 			: null;
 
-	for (let iter = 0; iter < config.maxIterations; iter++) {
+	// Productive-iteration budget. Hold exits (worker idles awaiting a ruling)
+	// do NOT consume it — they are bounded separately (MAX_HOLD_RELAUNCHES,
+	// reset by acknowledgements). Without this, a correctly-holding lane hit
+	// maxIterations (10) inside an hour (penster 20260906T194514). Explicit
+	// counter rather than `iter--` so the two budgets stay legible.
+	let productiveIterations = 0;
+	for (; productiveIterations < config.maxIterations; productiveIterations++) {
 		if (pauseSignal.paused) {
-			logExecution(statusPath, "Paused", `User paused at iteration ${totalIterations}`);
+			// A pause is NOT a terminal outcome. Returning "skipped" here converted a
+			// correctly-holding task into a skipped one and let a single-wave batch
+			// complete 0/1 and clean up its worktree (penster 20260906T194514).
+			// "pending" keeps the task re-executable on resume in this worktree.
+			logExecution(
+				statusPath,
+				"Paused",
+				`Paused at iteration ${totalIterations} — task remains pending`,
+			);
 			return makeResult(
 				taskId,
 				segmentId,
 				workerAgentId,
-				"skipped",
+				"pending",
 				startTime,
 				"Paused by user",
 				false,
@@ -1947,7 +1962,9 @@ export async function executeTaskV2(
 					);
 				}
 
-				// Not exhausted: this exit is accounted as a hold, not as progress or a stall.
+				// Not exhausted: this exit is accounted as a hold, not as progress or a stall,
+				// and it does not consume a productive iteration.
+				productiveIterations--;
 				continue;
 			}
 
@@ -2382,6 +2399,8 @@ export function mapLaneTaskStatusToTerminalSnapshotStatus(
 ): "idle" | "complete" | "failed" {
 	if (status === "succeeded") return "complete";
 	if (status === "skipped") return "idle";
+	// A paused (pending) task is not a failure — the lane is idle awaiting resume.
+	if (status === "pending") return "idle";
 	return "failed";
 }
 
