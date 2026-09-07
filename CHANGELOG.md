@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **Release workflow:** the npm-propagation check polls ~6 minutes (was 30 s)
+  and a timeout is a warning, not a failure — v0.30.6 published fine but the
+  registry lagged ~5 minutes, the old check aborted the job and the GitHub
+  release step never ran (created by hand afterwards).
+
 ## [0.30.6] - 2026-09-07
 
 ### New
