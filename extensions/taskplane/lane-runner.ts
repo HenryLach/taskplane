@@ -770,6 +770,15 @@ export async function executeTaskV2(
 		}
 	};
 
+	// Idempotency for END boundaries (Penster feedback on #632: a duplicate
+	// review_completed for R002 reached the supervisor). Whatever the upstream
+	// cause — a retried tool turn, a re-invoked review_step for the same round,
+	// or a doubled RPC event — one REVIEW FILE is one review: the second end
+	// boundary for the same (step, reviewType, reviewPath) must neither notify
+	// again nor advance the spiral streak again (which would fire the spiral a
+	// round early). Keyed by the resolved review path; falls back to the raw
+	// event identity when no path is known.
+	const seenReviewEnds = new Set<string>();
 	const bridgeReviewEvent = (evt: RuntimeAgentEvent): void => {
 		if (
 			evt.type !== "review_requested" &&
@@ -797,6 +806,21 @@ export async function executeTaskV2(
 		const reviewMd = isEnd ? readReviewFile(reviewPath) : null;
 		const fileVerdict = parseReviewVerdict(reviewMd);
 		const disposition = fileVerdict ?? payloadDisposition;
+
+		if (isEnd) {
+			const key = reviewPath
+				? `${stepNum ?? "?"}:${reviewType ?? "?"}:${reviewPath}`
+				: `${stepNum ?? "?"}:${reviewType ?? "?"}:${evt.ts}:${disposition ?? "?"}`;
+			if (seenReviewEnds.has(key)) {
+				logExecution(
+					statusPath,
+					"Duplicate review boundary",
+					`ignored repeated ${evt.type} for ${key.slice(0, 120)} (idempotency, one review file = one review)`,
+				);
+				return;
+			}
+			seenReviewEnds.add(key);
+		}
 
 		// Classify by the RESOLVED disposition: only a genuine UNAVAILABLE / total
 		// parse-miss (no verdict in the tool return AND none on disk) is

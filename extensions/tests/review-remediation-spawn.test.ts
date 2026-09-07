@@ -36,9 +36,12 @@ interface SpawnCall {
 let spawnCalls: SpawnCall[] = [];
 /** Per-test hook: called on each spawn with the call index; may write review files. */
 let onSpawn: ((index: number) => void) | null = null;
+/** The lane-runner's review-boundary bridge (2nd spawnAgent arg), captured per spawn. */
+let lastOnEvent: ((evt: unknown) => void) | null = null;
 
 const realAgentHost = await import("../taskplane/agent-host.ts");
-const mockSpawnAgent = mock.fn((opts: { prompt: string }) => {
+const mockSpawnAgent = mock.fn((opts: { prompt: string }, onEvent?: (evt: unknown) => void) => {
+	lastOnEvent = onEvent ?? null;
 	const index = spawnCalls.length;
 	spawnCalls.push({ prompt: opts.prompt });
 	onSpawn?.(index);
@@ -278,6 +281,59 @@ describe("#629 — review-gate remediation spawn (behavioural)", () => {
 		const status = readFileSync(join(taskFolder, "STATUS.md"), "utf-8");
 		expect(status).toContain("Review remediation exhausted");
 		expect(status).toContain("Finalize refused");
+	});
+
+	it("6. a duplicated review_completed for the SAME review file is ignored (one file = one review; no double notify, no double streak)", async () => {
+		// Penster feedback on #632: a duplicate review_completed for R002 reached the
+		// supervisor. Drive the bridge with the same end boundary twice.
+		mkdirSync(reviewsDir, { recursive: true });
+		const r1 = join(reviewsDir, "R001-code-step1.md");
+		writeFileSync(r1, REVISE_REVIEW);
+		const engineEvents: Array<{ type: string; reviewRound?: number }> = [];
+		const eventsPath = join(tmpRoot, ".pi", "supervisor", "events.jsonl");
+		onSpawn = () => {
+			const bridge = lastOnEvent;
+			if (!bridge) return;
+			const evt = (type: string) => ({
+				batchId: "tp629-remediation",
+				agentId: "orch-test-lane-1-worker",
+				role: "worker",
+				laneNumber: 1,
+				taskId: "TP-R",
+				ts: Date.now(),
+				type,
+				payload: { step: 1, reviewType: "code", disposition: "REVISE", reviewPath: r1 },
+			});
+			bridge(evt("review_requested"));
+			bridge(evt("review_completed"));
+			bridge(evt("review_completed")); // the duplicate
+			// The worker then "fixes" and gets an APPROVE so the task can finalize.
+			writeFileSync(join(reviewsDir, "R002-code-step1.md"), APPROVE_REVIEW);
+		};
+		const { unit, config } = buildUnitAndConfig();
+		await executeTaskV2(
+			unit as Parameters<typeof executeTaskV2>[0],
+			config as unknown as Parameters<typeof executeTaskV2>[1],
+			{ paused: false },
+		);
+		// Give the lazy emitEngineEvent import a tick to flush.
+		await new Promise((r) => setTimeout(r, 200));
+		if (existsSync(eventsPath)) {
+			for (const line of readFileSync(eventsPath, "utf-8").split("\n")) {
+				if (!line.trim()) continue;
+				try {
+					const e = JSON.parse(line) as { type: string; taskId?: string; reviewRound?: number };
+					if (e.taskId === "TP-R") engineEvents.push(e);
+				} catch {
+					/* skip */
+				}
+			}
+		}
+		const completed = engineEvents.filter((e) => e.type === "review_completed");
+		expect(completed.length).toBe(1); // NOT 2
+		expect(completed[0].reviewRound).toBe(1); // streak advanced once, not twice
+		const status = readFileSync(join(taskFolder, "STATUS.md"), "utf-8");
+		expect(status).toContain("Duplicate review boundary");
 	});
 
 	it("3. no reviews at all → zero spawns, succeeded (pre-#629 behaviour preserved)", async () => {

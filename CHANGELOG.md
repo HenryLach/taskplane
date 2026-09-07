@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     now comes from outcome telemetry.
   - `skip-dependents` no longer names tasks outside the batch (the dependency
     graph is repo-wide; blocked IDs are now scoped to the wave plan).
+- **Duplicate review notifications.** A repeated `review_completed` for the
+  same review file (retried tool turn / re-invoked `review_step` / doubled RPC
+  event) reached the supervisor twice and would have advanced the spiral
+  streak twice (firing a round early). The review-boundary bridge is now
+  idempotent per (step, type, review file): one file = one review.
 - **Build marker.** `.pi/runtime/<batchId>/engine.json` now records
   `taskplaneVersion` and `taskplaneBuild` (sha256 prefix of the loaded
   extension sources), and the takeover summary shows them — a local
