@@ -233,7 +233,8 @@ describe("3.x: Rate limiting", () => {
 	it("3.8: direct send emits rate-limit audit event (TP-092)", () => {
 		const fnIdx = extensionSrc.indexOf("function doSendAgentMessage(");
 		// #630 added a dead-pid diagnostic block ahead of validation; widen the window.
-		const block = extensionSrc.slice(fnIdx, fnIdx + 5500);
+		// #627: window widened past the held-unit target block.
+		const block = extensionSrc.slice(fnIdx, fnIdx + 12000);
 		expect(block).toContain("message_rate_limited");
 		expect(block).toContain("appendMailboxAuditEvent");
 	});
@@ -244,7 +245,7 @@ describe("3.x: Rate limiting", () => {
 describe("4.x: Registry-backed supervisor tool contracts", () => {
 	it("4.1: send_agent_message checks registry-backed liveness", () => {
 		const fnIdx = extensionSrc.indexOf("function doSendAgentMessage(");
-		const block = extensionSrc.slice(fnIdx, fnIdx + 3000);
+		const block = extensionSrc.slice(fnIdx, fnIdx + 12000); // #627
 		expect(block).toContain("readRegistrySnapshot");
 		expect(block).toContain("isTerminalStatus");
 		expect(block).toContain("registryIsProcessAlive");
@@ -254,7 +255,7 @@ describe("4.x: Registry-backed supervisor tool contracts", () => {
 	it("4.2: send_agent_message applies rate limiting", () => {
 		const fnIdx = extensionSrc.indexOf("function doSendAgentMessage(");
 		// #630 added a dead-pid diagnostic block ahead of validation; widen the window.
-		const block = extensionSrc.slice(fnIdx, fnIdx + 5500);
+		const block = extensionSrc.slice(fnIdx, fnIdx + 12000); // #627
 		expect(block).toContain("checkRateLimit(to)");
 		expect(block).toContain("recordSend(to)");
 		expect(block).toContain("Rate limited");

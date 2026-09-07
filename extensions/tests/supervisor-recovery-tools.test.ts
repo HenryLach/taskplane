@@ -640,7 +640,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 
 	it("5.2 — doOrchRetryTask saves modified state", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
-		const block = extensionSource.slice(idx, idx + 5000);
+		const block = extensionSource.slice(idx, idx + 6200); // #627: held refusal block
 		expect(block).toContain("saveBatchState(");
 	});
 
@@ -653,7 +653,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 
 	it("5.4 — doOrchRetryTask resets task fields", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
-		const block = extensionSource.slice(idx, idx + 2500);
+		const block = extensionSource.slice(idx, idx + 4000); // #627: held refusal block
 		expect(block).toContain('status = "pending"');
 		expect(block).toContain('exitReason = ""');
 		expect(block).toContain("doneFileFound = false");

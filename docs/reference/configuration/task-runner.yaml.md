@@ -87,6 +87,7 @@ If a task path matches a configured task area, that area's override applies.
 | `worker.thinking` | string | `""` | Thinking mode for worker agent. Empty string (or explicit `"inherit"`) = inherit active session thinking. |
 | `worker.spawn_mode` | `"subprocess"` \| `"tmux"` | commented in template | Optional spawn mode override for task-runner. |
 | `worker.exit_intercept_timeout_sec` | number | `60` (15..1800) | How long the lane waits for a supervisor reply when it intercepts a worker's premature exit before letting the session close. Raise it when the supervisor is often inside long tool calls (a blocking `--wait` cannot answer in 60 s). In `.pi/taskplane-config.json` (the preferred project config) the key is camelCase: `taskRunner.worker.exitInterceptTimeoutSec`. |
+| `worker.hold_timeout_minutes` | number | `240` (5..10080) | How long a lane may stay **held** (worker escalated, waiting for a typed ruling, no worker process running) before the batch parks with pause cause `hold-timeout`. Acknowledgements never extend it; the hold stays open when it expires — rule, then `orch_resume(force=true)`. JSON key: `taskRunner.worker.holdTimeoutMinutes`. |
 
 Notes:
 - `spawn_mode` defaults to `subprocess` when not set.

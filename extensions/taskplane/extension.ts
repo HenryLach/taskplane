@@ -106,6 +106,12 @@ import {
 	drainAgentOutbox,
 } from "./mailbox.ts";
 import {
+	buildHoldStatusSummary,
+	isHoldUnresolved,
+	type RulingActor,
+	validateRuling,
+} from "./hold-state.ts";
+import {
 	readRegistrySnapshot,
 	isProcessAlive as registryIsProcessAlive,
 	isTerminalStatus,
@@ -3790,8 +3796,27 @@ export default function (pi: ExtensionAPI) {
 						/* per-agent drain best-effort */
 					}
 				}
+				// #627: escalations are never drained (they may be unpersisted holds);
+				// held units are reported so the operator sees them as governance, not noise.
+				// (read from disk: the engine child owns the authoritative hold table)
+				let heldNow: import("./hold-state.ts").HoldRecord[] = [];
+				try {
+					heldNow = (loadBatchState(stateRoot)?.holds ?? []).filter((h) => isHoldUnresolved(h));
+				} catch {
+					/* unreadable — report nothing */
+				}
+				if (heldNow.length > 0) {
+					messages.push(
+						`  ⏸️ ${heldNow.length} held unit(s) preserved (never a completion path):\n${buildHoldStatusSummary(
+							heldNow,
+						)
+							.split("\n")
+							.map((l) => `      ${l}`)
+							.join("\n")}`,
+					);
+				}
 				messages.push(
-					`  ✓ Drained on-disk outboxes (${drainedMessages} message(s) across ${drainedAgents} agent(s))`,
+					`  ✓ Drained on-disk outboxes (${drainedMessages} message(s) across ${drainedAgents} agent(s); escalations kept)`,
 				);
 			} catch (err) {
 				messages.push(`  ⚠ Drain failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -3873,6 +3898,16 @@ export default function (pi: ExtensionAPI) {
 		// included because a runtime defect (pause → skipped, penster
 		// 20260906T194514) left tasks skipped that never ran; the documented
 		// recovery (retry → resume) must be able to start from that state.
+		if (taskRecord.status === "held") {
+			// #627: retry is not release. A held task is waiting for a ruling, not failed.
+			const open = (state.holds ?? []).filter((h) => h.taskId === taskId && isHoldUnresolved(h));
+			return (
+				`❌ Task "${taskId}" is HELD — it is waiting for a ruling, not failed, and retry never releases a hold.\n` +
+				`${buildHoldStatusSummary(open)}\n` +
+				`Rule on it: send_agent_message(to="${open[0]?.agentId ?? "<lane worker>"}", type="ruling", replyTo="${open[0]?.escalationId ?? "<escalation id>"}", content=<instructions>) ` +
+				`(or /orch-rule <escalation id> <text> as the operator), then orch_resume(force=true) if the batch is parked.`
+			);
+		}
 		if (
 			taskRecord.status !== "failed" &&
 			taskRecord.status !== "stalled" &&
@@ -4200,6 +4235,23 @@ export default function (pi: ExtensionAPI) {
 		// Validate wave index
 		if (targetWave < 0 || targetWave >= state.totalWaves) {
 			return `❌ Invalid wave index ${targetWave}. Batch has ${state.totalWaves} wave(s) (0-based: 0..${state.totalWaves - 1}).`;
+		}
+
+		// #627: never merge held work. A wave containing a unit bound by an
+		// unresolved hold cannot be force-merged — a ruling (or abort) must
+		// resolve it first.
+		{
+			const waveTaskIds = new Set(state.wavePlan[targetWave] ?? []);
+			const heldInWave = (state.holds ?? []).filter(
+				(h) => waveTaskIds.has(h.taskId) && isHoldUnresolved(h),
+			);
+			if (heldInWave.length > 0) {
+				return (
+					`❌ Wave ${targetWave} contains ${heldInWave.length} unit(s) bound by an unresolved hold — force merge refused.\n` +
+					`${buildHoldStatusSummary(heldInWave)}\n` +
+					`Resolve each with a typed ruling (send_agent_message type="ruling" replyTo=<escalation id>) or cancel with type="abort", then resume.`
+				);
+			}
 		}
 
 		// Find the merge result for the target wave
@@ -5509,8 +5561,9 @@ export default function (pi: ExtensionAPI) {
 			"Call send_agent_message to course-correct a running agent (worker, reviewer, or merger).",
 			"The 'to' parameter must be a valid agent session name from the current batch.",
 			"Use orch_status() to see active session names.",
-			"Default type is 'steer' (course correction). Other types: 'query', 'abort', 'info'.",
-			"HOLD CONTRACT (#630): when a worker is holding for a ruling you escalated for, send type='info' to ACKNOWLEDGE (\"received, ruling pending\") — it keeps the worker on hold and resets its relaunch budget. Send type='steer' only for the actual ruling/instruction — it releases the hold.",
+			"Default type is 'steer' (course correction). Other types: 'query', 'abort', 'info', 'ruling'.",
+			"HOLD CONTRACT (#627): a worker that escalated is HELD by the runtime — no worker process exists, the lane waits at zero cost, and the lane's agent id stays addressable. Only type='ruling' with replyTo=<escalation id> releases the hold (your instructions are placed at the top of the relaunched worker's first prompt). type='info' acknowledges without releasing (deadline unchanged). type='query' gets the hold status back from the runner (no worker spawned). type='abort' cancels the hold and fails the task — it never approves. type='steer' does NOT release a hold.",
+			"A ruling releases execution; it does not approve the result. Review gates still apply afterwards.",
 			"Messages are limited to 4KB. For larger context, write to a file and reference by path.",
 		],
 		parameters: Type.Object({
@@ -5522,14 +5575,30 @@ export default function (pi: ExtensionAPI) {
 			}),
 			type: Type.Optional(
 				Type.Union(
-					[Type.Literal("steer"), Type.Literal("query"), Type.Literal("abort"), Type.Literal("info")],
+					[
+						Type.Literal("steer"),
+						Type.Literal("query"),
+						Type.Literal("abort"),
+						Type.Literal("info"),
+						Type.Literal("ruling"),
+					],
 					{ description: 'Message type (default: "steer")' },
 				),
+			),
+			replyTo: Type.Optional(
+				Type.String({
+					description:
+						"Escalation message id this message answers. REQUIRED for type='ruling' (the hold it releases).",
+				}),
 			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
-				const result = doSendAgentMessage(params.to, params.content, params.type ?? "steer", ctx);
+				const result = doSendAgentMessage(params.to, params.content, params.type ?? "steer", ctx, {
+					replyTo: params.replyTo,
+					// Trusted stamp: this tool is only reachable from the supervisor session.
+					actor: { role: "supervisor", id: "supervisor" },
+				});
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
@@ -5587,13 +5656,20 @@ export default function (pi: ExtensionAPI) {
 		content: string,
 		messageType: string,
 		ctx: ExtensionContext,
+		opts: {
+			replyTo?: string;
+			/** Trusted actor stamp — set by the issuing path, never by a model. */
+			actor?: RulingActor;
+			/** Explicit state root (operator commands); defaults to the tool's resolution. */
+			stateRootOverride?: string;
+		} = {},
 	): string {
-		const stateRoot = resolveToolStateRoot(ctx);
+		const stateRoot = opts.stateRootOverride ?? resolveToolStateRoot(ctx);
 
-		// Validate message type (outbound allowlist: steer, query, abort, info)
-		const validOutboundTypes = new Set(["steer", "query", "abort", "info"]);
+		// Validate message type (outbound allowlist)
+		const validOutboundTypes = new Set(["steer", "query", "abort", "info", "ruling"]);
 		if (!validOutboundTypes.has(messageType)) {
-			return `❌ Invalid message type "${messageType}". Valid types: steer, query, abort, info.`;
+			return `❌ Invalid message type "${messageType}". Valid types: steer, query, abort, info, ruling.`;
 		}
 
 		// Load batch state
@@ -5610,6 +5686,99 @@ export default function (pi: ExtensionAPI) {
 		// Guard: terminal batches have no running agent sessions to receive messages.
 		if (isBatchTerminal(state.phase)) {
 			return `❌ Batch ${state.batchId} is in terminal phase (${state.phase}). Start or resume a batch before sending messages.`;
+		}
+
+		// ── #627: held-unit target ─────────────────────────────────
+		// A lane whose unit has an unresolved hold has NO worker process, yet it is
+		// addressable: the lane-runner's hold loop (or, if the batch is parked, the
+		// next resume) is the consumer. Rulings are validated against the durable
+		// hold table here so a bad ruling fails at the sender, not silently at the
+		// runner. Rulings ONLY go to held units.
+		const heldHolds = (state.holds ?? []).filter((h) => h.agentId === to && isHoldUnresolved(h));
+		const heldOpen = heldHolds.filter((h) => h.phase === "open");
+		if (messageType === "ruling") {
+			if (!opts.actor) {
+				return "❌ A ruling needs a trusted actor stamp; issue it via send_agent_message (supervisor) or /orch-rule (operator).";
+			}
+			if (!opts.replyTo) {
+				return (
+					`❌ A ruling must name the escalation it resolves: replyTo=<escalation id>.` +
+					(heldOpen.length > 0
+						? `\nOpen holds on ${to}:\n${buildHoldStatusSummary(heldOpen)}`
+						: `\n${to} has no open hold.`)
+				);
+			}
+			const target = (state.holds ?? []).find((h) => h.escalationId === opts.replyTo);
+			if (!target) {
+				return `❌ No hold with escalation id ${opts.replyTo} in batch ${state.batchId}.${heldOpen.length > 0 ? `\nOpen holds on ${to}:\n${buildHoldStatusSummary(heldOpen)}` : ""}`;
+			}
+			if (target.agentId !== to) {
+				return `❌ Escalation ${opts.replyTo} belongs to ${target.agentId} (${target.taskId}), not ${to}. Address the ruling to ${target.agentId}.`;
+			}
+			const v = validateRuling(
+				{ type: "ruling", replyTo: opts.replyTo, content, actor: opts.actor },
+				state.holds ?? [],
+				{ taskId: target.taskId, segmentId: target.segmentId },
+			);
+			if (v.ok === false) {
+				return `❌ Ruling refused: ${v.reason}.`;
+			}
+		}
+		if (heldHolds.length > 0) {
+			// Bypass the live-pid gates: the runner is the consumer.
+			try {
+				const msg = writeMailboxMessage(stateRoot, state.batchId, to, {
+					from: opts.actor?.role === "operator" ? `operator:${opts.actor.id}` : "supervisor",
+					type: messageType as MailboxMessageType,
+					content,
+					replyTo: opts.replyTo ?? null,
+					...(messageType === "ruling" && opts.actor ? { actor: opts.actor } : {}),
+				});
+				appendMailboxAuditEvent(stateRoot, state.batchId, {
+					type: "message_sent",
+					from: opts.actor?.role === "operator" ? `operator:${opts.actor.id}` : "supervisor",
+					to,
+					messageId: msg.id,
+					messageType,
+					contentPreview: content.slice(0, 200),
+					broadcast: false,
+				});
+				const parked = state.phase === "paused" || state.phase === "stopped";
+				const delivery = parked
+					? "queued while the batch is parked — the hold loop consumes it on orch_resume(force=true)"
+					: "queued for the lane's hold loop (polled every few seconds; no worker process is involved)";
+				let effect: string;
+				switch (messageType) {
+					case "ruling":
+						effect =
+							"releases the hold; the worker is relaunched with your ruling at the top of its first prompt and must acknowledge it before the unit can complete";
+						break;
+					case "info":
+						effect = "acknowledgement only — the hold and its deadline are unchanged";
+						break;
+					case "query":
+						effect = "the runner will answer with the hold status (alert); nothing is spawned";
+						break;
+					case "abort":
+						effect = "cancels the hold (never approves) and fails the task";
+						break;
+					default:
+						effect =
+							"⚠️ steer does NOT release a hold; it is ordinary mail for the next worker session. Use type='ruling' with replyTo to release";
+				}
+				return (
+					`✅ ${messageType} sent to held lane \`${to}\` (batch ${state.batchId})\n` +
+					`- **ID:** ${msg.id}\n` +
+					(opts.replyTo ? `- **Resolves:** ${opts.replyTo}\n` : "") +
+					`- **Delivery:** ${delivery}\n` +
+					`- **Effect:** ${effect}`
+				);
+			} catch (err) {
+				return `❌ Failed to write message: ${err instanceof Error ? err.message : String(err)}`;
+			}
+		}
+		if (messageType === "ruling") {
+			return `❌ ${to} has no unresolved hold — rulings only apply to held lanes. Use type='steer' to instruct a running worker.`;
 		}
 
 		// #630: a registry agent still marked running whose PROCESS is gone gets a
@@ -6125,6 +6294,51 @@ export default function (pi: ExtensionAPI) {
 			? `✅ ${result.reason}. Recovery tools (orch_resume(force=true), retry/skip/force_merge) will now proceed via the verified path. Audit entry written.`
 			: `❌ Not recorded: ${result.reason}`;
 	}
+
+	// ── #627: operator ruling ──────────────────────────────────
+	// The only path that stamps role "operator". A model cannot claim operator
+	// authority through send_agent_message; the operator types this.
+	pi.registerCommand("orch-rule", {
+		description:
+			"Issue an OPERATOR ruling that releases a held lane (#627): /orch-rule <escalation id> <ruling text>",
+		handler: async (args, ctx) => {
+			const raw = (args ?? "").trim();
+			const m = /^(\S+)\s+([\s\S]+)$/.exec(raw);
+			if (!m) {
+				ctx.ui.notify(
+					"Usage: /orch-rule <escalation id> <ruling text>. Find open escalation ids in the ⏸️ Lane held alert or via send_agent_message(type='query').",
+					"warning",
+				);
+				return;
+			}
+			const [, escalationId, text] = m;
+			const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+			let state: PersistedBatchState | null = null;
+			try {
+				state = loadBatchState(stateRoot);
+			} catch (err) {
+				ctx.ui.notify(
+					`❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`,
+					"warning",
+				);
+				return;
+			}
+			const hold = state?.holds?.find((h) => h.escalationId === escalationId);
+			if (!state || !hold) {
+				ctx.ui.notify(`❌ No hold with escalation id ${escalationId}.`, "warning");
+				return;
+			}
+			const operatorId = execCtx?.orchestratorConfig
+				? resolveOperatorId(execCtx.orchestratorConfig)
+				: (process.env.USERNAME ?? process.env.USER ?? "operator");
+			const result = doSendAgentMessage(hold.agentId, text, "ruling", ctx as never, {
+				replyTo: escalationId,
+				actor: { role: "operator", id: operatorId },
+				stateRootOverride: stateRoot,
+			});
+			ctx.ui.notify(result, result.startsWith("✅") ? "info" : "warning");
+		},
+	});
 
 	pi.registerCommand("orch-confirm-engine-shutdown", {
 		description:

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New
+
+- **First-class `held` state for escalations (#627, Stage 1).** When a worker
+  calls `escalate_to_supervisor`, the runtime now holds the unit itself: a
+  durable hold record is persisted (strictly — a persist failure blocks, never
+  fails open) before the escalation is acknowledged; the worker exits and is
+  **not relaunched**; the lane waits at zero cost (no iterations, no stall
+  clock, no relaunch budget); the task shows `held` (⚖ in the dashboard) and
+  its worktree/branch are preserved and never merged. The hold survives pause,
+  crash, resume and retry. It is released **only** by a typed ruling —
+  `send_agent_message(type="ruling", replyTo=<escalation id>)` from the
+  supervisor, or `/orch-rule <escalation id> <text>` from the operator (the
+  only path that stamps role `operator`). The ruling is placed at the top of
+  the relaunched worker's first prompt and must be acknowledged
+  (`notify_supervisor(replyTo=<ruling id>)`) before the unit can complete;
+  unacknowledged rulings are replayed. `info` acknowledges without releasing,
+  `query` returns the hold status from the runner (no worker spawned), `abort`
+  cancels and fails the task (never approves), and **`steer` no longer
+  releases a hold**. A hold that receives no ruling within
+  `taskRunner.worker.holdTimeoutMinutes` (default 240) parks the batch with
+  pause cause `hold-timeout` and stays open. Completion authority is one
+  predicate consulted by step check-off, finalize, the task monitor (hold-first,
+  before `.DONE`/stall/dead-pid), resume reconciliation, force-merge, cleanup
+  and takeover; a worker-written `.DONE` under a hold is quarantined. Schema
+  v5 adds the `holds` table. Design: `docs/specifications/taskplane/held-state-spec.md`.
+
+### Fixed
+
+- **Resume re-executed interrupted tasks one at a time.** A held (or slow) task
+  in the first slot parked every other interrupted lane behind it. Re-execution
+  now runs lanes in parallel, serial within a lane.
+- **Resume trusted a stale `.DONE` over an outstanding escalation.** Resume
+  reconciliation is now hold-first: a task bound by an unresolved hold — or by
+  an escalation still sitting unrecorded in its worker's outbox after a crash —
+  is re-executed into the hold loop, never marked complete.
+- **`supervisor_takeover` drained escalations from worker outboxes.** Outbox
+  drains now keep `escalate` messages (an unpersisted hold candidate) and the
+  takeover summary lists held units.
+
 ### Internal
 
 - **Release workflow:** the npm-propagation check polls ~6 minutes (was 30 s)

@@ -574,7 +574,21 @@ export function ackOutboxMessage(
  *
  * @since TP-187 (#538)
  */
-export function drainAgentOutbox(stateRoot: string, batchId: string, agentId: string): number {
+export function drainAgentOutbox(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+	opts: {
+		/**
+		 * #627: keep `escalate` messages in place. A pending escalation may be a
+		 * hold whose persist has not landed yet; draining it away would release
+		 * the hold silently. Default true — pass false only when the lane is
+		 * being torn down for good (abort).
+		 */
+		preserveEscalations?: boolean;
+	} = {},
+): number {
+	const preserveEscalations = opts.preserveEscalations ?? true;
 	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
 	if (!existsSync(outboxDir)) return 0;
 
@@ -599,6 +613,14 @@ export function drainAgentOutbox(stateRoot: string, batchId: string, agentId: st
 		const srcPath = join(outboxDir, entry);
 
 		if (entry.endsWith(".msg.json")) {
+			if (preserveEscalations) {
+				try {
+					const parsed = JSON.parse(readFileSync(srcPath, "utf-8")) as { type?: string };
+					if (parsed?.type === "escalate") continue;
+				} catch {
+					/* unreadable — treat as ordinary mail */
+				}
+			}
 			if (!processedDirEnsured) {
 				try {
 					mkdirSync(processedDir, { recursive: true });

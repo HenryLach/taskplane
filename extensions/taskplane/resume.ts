@@ -154,7 +154,12 @@ import {
 	syncTaskOutcomesFromMonitor,
 	upsertTaskOutcome,
 } from "./persistence.ts";
-import { createHoldStore } from "./hold-state.ts";
+import {
+	createHoldStore,
+	selectUnrecordedEscalations,
+	taskCompletionBlocked,
+} from "./hold-state.ts";
+import { readOutbox } from "./mailbox.ts";
 import {
 	buildBatchProgressSnapshot,
 	buildSupervisorSegmentFrontierSnapshot,
@@ -766,11 +771,32 @@ export function reconcileTaskStates(
 	aliveSessions: ReadonlySet<string>,
 	doneTaskIds: ReadonlySet<string>,
 	existingWorktrees: ReadonlySet<string> = new Set(),
+	/**
+	 * #627: tasks with an unresolved hold (from the durable hold table, or an
+	 * escalation still sitting unrecorded in a worker outbox). Evaluated BEFORE
+	 * `.DONE`: a held task is never marked complete on resume — it is re-executed
+	 * so the lane-runner enters (or records) the hold, spawning nothing until a
+	 * ruling arrives.
+	 */
+	holdBlockedTaskIds: ReadonlySet<string> = new Set(),
 ): ReconciledTaskState[] {
 	return persistedState.tasks.map((task) => {
 		const sessionAlive = aliveSessions.has(task.sessionName);
 		const doneFileFound = doneTaskIds.has(task.taskId);
 		const worktreeExists = existingWorktrees.has(task.taskId);
+
+		// Precedence 0 (#627): hold-blocked → held (re-execute into the hold loop)
+		if (holdBlockedTaskIds.has(task.taskId)) {
+			return {
+				taskId: task.taskId,
+				persistedStatus: task.status,
+				liveStatus: "held" as LaneTaskStatus,
+				sessionAlive,
+				doneFileFound,
+				worktreeExists,
+				action: worktreeExists ? ("re-execute" as const) : ("pending" as const),
+			};
+		}
 
 		// Precedence 1: .DONE file found → task completed
 		if (doneFileFound) {
@@ -1556,12 +1582,54 @@ export async function resumeOrchBatch(
 		}
 	}
 
+	// ── 3c. #627: hold-first — which tasks are bound by an unresolved hold? ──
+	// Source 1: the durable hold table. Source 2: an `escalate` still sitting in
+	// a worker outbox with no hold record (crash between outbox write and the
+	// strict persist). Both make the task `held` for reconciliation; the
+	// lane-runner records the unrecorded ones at its loop top before any spawn.
+	const holdBlockedTaskIds = new Set<string>();
+	for (const task of persistedState.tasks) {
+		if (taskCompletionBlocked(persistedState.holds ?? [], task.taskId)) {
+			holdBlockedTaskIds.add(task.taskId);
+			continue;
+		}
+		if (task.sessionName) {
+			const workerAgentId = task.sessionName.endsWith("-worker")
+				? task.sessionName
+				: `${task.sessionName}-worker`;
+			try {
+				const unrecorded = selectUnrecordedEscalations(
+					readOutbox(stateRoot, persistedState.batchId, workerAgentId),
+					persistedState.holds ?? [],
+				);
+				if (unrecorded.length > 0) {
+					execLog(
+						"resume",
+						persistedState.batchId,
+						`hold-first: ${task.taskId} has ${unrecorded.length} unrecorded escalation(s) in ${workerAgentId}'s outbox — treating as held`,
+					);
+					holdBlockedTaskIds.add(task.taskId);
+				}
+			} catch {
+				/* no outbox */
+			}
+		}
+	}
+	if (holdBlockedTaskIds.size > 0) {
+		execLog(
+			"resume",
+			persistedState.batchId,
+			`hold-first: ${[...holdBlockedTaskIds].join(", ")} bound by unresolved holds — re-executed into the hold loop (no spawn until a ruling)`,
+		);
+	}
+
 	// ── 4. Reconcile task states ─────────────────────────────────
 	const reconciledTasks = reconcileTaskStates(
 		persistedState,
 		aliveSessions,
 		doneTaskIds,
 		existingWorktreeTaskIds,
+		holdBlockedTaskIds,
 	);
 
 	// ── 4b. Clear stale session allocation for tasks reconciled as pending ──
@@ -1730,6 +1798,32 @@ export async function resumeOrchBatch(
 	// #627: holds are authoritative and survive resume verbatim. Retry is not
 	// release; only a ruling, an abort, or an acknowledged delivery closes one.
 	batchState.holds = (persistedState.holds ?? []).map((h) => ({ ...h }));
+	// #627: durable hold store, available to the re-execution/reconnect phase
+	// below AND to the resumed waves. Strict persistence (throws), same
+	// contract as the engine's. The persistence context is upgraded once the
+	// wave-phase variables exist (see "holdPersistCtx" below).
+	const holdPersistCtx: {
+		wavePlan: string[][];
+		lanes: AllocatedLane[];
+		outcomes: LaneTaskOutcome[];
+		discovery: import("./types.ts").DiscoveryResult | null;
+	} = {
+		wavePlan: runtimeWavePlan,
+		lanes: reconstructAllocatedLanes(persistedState.lanes, persistedState.tasks),
+		outcomes: [],
+		discovery: null,
+	};
+	const holdStore = createHoldStore(batchState, (reason) =>
+		persistRuntimeStateStrict(
+			reason,
+			batchState,
+			holdPersistCtx.wavePlan,
+			holdPersistCtx.lanes,
+			holdPersistCtx.outcomes,
+			holdPersistCtx.discovery,
+			stateRoot,
+		),
+	);
 	// Carry forward unknown fields for roundtrip preservation
 	if (persistedState._extraFields) {
 		batchState._extraFields = persistedState._extraFields;
@@ -1917,12 +2011,24 @@ export async function resumeOrchBatch(
 			"info",
 		);
 
+		// #627 (Sage design review): re-execution was task-SERIAL — a restored
+		// hold in the first slot would have parked every other interrupted lane
+		// behind it. Run lanes in PARALLEL, serial WITHIN a lane (one worktree,
+		// one worker at a time). Shared bookkeeping below is mutated only between
+		// awaits, so it needs no locking.
+		const reExecByLane = new Map<number, typeof reExecuteTasks>();
 		for (const task of reExecuteTasks) {
+			const laneRecord = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
+			const key = laneRecord?.laneNumber ?? -1;
+			if (!reExecByLane.has(key)) reExecByLane.set(key, []);
+			reExecByLane.get(key)!.push(task);
+		}
+		const reExecuteOne = async (task: (typeof reExecuteTasks)[number]): Promise<void> => {
 			const parsedTask = discovery.pending.get(task.taskId);
-			if (!parsedTask) continue;
+			if (!parsedTask) return;
 
 			const laneRecord = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
-			if (!laneRecord) continue;
+			if (!laneRecord) return;
 
 			const allocatedTask: AllocatedTask = {
 				taskId: task.taskId,
@@ -1969,6 +2075,9 @@ export async function resumeOrchBatch(
 						...buildWorkerExcludeEnv(runnerConfig.workerExcludeExtensions),
 					},
 					emitAlert,
+					undefined,
+					undefined,
+					holdStore,
 				);
 				const taskResult = laneResult.tasks.find((t) => t.taskId === task.taskId);
 				const pollResult: { status: LaneTaskStatus; exitReason: string; doneFileFound: boolean } = {
@@ -1976,6 +2085,15 @@ export async function resumeOrchBatch(
 					exitReason: taskResult?.exitReason ?? "V2 re-execution completed",
 					doneFileFound: taskResult?.doneFileFound ?? false,
 				};
+				// #627: a HELD outcome (pause or hold-timeout while awaiting a ruling)
+				// is interrupted-not-complete: the task stays held, segments untouched,
+				// worktree preserved; the next resume re-enters the hold loop.
+				if (pollResult.status === "held") {
+					reExecuteFinalStatus.set(task.taskId, "held");
+					if (taskResult) reExecuteOutcome.set(task.taskId, taskResult);
+					execLog("resume", task.taskId, `re-execution held — ${pollResult.exitReason}`);
+					return;
+				}
 				// #629: a PAUSE during re-execution surfaces as `skipped` from
 				// executeLaneV2. That is not a terminal outcome: leave the task and
 				// its segments pending/re-executable (the previous code marked the
@@ -1992,7 +2110,7 @@ export async function resumeOrchBatch(
 						task.taskId,
 						"re-execution paused — task remains pending for the next resume",
 					);
-					continue;
+					return;
 				}
 				if (taskResult) reExecuteOutcome.set(task.taskId, taskResult);
 
@@ -2081,7 +2199,14 @@ export async function resumeOrchBatch(
 					exitReason: `re-execution error: ${msg}`,
 				});
 			}
-		}
+		};
+		await Promise.all(
+			[...reExecByLane.values()].map(async (laneTasks) => {
+				for (const task of laneTasks) {
+					await reExecuteOne(task);
+				}
+			}),
+		);
 	}
 
 	// ── 8c. Merge re-executed lane branches before cleanup ───────
@@ -2402,19 +2527,11 @@ export async function resumeOrchBatch(
 	// Initialized from collectRepoRoots() helper for parity with other callers.
 	const encounteredRepoRoots = new Set(collectRepoRoots(persistedState, repoRoot, workspaceConfig));
 
-	// #627: durable hold store for resumed lanes — strict persistence, same
-	// contract as the engine's (see engine.ts).
-	const holdStore = createHoldStore(batchState, (reason) =>
-		persistRuntimeStateStrict(
-			reason,
-			batchState,
-			wavePlan,
-			latestAllocatedLanes,
-			allTaskOutcomes,
-			discovery ?? null,
-			stateRoot,
-		),
-	);
+	// #627: from here on, hold persistence carries the full wave-phase context.
+	holdPersistCtx.wavePlan = wavePlan;
+	holdPersistCtx.lanes = latestAllocatedLanes;
+	holdPersistCtx.outcomes = allTaskOutcomes;
+	holdPersistCtx.discovery = discovery ?? null;
 
 	// Build outcomes from reconciled tasks
 	for (const task of reconciledTasks) {
@@ -2445,6 +2562,22 @@ export async function resumeOrchBatch(
 					: task.liveStatus;
 		const isTerminal =
 			status === "succeeded" || status === "failed" || status === "stalled" || status === "skipped";
+		if (status === "held") {
+			// #627: keep the runner's own held outcome (reason, telemetry) when present.
+			const heldOutcome = reExecuteOutcome.get(task.taskId);
+			allTaskOutcomes.push(
+				heldOutcome ?? {
+					taskId: task.taskId,
+					status: "held",
+					startTime: persistedTask?.startedAt ?? null,
+					endTime: null,
+					exitReason: "Held — awaiting a ruling (resume)",
+					sessionName: persistedTask?.sessionName ?? "",
+					doneFileFound: false,
+				},
+			);
+			continue;
+		}
 		allTaskOutcomes.push({
 			taskId: task.taskId,
 			status,

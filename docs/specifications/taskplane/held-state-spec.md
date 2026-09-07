@@ -1,6 +1,6 @@
 # Held state and typed rulings — design spec (#627, companion to #626/#628/#630/#631)
 
-Status: **design, Sage-reviewed (2026-09-07)**. Implementation staged below.
+Status: **Stage 1 implemented** on `feat/held-state` (design Sage-reviewed 2026-09-07). Stages 2–4 below.
 
 ## Problem
 
@@ -46,7 +46,7 @@ interface HoldRecord {
   `RuntimeAgentStatus` — the worker really exited; the held snapshot has `worker: null` + hold summary.
 - Schema bump; old states load an empty `holds` table. Multiple open holds per unit allowed; all must
   resolve. **Retry is not release** — holds survive `orch_retry_task`.
-- Config: `taskRunner.holdTimeoutMinutes` (default 240). `deadline = openedAt + timeout`; **acks never
+- Config: `taskRunner.worker.holdTimeoutMinutes` (default 240). `deadline = openedAt + timeout`; **acks never
   extend it; administrative pause and engine downtime do not suspend it**; renewal is an explicit,
   audited operator action.
 

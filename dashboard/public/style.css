@@ -378,6 +378,7 @@ body {
 .count-failed    { background: var(--badge-failed-bg); color: var(--red); }
 .count-stalled   { background: var(--badge-stalled-bg); color: var(--yellow); }
 .count-pending   { background: var(--badge-pending-bg); color: var(--text-muted); }
+.count-held      { background: var(--badge-stalled-bg); color: var(--accent, var(--yellow)); } /* #627 */
 
 .summary-elapsed {
   color: var(--text-muted);
@@ -721,6 +722,7 @@ body {
 .seg-pill.seg-failed    { background: var(--badge-failed-bg);    color: var(--red); }
 .seg-pill.seg-stalled   { background: var(--badge-failed-bg);    color: var(--yellow, var(--red)); opacity: 0.85; }
 .seg-pill.seg-skipped   { background: var(--bg-surface);         color: var(--text-muted); opacity: 0.7; }
+.seg-pill.seg-held      { background: var(--badge-stalled-bg);   color: var(--accent, var(--yellow)); } /* #627 */
 
 /* Current-segment emphasis: brighter border + slight weight bump so operator
  * can spot "we're here right now" at a glance independent of icon. */
@@ -788,6 +790,7 @@ body {
 .status-stalled   { background: var(--badge-stalled-bg); color: var(--yellow); }
 .status-pending   { background: var(--badge-pending-bg); color: var(--text-muted); }
 .status-skipped   { background: var(--badge-skipped-bg); color: var(--text-faint); }
+.status-held      { background: var(--badge-stalled-bg); color: var(--accent, var(--yellow)); } /* #627: awaiting a ruling */
 
 .status-dot {
   width: 6px;
@@ -802,6 +805,7 @@ body {
 .status-dot.stalled   { background: var(--yellow); }
 .status-dot.pending   { background: var(--text-faint); }
 .status-dot.skipped   { background: var(--text-faint); }
+.status-dot.held      { background: var(--accent, var(--yellow)); }
 
 /* Task progress bar (inline) */
 .task-progress {

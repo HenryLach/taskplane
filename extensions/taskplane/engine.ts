@@ -51,7 +51,7 @@ import {
 	syncTaskOutcomesFromMonitor,
 	upsertTaskOutcome,
 } from "./persistence.ts";
-import { createHoldStore } from "./hold-state.ts";
+import { createHoldStore, isHoldUnresolved } from "./hold-state.ts";
 import {
 	readRegistrySnapshot,
 	isTerminalStatus,
@@ -5578,6 +5578,24 @@ export async function executeOrchBatch(
 	}
 
 	// ── Phase 3: Cleanup ─────────────────────────────────────────
+	// #627: an unresolved hold protects its worktree and branch even when they
+	// are git-clean — committed-but-unmerged held work is the evidence a ruling
+	// is about. Whatever path brought us here, holds mean preserve.
+	if (!preserveWorktreesForResume && (batchState.holds ?? []).some(isHoldUnresolved)) {
+		preserveWorktreesForResume = true;
+		execLog(
+			"batch",
+			batchState.batchId,
+			"pre-cleanup: unresolved hold(s) present, preserving worktrees/branches (never a completion path)",
+			{
+				holds: (batchState.holds ?? [])
+					.filter(isHoldUnresolved)
+					.map((h) => h.escalationId)
+					.join(","),
+			},
+		);
+	}
+
 	const prefix = orchConfig.orchestrator.worktree_prefix;
 
 	if (preserveWorktreesForResume) {

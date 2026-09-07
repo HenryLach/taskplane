@@ -80,7 +80,7 @@ describe("TP-187 #538: drainAgentOutbox helper", () => {
 		expect(drained).toBe(0);
 	});
 
-	it("moves pending *.msg.json files to processed/", () => {
+	it("moves pending *.msg.json files to processed/ — except escalations, which may be unpersisted holds (#627)", () => {
 		const outbox = sessionOutboxDir(stateRoot, batchId, agentId);
 		mkdirSync(outbox, { recursive: true });
 		const msg = {
@@ -102,11 +102,13 @@ describe("TP-187 #538: drainAgentOutbox helper", () => {
 		);
 
 		const drained = drainAgentOutbox(stateRoot, batchId, agentId);
-		expect(drained).toBe(2);
-		expect(existsSync(join(outbox, "m1.msg.json"))).toBe(false);
+		expect(drained).toBe(1);
+		expect(existsSync(join(outbox, "m1.msg.json"))).toBe(true); // escalate preserved
 		expect(existsSync(join(outbox, "m2.msg.json"))).toBe(false);
-		expect(existsSync(join(outbox, "processed", "m1.msg.json"))).toBe(true);
 		expect(existsSync(join(outbox, "processed", "m2.msg.json"))).toBe(true);
+		// explicit teardown drains the escalation too
+		expect(drainAgentOutbox(stateRoot, batchId, agentId, { preserveEscalations: false })).toBe(1);
+		expect(existsSync(join(outbox, "processed", "m1.msg.json"))).toBe(true);
 	});
 
 	it("renames non-message pending files (e.g., segment-expansion-*) to .drained", () => {
