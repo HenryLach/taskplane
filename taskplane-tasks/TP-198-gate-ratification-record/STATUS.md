@@ -1,11 +1,11 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-09-08
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-09-07
 **Review Level:** 3
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,11 +15,13 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] `hold-state.ts` exports confirmed (HoldRecord, HoldRuling, RulingActor, evaluateCompletionAuthority, holdsForTask)
-- [ ] `review-analysis.ts` exports confirmed (parseReviewVerdict, latestReviewFilesPerGate)
-- [ ] Full-suite baseline recorded (pass/fail counts, lint warning count)
+- [x] `hold-state.ts` exports confirmed (HoldRecord, HoldRuling, RulingActor, evaluateCompletionAuthority, holdsForTask)
+- [x] `review-analysis.ts` exports confirmed (parseReviewVerdict, latestReviewFilesPerGate)
+- [x] Full-suite baseline recorded (pass/fail counts, lint warning count)
+
+**Baseline (Step 0):** tests 4018, pass 4016, fail 1 (pre-existing: `project-config-loader.test.ts:1619` "repo mode — pointer is not consulted", unrelated to TP-198). Lint: 283 warnings, 677 infos.
 
 ---
 
@@ -100,6 +102,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-09-08 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-09-07 23:47 | Task started | Runtime V2 lane-runner execution |
+| 2026-09-07 23:47 | Step 0 started | Preflight |
 
 ---
 
