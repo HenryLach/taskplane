@@ -1319,9 +1319,10 @@ export async function executeTaskV2(
 				`⏸️ YOU ARE ON HOLD awaiting a supervisor ruling.`,
 				`You escalated ${ago} min ago (escalation ${pendingEscalation.id}: "${pendingEscalation.preview.slice(0, 160)}").`,
 				`If a supervisor reply is delivered to you at the start of this session (as a steering message), act on it.`,
-				`If NO reply has arrived: do NOT proceed past the hold, do NOT self-approve or write .DONE, and do NOT`,
-				`re-send the escalation. You may add a one-line status note with notify_supervisor(replyTo="${pendingEscalation.id}")`,
-				`and then end your turn; the runtime will relaunch you to re-check (bounded).`,
+				`If NO reply (or only an acknowledgement) has arrived: do NOT proceed past the hold, do NOT self-approve or`,
+				`write .DONE, and do NOT re-send the escalation. Work on anything that does not depend on the ruling`,
+				`(other remediable findings, unaffected checkboxes); otherwise add a one-line status note with`,
+				`notify_supervisor(replyTo="${pendingEscalation.id}") and end your turn; the runtime will relaunch you to re-check.`,
 			);
 		} else if (remediationGates.length === 0 && totalIterations > 1 && remainingSteps.length > 0) {
 			const remainingSet = new Set(remainingSteps.map((s) => s.number));
@@ -1568,6 +1569,7 @@ export async function executeTaskV2(
 						const POLL_INTERVAL_MS = 2_000;
 						const escalationTimestamp = Date.now();
 						let acceptedReplyTs = 0;
+						let acceptedReplyType = "";
 						const inboxDir = sessionInboxDir(config.stateRoot, config.batchId, workerAgentId);
 
 						const supervisorReply = await new Promise<string | null>((resolve) => {
@@ -1590,6 +1592,7 @@ export async function executeTaskV2(
 												/* best effort */
 											}
 											acceptedReplyTs = message.timestamp;
+											acceptedReplyType = message.type;
 											resolve(message.content);
 											return;
 										}
@@ -1645,9 +1648,19 @@ export async function executeTaskV2(
 						);
 						// #630: a supervisor reply consumed HERE never reaches .steering-pending
 						// (it is returned as the next prompt). It is the ruling: release the hold.
-						lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, acceptedReplyTs || Date.now());
-						pendingEscalation = null;
-						holdRelaunches = 0;
+						if (acceptedReplyType === "info" && pendingEscalation) {
+							// Acknowledgement consumed by the intercept: engaged, still holding.
+							holdRelaunches = 0;
+							logExecution(
+								statusPath,
+								"Hold acknowledged",
+								`supervisor acknowledged escalation ${pendingEscalation.id} (via exit-intercept); still holding`,
+							);
+						} else {
+							lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, acceptedReplyTs || Date.now());
+							pendingEscalation = null;
+							holdRelaunches = 0;
+						}
 						return supervisorReply;
 					}
 				: undefined,
@@ -1785,16 +1798,33 @@ export async function executeTaskV2(
 				const raw = readFileSync(steeringPendingPath, "utf-8");
 				for (const line of raw.split("\n").filter((l) => l.trim())) {
 					try {
-						const entry = JSON.parse(line) as { ts: number; content: string; id: string };
+						const entry = JSON.parse(line) as { ts: number; content: string; id: string; type?: string };
 						const sanitized = entry.content.replace(/\r?\n/g, " / ").replace(/\|/g, "\\|").slice(0, 200);
 						const ts = new Date(entry.ts).toISOString().slice(0, 16).replace("T", " ");
 						logExecution(statusPath, "⚠️ Steering", sanitized);
 						// #630: a steer delivered AFTER the escalation counts as the ruling
 						// (delivery, not content, is what we can observe here).
-						lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, entry.ts);
-						if (pendingEscalation && entry.ts >= pendingEscalation.ts) {
-							pendingEscalation = null;
-							holdRelaunches = 0;
+						// #630 contract: an `info` message is an ACKNOWLEDGEMENT ("received,
+						// ruling pending") — the supervisor is engaged, so the relaunch counter
+						// resets, but the worker is still holding. Any other type (steer/query/
+						// abort) is the ruling/instruction and releases the hold. This is what
+						// lets an hours-long operator ruling neither burn the relaunch budget
+						// nor be mistaken for a ruling.
+						if (entry.type === "info") {
+							if (pendingEscalation && entry.ts >= pendingEscalation.ts) {
+								holdRelaunches = 0;
+								logExecution(
+									statusPath,
+									"Hold acknowledged",
+									`supervisor acknowledged escalation ${pendingEscalation.id}; still holding`,
+								);
+							}
+						} else {
+							lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, entry.ts);
+							if (pendingEscalation && entry.ts >= pendingEscalation.ts) {
+								pendingEscalation = null;
+								holdRelaunches = 0;
+							}
 						}
 					} catch {
 						/* skip malformed */

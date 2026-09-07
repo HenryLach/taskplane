@@ -30,8 +30,10 @@
  * blocks batch start.
  */
 
+import { createHash } from "crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 
 import { isProcessAlive } from "./process-registry.ts";
 import { runtimeRoot } from "./types.ts";
@@ -50,6 +52,52 @@ export interface EngineIdentity {
 	exitCode?: number | null;
 	/** Why the exit was recorded (e.g. "child-exit", "session-end-kill", "abort") */
 	exitReason?: string;
+	/**
+	 * Build marker (Penster feedback on #632): which Taskplane code is actually
+	 * driving this batch. `version` is package.json's; `build` is a short
+	 * content fingerprint of the loaded extension source (sha256 prefix), so a
+	 * local pre-release deploy is distinguishable from the published version
+	 * even when the version string has not been bumped.
+	 */
+	taskplaneVersion?: string;
+	taskplaneBuild?: string;
+}
+
+/**
+ * Compute the build marker for the currently loaded Taskplane: package.json
+ * version + a short sha256 of the extension entry sources. Cached. Never throws.
+ */
+let cachedBuildMarker: { taskplaneVersion: string; taskplaneBuild: string } | null = null;
+export function taskplaneBuildMarker(): { taskplaneVersion: string; taskplaneBuild: string } {
+	if (cachedBuildMarker) return cachedBuildMarker;
+	let version = "unknown";
+	let build = "unknown";
+	try {
+		const here = dirname(fileURLToPath(import.meta.url));
+		const pkg = JSON.parse(readFileSync(join(here, "..", "..", "package.json"), "utf-8")) as {
+			version?: string;
+		};
+		if (typeof pkg.version === "string") version = pkg.version;
+		const h = createHash("sha256");
+		for (const file of [
+			"extension.ts",
+			"lane-runner.ts",
+			"engine.ts",
+			"resume.ts",
+			"engine-identity.ts",
+		]) {
+			try {
+				h.update(readFileSync(join(here, file)));
+			} catch {
+				/* skip */
+			}
+		}
+		build = h.digest("hex").slice(0, 12);
+	} catch {
+		/* best effort */
+	}
+	cachedBuildMarker = { taskplaneVersion: version, taskplaneBuild: build };
+	return cachedBuildMarker;
 }
 
 /**
@@ -121,7 +169,7 @@ export function writeEngineIdentity(
 		const path = engineIdentityPath(stateRoot, identity.batchId);
 		mkdirSync(join(path, ".."), { recursive: true });
 		const tmp = `${path}.${process.pid}.tmp`;
-		writeFileSync(tmp, JSON.stringify(identity, null, 2), "utf-8");
+		writeFileSync(tmp, JSON.stringify({ ...identity, ...taskplaneBuildMarker() }, null, 2), "utf-8");
 		renameSync(tmp, path);
 		// Read-back: the record on disk must be the one we just published.
 		const check = readEngineIdentity(stateRoot, identity.batchId);

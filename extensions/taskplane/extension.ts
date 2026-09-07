@@ -5470,6 +5470,7 @@ export default function (pi: ExtensionAPI) {
 			"The 'to' parameter must be a valid agent session name from the current batch.",
 			"Use orch_status() to see active session names.",
 			"Default type is 'steer' (course correction). Other types: 'query', 'abort', 'info'.",
+			"HOLD CONTRACT (#630): when a worker is holding for a ruling you escalated for, send type='info' to ACKNOWLEDGE (\"received, ruling pending\") — it keeps the worker on hold and resets its relaunch budget. Send type='steer' only for the actual ruling/instruction — it releases the hold.",
 			"Messages are limited to 4KB. For larger context, write to a file and reference by path.",
 		],
 		parameters: Type.Object({

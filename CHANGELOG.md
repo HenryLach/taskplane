@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     now comes from outcome telemetry.
   - `skip-dependents` no longer names tasks outside the batch (the dependency
     graph is repo-wide; blocked IDs are now scoped to the wave plan).
+- **Build marker.** `.pi/runtime/<batchId>/engine.json` now records
+  `taskplaneVersion` and `taskplaneBuild` (sha256 prefix of the loaded
+  extension sources), and the takeover summary shows them — a local
+  pre-release deploy is distinguishable from the published version without
+  grepping for tool names.
 - **Stale "Ready for integration" banner and supervised "Integration Plan"
   prompt after the batch was already integrated** (#610). When the engine
   finished while the supervisor was mid-turn, the batch-end epilogue was
@@ -84,7 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relaunches, then the task fails with an explicit `Hold unresolved` reason and
   supervisor alert instead of a frozen `running` lane. A ruling delivered as a
   steer, or consumed by the exit-intercept, releases the hold (reply watermark
-  by message timestamp). `send_agent_message` to a dead-pid agent now returns a
+  by message timestamp). **Acknowledgement contract:** `send_agent_message`
+  with `type="info"` acknowledges ("received, ruling pending") — the worker
+  stays on hold and its relaunch budget resets, so an hours-long operator
+  ruling neither burns the budget nor is mistaken for a ruling; `type="steer"`
+  is the ruling and releases the hold. `send_agent_message` to a dead-pid agent now returns a
   distinct error (pid, last registry update, resume guidance). The in-tool
   wait / first-class `held` state is the #627 follow-up.
 - **A replacement supervisor could not resume the batch it inherited** (#631).

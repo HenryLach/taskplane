@@ -3724,6 +3724,11 @@ export function buildTakeoverSummary(stateRoot: string, batchState: PersistedBat
 		batchState.phase === "merging" ||
 		batchState.phase === "planning";
 	const liveness = assessEngineLiveness(stateRoot, batchState.batchId);
+	if (liveness.identity?.taskplaneBuild) {
+		lines.push(
+			`**Build:** taskplane ${liveness.identity.taskplaneVersion ?? "?"} (build ${liveness.identity.taskplaneBuild}) drove this batch`,
+		);
+	}
 	if (liveness.status === "alive") {
 		lines.push(
 			`**Engine:** ⚠️ PID ${liveness.identity!.pid} is still ALIVE (forked by supervisor PID ${liveness.identity!.supervisorPid}). ` +

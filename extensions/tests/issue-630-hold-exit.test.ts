@@ -483,6 +483,67 @@ describe("#630 — Sage blockers (behavioural)", () => {
 		expect(result.outcome.exitReason).toContain("Hold unresolved");
 	});
 
+	it("ACK CONTRACT: type='info' keeps the hold and resets the relaunch budget; a later 'steer' releases it", async () => {
+		// Spawn 0: escalate. Spawns 1..: hold-resume relaunches. On spawn 2 an INFO
+		// (acknowledgement) is delivered; on spawn 5 a STEER (ruling) is delivered.
+		// With MAX_HOLD_RELAUNCHES=3, without the ack-reset the task would fail as
+		// 'Hold unresolved' at spawn 4; with it, holding continues until the ruling.
+		onSpawn = (i, opts) => {
+			if (i === 0) {
+				writeOutboxMessage(tmpRoot, BATCH, AGENT, {
+					from: AGENT,
+					type: "escalate",
+					content: "Ruling needed; may take hours.",
+					expectsReply: true,
+				});
+			}
+			if (i === 2 && opts.steeringPendingPath) {
+				writeFileSync(
+					opts.steeringPendingPath,
+					`${JSON.stringify({ ts: Date.now(), content: "Acknowledged — ruling pending, ~2h.", id: "ack-1", type: "info" })}\n`,
+				);
+			}
+			if (i === 5 && opts.steeringPendingPath) {
+				writeFileSync(
+					opts.steeringPendingPath,
+					`${JSON.stringify({ ts: Date.now(), content: "Ruling: amend File Scope; proceed.", id: "rule-1", type: "steer" })}\n`,
+				);
+			}
+		};
+		const { unit, config } = buildUnitAndConfig(1);
+		const result = await executeTaskV2(
+			unit as Parameters<typeof executeTaskV2>[0],
+			config as unknown as Parameters<typeof executeTaskV2>[1],
+			{ paused: false },
+		);
+		const status = readFileSync(join(taskFolder, "STATUS.md"), "utf-8");
+		expect(status).toContain("Hold acknowledged");
+		// Holding continued past the original 3-relaunch budget thanks to the ack:
+		// spawns 1..5 are all hold-resume relaunches (without the ack-reset, spawn 4
+		// would have been 'Hold unresolved').
+		expect(spawnPrompts.length).toBe(6);
+		for (let k = 1; k <= 5; k++) expect(spawnPrompts[k]).toContain("YOU ARE ON HOLD");
+		// The steer delivered during spawn 5 released the hold in that same post-exit
+		// pass, so spawn 5's idle exit was accounted as an ordinary stall (limit 1).
+		expect(result.outcome.exitReason).toContain("No progress");
+		expect(result.outcome.exitReason).not.toContain("Hold unresolved");
+	});
+
+	it("build marker: engine identity carries taskplaneVersion + taskplaneBuild", async () => {
+		const { taskplaneBuildMarker, writeEngineIdentity, readEngineIdentity } = await import(
+			"../taskplane/engine-identity.ts"
+		);
+		const m = taskplaneBuildMarker();
+		expect(/^\d+\.\d+\.\d+/.test(m.taskplaneVersion)).toBe(true);
+		expect(/^[0-9a-f]{12}$/.test(m.taskplaneBuild)).toBe(true);
+		const root = join(tmpRoot, "bm");
+		mkdirSync(root, { recursive: true });
+		writeEngineIdentity(root, { batchId: "b", pid: process.pid, supervisorPid: 1, startedAt: 1 });
+		const id = readEngineIdentity(root, "b")!;
+		expect(id.taskplaneBuild).toBe(m.taskplaneBuild);
+		expect(id.taskplaneVersion).toBe(m.taskplaneVersion);
+	});
+
 	it("BLOCKER 2: a reply created after the escalation but before its drain still counts (causal timestamps)", async () => {
 		// Escalation message timestamp T0; steering entry timestamp T0+1 written BEFORE
 		// the escalation is drained (both land in the same post-exit processing).
@@ -575,5 +636,9 @@ describe("#630 — wiring", () => {
 			"if (pendingEscalation && entry.ts >= pendingEscalation.ts) { pendingEscalation = null; holdRelaunches = 0; }",
 		);
 		expect(readSrc("lane-runner.ts")).toContain("const MAX_HOLD_RELAUNCHES = 3;");
+		// agent-host records the message type so info (ack) and steer (ruling) are distinguishable.
+		expect(readSrc("agent-host.ts").replace(/\s+/g, " ")).toContain("id: msg.id, type: msg.type }");
+		expect(flat).toContain('if (entry.type === "info") {');
+		expect(flat).toContain('if (acceptedReplyType === "info" && pendingEscalation) {');
 	});
 });

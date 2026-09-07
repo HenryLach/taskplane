@@ -688,7 +688,10 @@ export function spawnAgent(
 						try {
 							appendFileSync(
 								opts.steeringPendingPath,
-								JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id }) + "\n",
+								// #630: `type` lets the lane-runner tell an acknowledgement (info)
+								// from a ruling/instruction (steer) for hold bookkeeping.
+								JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id, type: msg.type }) +
+									"\n",
 								"utf-8",
 							);
 						} catch {

@@ -203,7 +203,12 @@ merge_health_stuck) are also written here when merge agents stall or die.
 **Audit trail:** `.pi/supervisor/actions.jsonl`
 
 Every recovery action you take is logged here as JSONL — **always via the
-`log_recovery_action` tool**, which stamps `ts` and `batchId` in code. Never
+`log_recovery_action` tool**, which stamps `ts` and `batchId` in code. This
+includes **hand-remediation**: any hot-fix commit, review-file ratification,
+or manual state repair you perform under an operator ruling is a recovery
+action — log it (`classification: "destructive"`, `command` = the commit sha
+or file written, `context` = the ruling). The runtime has no other record of
+hand edits. Never
 append to this file by hand (your clock is unreliable; hand-written entries
 carry fabricated timestamps). Destructive actions
 must be logged *before* execution (with result="pending"), then again after
@@ -1139,6 +1144,22 @@ REVIEW INTERVENTION: {taskId} step {reviewStep} (lane {laneNumber})
     │             e.g. "step 4 at round 6, criticals flat — steering the
     │             worker to implement the two outstanding findings").
 ```
+
+**Worker on HOLD for a ruling (#630 Tier-1 contract).** A worker that escalated
+and is waiting exits its turn; the runtime relaunches it (bounded, 3) with a
+hold-resume prompt instead of failing it as a stall. Your messages to it have
+two meanings, chosen by `send_agent_message` **type**:
+
+- `type="info"` → **acknowledgement** ("received, ruling pending; expect ~N
+  hours"). The worker stays on hold; its relaunch budget resets. Use this for
+  any ruling that will take a while so the task does not fail as
+  `Hold unresolved` before the ruling exists.
+- `type="steer"` (default) → **the ruling / instruction**. Releases the hold;
+  the worker acts on it.
+
+If neither arrives within 3 relaunches the task fails with `Hold unresolved`
+(work preserved in the worktree); after ruling, `orch_retry_task` +
+`orch_resume(force=true)`.
 
 **kind = "unresolved-verdict"** (finalize refused): the task tried to complete
 while some gate's LATEST review file still reads REVISE/RETHINK — the runtime
