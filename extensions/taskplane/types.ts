@@ -3985,6 +3985,14 @@ export interface MailboxMessage {
 	 * "operator"). A role supplied by a model is not authority.
 	 */
 	actor?: import("./hold-state.ts").RulingActor;
+	/**
+	 * Unit the message was written FOR (#627). Stamped by the agent bridge from
+	 * the worker's environment on every outbox message so an escalation can be
+	 * attributed to its task/segment even after the lane has moved on to
+	 * another task (replay after crash; reconstruction). Absent on pre-#627
+	 * messages — those are never guessed into a unit.
+	 */
+	scope?: { taskId: string; segmentId: string | null };
 }
 
 /**
@@ -4008,6 +4016,8 @@ export interface WriteMailboxMessageOpts {
 	replyTo?: string | null;
 	/** Trusted actor stamp for `ruling` messages (#627). */
 	actor?: import("./hold-state.ts").RulingActor;
+	/** Unit scope for outbox messages (#627). */
+	scope?: { taskId: string; segmentId: string | null };
 }
 
 // ── Runtime V2 Contracts (TP-102) ────────────────────────────────────

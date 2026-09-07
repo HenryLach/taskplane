@@ -88,11 +88,17 @@ describe("1.x — Worker crash auto-retry: retryable classification triggers ret
 		expect(TIER0_RETRYABLE_CLASSIFICATIONS.has("stall_timeout")).toBe(false);
 	});
 
-	it("1.4: worker crash retry uses a fresh pause signal (not batch-level)", () => {
+	it("1.4: worker crash retry runs despite a stop-wave pause, but stays linked to the batch signal (#627)", () => {
 		const engineSource = readSource("engine.ts");
-		// R002-4: fresh pause signal allows retry before stop-wave policy takes effect
-		expect(engineSource).toContain("retryPauseSignal");
-		expect(engineSource).toContain("const retryPauseSignal = { paused: false }");
+		// R002-4: the stop-wave pause set by the triggering failure must not cancel
+		// the retry. #627: the signal is otherwise LINKED to the batch's so a held
+		// retry can park the batch (hold-timeout) and a batch pause unwinds it.
+		expect(engineSource).toContain(
+			"const retryPauseSignal = linkedPauseSignal(batchState.pauseSignal);",
+		);
+		const flat = engineSource.replace(/\s+/g, " ");
+		expect(flat).toContain('get paused() { return target.paused && target.cause !== "stop-wave"; }');
+		expect(flat).toContain("set paused(v: boolean) { target.paused = v; }");
 	});
 
 	it("1.5: retry checks budget via tier0ScopeKey before executing", () => {

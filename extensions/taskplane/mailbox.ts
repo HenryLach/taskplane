@@ -406,6 +406,9 @@ export function writeOutboxMessage(
 		content: opts.content,
 		expectsReply: opts.expectsReply ?? false,
 		replyTo: opts.replyTo ?? null,
+		...(opts.scope
+			? { scope: { taskId: opts.scope.taskId, segmentId: opts.scope.segmentId ?? null } }
+			: {}),
 	};
 
 	const finalFilename = `${id}.msg.json`;

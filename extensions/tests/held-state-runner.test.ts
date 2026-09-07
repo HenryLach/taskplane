@@ -498,6 +498,88 @@ describe("#627 — held state (lane-runner behavioural)", () => {
 		expect(spawnPrompts.length).toBe(1);
 	});
 
+	it("Sage blocker 1: a ruling queued while the hold was EXPIRED/parked is consumed on the next run instead of re-parking with the ruling unread", async () => {
+		let escId = "";
+		onSpawn = (i) => {
+			if (i === 0) escId = escalate("slow ruling");
+		};
+		const { unit, config, holdStore } = buildUnitAndConfig({ holdTimeoutMinutes: 5 });
+		const pause = { paused: false, cause: undefined as string | undefined };
+		const p = run(config, unit, pause);
+		await untilHeld();
+		owner.holds![0] = { ...owner.holds![0], deadline: Date.now() - 1 };
+		const r1 = await p;
+		expect(r1.outcome.status).toBe("held");
+		expect(pause.cause).toBe("hold-timeout");
+		expect(holds()[0].expiredAt).toBeGreaterThan(0);
+
+		// While parked, the supervisor rules. Then the operator resumes.
+		ruling(escId, "Ruling after the deadline");
+		spawnPrompts = [];
+		onSpawn = (i) => {
+			if (i === 0) {
+				expect(spawnPrompts[0]).toContain("Ruling after the deadline");
+				writeOutboxMessage(tmpRoot, BATCH, AGENT, {
+					from: AGENT,
+					type: "reply",
+					content: "ack",
+					replyTo: holds()[0].ruling!.id,
+				});
+				checkBox();
+			}
+		};
+		const { unit: u2, config: c2 } = buildUnitAndConfig({ holdStore, holdTimeoutMinutes: 5 });
+		const r2 = await run(c2, u2, { paused: false });
+		expect(r2.outcome.status).toBe("succeeded");
+		expect(holds()[0].phase).toBe("released");
+		expect(alerts.filter((a) => a.summary.includes("Hold timeout")).length).toBe(1); // no second park
+	});
+
+	it("Sage blocker 2: a held return from the post-loop (iteration budget exhausted, ruling never acknowledged) PARKS the batch instead of leaving the wave monitor waiting forever", async () => {
+		let escId = "";
+		onSpawn = (i) => {
+			if (i === 0) escId = escalate("never acked");
+			// every later worker checks the box but never acknowledges the ruling
+			if (i >= 1) checkBox();
+		};
+		const { unit, config } = buildUnitAndConfig({ maxIterations: 3, noProgressLimit: 10 });
+		const pause = { paused: false, cause: undefined as string | undefined };
+		const p = run(config, unit, pause);
+		await untilHeld();
+		ruling(escId);
+		const r = await p;
+		expect(r.outcome.status).toBe("held");
+		expect(r.outcome.exitReason).toContain("Iteration budget exhausted");
+		expect(pause.paused).toBe(true);
+		expect(pause.cause).toBe("hold-timeout");
+		expect(holds()[0].deliveryState).toBe("in-flight");
+		expect(alerts.some((a) => a.summary.includes("iteration budget exhausted**"))).toBe(true);
+		expect(status()).not.toMatch(/\*\*Status:\*\* ✅ Complete/);
+		expect(existsSync(join(taskFolder, ".DONE"))).toBe(false);
+	});
+
+	it("Sage blocker 6: an escalation stamped for ANOTHER unit in this lane's outbox is left alone (no hold under the wrong task, not acked)", async () => {
+		onSpawn = (i) => {
+			if (i === 0) {
+				writeOutboxMessage(tmpRoot, BATCH, AGENT, {
+					from: AGENT,
+					type: "escalate",
+					content: "belongs to TP-OTHER",
+					expectsReply: true,
+					scope: { taskId: "TP-OTHER", segmentId: null },
+				});
+				checkBox();
+			}
+		};
+		const { unit, config } = buildUnitAndConfig();
+		const r = await run(config, unit);
+		expect(r.outcome.status).toBe("succeeded");
+		expect(holds().length).toBe(0);
+		expect(status()).toContain("Escalation not for this unit");
+		const outboxDir = join(tmpRoot, ".pi", "mailbox", BATCH, AGENT, "outbox");
+		expect(readdirSync(outboxDir).filter((f) => f.endsWith(".msg.json")).length).toBe(1);
+	});
+
 	it("a worker-written .DONE while held is quarantined, never accepted; step check-off is withheld; the monitor reports `held` instead of succeeded/stalled", async () => {
 		onSpawn = (i) => {
 			if (i === 0) {

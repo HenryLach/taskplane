@@ -14,7 +14,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect } from "./expect.ts";
-import { reconcileTaskStates } from "../taskplane/resume.ts";
+import {
+	pinHeldSegments,
+	reconcileTaskStates,
+	replayUnrecordedEscalations,
+} from "../taskplane/resume.ts";
+import { reconstructHoldsFromMailbox } from "../taskplane/hold-state.ts";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { drainAgentOutbox, writeOutboxMessage, sessionOutboxDir } from "../taskplane/mailbox.ts";
 import { applyRuling, createHoldRecord, type HoldRecord } from "../taskplane/hold-state.ts";
 import type { PersistedBatchState } from "../taskplane/types.ts";
@@ -168,9 +174,20 @@ describe("#627 — wiring: engine, resume, extension", () => {
 		expect(resume).toContain(
 			"if (taskCompletionBlocked(persistedState.holds ?? [], task.taskId)) { holdBlockedTaskIds.add(task.taskId);",
 		);
-		expect(resume).toContain(
-			"const unrecorded = selectUnrecordedEscalations( readOutbox(stateRoot, persistedState.batchId, workerAgentId), persistedState.holds ?? [], );",
+		// Sage blocker 6: replay is validated + persisted BEFORE frontier repair and reconciliation
+		const src = readSrc("resume.ts");
+		const replayIdx = src.indexOf("const replay = replayUnrecordedEscalations(persistedState");
+		const frontierIdx = src.indexOf(
+			"const segmentFrontierByTask = reconstructSegmentFrontier(persistedState);",
 		);
+		const pinIdx = src.indexOf("pinHeldSegments(persistedState);");
+		const reconcileIdx = src.indexOf("const reconciledTasks = reconcileTaskStates(");
+		expect(replayIdx).toBeGreaterThan(-1);
+		expect(replayIdx).toBeLessThan(frontierIdx);
+		expect(frontierIdx).toBeLessThan(pinIdx);
+		expect(pinIdx).toBeLessThan(reconcileIdx);
+		expect(resume).toContain('throw new ResumeError("RESUME_INVALID_STATE", replay.error);');
+		expect(resume).toContain("saveBatchState(JSON.stringify(persistedState, null, 2), stateRoot);");
 		expect(resume).toContain("existingWorktreeTaskIds, holdBlockedTaskIds, );");
 		expect(resume).toContain(
 			"await Promise.all( [...reExecByLane.values()].map(async (laneTasks) => { for (const task of laneTasks) { await reExecuteOne(task); } }), );",
@@ -248,5 +265,309 @@ describe("#627 — wiring: engine, resume, extension", () => {
 		);
 		expect(released.deliveryState).toBe("pending");
 		expect(r[0].liveStatus).toBe("held");
+	});
+});
+
+describe("#627 — Sage regressions: replay attribution, segment pinning, reconstruction", () => {
+	function persisted(over: Partial<PersistedBatchState> = {}): PersistedBatchState {
+		return {
+			batchId: "b",
+			tasks: [
+				{
+					taskId: "TP-A",
+					laneNumber: 1,
+					sessionName: "orch-op-lane-1",
+					status: "succeeded",
+					taskFolder: "",
+					startedAt: 1,
+					endedAt: 2,
+					doneFileFound: true,
+					exitReason: "",
+				},
+				{
+					taskId: "TP-B",
+					laneNumber: 1,
+					sessionName: "orch-op-lane-1",
+					status: "running",
+					taskFolder: "",
+					startedAt: 3,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+				},
+			],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-op-lane-1",
+					worktreePath: "/wt",
+					branch: "b1",
+					taskIds: ["TP-A", "TP-B"],
+				},
+			],
+			segments: [],
+			holds: [],
+			...over,
+		} as unknown as PersistedBatchState;
+	}
+	const esc = (id: string, over: Record<string, unknown> = {}) => ({
+		id,
+		batchId: "b",
+		from: "orch-op-lane-1-worker",
+		to: "supervisor",
+		timestamp: 10,
+		type: "escalate",
+		content: "?",
+		expectsReply: true,
+		replyTo: null,
+		...over,
+	});
+
+	it("replay: a SCOPED escalation is attributed to its task even after the lane moved on (B escalated; A must not inherit it)", () => {
+		const st = persisted();
+		const r = replayUnrecordedEscalations(
+			st,
+			() => [esc("e1", { scope: { taskId: "TP-B", segmentId: null } })] as never,
+		);
+		expect(r.ok).toBe(true);
+		expect(st.holds[0].taskId).toBe("TP-B");
+		expect(st.holds[0].agentId).toBe("orch-op-lane-1-worker");
+		expect(st.holds[0].executionId).toBe("replayed-on-resume");
+	});
+
+	it("replay: an UNSCOPED escalation on a lane that ran two tasks REFUSES the resume (never guessed)", () => {
+		const st = persisted();
+		const r = replayUnrecordedEscalations(st, () => [esc("e1")] as never);
+		expect(r.ok).toBe(false);
+		if (r.ok === false) {
+			expect(r.error).toContain("unscoped escalation e1");
+			expect(r.error).toContain("TP-A, TP-B");
+		}
+		expect(st.holds.length).toBe(0);
+	});
+
+	it("replay: an unscoped escalation on a single-task lane is attributed from the durable lane record; an unreadable outbox refuses", () => {
+		const st = persisted({
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					laneSessionId: "orch-op-lane-1",
+					worktreePath: "/wt",
+					branch: "b1",
+					taskIds: ["TP-B"],
+				},
+			],
+		} as never);
+		const r = replayUnrecordedEscalations(st, () => [esc("e1")] as never);
+		expect(r.ok).toBe(true);
+		expect(st.holds[0].taskId).toBe("TP-B");
+		const bad = replayUnrecordedEscalations(persisted(), () => {
+			throw new Error("EIO");
+		});
+		expect(bad.ok).toBe(false);
+	});
+
+	it("pinHeldSegments: a segment hold pins the held segment as active and marks task + segment held; a succeeded segment is left alone", () => {
+		const st = persisted({
+			tasks: [
+				{
+					taskId: "TP-B",
+					laneNumber: 1,
+					sessionName: "orch-op-lane-1",
+					status: "failed",
+					taskFolder: "",
+					startedAt: 3,
+					endedAt: 4,
+					doneFileFound: false,
+					exitReason: "x",
+					activeSegmentId: null,
+					segmentIds: ["TP-B::api", "TP-B::web"],
+				},
+			],
+			segments: [
+				{
+					segmentId: "TP-B::api",
+					taskId: "TP-B",
+					repoId: "api",
+					status: "failed",
+					laneId: "",
+					sessionName: "",
+					worktreePath: "",
+					branch: "",
+					startedAt: 1,
+					endedAt: 2,
+					retries: 0,
+					exitReason: "",
+					dependsOnSegmentIds: [],
+				},
+				{
+					segmentId: "TP-B::web",
+					taskId: "TP-B",
+					repoId: "web",
+					status: "succeeded",
+					laneId: "",
+					sessionName: "",
+					worktreePath: "",
+					branch: "",
+					startedAt: 1,
+					endedAt: 2,
+					retries: 0,
+					exitReason: "",
+					dependsOnSegmentIds: [],
+				},
+			],
+			holds: [
+				hold({ escalationId: "h-api", taskId: "TP-B", segmentId: "TP-B::api" }),
+				hold({ escalationId: "h-web", taskId: "TP-B", segmentId: "TP-B::web" }),
+			],
+		} as never);
+		const pinned = pinHeldSegments(st);
+		expect(pinned).toEqual(["TP-B→TP-B::api"]);
+		expect(st.tasks[0].activeSegmentId).toBe("TP-B::api");
+		expect(st.tasks[0].status).toBe("held");
+		expect(st.segments[0].status).toBe("held");
+		expect(st.segments[1].status).toBe("succeeded");
+	});
+
+	describe("reconstructHoldsFromMailbox", () => {
+		let root: string;
+		beforeEach(() => {
+			root = mkdtempSync(join(tmpdir(), "tp627-recon-"));
+		});
+		afterEach(() => {
+			rmSync(root, { recursive: true, force: true });
+		});
+		function put(sub: string, msg: Record<string, unknown>) {
+			const dir = join(root, ".pi", "mailbox", "b", "orch-op-lane-1-worker", sub);
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, `${msg.id}.msg.json`), JSON.stringify(msg));
+		}
+		const agentDir = () => join(root, ".pi", "mailbox", "b", "orch-op-lane-1-worker");
+		const opts = {
+			knownTaskIds: new Set(["TP-A", "TP-B"]),
+			hasSegmentTopology: false,
+			laneNumberForAgent: () => 1,
+		};
+
+		it("A→B mailbox reuse: an UNSCOPED escalation refuses reconstruction; a SCOPED one is attributed to its own task", () => {
+			put("outbox/processed", esc("e-old"));
+			let r = reconstructHoldsFromMailbox(root, "b", opts);
+			expect(r.ok).toBe(false);
+			if (r.ok === false) expect(r.error).toContain("has no unit scope");
+			rmSync(join(agentDir(), "outbox", "processed"), { recursive: true });
+			put("outbox/processed", esc("e-a", { scope: { taskId: "TP-A", segmentId: null } }));
+			put("outbox", esc("e-b", { scope: { taskId: "TP-B", segmentId: null }, timestamp: 20 }));
+			r = reconstructHoldsFromMailbox(root, "b", opts);
+			expect(r.ok).toBe(true);
+			if (r.ok) {
+				expect(r.holds.map((h) => `${h.escalationId}:${h.taskId}`).sort()).toEqual([
+					"e-a:TP-A",
+					"e-b:TP-B",
+				]);
+				expect(r.holds.every((h) => h.phase === "open")).toBe(true);
+			}
+		});
+
+		it("a processed escalation with a VALID acked ruling reconstructs released+acknowledged; an invalid ruling (no actor) is ignored; earliest valid wins", () => {
+			put("outbox/processed", esc("e1", { scope: { taskId: "TP-B", segmentId: null } }));
+			put("ack", {
+				id: "r-bad",
+				batchId: "b",
+				from: "supervisor",
+				to: "orch-op-lane-1-worker",
+				timestamp: 11,
+				type: "ruling",
+				content: "x",
+				replyTo: "e1",
+			});
+			put("ack", {
+				id: "r-late",
+				batchId: "b",
+				from: "supervisor",
+				to: "orch-op-lane-1-worker",
+				timestamp: 13,
+				type: "ruling",
+				content: "late",
+				replyTo: "e1",
+				actor: { role: "operator", id: "h" },
+			});
+			put("ack", {
+				id: "r-ok",
+				batchId: "b",
+				from: "supervisor",
+				to: "orch-op-lane-1-worker",
+				timestamp: 12,
+				type: "ruling",
+				content: "fix",
+				replyTo: "e1",
+				actor: { role: "supervisor", id: "s" },
+			});
+			put("outbox/processed", {
+				id: "a1",
+				batchId: "b",
+				from: "orch-op-lane-1-worker",
+				to: "supervisor",
+				timestamp: 14,
+				type: "reply",
+				content: "ack",
+				replyTo: "r-ok",
+			});
+			const r = reconstructHoldsFromMailbox(root, "b", opts);
+			expect(r.ok).toBe(true);
+			if (r.ok) {
+				expect(r.holds[0].phase).toBe("released");
+				expect(r.holds[0].ruling?.id).toBe("r-ok");
+				expect(r.holds[0].deliveryState).toBe("acknowledged");
+				expect(r.evidence).toEqual({ escalations: 1, rulings: 1, acks: 1 });
+			}
+		});
+
+		it("segment-scoped evidence with no topology refuses; unknown task refuses; malformed file refuses; empty mailbox is fine", () => {
+			expect(reconstructHoldsFromMailbox(root, "b", opts).ok).toBe(true);
+			put("outbox", esc("e-seg", { scope: { taskId: "TP-B", segmentId: "TP-B::api" } }));
+			let r = reconstructHoldsFromMailbox(root, "b", opts);
+			expect(r.ok).toBe(false);
+			if (r.ok === false) expect(r.error).toContain("segment topology");
+			rmSync(join(agentDir(), "outbox"), { recursive: true });
+			put("outbox", esc("e-x", { scope: { taskId: "TP-Z", segmentId: null } }));
+			r = reconstructHoldsFromMailbox(root, "b", opts);
+			expect(r.ok).toBe(false);
+			if (r.ok === false) expect(r.error).toContain("TP-Z");
+			rmSync(join(agentDir(), "outbox"), { recursive: true });
+			mkdirSync(join(agentDir(), "outbox"), { recursive: true });
+			writeFileSync(join(agentDir(), "outbox", "junk.msg.json"), "{not json");
+			r = reconstructHoldsFromMailbox(root, "b", opts);
+			expect(r.ok).toBe(false);
+		});
+	});
+
+	it("wiring: reconstruction refuses instead of emitting an empty table; retry helpers carry the store, proxy the batch pause signal, record held retries; hold loop reads inbox before deadline; budget-exhausted held parks; live drain filters by scope", () => {
+		const p = readSrc("persistence.ts").replace(/\s+/g, " ");
+		expect(p).toContain("const holdRebuild = reconstructHoldsFromMailbox(stateRoot, cand.batchId, {");
+		expect(p).toContain("holds: reconstructedHolds,");
+		const e = readSrc("engine.ts").replace(/\s+/g, " ");
+		expect(
+			(e.match(/const retryPauseSignal = linkedPauseSignal\(batchState\.pauseSignal\);/g) ?? [])
+				.length,
+		).toBe(2);
+		expect(
+			(e.match(/recordHeldRetryOutcome\(waveResult, allTaskOutcomes, taskId, retryOutcome\);/g) ?? [])
+				.length,
+		).toBe(2);
+		const lr = readSrc("lane-runner.ts").replace(/\s+/g, " ");
+		const loop = lr.slice(lr.indexOf("const awaitHoldResolution = async"));
+		expect(loop.indexOf("// Inbox: only hold-control mail is consumed here.")).toBeLessThan(
+			loop.indexOf("const expired = current.find((h) => isHoldExpired(h, now));"),
+		);
+		expect(lr).toContain('logExecution(statusPath, "Held — budget exhausted", authority.reason);');
+		expect(lr.slice(lr.indexOf("Held — budget exhausted"))).toContain(
+			'pauseSignal.paused = true; pauseSignal.cause = "hold-timeout";',
+		);
+		expect(lr).toContain(
+			'if (msg.type === "escalate" && !escalationMatchesUnit(msg, escalationFilter)) {',
+		);
+		expect(readSrc("agent-bridge-extension.ts")).toContain("taskId: process.env.TASKPLANE_TASK_ID,");
 	});
 });

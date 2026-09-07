@@ -118,6 +118,7 @@ import {
 	markDeliveryAcknowledged,
 	markDeliveryInFlight,
 	normalizeHoldTimeoutMinutes,
+	escalationMatchesUnit,
 	recordAcknowledgement,
 	selectUnrecordedEscalations,
 	unresolvedHoldsForUnit,
@@ -620,6 +621,14 @@ export async function executeTaskV2(
 	const holdStore: HoldStore = config.holdStore ?? createInMemoryHoldStore();
 	const executionId = `${taskId}${segmentId ? `::${segmentId}` : ""}@${startTime.toString(36)}`;
 	const holdTimeoutMinutes = normalizeHoldTimeoutMinutes(config.holdTimeoutMinutes);
+	/**
+	 * Which escalations in this lane's outbox belong to THIS unit: stamped scope
+	 * must match; an unscoped (pre-#627) message counts only if written during
+	 * this run. Anything else is another unit's business (resume attributes and
+	 * persists those before any lane runs) and is never guessed into this hold.
+	 */
+	const escalationFilter = { taskId, segmentId, sinceTs: startTime };
+	const foreignEscalationsLogged = new Set<string>();
 	const unitHolds = (): HoldRecord[] => unresolvedHoldsForUnit(holdStore.list(), taskId, segmentId);
 	const completionAuthority = () => evaluateCompletionAuthority(holdStore.list(), taskId, segmentId);
 	const holdAlert = (
@@ -717,6 +726,19 @@ export async function executeTaskV2(
 				// #627: an escalation opens a durable hold BEFORE the message is acked.
 				// If the hold cannot be persisted the message stays in the outbox and
 				// the next drain retries — an unpersisted hold must never be acked away.
+				if (msg.type === "escalate" && !escalationMatchesUnit(msg, escalationFilter)) {
+					// Another unit's (or an ambiguous legacy) escalation: leave it in the
+					// outbox — never open a hold under the wrong task, never ack it away.
+					if (!foreignEscalationsLogged.has(msg.id)) {
+						foreignEscalationsLogged.add(msg.id);
+						logExecution(
+							statusPath,
+							"Escalation not for this unit",
+							`${msg.id} (scope ${msg.scope ? `${msg.scope.taskId}${msg.scope.segmentId ? `::${msg.scope.segmentId}` : ""}` : "none, pre-run"}) left in outbox`,
+						);
+					}
+					continue;
+				}
 				if (msg.type === "escalate") {
 					const record = createHoldRecord({
 						escalation: msg,
@@ -1229,23 +1251,6 @@ export async function executeTaskV2(
 			let current = openHolds();
 			if (current.length === 0) return { kind: "ruled" };
 
-			// Deadline — expiry parks the batch; the hold stays open.
-			const expired = current.find((h) => isHoldExpired(h, now));
-			if (expired) {
-				if (expired.expiredAt === undefined) {
-					try {
-						holdStore.update(expireHold(expired, now));
-					} catch (err) {
-						logExecution(
-							statusPath,
-							"Hold persist failed",
-							`could not record expiry of ${expired.escalationId}: ${err instanceof Error ? err.message : String(err)}`,
-						);
-					}
-				}
-				return { kind: "expired", hold: expired };
-			}
-
 			// Inbox: only hold-control mail is consumed here.
 			let messages: ReturnType<typeof readInbox> = [];
 			try {
@@ -1350,6 +1355,26 @@ export async function executeTaskV2(
 			current = openHolds();
 			if (current.length === 0) return { kind: "ruled" };
 
+			// Deadline — checked AFTER the inbox pass so a ruling queued while the
+			// batch was parked on hold-timeout is consumed on resume instead of the
+			// lane re-parking with the ruling unread (Sage review, blocker 1).
+			// Expiry parks the batch; the hold stays open.
+			const expired = current.find((h) => isHoldExpired(h, now));
+			if (expired) {
+				if (expired.expiredAt === undefined) {
+					try {
+						holdStore.update(expireHold(expired, now));
+					} catch (err) {
+						logExecution(
+							statusPath,
+							"Hold persist failed",
+							`could not record expiry of ${expired.escalationId}: ${err instanceof Error ? err.message : String(err)}`,
+						);
+					}
+				}
+				return { kind: "expired", hold: expired };
+			}
+
 			if (Date.now() - lastHeartbeat >= HOLD_HEARTBEAT_INTERVAL_MS) {
 				lastHeartbeat = Date.now();
 				emitSnapshot(
@@ -1377,6 +1402,7 @@ export async function executeTaskV2(
 			const unrecorded = selectUnrecordedEscalations(
 				readOutbox(config.stateRoot, config.batchId, workerAgentId),
 				holdStore.list(),
+				escalationFilter,
 			);
 			if (unrecorded.length > 0) {
 				drainAndSurfaceOutbox(); // retries holdStore.open() for each
@@ -2380,6 +2406,7 @@ export async function executeTaskV2(
 		const unrecordedAfterExit = selectUnrecordedEscalations(
 			readOutbox(config.stateRoot, config.batchId, workerAgentId),
 			holdStore.list(),
+			escalationFilter,
 		);
 		if (unrecordedAfterExit.length > 0) {
 			// Persist failed in the drain: never count this exit, never kill; the
@@ -2618,6 +2645,19 @@ export async function executeTaskV2(
 			quarantineUnauthorizedDone(authority.reason);
 			logExecution(statusPath, "Held — budget exhausted", authority.reason);
 			updateStatusField(statusPath, "Status", "⏸️ Held — ruling outstanding");
+			// A returned held controller with the batch still running would leave
+			// the wave monitor reporting `held` forever with nobody consuming mail
+			// (Sage review, blocker 2). Every `held` return parks the batch.
+			if (!pauseSignal.paused) {
+				pauseSignal.paused = true;
+				pauseSignal.cause = "hold-timeout";
+				holdAlert(
+					"task-failure",
+					`⏸️ **Held — iteration budget exhausted** — ${taskId} (lane ${config.laneNumber}) used its worker budget while ${authority.reason}. ` +
+						`The batch is parking (pause cause hold-timeout) with the hold preserved. Resolve the hold, then orch_resume(force=true).`,
+					{ exitReason: "held_budget_exhausted" },
+				);
+			}
 			return makeResult(
 				taskId,
 				segmentId,

@@ -27,7 +27,7 @@ import {
 	runtimeManifestPath,
 } from "./types.ts";
 import type { BatchHistorySummary, RuntimeAgentManifest } from "./types.ts";
-import { isValidHoldRecord } from "./hold-state.ts";
+import { isValidHoldRecord, reconstructHoldsFromMailbox } from "./hold-state.ts";
 import type {
 	AllocatedLane,
 	DiscoveryResult,
@@ -2643,6 +2643,27 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 			});
 
 		const now = Date.now();
+		// #627 (Sage review, blocker 7): the hold table is AUTHORITY. Rebuild it
+		// from durable mailbox evidence; refuse the candidate when authority
+		// cannot be recovered (unscoped escalation, unknown task, segment-scoped
+		// evidence with no topology, unreadable mailbox) — never silently empty.
+		const holdRebuild = reconstructHoldsFromMailbox(stateRoot, cand.batchId, {
+			knownTaskIds,
+			hasSegmentTopology: false,
+			laneNumberForAgent: (agentId) => {
+				for (const lane of laneMap.values()) {
+					if (lane.agentId === agentId) return lane.laneNumber;
+				}
+				const m = /-lane-(d+)-worker$/.exec(agentId);
+				return m ? Number(m[1]) : undefined;
+			},
+		});
+		if (holdRebuild.ok === false) {
+			failures.push(`${cand.batchId}: ${holdRebuild.error}`);
+			continue;
+		}
+		const reconstructedHolds = holdRebuild.holds;
+
 		const reconstructed: PersistedBatchState = {
 			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
 			batchId: meta.batchId,
@@ -2667,11 +2688,7 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 			blockedTaskIds: [],
 			errors: [],
 			segments: [],
-			// Reconstruction has no access to hold records; a reconstructed batch
-			// is refused for resume when the runtime mailbox shows unrecorded
-			// escalations (resume.ts hold-first replay), so an empty table here is
-			// conservative, not lossy.
-			holds: [],
+			holds: reconstructedHolds,
 			lastError: null,
 			resilience: { ...defaultResilienceState(), resumeForced: true },
 			diagnostics: defaultBatchDiagnostics(),

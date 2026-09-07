@@ -17,6 +17,8 @@
  * Design: docs/specifications/taskplane/held-state-spec.md
  */
 
+import { existsSync, readdirSync, readFileSync } from "fs";
+import { join } from "path";
 import type { MailboxMessage } from "./types.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -134,6 +136,7 @@ export function createHoldRecord(input: OpenHoldInput): HoldRecord {
 
 // ── Selection ─────────────────────────────────────────────────────────
 
+/** Exact unit identity (task + segment). */
 export function sameUnit(
 	record: Pick<HoldRecord, "taskId" | "segmentId">,
 	taskId: string,
@@ -142,12 +145,29 @@ export function sameUnit(
 	return record.taskId === taskId && (record.segmentId ?? null) === (segmentId ?? null);
 }
 
+/**
+ * Binding rule (Sage review, blocker 5): a hold BINDS a unit when it is on the
+ * same task and either side is the whole task. A whole-task hold binds every
+ * segment; a segment hold binds its own segment AND the whole-task unit — so a
+ * resume that runs the task as one unit can never step around a segment's hold.
+ */
+export function holdBindsUnit(
+	record: Pick<HoldRecord, "taskId" | "segmentId">,
+	taskId: string,
+	segmentId: string | null | undefined,
+): boolean {
+	if (record.taskId !== taskId) return false;
+	const hs = record.segmentId ?? null;
+	const us = segmentId ?? null;
+	return hs === null || us === null || hs === us;
+}
+
 export function holdsForUnit(
 	holds: readonly HoldRecord[],
 	taskId: string,
 	segmentId: string | null | undefined,
 ): HoldRecord[] {
-	return holds.filter((h) => sameUnit(h, taskId, segmentId));
+	return holds.filter((h) => holdBindsUnit(h, taskId, segmentId));
 }
 
 export function holdsForTask(holds: readonly HoldRecord[], taskId: string): HoldRecord[] {
@@ -305,7 +325,7 @@ export function validateRuling(
 			reason: `no hold with escalation id ${msg.replyTo}`,
 		};
 	}
-	if (!sameUnit(hold, scope.taskId, scope.segmentId)) {
+	if (!holdBindsUnit(hold, scope.taskId, scope.segmentId)) {
 		return {
 			ok: false,
 			code: "wrong-unit",
@@ -409,12 +429,41 @@ export function upsertHold(holds: readonly HoldRecord[], record: HoldRecord): Ho
  * escalation time and on resume replay (crash between outbox write and hold
  * persist must not lose the hold).
  */
+export interface EscalationScopeFilter {
+	taskId: string;
+	segmentId: string | null | undefined;
+	/**
+	 * Accept an UNSCOPED escalation only if it was written at/after this time
+	 * (i.e. by the worker of the current run). Older unscoped messages are
+	 * ambiguous and are never guessed into this unit.
+	 */
+	sinceTs?: number;
+}
+
 export function selectUnrecordedEscalations(
 	outbox: readonly MailboxMessage[],
 	holds: readonly HoldRecord[],
+	filter?: EscalationScopeFilter,
 ): MailboxMessage[] {
 	const known = new Set(holds.map((h) => h.escalationId));
-	return outbox.filter((m) => m.type === "escalate" && !known.has(m.id));
+	return outbox.filter((m) => {
+		if (m.type !== "escalate" || known.has(m.id)) return false;
+		if (!filter) return true;
+		return escalationMatchesUnit(m, filter);
+	});
+}
+
+/** Does this escalation belong to the unit (by stamp, or — unscoped — by time)? */
+export function escalationMatchesUnit(
+	m: Pick<MailboxMessage, "scope" | "timestamp">,
+	filter: EscalationScopeFilter,
+): boolean {
+	if (m.scope) {
+		return (
+			m.scope.taskId === filter.taskId && (m.scope.segmentId ?? null) === (filter.segmentId ?? null)
+		);
+	}
+	return filter.sinceTs !== undefined && m.timestamp >= filter.sinceTs;
 }
 
 /**
@@ -616,4 +665,171 @@ export function createHoldStore(
 /** Volatile store for tests and legacy callers that run without an engine. */
 export function createInMemoryHoldStore(initial: HoldRecord[] = []): HoldStore {
 	return createHoldStore({ holds: [...initial] }, () => {});
+}
+
+// ── Reconstruction from durable mailbox evidence ───────────────────────
+
+export type HoldReconstruction =
+	| {
+			ok: true;
+			holds: HoldRecord[];
+			evidence: { escalations: number; rulings: number; acks: number };
+	  }
+	| { ok: false; error: string };
+
+/**
+ * Rebuild the hold table for a batch whose `batch-state.json` is gone, from the
+ * mailbox on disk (Sage review, blocker 7). Authority must be recoverable or
+ * the reconstruction is refused — never silently empty.
+ *
+ * Evidence considered, per `<agent>-worker` mailbox directory:
+ *  - `escalate` messages in `outbox/` and `outbox/processed/` → hold candidates.
+ *    Attribution is by the message's stamped `scope` ONLY: an unscoped
+ *    escalation cannot be attributed (registry manifests are overwritten, so a
+ *    lane's "current task" is not ownership evidence) → refuse.
+ *  - `ruling` messages in the agent's `inbox/` and `ack/` → release, when the
+ *    FULL ruling validation passes against the candidate (correlation, unit,
+ *    actor, instructions). Earliest valid ruling wins (deterministic).
+ *  - `reply` messages in `outbox/` + `outbox/processed/` with `replyTo` =
+ *    ruling id → delivery acknowledged.
+ *  - Nothing else changes phase: an escalation with no valid ruling stays
+ *    OPEN (fail closed; the operator rules or aborts).
+ *  - Segment-scoped evidence with no segment topology to attach to → refuse
+ *    (the caller reconstructs `segments: []`).
+ *  - Unreadable or malformed mailbox files → refuse, not "no evidence".
+ */
+export function reconstructHoldsFromMailbox(
+	stateRoot: string,
+	batchId: string,
+	opts: {
+		knownTaskIds: ReadonlySet<string>;
+		/** True when the caller can attach segment-scoped holds to real segment records. */
+		hasSegmentTopology: boolean;
+		laneNumberForAgent: (agentId: string) => number | undefined;
+		holdTimeoutMinutes?: number;
+		now?: number;
+	},
+): HoldReconstruction {
+	const root = join(stateRoot, ".pi", "mailbox", batchId);
+	if (!existsSync(root))
+		return { ok: true, holds: [], evidence: { escalations: 0, rulings: 0, acks: 0 } };
+
+	const readMessages = (dir: string): MailboxMessage[] | { error: string } => {
+		if (!existsSync(dir)) return [];
+		let entries: string[];
+		try {
+			entries = readdirSync(dir).filter((f) => f.endsWith(".msg.json"));
+		} catch (err) {
+			return { error: `${dir}: ${err instanceof Error ? err.message : String(err)}` };
+		}
+		const out: MailboxMessage[] = [];
+		for (const f of entries.sort()) {
+			try {
+				const parsed = JSON.parse(readFileSync(join(dir, f), "utf-8")) as MailboxMessage;
+				if (
+					!parsed ||
+					typeof parsed !== "object" ||
+					typeof parsed.id !== "string" ||
+					typeof parsed.type !== "string"
+				) {
+					return { error: `${join(dir, f)}: malformed mailbox message` };
+				}
+				if (parsed.batchId !== batchId) continue;
+				out.push(parsed);
+			} catch (err) {
+				return { error: `${join(dir, f)}: ${err instanceof Error ? err.message : String(err)}` };
+			}
+		}
+		return out;
+	};
+
+	let agents: string[];
+	try {
+		agents = readdirSync(root).filter((d) => d.endsWith("-worker"));
+	} catch (err) {
+		return {
+			ok: false,
+			error: `mailbox root unreadable: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+
+	const holds: HoldRecord[] = [];
+	const evidence = { escalations: 0, rulings: 0, acks: 0 };
+	for (const agentId of agents) {
+		const outboxes = [
+			readMessages(join(root, agentId, "outbox")),
+			readMessages(join(root, agentId, "outbox", "processed")),
+		];
+		const inboxes = [
+			readMessages(join(root, agentId, "inbox")),
+			readMessages(join(root, agentId, "ack")),
+		];
+		for (const r of [...outboxes, ...inboxes]) {
+			if (!Array.isArray(r))
+				return { ok: false, error: `hold authority cannot be recovered: ${r.error}` };
+		}
+		const outbox = (outboxes as MailboxMessage[][]).flat();
+		const inbox = (inboxes as MailboxMessage[][]).flat();
+		const laneNumber = opts.laneNumberForAgent(agentId);
+
+		for (const esc of outbox.filter((m) => m.type === "escalate")) {
+			evidence.escalations++;
+			if (!esc.scope) {
+				return {
+					ok: false,
+					error: `hold authority cannot be recovered: escalation ${esc.id} in ${agentId}'s outbox has no unit scope and cannot be attributed. Restore .pi/batch-state.json from backup, or resolve the escalation out of band and move the message out of the mailbox.`,
+				};
+			}
+			if (!opts.knownTaskIds.has(esc.scope.taskId)) {
+				return {
+					ok: false,
+					error: `hold authority cannot be recovered: escalation ${esc.id} names task ${esc.scope.taskId}, which is not part of the reconstructed batch.`,
+				};
+			}
+			if (esc.scope.segmentId && !opts.hasSegmentTopology) {
+				return {
+					ok: false,
+					error: `hold authority cannot be recovered: escalation ${esc.id} is scoped to segment ${esc.scope.segmentId} but the segment topology cannot be reconstructed. Restore .pi/batch-state.json from backup.`,
+				};
+			}
+			if (laneNumber === undefined) {
+				return {
+					ok: false,
+					error: `hold authority cannot be recovered: no lane number for ${agentId}`,
+				};
+			}
+			let record = createHoldRecord({
+				escalation: esc,
+				batchId,
+				taskId: esc.scope.taskId,
+				segmentId: esc.scope.segmentId ?? null,
+				executionId: "reconstructed",
+				agentId,
+				laneNumber,
+				holdTimeoutMinutes: opts.holdTimeoutMinutes ?? HOLD_TIMEOUT_MINUTES_DEFAULT,
+				now: opts.now,
+			});
+			// Earliest VALID ruling releases.
+			const rulings = inbox
+				.filter((m) => m.type === "ruling" && m.replyTo === esc.id)
+				.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
+			for (const r of rulings) {
+				const v = validateRuling(r, [record], { taskId: record.taskId, segmentId: record.segmentId });
+				if (v.ok) {
+					record = applyRuling(record, r, r.timestamp);
+					evidence.rulings++;
+					break;
+				}
+			}
+			if (record.phase === "released" && record.ruling) {
+				const rulingId = record.ruling.id;
+				if (outbox.some((m) => m.type === "reply" && m.replyTo === rulingId)) {
+					record = markDeliveryAcknowledged(markDeliveryInFlight(record, "reconstructed"));
+					evidence.acks++;
+				}
+			}
+			holds.push(record);
+		}
+	}
+	return { ok: true, holds, evidence };
 }

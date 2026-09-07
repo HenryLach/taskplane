@@ -167,14 +167,29 @@ describe("hold-state: completion authority (the single predicate)", () => {
 		assert.equal(evaluateCompletionAuthority([c], "TP-1", null).blocked, false);
 	});
 
-	it("is unit-scoped: a hold on another task or segment does not block this unit", () => {
+	it("binding rule: another task never binds; a segment hold binds its segment AND the whole-task unit; a whole-task hold binds every segment; sibling segments are independent", () => {
 		const other = openHold({ taskId: "TP-2" });
 		const seg = openHold({ escalationId: "esc-seg", segmentId: "TP-1::api" });
+		const whole = openHold({ escalationId: "esc-whole", segmentId: null });
 		assert.equal(evaluateCompletionAuthority([other], "TP-1", null).blocked, false);
-		assert.equal(evaluateCompletionAuthority([seg], "TP-1", null).blocked, false);
+		// Sage blocker 5: a resume that runs the task as ONE unit cannot step around a segment's hold
+		assert.equal(evaluateCompletionAuthority([seg], "TP-1", null).blocked, true);
 		assert.equal(evaluateCompletionAuthority([seg], "TP-1", "TP-1::api").blocked, true);
+		assert.equal(evaluateCompletionAuthority([seg], "TP-1", "TP-1::web").blocked, false);
+		assert.equal(evaluateCompletionAuthority([whole], "TP-1", "TP-1::web").blocked, true);
 		// task-level view sees any unit of the task
 		assert.equal(taskCompletionBlocked([seg], "TP-1"), true);
+		// a ruling for the segment hold is accepted by the whole-task unit's runner
+		const v = validateRuling(ruling({ replyTo: "esc-seg" }), [seg], {
+			taskId: "TP-1",
+			segmentId: null,
+		});
+		assert.equal(v.ok, true);
+		const w = validateRuling(ruling({ replyTo: "esc-seg" }), [seg], {
+			taskId: "TP-1",
+			segmentId: "TP-1::web",
+		});
+		assert.equal(w.ok, false);
 	});
 
 	it("all holds on a unit must resolve — a second open escalation keeps blocking", () => {

@@ -88,6 +88,16 @@ function writeOutbox(
 		content,
 		expectsReply: type === "escalate",
 		replyTo: replyTo || null,
+		// #627: unit scope so the runtime can attribute this message to its task
+		// (and segment) even after the lane moves on — never guessed on replay.
+		...(process.env.TASKPLANE_TASK_ID
+			? {
+					scope: {
+						taskId: process.env.TASKPLANE_TASK_ID,
+						segmentId: process.env.TASKPLANE_ACTIVE_SEGMENT_ID || null,
+					},
+				}
+			: {}),
 	};
 
 	const tmpPath = join(outboxDir, `${id}.msg.json.tmp`);

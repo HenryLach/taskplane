@@ -82,6 +82,7 @@ import type {
 	EscalationContext,
 	LaneExecutionResult,
 	LaneTaskOutcome,
+	PauseSignal,
 	MergeWaveResult,
 	OrchBatchPhase,
 	OrchBatchRuntimeState,
@@ -1513,6 +1514,56 @@ export function buildSegmentFrontierWaves(
  *
  * @returns Object with retried count and updated task outcomes
  */
+/**
+ * #627: a pause signal that reads and writes THROUGH to the batch's signal.
+ * Retry helpers used to hand lanes a detached `{ paused: false }`; with holds
+ * that detaches the lane from the batch's park/unwind semantics.
+ */
+function linkedPauseSignal(target: PauseSignal): PauseSignal {
+	return {
+		// R002-4: a `stop-wave` pause is already set when a Tier-0 retry starts (the
+		// failure that triggered the retry set it). The retry must still run, so
+		// that cause is ignored on read; every other pause (operator, abort,
+		// merge-failure, hold-timeout) unwinds the retry like any lane.
+		get paused() {
+			return target.paused && target.cause !== "stop-wave";
+		},
+		set paused(v: boolean) {
+			target.paused = v;
+		},
+		get cause() {
+			return target.cause;
+		},
+		set cause(v: PauseSignal["cause"]) {
+			target.cause = v;
+		},
+	};
+}
+
+/**
+ * #627: a retried lane that ends HELD is neither succeeded nor failed. Move it
+ * out of the wave's failed set into heldTaskIds so the pause finalizer parks
+ * the batch (preserve worktrees, no merge) instead of counting it as a failure.
+ */
+function recordHeldRetryOutcome(
+	waveResult: WaveExecutionResult,
+	allTaskOutcomes: LaneTaskOutcome[],
+	taskId: string,
+	outcome: LaneTaskOutcome,
+): void {
+	const failIdx = waveResult.failedTaskIds.indexOf(taskId);
+	if (failIdx !== -1) waveResult.failedTaskIds.splice(failIdx, 1);
+	waveResult.heldTaskIds = [...(waveResult.heldTaskIds ?? []), taskId].sort();
+	for (const lr of waveResult.laneResults) {
+		const idx = lr.tasks.findIndex((t) => t.taskId === taskId);
+		if (idx !== -1) {
+			lr.tasks[idx] = outcome;
+			break;
+		}
+	}
+	upsertTaskOutcome(allTaskOutcomes, outcome);
+}
+
 async function attemptWorkerCrashRetry(
 	waveResult: WaveExecutionResult,
 	waveIdx: number,
@@ -1525,6 +1576,8 @@ async function attemptWorkerCrashRetry(
 	stateRoot: string,
 	runnerConfig?: TaskRunnerConfig,
 	runtimeBackend?: RuntimeBackend,
+	/** #627: strict hold store — a retried lane's escalation must enter authoritative state. */
+	holdStore?: import("./hold-state.ts").HoldStore,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	if (!batchState.resilience) {
 		batchState.resilience = defaultResilienceState();
@@ -1715,7 +1768,10 @@ async function attemptWorkerCrashRetry(
 			// Use a fresh pause signal for the retry — the batch pauseSignal
 			// may be paused due to stop-wave policy, but Tier 0 retry should
 			// attempt recovery before the stop decision takes effect (R002-4).
-			const retryPauseSignal = { paused: false };
+			// #627: proxy the BATCH pause signal (previously a detached { paused: false }).
+			// A retried lane that holds must be able to park the batch on hold-timeout,
+			// and a batch pause must unwind a held retry instead of leaving it waiting.
+			const retryPauseSignal = linkedPauseSignal(batchState.pauseSignal);
 			const retryResult = await executeLaneV2(
 				retryLane,
 				orchConfig,
@@ -1729,9 +1785,20 @@ async function attemptWorkerCrashRetry(
 					...buildReviewerEnv(runnerConfig?.reviewer),
 					...buildWorkerExcludeEnv(runnerConfig?.workerExcludeExtensions),
 				}, // TP-089: ensure mailbox works for retries
+				undefined,
+				undefined,
+				undefined,
+				holdStore,
 			);
 
 			const retryOutcome = retryResult.tasks[0];
+			if (retryOutcome && retryOutcome.status === "held") {
+				recordHeldRetryOutcome(waveResult, allTaskOutcomes, taskId, retryOutcome);
+				execLog("batch", batchState.batchId, `tier0: task ${taskId} retry is HELD awaiting a ruling`, {
+					scopeKey,
+				});
+				continue;
+			}
 			if (retryOutcome && retryOutcome.status === "succeeded") {
 				succeededRetries.push(taskId);
 
@@ -1905,6 +1972,8 @@ async function attemptModelFallbackRetry(
 	stateRoot: string,
 	runnerConfig?: TaskRunnerConfig,
 	runtimeBackend?: RuntimeBackend,
+	/** #627: strict hold store — a retried lane's escalation must enter authoritative state. */
+	holdStore?: import("./hold-state.ts").HoldStore,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	// Short-circuit: if model fallback is disabled, skip entirely
 	const modelFallbackMode = runnerConfig?.model_fallback ?? "inherit";
@@ -2036,7 +2105,10 @@ async function attemptModelFallbackRetry(
 		const wsRoot = workspaceConfig ? resolve(workspaceConfig.configPath, "..", "..") : undefined;
 
 		try {
-			const retryPauseSignal = { paused: false };
+			// #627: proxy the BATCH pause signal (previously a detached { paused: false }).
+			// A retried lane that holds must be able to park the batch on hold-timeout,
+			// and a batch pause must unwind a held retry instead of leaving it waiting.
+			const retryPauseSignal = linkedPauseSignal(batchState.pauseSignal);
 			// Pass TASKPLANE_MODEL_FALLBACK=1 as extra env var to signal
 			// the task-runner to use the session model instead of configured model.
 			// TP-089: Also include ORCH_BATCH_ID so mailbox steering works for retries.
@@ -2054,9 +2126,25 @@ async function attemptModelFallbackRetry(
 				wsRoot,
 				isWsMode,
 				modelFallbackEnv,
+				undefined,
+				undefined,
+				undefined,
+				holdStore,
 			);
 
 			const retryOutcome = retryResult.tasks[0];
+			if (retryOutcome && retryOutcome.status === "held") {
+				recordHeldRetryOutcome(waveResult, allTaskOutcomes, taskId, retryOutcome);
+				execLog(
+					"batch",
+					batchState.batchId,
+					`tier0: task ${taskId} model-fallback retry is HELD awaiting a ruling`,
+					{
+						scopeKey,
+					},
+				);
+				continue;
+			}
 			if (retryOutcome && retryOutcome.status === "succeeded") {
 				succeededRetries.push(taskId);
 
@@ -3280,6 +3368,7 @@ export async function executeOrchBatch(
 				stateRoot,
 				runnerConfig,
 				selectedBackend,
+				holdStore,
 			);
 			if (modelFallbackOutcome.succeededRetries.length > 0) {
 				// Recompute blocked tasks after model fallback successes
@@ -3324,6 +3413,7 @@ export async function executeOrchBatch(
 				stateRoot,
 				undefined,
 				selectedBackend,
+				holdStore,
 			);
 			if (retryOutcome.succeededRetries.length > 0) {
 				// Recompute blockedTaskIds from remaining failures (R002-2).
