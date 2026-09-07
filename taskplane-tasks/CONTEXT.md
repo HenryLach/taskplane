@@ -1,8 +1,8 @@
 # General — Context
 
-**Last Updated:** 2026-05-10
+**Last Updated:** 2026-09-08
 **Status:** Active
-**Next Task ID:** TP-198
+**Next Task ID:** TP-200
 
 ---
 
