@@ -73,7 +73,8 @@ describe("2.x: Lane-runner execution contract", () => {
 	it("2.1: executeTaskV2 takes ExecutionUnit, LaneRunnerConfig, and pauseSignal", () => {
 		expect(laneRunnerSrc).toContain("unit: ExecutionUnit");
 		expect(laneRunnerSrc).toContain("config: LaneRunnerConfig");
-		expect(laneRunnerSrc).toContain("pauseSignal: { paused: boolean }");
+		// Shared PauseSignal type ({ paused; cause? }) since the owned-batch pause fix.
+		expect(laneRunnerSrc).toContain("pauseSignal: PauseSignal");
 	});
 
 	it("2.2: returns LaneRunnerTaskResult with LaneTaskOutcome", () => {
@@ -176,7 +177,8 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 		// emit added at the top of the function body. TP-195: widened to 7500
 		// to accommodate the typecheck-cleanup TP-195 comments documenting the
 		// `maxWorkerMinutes`/`projectName` field-name decisions.
-		const bodySection = executionSrc.slice(start, start + 7500);
+		// review-boundary: widened to 8500 for the TASKPLANE_REVIEW_ANALYSIS parse block.
+		const bodySection = executionSrc.slice(start, start + 8500);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});

@@ -40,6 +40,7 @@ import type {
 	RuntimeAgentEventType,
 	RuntimeAgentManifest,
 	PacketPaths,
+	ReviewDisposition,
 } from "./types.ts";
 
 import {
@@ -144,6 +145,65 @@ export function buildWorkerToolsAllowlist(userTools: string | undefined | null):
 	return Array.from(merged).join(",");
 }
 
+/**
+ * Normalize the freeform text a `review_step` tool call returns into a
+ * {@link ReviewDisposition}. The tool returns clean leading tokens
+ * (`APPROVE`, `REVISE: …`, `RETHINK — …`, `UNAVAILABLE — …`, `REFUSED: …`),
+ * but this parser is defensive: it matches a leading verdict token
+ * case-insensitively and falls back to a substring scan, returning `UNKNOWN`
+ * when nothing recognizable is present.
+ *
+ * Pure and side-effect-free so it can be unit-tested directly.
+ *
+ * @since review-boundary notifications
+ */
+/**
+ * Extract the review file path from a review_step tool return. The tool appends
+ * "Full review: .reviews/R{NNN}-{type}-step{N}.md" (REVISE) or
+ * "See .reviews/R{NNN}-{type}-step{N}.md" (RETHINK). Returns undefined when no
+ * such reference is present (e.g. APPROVE returns just "APPROVE").
+ */
+export function extractReviewPath(resultText: string | undefined | null): string | undefined {
+	if (!resultText || typeof resultText !== "string") return undefined;
+	const m = resultText.match(/(?:Full review:|See)\s+(\S*R\d+-[a-z]+-step\d+\.md)\b/i);
+	if (m) return m[1];
+	const m2 = resultText.match(/(\S*R\d+-[a-z]+-step\d+\.md)\b/i);
+	return m2 ? m2[1] : undefined;
+}
+
+export function normalizeReviewDisposition(
+	resultText: string | undefined | null,
+): ReviewDisposition {
+	if (!resultText || typeof resultText !== "string") return "UNKNOWN";
+	const text = resultText.trim();
+	if (text.length === 0) return "UNKNOWN";
+	// Leading-token match (the tool's canonical output shape).
+	const lead = text.toUpperCase();
+	if (/^APPROVE\b/.test(lead)) return "APPROVE";
+	if (/^REVISE\b/.test(lead)) return "REVISE";
+	if (/^RETHINK\b/.test(lead)) return "RETHINK";
+	if (/^REFUSED\b/.test(lead)) return "REFUSED";
+	if (/^UNAVAILABLE\b/.test(lead)) return "UNAVAILABLE";
+	// Defensive fallback: scan for the token anywhere, most-specific first, using
+	// word boundaries so substrings inside other words don't false-match.
+	// REFUSED and UNAVAILABLE are checked before REVISE/RETHINK because their
+	// bodies may quote a verdict word.
+	if (/\bREFUSED\b/.test(lead)) return "REFUSED";
+	if (/\bUNAVAILABLE\b/.test(lead)) return "UNAVAILABLE";
+	if (/\bRETHINK\b/.test(lead)) return "RETHINK";
+	if (/\bREVISE\b/.test(lead) || /\bCHANGES REQUESTED\b/.test(lead)) return "REVISE";
+	// Approve only on a clean, non-negated APPROVE token. Reject explicit
+	// negations ("do not approve", "not approved", "disapprove", "unapproved").
+	if (
+		/\bAPPROVE\b/.test(lead) &&
+		!/\bDO NOT APPROVE\b/.test(lead) &&
+		!/\bNOT APPROVE\b/.test(lead)
+	) {
+		return "APPROVE";
+	}
+	return "UNKNOWN";
+}
+
 // ── Conversation Payload Helpers (TP-111) ───────────────────────────────
 
 /** Maximum characters for conversation event text payloads. */
@@ -179,6 +239,37 @@ function extractAssistantText(message: Record<string, unknown>): string {
 	// Fallback: try text field
 	if (typeof message.text === "string") return message.text;
 	return "";
+}
+
+/**
+ * Extract text from a Pi RPC `tool_execution_end` result, which — like message
+ * content — may be a plain string, an array of `{type:"text",text}` blocks, or
+ * an object with a `content` field (the shape tool handlers return). The old
+ * `typeof event.result === "string" ? ... : String(event.output)` extraction
+ * silently produced an empty/garbage string for structured results, which made
+ * review_step verdicts unparseable and mis-fired "Reviewer unavailable" (#624).
+ */
+export function extractToolResultText(event: { result?: unknown; output?: unknown }): string {
+	const fromValue = (val: unknown): string | null => {
+		if (typeof val === "string") return val;
+		if (Array.isArray(val)) {
+			const texts = val
+				.filter(
+					(b: unknown): b is { type: string; text: string } =>
+						typeof b === "object" &&
+						b !== null &&
+						(b as { type?: unknown }).type === "text" &&
+						typeof (b as { text?: unknown }).text === "string",
+				)
+				.map((b) => b.text);
+			if (texts.length > 0) return texts.join("\n");
+		}
+		if (val && typeof val === "object" && "content" in val) {
+			return extractAssistantText(val as Record<string, unknown>);
+		}
+		return null;
+	};
+	return fromValue(event.result) ?? fromValue(event.output) ?? "";
 }
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -250,6 +341,11 @@ export interface AgentHostOptions {
 	 * @since TP-172
 	 */
 	maxExitInterceptions?: number;
+	/**
+	 * Upper bound (ms) for one onPrematureExit intercept before the host stops
+	 * waiting. Must exceed the lane's supervisor-reply window; default 120s.
+	 */
+	exitInterceptSafetyMs?: number;
 }
 
 /**
@@ -396,6 +492,14 @@ export function spawnAgent(
 	let lastTool = "",
 		error: string | null = null;
 	let contextUsage: AgentHostResult["contextUsage"] = null;
+	/**
+	 * In-flight review_step boundary state (review-boundary notifications). Set at
+	 * tool_execution_start so the end event and any crash-abort can carry the
+	 * step/reviewType identity (tool_execution_end does not include the original
+	 * args). review_step calls are sequential within a worker (the worker blocks
+	 * on the verdict), so a single pending slot is sufficient.
+	 */
+	let pendingReview: { step?: number; reviewType?: string } | null = null;
 	let stderrBuffer = "";
 	const STDERR_MAX = 2048;
 	/** Last assistant message text captured from message_end events (TP-172) */
@@ -589,7 +693,10 @@ export function spawnAgent(
 						try {
 							appendFileSync(
 								opts.steeringPendingPath,
-								JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id }) + "\n",
+								// #630: `type` lets the lane-runner tell an acknowledgement (info)
+								// from a ruling/instruction (steer) for hold bookkeeping.
+								JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id, type: msg.type }) +
+									"\n",
 								"utf-8",
 							);
 						} catch {
@@ -671,6 +778,19 @@ export function spawnAgent(
 					: exitCode === 0 && agentEnded
 						? "agent_exited"
 						: "agent_crashed";
+			// Review-boundary: if the worker died mid-review, close the dangling
+			// review_started so the supervisor doesn't see an orphaned "review
+			// starting" with no end. Emitted as review_failed (aborted) before the
+			// terminal exit event.
+			if (pendingReview) {
+				emitEvent("review_failed", {
+					step: pendingReview.step,
+					reviewType: pendingReview.reviewType,
+					disposition: "UNKNOWN",
+					summary: `review aborted (${exitEventType})`,
+				});
+				pendingReview = null;
+			}
 			emitEvent(exitEventType, { exitCode, signal, durationMs: result.durationMs, timedOut });
 
 			// Registry integration: update manifest to terminal status
@@ -781,17 +901,58 @@ export function spawnAgent(
 						// TP-111: Bounded payload only — no raw args in durable event log
 						const toolPath = event.args?.path ? String(event.args.path).slice(0, 200) : "";
 						emitEvent("tool_call", { tool: toolName, path: toolPath, argsPreview: argPreview });
+						// Review-boundary notification: the review START. review_step spawns a
+						// reviewer; surfacing this lets the supervisor track review activity
+						// live (see lane-runner onEvent bridge + supervisor tailer).
+						if (toolName === "review_step") {
+							const reviewStep =
+								event.args && typeof event.args === "object"
+									? (event.args as { step?: unknown }).step
+									: undefined;
+							const reviewType =
+								event.args && typeof event.args === "object"
+									? (event.args as { type?: unknown }).type
+									: undefined;
+							const stepNum = typeof reviewStep === "number" ? reviewStep : undefined;
+							const rType = typeof reviewType === "string" ? reviewType : undefined;
+							// Remember identity so the end/abort events can carry step+reviewType
+							// (tool_execution_end omits args).
+							pendingReview = { step: stepNum, reviewType: rType };
+							emitEvent("review_requested", { step: stepNum, reviewType: rType });
+						}
 						break;
 					}
 					case "tool_execution_end": {
-						// TP-111: Include bounded result summary for dashboard display
-						const toolResultSummary =
-							typeof event.result === "string"
-								? event.result.slice(0, 200)
-								: event.output
-									? String(event.output).slice(0, 200)
-									: "";
+						// #624: extract robustly — tool results are often structured content
+						// arrays, not plain strings; the old extraction produced "" for those.
+						const fullResult = extractToolResultText(event);
+						const toolResultSummary = fullResult.slice(0, 200);
 						emitEvent("tool_result", { tool: event.toolName, summary: toolResultSummary });
+						// Review-boundary notification: the review END. Normalize the reviewer
+						// verdict and emit review_completed (APPROVE/REVISE/RETHINK/REFUSED) or
+						// review_failed. Only a GENUINE UNAVAILABLE (reviewer subprocess failed
+						// / produced no output) is the "broken reviewer" signal. A parse miss
+						// (UNKNOWN) must NOT masquerade as a broken reviewer (#624) — emit it as
+						// review_completed; lane-runner authoritatively resolves the verdict from
+						// the review file on disk.
+						if (event.toolName === "review_step") {
+							const disposition = normalizeReviewDisposition(fullResult);
+							const reviewFields = {
+								step: pendingReview?.step,
+								reviewType: pendingReview?.reviewType,
+								disposition,
+								summary: toolResultSummary,
+								// review_step embeds the review file path in its REVISE/RETHINK
+								// return; surfacing it lets lane-runner read the EXACT review file.
+								reviewPath: extractReviewPath(fullResult),
+							};
+							if (disposition === "UNAVAILABLE") {
+								emitEvent("review_failed", reviewFields);
+							} else {
+								emitEvent("review_completed", reviewFields);
+							}
+							pendingReview = null;
+						}
 						break;
 					}
 					case "auto_retry_start": {
@@ -841,7 +1002,7 @@ export function spawnAgent(
 						const shouldIntercept = opts.onPrematureExit && exitInterceptionCount < maxExitInterceptions;
 						if (shouldIntercept) {
 							exitInterceptionCount++;
-							const INTERCEPTION_TIMEOUT_MS = 120_000; // 2 minute safety timeout
+							const INTERCEPTION_TIMEOUT_MS = opts.exitInterceptSafetyMs ?? 120_000; // safety timeout (> lane window)
 							// Wrap in Promise.resolve().then() to catch synchronous throws
 							const interceptPromise = Promise.resolve().then(() =>
 								opts.onPrematureExit!(lastAssistantMessage),

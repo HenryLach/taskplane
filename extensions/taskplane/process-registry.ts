@@ -236,8 +236,13 @@ export function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
-	} catch {
-		return false;
+	} catch (err: unknown) {
+		// #631: only a confirmed "no such process" means dead. EPERM means the
+		// process EXISTS but we lack permission to signal it; any other probe
+		// error is unknown. Safety gates (engine liveness, worker reconciliation)
+		// must fail closed, so unknown → alive.
+		const code = (err as { code?: string } | null)?.code;
+		return code !== "ESRCH";
 	}
 }
 

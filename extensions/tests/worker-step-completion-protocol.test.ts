@@ -462,6 +462,9 @@ describe("3.x — Recovery Recipe / refusal message wording consistency", () => 
 		// reviews fire pre-implementation, when an empty STATUS is correct.
 		const enginePath = join(REPO_ROOT, "extensions", "taskplane", "agent-bridge-extension.ts");
 		const engineSrc = readFileSync(enginePath, "utf-8");
-		expect(engineSrc).toContain('if (reviewType !== "plan" && isStepMarkedComplete(');
+		// #629: the guard is now multi-line and conjoined with the remediation exemption.
+		expect(engineSrc.replace(/\s+/g, " ")).toContain(
+			'reviewType !== "plan" && isStepMarkedComplete(statusPath, stepNum) &&',
+		);
 	});
 });

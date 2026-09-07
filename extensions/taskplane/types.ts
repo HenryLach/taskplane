@@ -369,6 +369,10 @@ export interface TaskRunnerConfig {
 		tools: string;
 		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
 		excludeExtensions?: string[];
+		/** Ordered severity vocabulary for review finding-count analysis (review-boundary notifications). */
+		severityLabels?: string[];
+		/** Revision-spiral detection tuning. */
+		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	};
 	/**
 	 * Worker agent model/thinking/tools configuration.
@@ -384,6 +388,8 @@ export interface TaskRunnerConfig {
 		tools: string;
 		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
 		excludeExtensions?: string[];
+		/** Exit-intercept supervisor-reply window in seconds (default 60; 15..1800). */
+		exitInterceptTimeoutSec?: number;
 	};
 	/** Worker agent extension exclusion list. @since TP-180 */
 	workerExcludeExtensions?: string[];
@@ -561,6 +567,13 @@ export class WorktreeError extends Error {
  * catching errors for expected idempotent scenarios.
  */
 export interface RemoveWorktreeResult {
+	/**
+	 * #628: removal was refused because the worktree has uncommitted changes and
+	 * the caller did not pass allowDirty. The worktree and branch are preserved.
+	 */
+	refusedDirty?: boolean;
+	/** Number of uncommitted paths found when refusedDirty is true. */
+	dirtyFileCount?: number;
 	/** Whether the worktree directory was removed in this call */
 	removed: boolean;
 	/** Whether the worktree was already absent (idempotent no-op) */
@@ -1132,8 +1145,15 @@ export interface WaveExecutionResult {
 	stoppedEarly: boolean;
 	/** Task IDs that failed (including stalled) */
 	failedTaskIds: string[];
-	/** Task IDs that were skipped (due to pause, prior failure, or policy) */
+	/** Task IDs that were skipped (due to prior failure in lane, or policy) */
 	skippedTaskIds: string[];
+	/**
+	 * Task IDs that did NOT run to a terminal state because the batch was PAUSED
+	 * while they were pending/holding. They remain `pending` (not skipped, not
+	 * counted) and re-execute on resume. A wave with any paused task is not
+	 * complete; the engine finalizes the batch as `paused` instead of merging.
+	 */
+	pausedTaskIds?: string[];
 	/** Task IDs that succeeded */
 	succeededTaskIds: string[];
 	/** Task IDs blocked for future waves (transitive dependents of failed tasks) */
@@ -1191,6 +1211,20 @@ export type OrchBatchPhase =
  * - Tracks pauseSignal for /orch-pause
  * - Accumulates wave results for summary
  */
+/**
+ * Shared pause signal (engine ⇄ waves ⇄ lanes).
+ *
+ * `cause` says WHY the batch is paused: `operator` = /orch-pause (or an orphan
+ * engine winding down), `abort` = stop-all failure policy / orch_abort,
+ * `stop-wave` reserved for the stop-wave policy. Tier-0 retry may clear ONLY
+ * a policy cause — one boolean let a successful retry erase an operator's
+ * pause (Sage review of the 20260906T194514 incident).
+ */
+export interface PauseSignal {
+	paused: boolean;
+	cause?: "operator" | "stop-wave" | "abort" | "merge-failure";
+}
+
 export interface OrchBatchRuntimeState {
 	/** Current execution phase */
 	phase: OrchBatchPhase;
@@ -1200,10 +1234,18 @@ export interface OrchBatchRuntimeState {
 	baseBranch: string;
 	/** Orchestrator-managed branch name (e.g., 'orch/henry-20260318T140000'). Empty = legacy mode (merge into baseBranch directly). */
 	orchBranch: string;
+	/**
+	 * #610: epoch ms when this batch was integrated (manual or auto). Set in
+	 * memory by the integration path so a batch-end epilogue that was DEFERRED
+	 * behind the integrating turn is skipped instead of showing stale "ready for
+	 * integration" banners. Not persisted (the persisted checkpoint is deleted
+	 * on integration; batch-history carries its own integratedAt).
+	 */
+	integratedAt?: number;
 	/** Workspace execution mode (v2). Defaults to "repo" for backward compatibility. */
 	mode: WorkspaceMode;
 	/** Shared pause signal — set by /orch-pause, read by executeLane/executeWave */
-	pauseSignal: { paused: boolean };
+	pauseSignal: PauseSignal;
 	/** All wave results in order (grows as waves complete) */
 	waveResults: WaveExecutionResult[];
 	/** Current wave index (0-based into waves array, -1 if not started) */
@@ -2028,7 +2070,14 @@ export type EngineEventType =
 	| "merge_health_dead"
 	| "merge_health_stuck"
 	| "batch_complete"
-	| "batch_paused";
+	| "batch_paused"
+	// Review boundaries (review-boundary supervisor notifications). Bridged from
+	// the per-agent RuntimeAgentEvent review_* stream by lane-runner so the
+	// supervisor's live events.jsonl tailer surfaces every review start/end and
+	// can adjudicate revisions case-by-case.
+	| "review_started"
+	| "review_completed"
+	| "review_failed";
 
 /**
  * Structured engine event written to `.pi/supervisor/events.jsonl`.
@@ -2101,6 +2150,31 @@ export interface EngineEvent {
 	healthStatus?: MergeHealthStatus;
 	/** Minutes since last activity (for merge_health_warning, merge_health_stuck) */
 	stalledMinutes?: number;
+
+	// ── Review-boundary fields (review_started/completed/failed) ────
+
+	/** Worker agent ID that owns the review (for review_* events) */
+	agentId?: string;
+	/** Step number under review (for review_* events) */
+	reviewStep?: number;
+	/** Review type, e.g. "plan" | "code" (for review_* events) */
+	reviewType?: string;
+	/** Normalized reviewer verdict (for review_completed, review_failed) */
+	disposition?: ReviewDisposition;
+	/** Per-step review round (Nth verdict-producing review of this step) */
+	reviewRound?: number;
+	/** Human/file-correlation label, e.g. "R008-code-step4" */
+	reviewLabel?: string;
+	/** Review file path (relative), for correlation / optional re-parse */
+	reviewPath?: string;
+	/** Finding counts by severity label for this review */
+	findingCounts?: Record<string, number>;
+	/** Converging-vs-circling trend vs the previous round */
+	findingTrend?: "dropping" | "flat" | "rising";
+	/** Per-severity delta (curr - prev) */
+	findingDeltas?: Record<string, number>;
+	/** Whether severities moved in opposing directions */
+	findingMixed?: boolean;
 }
 
 /**
@@ -2145,7 +2219,21 @@ export type SupervisorAlertCategory =
 	| "worker-exit-intercept"
 	| "segment-expansion-requested"
 	| "segment-expansion-approved"
-	| "segment-expansion-rejected";
+	| "segment-expansion-rejected"
+	// Review-boundary supervisor notifications: an actionable escalation when a
+	// step's reviews are spiraling (repeated non-APPROVE) or the worker tripped
+	// the order-of-operations guard (REFUSED). Delivered `steer` (urgent) so the
+	// supervisor can adjudicate mid-run. `context.reviewInterventionKind`
+	// distinguishes the two situations.
+	| "review-intervention-needed";
+
+/** Which review situation triggered a `review-intervention-needed` alert. */
+export type ReviewInterventionKind =
+	| "revision-spiral"
+	| "order-violation"
+	// #626 minimal cut: a task attempted to finalize (.DONE) while a step's
+	// LATEST review verdict is still REVISE/RETHINK — finalization was refused.
+	| "unresolved-verdict";
 
 /**
  * Structured context payload for supervisor alerts.
@@ -2215,6 +2303,31 @@ export interface SupervisorAlertContext {
 	messageId?: string;
 	/** Segment expansion request ID (for segment-expansion alerts) */
 	expansionRequestId?: string;
+	// ── Review-intervention fields (review-intervention-needed alerts) ────
+	/** Which review situation triggered the escalation. */
+	reviewInterventionKind?: ReviewInterventionKind;
+	/** Step number under review. */
+	reviewStep?: number;
+	/** Review type ("plan" | "code"). */
+	reviewType?: string;
+	/** Per-step review round (Nth verdict-producing review of this step). */
+	reviewRound?: number;
+	/** Human/file-correlation label, e.g. "R008-code-step4". */
+	reviewLabel?: string;
+	/** Latest normalized disposition. */
+	disposition?: ReviewDisposition;
+	/** Recent disposition history for this step (oldest→newest, bounded). */
+	recentDispositions?: ReviewDisposition[];
+	/** Consecutive non-APPROVE count for this step at escalation time. */
+	consecutiveNonApprove?: number;
+	/** Finding counts by severity label for the latest review. */
+	findingCounts?: Record<string, number>;
+	/** Converging-vs-circling trend vs the previous round. */
+	findingTrend?: "dropping" | "flat" | "rising";
+	/** Per-severity delta (curr - prev) for the latest review. */
+	findingDeltas?: Record<string, number>;
+	/** Whether severities moved in opposing directions. */
+	findingMixed?: boolean;
 	/** Whether partial progress was preserved (for task-failure alerts) */
 	partialProgress?: boolean;
 	/** Batch progress summary */
@@ -4210,6 +4323,31 @@ export type RuntimeAgentEventType =
 	| "review_failed"
 	// Exit interception (TP-172)
 	| "exit_intercepted";
+
+/**
+ * Normalized outcome of a `review_step` tool call, extracted from the reviewer
+ * verdict the tool returns to the worker. Used by the review-boundary
+ * notification pipeline (agent-host emits it in `review_completed`; the
+ * supervisor adjudicates on it).
+ *
+ * - `APPROVE`     — reviewer approved the step.
+ * - `REVISE`      — changes requested (spiral-relevant).
+ * - `RETHINK`     — reconsider the approach (spiral-relevant).
+ * - `REFUSED`     — the TP-186 death-spiral guard refused to spawn a reviewer
+ *                   (step prematurely marked Complete). A correctness signal,
+ *                   not a normal verdict.
+ * - `UNAVAILABLE` — the reviewer subprocess failed / produced no output. A
+ *                   "reviewer broken" signal (surfaced as `review_failed`), NOT
+ *                   counted toward the revision spiral.
+ * - `UNKNOWN`     — verdict could not be parsed.
+ */
+export type ReviewDisposition =
+	| "APPROVE"
+	| "REVISE"
+	| "RETHINK"
+	| "REFUSED"
+	| "UNAVAILABLE"
+	| "UNKNOWN";
 
 // ── Runtime V2 Path Helpers (TP-102) ─────────────────────────────────
 

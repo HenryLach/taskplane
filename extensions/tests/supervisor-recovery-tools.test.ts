@@ -695,7 +695,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 	it("5.10 — both tools update in-memory orchBatchState for widget sync", () => {
 		const retryIdx = extensionSource.indexOf("function doOrchRetryTask(");
 		// Search a larger block to ensure we capture updateOrchWidget call
-		const retryBlock = extensionSource.slice(retryIdx, retryIdx + 5000);
+		const retryBlock = extensionSource.slice(retryIdx, retryIdx + 8000);
 		expect(retryBlock).toContain("updateOrchWidget()");
 
 		const skipIdx = extensionSource.indexOf("function doOrchSkipTask(");
@@ -710,20 +710,17 @@ describe("5.x — Implementation correctness (source-based)", () => {
 	it("5.12 — doOrchRetryTask rejects while batch is in active phase", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
 		const block = extensionSource.slice(idx, idx + 2500);
-		// Should check for active phases and reject
-		expect(block).toContain("launching");
-		expect(block).toContain("executing");
-		expect(block).toContain("merging");
-		expect(block).toContain("planning");
+		// #631: rejection while the engine runs is case 1 of the single ownership gate.
+		expect(block).toContain('recoveryOwnershipGate("orch_retry_task"');
+		const g = extensionSource.indexOf("function recoveryOwnershipGate(");
+		expect(extensionSource.slice(g, g + 1800)).toContain("engineAttached: engineAttachedHere(),");
 	});
 
 	it("5.13 — doOrchSkipTask rejects while batch is in active phase", () => {
 		const idx = extensionSource.indexOf("function doOrchSkipTask(");
 		const block = extensionSource.slice(idx, idx + 4000);
-		expect(block).toContain("launching");
-		expect(block).toContain("executing");
-		expect(block).toContain("merging");
-		expect(block).toContain("planning");
+		// #631: rejection while the engine runs is case 1 of the single ownership gate.
+		expect(block).toContain('recoveryOwnershipGate("orch_skip_task"');
 	});
 
 	it("5.14 — doOrchRetryTask transitions failed phase to stopped", () => {
@@ -759,7 +756,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 
 	it("5.17 — doOrchRetryTask syncs in-memory state gated on batchId match", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
-		const block = extensionSource.slice(idx, idx + 3500);
+		const block = extensionSource.slice(idx, idx + 8000);
 		expect(block).toContain("batchId");
 		expect(block).toContain("orchBatchState.batchId");
 	});

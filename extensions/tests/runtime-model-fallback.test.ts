@@ -238,9 +238,9 @@ describe("model_access_error classification", () => {
 			expect(EXIT_CLASSIFICATIONS).toContain("model_access_error");
 		});
 
-		it("total count is 11 (9 original + model_access_error + spawn_failure)", () => {
-			// TP-190 (#561): added "spawn_failure" for Runtime V2 spawn-stage errors.
-			expect(EXIT_CLASSIFICATIONS).toHaveLength(11);
+		it("total count is 12 (9 original + model_access_error + spawn_failure + review_gate_refusal)", () => {
+			// TP-190 (#561): added "spawn_failure"; #629: added "review_gate_refusal".
+			expect(EXIT_CLASSIFICATIONS).toHaveLength(12);
 		});
 	});
 });

@@ -120,6 +120,14 @@ export interface EngineWorkerData {
 	force?: boolean;
 	/** Supervisor autonomy mode propagated to worker bridge tools. */
 	supervisorAutonomy?: "interactive" | "supervised" | "autonomous";
+	/**
+	 * #631: the batch this engine is AUTHORIZED to drive. Preallocated by the
+	 * parent so the engine identity (pid) is published BEFORE the engine starts
+	 * — for a fresh batch this is the id the engine must adopt instead of
+	 * generating its own; for resume it is the persisted/reconstructed target
+	 * the parent gated ownership against, and resume verifies it matches.
+	 */
+	authorizedBatchId?: string;
 }
 
 // ── Serialization helpers (used by both main thread and worker) ──────
@@ -211,13 +219,57 @@ export function applySerializedState(
 
 // Guard: only run engine main when launched via fork() with the sentinel env var.
 if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "function") {
+	// #631: a send() on a CLOSED channel does not throw synchronously — Node emits
+	// an asynchronous ERR_IPC_CHANNEL_CLOSED on `process`, which would surface as
+	// an uncaughtException and route an orphaned engine into reportFatalAndExit
+	// instead of its graceful paused wind-down. Gate every send on
+	// `process.connected`, and absorb any stray channel error.
 	const send = (msg: WorkerToMainMessage) => {
+		if (!process.connected) return;
 		try {
 			process.send?.(msg);
 		} catch {
 			// best effort only
 		}
 	};
+	const safeDisconnect = () => {
+		if (!process.connected) return;
+		try {
+			process.disconnect?.();
+		} catch {
+			/* already closed */
+		}
+	};
+	process.on("error", (err: unknown) => {
+		const code = (err as { code?: string } | null)?.code;
+		if (code === "ERR_IPC_CHANNEL_CLOSED" || code === "EPIPE") return; // parent gone — expected while orphaned
+		throw err;
+	});
+
+	// #631: orphan detection must be armed BEFORE the async module imports below
+	// (a parent can die during engine startup). `batchState` is hoisted so the
+	// handler can pause it once it exists.
+	let batchState: OrchBatchRuntimeState | null = null;
+	let orphanedBeforeInit = false;
+	process.on("disconnect", () => {
+		if (!batchState) {
+			// Parent vanished before init/planning produced any state: nothing to
+			// checkpoint, nothing another session could inherit. Exit quietly.
+			orphanedBeforeInit = true;
+			process.exit(0);
+			return;
+		}
+		// We call process.disconnect() ourselves after a terminal state — that is
+		// not an orphaning; only act while the batch is still active.
+		const p = batchState.phase;
+		if (p === "completed" || p === "failed" || p === "paused" || p === "stopped") return;
+		batchState.pauseSignal.paused = true;
+		batchState.pauseSignal.cause = "operator";
+		process.stderr.write(
+			`[orch] engine-worker: supervisor disconnected (parent pid gone) — winding down as paused (#631)
+`,
+		);
+	});
 
 	const sendWithAck = (msg: WorkerToMainMessage, onFlushed: () => void) => {
 		if (typeof process.send !== "function" || !process.connected) {
@@ -255,8 +307,8 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 	// Wait for the init message carrying workerData, then start the engine.
 	process.once("message", async (initMsg: { type: string; data: EngineWorkerData }) => {
 		if (initMsg?.type !== "init") return;
+		if (orphanedBeforeInit) return;
 
-		let batchState: OrchBatchRuntimeState | null = null;
 		let fatalHandled = false;
 		const reportFatalAndExit = (source: WorkerErrorSource, err: unknown) => {
 			if (fatalHandled) return;
@@ -292,6 +344,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 
 		// Create a fresh batch state for this process
 		batchState = freshOrchBatchState();
+		if (data.authorizedBatchId) batchState.batchId = data.authorizedBatchId; // #631
 		batchState.phase = "launching";
 		batchState.startedAt = Date.now();
 
@@ -306,12 +359,15 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 			switch (msg.type) {
 				case "pause":
 					batchState.pauseSignal.paused = true;
+					batchState.pauseSignal.cause = "operator";
 					break;
 				case "resume":
 					batchState.pauseSignal.paused = false;
+					batchState.pauseSignal.cause = undefined;
 					break;
 				case "abort":
 					batchState.pauseSignal.paused = true;
+					batchState.pauseSignal.cause = "abort";
 					break;
 			}
 		});
@@ -392,7 +448,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				const finalState = serializeBatchState(batchState);
 				send({ type: "complete", state: finalState });
 				// Disconnect IPC so the child process can exit cleanly
-				process.disconnect?.();
+				safeDisconnect();
 			})
 			.catch((err: unknown) => {
 				const normalized = normalizeError(err);
@@ -409,7 +465,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 					message: normalized.message,
 					stack: normalized.stack,
 				});
-				process.disconnect?.();
+				safeDisconnect();
 			});
 	});
 }

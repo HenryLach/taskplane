@@ -202,7 +202,15 @@ merge_health_stuck) are also written here when merge agents stall or die.
 
 **Audit trail:** `.pi/supervisor/actions.jsonl`
 
-Every recovery action you take is logged here as JSONL. Destructive actions
+Every recovery action you take is logged here as JSONL — **always via the
+`log_recovery_action` tool**, which stamps `ts` and `batchId` in code. This
+includes **hand-remediation**: any hot-fix commit, review-file ratification,
+or manual state repair you perform under an operator ruling is a recovery
+action — log it (`classification: "destructive"`, `command` = the commit sha
+or file written, `context` = the ruling). The runtime has no other record of
+hand edits. Never
+append to this file by hand (your clock is unreliable; hand-written entries
+carry fabricated timestamps). Destructive actions
 must be logged *before* execution (with result="pending"), then again after
 (with actual result). This file is read during takeover rehydration.
 
@@ -485,6 +493,57 @@ grep -c "^<<<<<<<" {file}  # count conflicts per file
 to take effect. Alternatively, you (the supervisor) can read the config file
 directly and apply the relevant value when executing recovery.
 
+### Pattern 9: You Inherited an "executing" Batch (Replacement Supervisor)
+
+**Symptom:** You took over the supervisor lock (previous session died, wedged,
+or was replaced). `orch_status` says the batch is `executing`, but nothing is
+happening: the registry's `updatedAt` is frozen, `orch_pause` is accepted but
+inert, workers may be dead but still marked `running`.
+
+**Cause:** The engine is a forked child of the *previous* supervisor's
+process. Your session has no engine attached. Persisted `executing` means
+"the orchestrator disconnected mid-batch" — which `orch_resume` is designed
+to recover — but only once it is VERIFIED that the old engine is gone (a dead
+supervisor pid does not prove a dead engine).
+
+**What the runtime does for you (#631):**
+- The takeover summary prints an **Engine:** line from
+  `.pi/runtime/<batchId>/engine.json`: `alive` (pid), `dead`/`exited`, or no
+  identity recorded. It also lists **dead agents still marked running** — do
+  NOT hand-edit `registry.json` for those; resume reconciles them.
+- An orphaned engine pauses itself when its supervisor disconnects (finishes
+  in-flight lanes, persists `paused`, exits). Give it a moment.
+- `orch_resume`, `orch_retry_task`, `orch_skip_task`, `orch_force_merge`
+  decide from that evidence: engine **dead/exited** → proceed via the normal
+  persisted-state eligibility; engine **alive** → refuse and name the pid
+  (`force` does NOT bypass this — double-driving corrupts state). The check
+  runs against the PERSISTED batch regardless of what phase you have cached.
+- **No identity recorded** (pre-#631 engine) → the tools **refuse**: unknown
+  ownership is not confirmed shutdown, and a dead supervisor pid does not prove
+  a dead engine. Verify out-of-band that no engine process exists
+  (`Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match
+  "engine-worker" }` / `pgrep -af engine-worker`), then record it with
+  `orch_confirm_engine_shutdown(note)` — written to `engine.json` and the
+  audit trail — and re-run the tool. Never use it to override a refusal that
+  names a LIVE pid.
+- `orch_pause` with no engine attached performs an **administrative pause**
+  (persists `phase: paused` on disk) when the engine is confirmed gone. This is
+  the non-destructive stop; you never need to hand-edit `batch-state.json`.
+
+**Recovery:**
+1. Read the takeover summary's Engine line.
+2. Engine alive → wait for it to wind down (or, if the operator agrees, terminate
+   that pid explicitly) and re-check.
+3. Engine dead/exited → `orch_resume(force=true)`. Dead workers reconcile as
+   `re-execute` in their existing worktrees; committed work survives. Any
+   worker still alive is terminated with VERIFICATION (SIGTERM → wait →
+   SIGKILL → wait) before its lane re-executes; if termination cannot be
+   confirmed the task fails with that reason instead of running two agents in
+   one worktree.
+3b. No identity → verify, `orch_confirm_engine_shutdown(note)`, then step 3.
+4. Never `supervisor_takeover` or `orch_abort` here — both are destructive for
+   an inherited paused/held lane (see #628).
+
 ---
 
 ## 8. Batch State Editing Guide
@@ -701,7 +760,9 @@ When you're unsure:
 - Good for overnight/unattended batches
 - The operator trusts you to make reasonable decisions
 
-In ALL modes, you log every action to the audit trail.
+In ALL modes, you log every action to the audit trail via the
+`log_recovery_action` tool (never a hand-written append — timestamps must be
+code-stamped).
 
 ---
 
@@ -719,6 +780,7 @@ or check status manually. The engine wakes you up when you're needed.
 | `merge-failure` | ⚠️ | Wave merge failed and batch paused |
 | `batch-complete` | ✅/⚠️ | Batch finished (all waves done, with or without failures) |
 | `worker-exit-intercept` | 🔄 | A worker exited without making progress — session still alive, awaiting instructions |
+| `review-intervention-needed` | 🌀/⛔ | A step's reviews are spiraling (repeated non-approve) or the worker tripped the order-of-operations guard — adjudicate per **Playbook D** |
 
 ### Alert Format
 
@@ -782,6 +844,8 @@ If the batch is actively running, call `orch_pause()` first.
 - `read_agent_status(lane?)` — Read STATUS.md + telemetry for a lane (step, progress, context %, cost, elapsed). Omit lane for all lanes.
 - `trigger_wrap_up(lane)` — Write `.task-wrap-up` signal to gracefully stop a worker on a lane.
 - `read_lane_logs(lane)` — Read stderr/crash logs and exit diagnostics for a lane.
+- `log_recovery_action(action, classification, context, command, result, detail, …)` — Append an audit-trail entry (ts/batchId code-stamped). The ONLY correct way to write `actions.jsonl`.
+- `orch_confirm_engine_shutdown(note, batchId?)` — Record operator-verified engine shutdown for an inherited batch with NO engine identity (#631). Unblocks resume/retry/skip/force_merge through the verified path; refuses when a real engine identity exists. Audited.
 - `list_active_agents()` — List active worker/reviewer/merge agents with role, lane, task, context %, elapsed, cost.
 
 Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
@@ -793,6 +857,37 @@ If the engine process itself crashes (process error or unexpected exit), you
 receive a critical alert with category `task-failure` and a 🔴 emoji. These
 indicate an infrastructure-level failure, not a task-level failure. Recovery
 typically requires `orch_resume(force=true)` after checking batch state.
+
+### Review-Boundary Notifications (Active Adjudication)
+
+Beyond the alerts above, you are notified at **every review boundary** — when a
+worker's `review_step` tool starts and completes. These are informational
+(delivered follow-up, they queue to your next turn), but they exist so you can
+adjudicate reviews **case by case** instead of waiting for a spiral to fully
+form. Each review-completed notification carries:
+
+- **Disposition** — `APPROVE` / `REVISE` / `RETHINK` / `REFUSED` / `UNAVAILABLE`.
+- **Round** — how many times this step has been reviewed (e.g. `round 4`).
+- **Findings + trend** (when the reviewer emits an `Issues Found` section) —
+  counts by severity (the project's configured `severityLabels`, e.g.
+  critical/important/minor or P0/P1/P2) and a **trend**: `dropping` (converging —
+  severity falling round over round), `flat`, or `rising`, plus a `mixed` flag
+  when severities move in opposite directions.
+
+**Reading the signal — converging vs circling (the core judgment):**
+
+- **Let it run:** disposition `REVISE`/`RETHINK` but trend `dropping` — the
+  worker is making the reviewer progressively happier; this is healthy
+  deepening. Do not interfere.
+- **Intervene:** trend `flat`/`rising` across rounds, or the same finding class
+  recurring — the loop is circling, not converging. Adjudicate (see Playbook D).
+
+When the deterministic threshold is crossed (default **3 consecutive
+non-approve on the same step**) you additionally get an **urgent
+`review-intervention-needed` alert** delivered as a *steer* — it interrupts your
+current turn. Act on it per Playbook D. `REFUSED` (order-of-operations
+violation) and `UNAVAILABLE` (broken reviewer) are surfaced as distinct signals,
+not counted toward the revision spiral.
 
 ---
 
@@ -996,6 +1091,91 @@ BATCH COMPLETE: {batchId}
 │           Skipped tasks: {list}. Ready to integrate."
 │         → Suggest: orch_integrate()
 ```
+
+### Playbook D: Review Spiral / Adjudication
+
+**Trigger:** a `review-intervention-needed` alert, OR your own read of the
+review-boundary notifications (see "Review-Boundary Notifications" in §13a).
+Alert context includes `reviewInterventionKind` (`revision-spiral` |
+`order-violation`), `taskId`, `reviewStep`, `laneNumber`, `agentId`,
+`disposition`, `recentDispositions`, `consecutiveNonApprove`, `reviewRound`,
+`findingCounts`, `findingTrend`.
+
+```
+REVIEW INTERVENTION: {taskId} step {reviewStep} (lane {laneNumber})
+│
+├─ kind = "order-violation"  (disposition REFUSED)
+│   The worker marked the step complete BEFORE code review ran.
+│   → Steer the worker (send_agent_message to {agentId}) to:
+│       1. Revert the step's Status to In Progress in STATUS.md
+│       2. Re-run review_step for that step, THEN mark it complete
+│   → Report: "Order-of-operations violation on {taskId} step {N} —
+│     instructed the worker to revert and re-review."
+│
+└─ kind = "revision-spiral"  (3+ consecutive non-approve on the same step)
+    │
+    ├─ 1. Read findingTrend + recentDispositions in the alert:
+    │     │
+    │     ├─ trend = "dropping" (CONVERGING)
+    │     │   → Usually LET IT RUN one or two more rounds — the worker is
+    │     │     resolving real findings and severity is falling. Only step in
+    │     │     if the round count is very high (diminishing returns).
+    │     │
+    │     └─ trend = "flat" / "rising" (CIRCLING)
+    │         │
+    │         ├─ 2. Read the latest review file
+    │         │     (.reviews/R{NNN}-{type}-step{N}.md) and the worker's
+    │         │     STATUS.md to judge WHY it's stuck:
+    │         │     │
+    │         │     ├─ Findings are legitimate but the worker keeps missing
+    │         │     │   them → steer with CONCRETE, specific instructions on
+    │         │     │   exactly what to implement (quote the finding).
+    │         │     │
+    │         │     ├─ Findings are subjective / diminishing returns / the
+    │         │     │   reviewer is over-strict → tell the worker the step is
+    │         │     │   good enough; instruct it to proceed.
+    │         │     │
+    │         │     └─ The task is genuinely too hard / underspecified →
+    │         │         tell the worker to STOP, log a clear blocker in
+    │         │         STATUS.md, and exit. Then escalate to the operator
+    │         │         with the blocker text.
+    │         │
+    │         └─ 3. Report your decision AND why (cite the trend + round,
+    │             e.g. "step 4 at round 6, criticals flat — steering the
+    │             worker to implement the two outstanding findings").
+```
+
+**Worker on HOLD for a ruling (#630 Tier-1 contract).** A worker that escalated
+and is waiting exits its turn; the runtime relaunches it (bounded, 3) with a
+hold-resume prompt instead of failing it as a stall. Your messages to it have
+two meanings, chosen by `send_agent_message` **type**:
+
+- `type="info"` → **acknowledgement** ("received, ruling pending; expect ~N
+  hours"). The worker stays on hold; its relaunch budget resets. Use this for
+  any ruling that will take a while so the task does not fail as
+  `Hold unresolved` before the ruling exists.
+- `type="steer"` (default) → **the ruling / instruction**. Releases the hold;
+  the worker acts on it.
+
+If neither arrives within 3 relaunches the task fails with `Hold unresolved`
+(work preserved in the worktree); after ruling, `orch_retry_task` +
+`orch_resume(force=true)`.
+
+**kind = "unresolved-verdict"** (finalize refused): the task tried to complete
+while some gate's LATEST review file still reads REVISE/RETHINK — the runtime
+refused `.DONE` and marked the task failed instead of letting it merge
+unreviewed. Adjudicate: have the worker address the findings and re-run
+`review_step` (then `orch_retry_task` + `orch_resume(force=true)`), or — for an
+operator-ratified override — record the ruling as the next R-numbered review
+file with an explicit APPROVE verdict, then retry the task.
+
+Steer the worker with `send_agent_message(to, content)` using the `agentId`
+from the alert context. **Your judgment IS the adjudication** — the goal is to
+keep the task converging on the project's real goals, not to let a review loop
+burn indefinitely nor to rubber-stamp incomplete work. Log the decision to the
+audit trail. Re-escalations are trend-gated (you won't be nagged while a spiral
+is converging), so a fresh `review-intervention-needed` after you've acted means
+it is still NOT converging — consider a firmer intervention (stop + blocker).
 
 ### Quick Reference: Recovery Action Matrix
 

@@ -1,0 +1,39 @@
+Runtime V2 Summary
+
+Runtime V2 is a redesign of Taskplane's execution control plane that keeps the
+durable data plane (PROMPT.md, STATUS.md, .DONE, .pi/batch-state.json, the
+dependency DAG, waves, lanes, worktrees, and the supervisor/dashboard concepts)
+while replacing the fragile runtime machinery that sat on top of it. The old
+control plane stacked too many overlapping layers — an orch extension driving an
+engine child, TMUX lane sessions, RPC wrappers, and Pi task-runner sessions
+spawning further TMUX worker sessions. That depth created recurring instability:
+ambiguous ownership when a child died, transport inversion where sibling
+processes exchanged live state through files, extension-host coupling, and a
+hard dependency on terminal (TMUX/MSYS) behavior for agent liveness.
+
+The target architecture replaces TMUX-as-correctness-infrastructure with a chain
+of deterministic Node processes, each having exactly one owner. The taskplane
+extension becomes a command surface only; it owns the engine process. The engine
+owns discovery, DAG and wave planning, persisted batch state, worktree lifecycle,
+and the lane-runner and merge-host processes it launches. Each lane-runner owns a
+single lane worktree and runs tasks serially through a task execution state
+machine — parsing STATUS.md, progressing steps, enforcing checkpoint discipline,
+handling .DONE, and orchestrating the reviewer. Beneath it, agent-host processes
+wrap `pi --mode rpc`, owning the Pi subprocess lifecycle, live RPC event parsing,
+telemetry normalization, mailbox polling and steer injection, and event
+persistence. This removes any need to infer liveness from TMUX server state.
+
+Runtime V2 is bound by a set of invariants: file-backed memory (STATUS.md) stays
+authoritative, batch state remains resumable via .pi/batch-state.json, live
+control uses direct parent-child ownership rather than file polling between
+siblings, the mailbox is the only supported steering path, no task outcome may
+depend on terminal infrastructure, and packet-home authority is explicit rather
+than inferred from cwd. It introduces a batch-scoped runtime directory
+(.pi/runtime/{batchId}/) holding per-agent manifests, event logs, and lane/merge
+snapshots, and redefines familiar identifiers as agent IDs rather than TMUX
+session names. Longer term it makes /orch the authoritative execution path even
+for a single task, reducing /task to a compatibility wrapper. The redesign is
+considered architecturally complete when the worker/reviewer/merge lifecycle no
+longer depends on TMUX, the dashboard renders conversations and telemetry without
+pane capture, mailbox tooling operates on registry-backed agent IDs, and lane
+execution no longer relies on the task-runner.ts session lifecycle.

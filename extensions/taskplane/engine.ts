@@ -10,6 +10,7 @@ import {
 	buildReviewerEnv,
 	buildWorkerEnv,
 	buildWorkerExcludeEnv,
+	batchTaskScope,
 	computeTransitiveDependents,
 	execLog,
 	executeLaneV2,
@@ -21,7 +22,7 @@ import type { RuntimeBackend } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
-import { getCurrentBranch, runGit } from "./git.ts";
+import { describeOrchBranchStateAcrossRepos, getCurrentBranch, runGit } from "./git.ts";
 import { killAllMergeAgentsV2, mergeWaveByRepo, MergeHealthMonitor } from "./merge.ts";
 import {
 	applyMergeRetryLoop,
@@ -1581,6 +1582,18 @@ async function attemptWorkerCrashRetry(
 			continue;
 		}
 
+		// #629: a finalize refusal over an outstanding REVISE/RETHINK is a
+		// governance outcome, not a fault. Re-running the same worker without
+		// the review file changing cannot succeed; the supervisor adjudicates.
+		if (classification === "review_gate_refusal") {
+			execLog(
+				"batch",
+				batchState.batchId,
+				`tier0: task ${taskId} review_gate_refusal — awaiting adjudication, NOT auto-retrying (#629)`,
+			);
+			continue;
+		}
+
 		// Check if retryable
 		if (!TIER0_RETRYABLE_CLASSIFICATIONS.has(classification)) {
 			execLog(
@@ -2341,6 +2354,8 @@ async function attemptStaleWorktreeRecovery(
 			thinking: runnerConfig?.reviewer?.thinking || "",
 			tools: runnerConfig?.reviewer?.tools || "",
 			excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
+			severityLabels: runnerConfig?.reviewer?.severityLabels,
+			spiral: runnerConfig?.reviewer?.spiral,
 		},
 		runnerConfig?.worker
 			? {
@@ -2533,7 +2548,9 @@ export async function executeOrchBatch(
 
 	// ── Phase 1: Planning ────────────────────────────────────────
 	batchState.phase = "planning";
-	batchState.batchId = generateBatchId();
+	// #631: honour a parent-preallocated (authorized) batchId so the engine
+	// identity could be published before this process started.
+	batchState.batchId = batchState.batchId || generateBatchId();
 	// Preserve startedAt if set during "launching" phase (TP-040)
 	if (!batchState.startedAt) batchState.startedAt = Date.now();
 	// Preserve pauseSignal if already set during "launching" phase (TP-040)
@@ -2887,6 +2904,7 @@ export async function executeOrchBatch(
 		// Check pause signal before starting each wave
 		if (batchState.pauseSignal.paused) {
 			batchState.phase = "paused";
+			preserveWorktreesForResume = true; // every pause exit preserves recovery worktrees
 			execLog("batch", batchState.batchId, `batch paused before wave ${waveIdx + 1}`);
 			{
 				const { displayWave } = resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount);
@@ -3111,6 +3129,8 @@ export async function executeOrchBatch(
 				thinking: runnerConfig?.reviewer?.thinking || "",
 				tools: runnerConfig?.reviewer?.tools || "",
 				excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
+				severityLabels: runnerConfig?.reviewer?.severityLabels,
+				spiral: runnerConfig?.reviewer?.spiral,
 			},
 			runnerConfig?.worker
 				? {
@@ -3243,7 +3263,11 @@ export async function executeOrchBatch(
 			if (modelFallbackOutcome.succeededRetries.length > 0) {
 				// Recompute blocked tasks after model fallback successes
 				if (waveResult.policyApplied === "skip-dependents" && waveResult.failedTaskIds.length > 0) {
-					const recomputed = computeTransitiveDependents(new Set(waveResult.failedTaskIds), depGraph);
+					const recomputed = computeTransitiveDependents(
+						new Set(waveResult.failedTaskIds),
+						depGraph,
+						batchTaskScope(wavePlan),
+					);
 					waveResult.blockedTaskIds = [...recomputed].sort();
 				} else if (waveResult.failedTaskIds.length === 0) {
 					waveResult.blockedTaskIds = [];
@@ -3285,7 +3309,11 @@ export async function executeOrchBatch(
 				// attemptWorkerCrashRetry already updated waveResult.failedTaskIds
 				// and waveResult.succeededTaskIds in-place.
 				if (waveResult.policyApplied === "skip-dependents" && waveResult.failedTaskIds.length > 0) {
-					const recomputed = computeTransitiveDependents(new Set(waveResult.failedTaskIds), depGraph);
+					const recomputed = computeTransitiveDependents(
+						new Set(waveResult.failedTaskIds),
+						depGraph,
+						batchTaskScope(wavePlan),
+					);
 					waveResult.blockedTaskIds = [...recomputed].sort();
 				} else if (waveResult.failedTaskIds.length === 0) {
 					// All failures recovered — no blocked tasks
@@ -3312,9 +3340,13 @@ export async function executeOrchBatch(
 			if (
 				waveResult.failedTaskIds.length === 0 &&
 				batchState.pauseSignal.paused &&
+				// Positive check: Tier-0 clears ONLY a policy-caused pause. Operator,
+				// abort and merge-failure pauses are never cleared by a recovered retry.
+				(batchState.pauseSignal.cause === undefined || batchState.pauseSignal.cause === "stop-wave") &&
 				waveResult.policyApplied === "stop-wave"
 			) {
 				batchState.pauseSignal.paused = false;
+				batchState.pauseSignal.cause = undefined;
 				execLog(
 					"batch",
 					batchState.batchId,
@@ -3748,9 +3780,14 @@ export async function executeOrchBatch(
 		batchState.failedTasks += waveResult.failedTaskIds.length;
 		batchState.skippedTasks += waveResult.skippedTaskIds.length;
 
-		// Add newly blocked tasks (after retry so recovered tasks don't block dependents)
-		for (const blocked of waveResult.blockedTaskIds) {
-			batchState.blockedTaskIds.add(blocked);
+		// Add newly blocked tasks (after retry so recovered tasks don't block dependents).
+		// #629: the dependency graph is repo-wide — only record IDs that belong to
+		// this batch (the blockedTasks counter is already wave-scoped).
+		{
+			const scope = batchTaskScope(wavePlan);
+			for (const blocked of waveResult.blockedTaskIds) {
+				if (scope.has(blocked)) batchState.blockedTaskIds.add(blocked);
+			}
 		}
 
 		// ── TP-040: Emit task_complete / task_failed events ──────
@@ -3916,6 +3953,51 @@ export async function executeOrchBatch(
 				stateRoot,
 			);
 			emitTerminalEvent(`All-lane spawn failure at wave ${waveIdx + 1}`);
+			break;
+		}
+
+		// ── Pause finalizer (penster 20260906T194514) ───────────────
+		// A pause that lands DURING a wave leaves tasks pending (never skipped).
+		// Previously pause was only honoured before the NEXT wave, so a paused
+		// single-wave batch "completed" 0/1, merged nothing and cleaned up its
+		// worktree. Finalize as paused here: persist the pending outcomes and
+		// frontier, preserve worktrees, emit batch_paused, and stop — no merge.
+		// A stop-all abort also leaves peers pending — that is the abort path's
+		// business, never a pause. The exclusion applies to the WHOLE predicate.
+		const notAborting =
+			batchState.pauseSignal.cause !== "abort" && waveResult.overallStatus !== "aborted";
+		const operatorPaused = batchState.pauseSignal.paused && notAborting;
+		if (notAborting && ((waveResult.pausedTaskIds?.length ?? 0) > 0 || operatorPaused)) {
+			batchState.phase = "paused";
+			preserveWorktreesForResume = true;
+			const pausedIds = waveResult.pausedTaskIds ?? [];
+			execLog("batch", batchState.batchId, `batch paused during wave ${waveIdx + 1}`, {
+				cause: batchState.pauseSignal.cause ?? "operator",
+				pendingTasks: pausedIds.join(",") || "(none)",
+				succeeded: waveResult.succeededTaskIds.length,
+				failed: waveResult.failedTaskIds.length,
+			});
+			// (Succeeded/failed/skipped counters were already accumulated above; paused
+			// tasks are pending and intentionally not counted.)
+			persistRuntimeState(
+				"pause-during-wave",
+				batchState,
+				wavePlan,
+				latestAllocatedLanes,
+				allTaskOutcomes,
+				discoveryRef,
+				stateRoot,
+			);
+			{
+				const { displayWave } = resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount);
+				onNotify(
+					`⏸️  Batch paused during wave ${displayWave}: ${pausedIds.length} task(s) remain pending` +
+						`${waveResult.succeededTaskIds.length > 0 ? `, ${waveResult.succeededTaskIds.length} succeeded (unmerged until resume)` : ""}. ` +
+						`Worktrees preserved. Use orch_resume() to continue.`,
+					"warning",
+				);
+			}
+			emitTerminalEvent(`Paused during wave ${waveIdx + 1}`);
 			break;
 		}
 
@@ -4915,12 +4997,28 @@ export async function executeOrchBatch(
 						});
 						// If reset fails, remove this worktree so the next wave can recreate it cleanly.
 						try {
-							removeWorktree(wt, perRepoRoot);
-							execLog(
-								"batch",
-								batchState.batchId,
-								`removed unrecoverable worktree for lane ${wt.laneNumber}`,
-							);
+							const rm = removeWorktree(wt, perRepoRoot);
+							if (rm.refusedDirty) {
+								// #628: refusal is NOT success — the worktree still exists with
+								// uncommitted work. Track it for the cleanup gate and surface loudly;
+								// do NOT force-clean (that would destroy the work being protected).
+								execLog(
+									"batch",
+									batchState.batchId,
+									`worktree removal REFUSED for lane ${wt.laneNumber}: ${rm.dirtyFileCount} uncommitted change(s) — preserve progress before cleanup (#628)`,
+									{ path: wt.path },
+								);
+								if (!failedRemovalWorktrees.has(perRepoRoot)) {
+									failedRemovalWorktrees.set(perRepoRoot, { repoId: perRepoId, paths: [] });
+								}
+								failedRemovalWorktrees.get(perRepoRoot)!.paths.push(wt.path);
+							} else {
+								execLog(
+									"batch",
+									batchState.batchId,
+									`removed unrecoverable worktree for lane ${wt.laneNumber}`,
+								);
+							}
 						} catch (removeErr: unknown) {
 							execLog(
 								"batch",
@@ -5841,14 +5939,36 @@ export async function executeOrchBatch(
 				? `${Math.floor(batchDurationMs / 60000)}m ${Math.round((batchDurationMs % 60000) / 1000)}s`
 				: "unknown";
 		if (batchState.phase === "completed" && batchState.failedTasks === 0) {
+			// Report outcomes and branch state SEPARATELY and truthfully (penster
+			// 20260906T194514 saw "Merged … Ready for integration" on 0/1 succeeded
+			// with an empty orch branch). Never say "merged" unless the orch branch is
+			// verifiably ahead of base; a failed comparison is "unknown", not "nothing".
+			const branchState = describeOrchBranchStateAcrossRepos(
+				batchState.orchBranch,
+				batchState.baseBranch,
+				encounteredRepoRoots.keys(),
+			);
+			const hasSuccess = batchState.succeededTasks > 0;
+			const outcomeLine =
+				`  ${batchState.succeededTasks}/${batchState.totalTasks} tasks succeeded` +
+				(batchState.skippedTasks > 0 ? `, ${batchState.skippedTasks} skipped` : "") +
+				"\n";
+			const nextStep =
+				hasSuccess && branchState.kind === "ahead"
+					? `Ready for integration. Run orch_integrate() or review first.`
+					: branchState.kind === "ahead"
+						? `⚠️ No task succeeded, yet ${branchState.detail} — partial work was merged; inspect before integrating.`
+						: branchState.kind === "unknown"
+							? `⚠️ Could not verify the orch branch (${branchState.detail}). Inspect before integrating.`
+							: `Nothing to integrate: ${branchState.detail}.`;
 			emitAlert({
 				category: "batch-complete",
 				summary:
-					`✅ Batch ${batchState.batchId} completed\n` +
-					`  ${batchState.succeededTasks}/${batchState.totalTasks} tasks succeeded\n` +
+					`${hasSuccess ? "✅" : "⚠️"} Batch ${batchState.batchId} completed\n` +
+					outcomeLine +
 					`  ${batchState.taskLevelWaveCount ?? batchState.totalWaves} wave(s), duration: ${durationStr}\n` +
-					`  Merged to orch branch: ${batchState.orchBranch}\n\n` +
-					`Ready for integration. Run orch_integrate() or review first.`,
+					`  Orch branch ${batchState.orchBranch}: ${branchState.detail}\n\n` +
+					nextStep,
 				context: {
 					batchProgress: buildBatchProgressSnapshot(batchState),
 					batchDurationMs,

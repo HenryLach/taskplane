@@ -1,0 +1,19 @@
+Code Analysis: extensions/taskplane/lane-runner.ts
+
+Exported functions count: 10
+
+Function names:
+1. getStepsForRepoId
+2. getSegmentCheckboxes
+3. isSegmentComplete
+4. computeSegmentScopeMode
+5. shouldSkipSpawnForCompleteSegment
+6. executeTaskV2 (async)
+7. hasPendingExpansionRequestFiles
+8. mapLaneTaskStatusToTerminalSnapshotStatus
+9. mapLaneSnapshotStatusToWorkerStatus
+10. readReviewerTelemetrySnapshot
+
+Note: The file also exports two interfaces (LaneRunnerConfig,
+LaneRunnerTaskResult), which are type declarations, not functions, and are
+therefore excluded from the function count above.

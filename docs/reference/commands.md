@@ -45,6 +45,12 @@ States are evaluated in the order shown above (active batch and completed batch 
 **Behavior (with arguments)**
 
 - Runs additive upgrade migrations (e.g., creating missing `.pi/agents/supervisor.md` from template). Migrations are tracked in `.pi/taskplane.json` and never overwrite existing files. Failures are non-fatal.
+- **Ownership gate (#631)** before anything is deleted or launched: refused while
+  this session's previous engine is still exiting; refused while an existing
+  persisted batch's recorded engine is alive elsewhere or has no identity
+  (`/orch-confirm-engine-shutdown` after verifying); proceeds once verified
+  dead/exited. The new batch id is preallocated and the engine identity
+  (`.pi/runtime/<batchId>/engine.json`) is published before the engine starts.
 - Runs orphan-session/state detection before starting
 - Discovers tasks and dependencies
 - Computes waves and lane assignments
@@ -170,11 +176,57 @@ Pause batch after current tasks finish.
 
 - Sets orchestrator pause signal
 - Lane polling sees signal and stops scheduling further work
+- **Inherited batch (#631):** if this session has no engine attached (the batch
+  was imported at supervisor takeover), a pause signal would be inert. When the
+  recorded engine is verified gone, `/orch-pause` performs an **administrative
+  pause** — persists `phase: paused` on disk (the non-destructive stop; no
+  hand-edit of `batch-state.json`). If the engine is alive elsewhere, or no
+  engine identity is recorded, it refuses with the reason.
 
 **Common responses**
 
 - No active batch
 - Batch already paused
+
+---
+
+### `/orch-confirm-engine-shutdown [--batch <batchId>] <note>`
+
+Record that the operator verified **no engine process is running** for a batch
+that has **no engine identity** (`.pi/runtime/<batchId>/engine.json`; batches
+started before v0.30.6, or an engine that never got far enough to publish one).
+
+**Syntax**
+
+```text
+/orch-confirm-engine-shutdown no engine-worker processes in Get-CimInstance output at 21:32
+/orch-confirm-engine-shutdown --batch henrylach-20260905T210935 verified via pgrep -af engine-worker
+```
+
+`--batch` names the exact batch a refusal reported (required when that batch
+has no `batch-state.json` and is not reconstructable, e.g. a meta-only legacy
+runtime dir). Without it the target is the persisted batch, else the
+reconstructed one.
+
+**Behavior**
+
+- Recovery commands/tools (`/orch-resume`, `orch_retry_task`, `orch_skip_task`,
+  `orch_force_merge`, administrative `/orch-pause`) **fail closed** when the
+  target batch has no engine identity: unknown ownership is not confirmed
+  shutdown, and a dead supervisor pid does not prove a dead engine (the engine
+  is a forked child that can outlive its parent).
+- Verify out-of-band first — Windows:
+  `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match "engine-worker" }`;
+  POSIX: `pgrep -af engine-worker`.
+- The confirmation is written as an `exited` identity (pid `0`, reason
+  `operator-confirmed-shutdown: <note>`) **and** as an audit-trail entry, so
+  every recovery gate then proceeds through the normal verified path.
+- **Refuses** when a real engine identity exists — that path is pid-verified
+  and cannot be overridden. If a refusal names a live PID, wait for that
+  engine to wind down (it pauses itself when its supervisor disconnects) or
+  terminate it explicitly.
+
+Supervisor tool equivalent: `orch_confirm_engine_shutdown(note, batchId?)`.
 
 ---
 
@@ -201,6 +253,16 @@ Resume a paused or interrupted batch from persisted state.
 - Reactivates the supervisor agent in the session
 - Reconnects/re-executes tasks as needed
 - Continues from first incomplete wave
+
+**Ownership gate (#631)** — runs before eligibility, against the batch that
+would actually be resumed (persisted, or reconstructed on `--force` when no
+state file exists): refused while an engine is attached to this session
+(running or still exiting); refused while the target's recorded engine is
+alive elsewhere; refused when no engine identity is recorded (use
+`/orch-confirm-engine-shutdown` after verifying); allowed once verified
+dead/exited. `--force` never bypasses it. The new engine is authorized for
+that one batch and publishes its identity before it starts; it refuses to
+resume a different batch than the one authorized.
 
 **Resume eligibility**
 
@@ -259,6 +321,14 @@ Abort current batch.
 **Behavior**
 
 - Writes abort signal file: `.pi/orch-abort-signal`
+- **Ownership + verified shutdown first (#631):** abort persists `stopped` and
+  deletes batch state, so it must never run underneath a live engine. With this
+  session's engine attached, abort pauses it and **verifies it has exited**
+  (graceful: within the grace period, then SIGTERM/SIGKILL; hard: immediately)
+  — if the process is still alive after that, abort refuses cleanup and tells
+  you to terminate it. For an inherited batch whose engine belongs to another
+  process: alive or unknown (no identity) → refuse (see
+  `/orch-confirm-engine-shutdown`); verified dead/exited → proceed.
 - Attempts to terminate active lane/merge agent processes for the batch
 - Cleans in-memory/persisted batch state
 - Preserves worktrees/branches for inspection
@@ -375,6 +445,20 @@ After `/orch` finishes, all task work lives on an orch branch (`orch/<operator>-
 
 - `--force` — skip the branch safety check (normally the command verifies you're on the same branch the batch was started from)
 
+**Ownership gate (#631)**
+
+Integration merges and cleans up the orch branch. It refuses while this
+session's engine is still running/exiting. Ownership is looked up **by the
+selected branch**: every batch whose `.pi/runtime/<id>/batch-meta.json` names
+that `orchBranch` (plus persisted state for the same branch) must have a
+recorded engine that is verified dead/exited — alive or no identity refuses
+(`/orch-confirm-engine-shutdown --batch <id>` after verifying). A branch with
+no associated runtime batch integrates as a pure branch. An explicit branch
+argument never inherits the batch id of an unrelated persisted batch; cleanup
+and history bind to the branch's own batch. The post-integration lane-branch
+sweep keeps refs of any other batch whose engine is alive or whose ownership
+is unknown.
+
 **Branch safety check**
 
 By default, `/orch-integrate` verifies that your current branch matches the base branch recorded when the batch started. This prevents accidentally integrating into the wrong branch. Use `--force` to skip this check.
@@ -442,6 +526,8 @@ The key orchestrator commands are also registered as **extension tools** that th
 | `broadcast_message(content, type?)` | — | `content`: string (max 4KB), `type`: "steer"\|"info"\|"abort" (default: "info") — send to all agents (all-or-none: rejected if any recipient is rate-limited) |
 | `read_agent_status(lane?)` | — | `lane`: number (optional) — read STATUS.md progress + telemetry for a lane |
 | `list_active_agents()` | `/orch-sessions` | — — list all active agent sessions with role, task, status |
+| `log_recovery_action(action, classification, context, command, result, detail, …)` | — | Append an audit-trail entry; `ts`/`batchId` are code-stamped (#625) |
+| `orch_confirm_engine_shutdown(note, batchId?)` | `/orch-confirm-engine-shutdown [--batch <id>] <note>` | `note`: string (required), `batchId`: string (optional — the exact batch a refusal named) — record operator-verified engine shutdown for a batch with no engine identity (#631) |
 
 These tools share the same logic as the slash commands. They return text results and catch errors gracefully (never throw). The supervisor agent uses these to manage batches proactively during monitoring.
 
@@ -449,13 +535,23 @@ These tools share the same logic as the slash commands. They return text results
 
 The `orch_retry_task`, `orch_skip_task`, and `orch_force_merge` tools enable surgical task-level and wave-level recovery:
 
-- **`orch_retry_task(taskId)`** — Resets a failed or stalled task to `pending` status. Clears exit reason, timing, and diagnostic fields. Decrements failure counters. Transitions batch from `failed` → `stopped` if no failures remain. Use `orch_resume(force=true)` after retrying to re-execute.
+- **`orch_retry_task(taskId)`** — Resets a failed, stalled **or skipped** task to `pending` status (and its v2 segment records). Clears exit reason, timing, and diagnostic fields; **keeps** `partialProgressBranch`/`Commits` as recovery provenance and reports them. Decrements the failure (or skipped) counter. Transitions the batch `failed` → `stopped`, and **reopens a `completed` batch as `stopped`** when a task in it was wrongly skipped (refused if that batch was already integrated). Use `orch_resume(force=true)` after retrying to re-execute.
+
+  **Pause semantics.** `/orch-pause` on a running batch leaves not-yet-terminal tasks **pending** (never `skipped`), finalizes the batch as `paused` with worktrees preserved, and does not merge the interrupted wave. On resume, tasks that succeeded before the pause are merged by a **catch-up merge** before the wave loop; a failed catch-up (or re-executed-branch) merge pauses the batch again with the reason, and the next resume retries it. Tier-0 recovery can clear only a policy-caused pause, never an operator pause.
 
 - **`orch_skip_task(taskId)`** — Marks a failed, stalled, or pending task as `skipped`. Updates counters and recomputes blocked dependents using the dependency graph. Unblocked tasks are reported in the response. Use `orch_resume(force=true)` after skipping to continue.
 
 - **`orch_force_merge(waveIndex?, skipFailed?)`** — Forces a wave merge that was rejected due to mixed-outcome lanes (succeeded + failed tasks on the same lane). Updates the merge result from `partial` to `succeeded`. If `skipFailed=true`, automatically marks all failed/stalled tasks in the wave as `skipped` and adjusts counters. If `skipFailed=false` and failed tasks exist, rejects with guidance to skip them first. Defaults to the current wave if `waveIndex` is omitted. Use `orch_resume(force=true)` after force merging to continue.
 
-All three tools reject operations while the engine is actively running (launching/executing/merging/planning) — pause the batch first. They modify the persisted `batch-state.json` directly and sync in-memory state for the dashboard widget.
+All three tools (and `orch_resume`) pass through one **ownership gate** (#631)
+against the persisted target batch before mutating anything: refused while an
+engine is attached to this session (running *or still exiting*); refused while
+the target's recorded engine (`.pi/runtime/<batchId>/engine.json`) is alive in
+another process; refused when no engine identity is recorded (use
+`/orch-confirm-engine-shutdown` after verifying out-of-band); allowed once the
+recorded engine is verified dead/exited. `force` never bypasses the gate. They
+modify the persisted `batch-state.json` directly and sync in-memory state for
+the dashboard widget.
 
 ---
 

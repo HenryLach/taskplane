@@ -1268,6 +1268,9 @@ export function toTaskRunnerConfig(config: TaskplaneConfig): import("./types.ts"
 			thinking: config.taskRunner.worker.thinking,
 			tools: config.taskRunner.worker.tools,
 			excludeExtensions: [...(config.taskRunner.worker.excludeExtensions ?? [])],
+			...(typeof config.taskRunner.worker.exitInterceptTimeoutSec === "number"
+				? { exitInterceptTimeoutSec: config.taskRunner.worker.exitInterceptTimeoutSec }
+				: {}),
 		},
 		model_fallback: config.taskRunner.modelFallback ?? "inherit",
 		reviewer: {
@@ -1275,6 +1278,12 @@ export function toTaskRunnerConfig(config: TaskplaneConfig): import("./types.ts"
 			thinking: config.taskRunner.reviewer.thinking,
 			tools: config.taskRunner.reviewer.tools,
 			excludeExtensions: [...(config.taskRunner.reviewer.excludeExtensions ?? [])],
+			...(config.taskRunner.reviewer.severityLabels
+				? { severityLabels: [...config.taskRunner.reviewer.severityLabels] }
+				: {}),
+			...(config.taskRunner.reviewer.spiral
+				? { spiral: { ...config.taskRunner.reviewer.spiral } }
+				: {}),
 		},
 		workerExcludeExtensions: [...(config.taskRunner.worker.excludeExtensions ?? [])],
 	};

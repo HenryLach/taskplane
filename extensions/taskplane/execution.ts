@@ -35,6 +35,7 @@ import type {
 	ParsedTask,
 	TaskMonitorSnapshot,
 	WaveExecutionResult,
+	PauseSignal,
 	WorkspaceConfig,
 	ExecutionUnit,
 	PacketPaths,
@@ -1198,7 +1199,7 @@ export async function monitorLanes(
 	lanes: AllocatedLane[],
 	config: OrchestratorConfig,
 	repoRoot: string,
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	waveNumber: number = 1,
 	onUpdate?: MonitorUpdateCallback,
 	isWorkspaceMode?: boolean,
@@ -1521,15 +1522,25 @@ export async function monitorLanes(
  * The failed tasks themselves are NOT included in the output — only their
  * downstream dependents.
  *
+ * #629 side-effect 3: the dependency graph is REPO-WIDE (built from all
+ * discovered tasks), so without a scope the result can name tasks that are
+ * not in the batch at all ("blocked=TP-2047" for a single-task batch). When
+ * `scope` is given, traversal still walks THROUGH out-of-scope nodes (a
+ * transitive dependent reached via one is still blocked) but only in-scope
+ * task IDs are REPORTED.
+ *
  * @param failedTaskIds     - Set of task IDs that failed
  * @param dependencyGraph   - Dependency graph with dependents map
+ * @param scope             - Optional batch task set; only these IDs are reported
  * @returns Set of task IDs transitively blocked (excludes the failed tasks themselves)
  */
 export function computeTransitiveDependents(
 	failedTaskIds: Set<string>,
 	dependencyGraph: DependencyGraph,
+	scope?: Set<string>,
 ): Set<string> {
 	const blocked = new Set<string>();
+	const visited = new Set<string>(); // traversal set — distinct from the reported set
 	const queue = [...failedTaskIds];
 
 	while (queue.length > 0) {
@@ -1540,14 +1551,22 @@ export function computeTransitiveDependents(
 		const sortedDependents = [...dependents].sort();
 
 		for (const dep of sortedDependents) {
-			if (blocked.has(dep)) continue;
+			if (visited.has(dep)) continue;
 			if (failedTaskIds.has(dep)) continue; // Don't re-add failed tasks
-			blocked.add(dep);
+			visited.add(dep);
+			if (!scope || scope.has(dep)) blocked.add(dep);
 			queue.push(dep); // Continue BFS for transitive closure
 		}
 	}
 
 	return blocked;
+}
+
+/** Flatten a wave plan into the set of task IDs that belong to the batch. */
+export function batchTaskScope(wavePlan: string[][] | undefined | null): Set<string> {
+	const scope = new Set<string>();
+	for (const wave of wavePlan ?? []) for (const id of wave) scope.add(id);
+	return scope;
 }
 
 // ── Pre-flight: Commit Untracked Task Files ─────────────────────────
@@ -1914,7 +1933,7 @@ export async function executeWave(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	batchId: string,
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	dependencyGraph: DependencyGraph,
 	orchBranch: string,
 	onMonitorUpdate?: MonitorUpdateCallback,
@@ -1928,6 +1947,8 @@ export async function executeWave(
 		thinking?: string;
 		tools?: string;
 		excludeExtensions?: string[];
+		severityLabels?: string[];
+		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	},
 	workerConfig?: {
 		model?: string;
@@ -2166,6 +2187,7 @@ export async function executeWave(
 	// ── Stage 5: Build WaveExecutionResult ───────────────────────
 	const failedTaskIds: string[] = [];
 	const skippedTaskIds: string[] = [];
+	const pausedTaskIds: string[] = [];
 	const succeededTaskIds: string[] = [];
 
 	for (const lr of laneResults) {
@@ -2176,6 +2198,8 @@ export async function executeWave(
 				failedTaskIds.push(t.taskId);
 			} else if (t.status === "skipped") {
 				skippedTaskIds.push(t.taskId);
+			} else if (t.status === "pending") {
+				pausedTaskIds.push(t.taskId);
 			}
 		}
 	}
@@ -2184,6 +2208,7 @@ export async function executeWave(
 	failedTaskIds.sort();
 	skippedTaskIds.sort();
 	succeededTaskIds.sort();
+	pausedTaskIds.sort();
 
 	// Compute blocked tasks for future waves (skip-dependents policy)
 	let blockedTaskIds: string[] = [];
@@ -2210,6 +2235,10 @@ export async function executeWave(
 	let overallStatus: WaveExecutionResult["overallStatus"];
 	if (policy === "stop-all" && failedTaskIds.length > 0) {
 		overallStatus = "aborted";
+	} else if (pausedTaskIds.length > 0 && failedTaskIds.length === 0) {
+		// Interrupted, not succeeded: a wave with paused (pending) tasks is not
+		// complete. The engine finalizes as `paused` and does not merge.
+		overallStatus = succeededTaskIds.length > 0 ? "partial" : "failed";
 	} else if (failedTaskIds.length === 0) {
 		overallStatus = "succeeded";
 	} else if (succeededTaskIds.length > 0) {
@@ -2225,6 +2254,7 @@ export async function executeWave(
 		succeeded: succeededTaskIds.length,
 		failed: failedTaskIds.length,
 		skipped: skippedTaskIds.length,
+		paused: pausedTaskIds.length,
 		blocked: blockedTaskIds.length,
 		elapsed: `${elapsedSec}s`,
 		stoppedEarly,
@@ -2238,6 +2268,7 @@ export async function executeWave(
 		policyApplied: policy,
 		stoppedEarly,
 		failedTaskIds,
+		pausedTaskIds,
 		skippedTaskIds,
 		succeededTaskIds,
 		blockedTaskIds,
@@ -2269,7 +2300,7 @@ export async function executeWave(
 export async function executeWithStopAll(
 	lanes: AllocatedLane[],
 	lanePromises: Promise<LaneExecutionResult>[],
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	waveIndex: number,
 ): Promise<LaneExecutionResult[]> {
 	// Track results as they complete
@@ -2290,6 +2321,7 @@ export async function executeWithStopAll(
 					// First failure detected — trigger stop-all
 					abortTriggered = true;
 					pauseSignal.paused = true;
+					pauseSignal.cause = "abort";
 
 					// Determine which task failed first for logging
 					const firstFailed = result.tasks
@@ -2325,6 +2357,7 @@ export async function executeWithStopAll(
 			if (!abortTriggered) {
 				abortTriggered = true;
 				pauseSignal.paused = true;
+				pauseSignal.cause = "abort";
 				execLog(
 					"wave",
 					`W${waveIndex}`,
@@ -2758,6 +2791,8 @@ export function buildReviewerEnv(
 		thinking?: string;
 		tools?: string;
 		excludeExtensions?: string[];
+		severityLabels?: string[];
+		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
@@ -2767,6 +2802,17 @@ export function buildReviewerEnv(
 	// TP-180: Forward reviewer extension exclusions as JSON array
 	if (reviewerConfig?.excludeExtensions && reviewerConfig.excludeExtensions.length > 0) {
 		env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS = JSON.stringify(reviewerConfig.excludeExtensions);
+	}
+	// Review-boundary notifications: forward the severity vocabulary + spiral
+	// tuning as one JSON blob so the lane-runner can analyze reviews and detect
+	// spirals. Absent fields fall back to lane-runner defaults.
+	const analysis: Record<string, unknown> = {};
+	if (reviewerConfig?.severityLabels && reviewerConfig.severityLabels.length > 0) {
+		analysis.severityLabels = reviewerConfig.severityLabels;
+	}
+	if (reviewerConfig?.spiral) analysis.spiral = reviewerConfig.spiral;
+	if (Object.keys(analysis).length > 0) {
+		env.TASKPLANE_REVIEW_ANALYSIS = JSON.stringify(analysis);
 	}
 	return env;
 }
@@ -2785,12 +2831,21 @@ export function buildWorkerEnv(
 		thinking?: string;
 		tools?: string;
 		excludeExtensions?: string[];
+		exitInterceptTimeoutSec?: number;
 	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
 	if (workerConfig?.model) env.TASKPLANE_WORKER_MODEL = workerConfig.model;
 	if (workerConfig?.thinking) env.TASKPLANE_WORKER_THINKING = workerConfig.thinking;
 	if (workerConfig?.tools) env.TASKPLANE_WORKER_TOOLS = workerConfig.tools;
+	if (
+		typeof workerConfig?.exitInterceptTimeoutSec === "number" &&
+		Number.isFinite(workerConfig.exitInterceptTimeoutSec)
+	) {
+		env.TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC = String(
+			Math.min(1800, Math.max(15, Math.round(workerConfig.exitInterceptTimeoutSec))),
+		);
+	}
 
 	return env;
 }
@@ -2813,7 +2868,7 @@ export async function executeLaneV2(
 	lane: AllocatedLane,
 	config: OrchestratorConfig,
 	repoRoot: string,
-	pauseSignal: { paused: boolean },
+	pauseSignal: PauseSignal,
 	workspaceRoot?: string,
 	isWorkspaceMode?: boolean,
 	extraEnvVars?: Record<string, string>,
@@ -2892,12 +2947,14 @@ export async function executeLaneV2(
 	for (const task of lane.tasks) {
 		const taskSegmentId = task.task.activeSegmentId ?? null;
 		if (shouldSkipRemaining || pauseSignal.paused) {
+			// A pause leaves the remaining lane tasks PENDING (they never ran); only a
+			// prior failure in the lane skips them.
 			const reason = pauseSignal.paused
-				? "Skipped due to pause signal"
+				? "Paused by user"
 				: "Skipped due to prior task failure in lane";
 			outcomes.push({
 				taskId: task.taskId,
-				status: "skipped",
+				status: pauseSignal.paused && !shouldSkipRemaining ? "pending" : "skipped",
 				segmentId: taskSegmentId,
 				startTime: null,
 				endTime: null,
@@ -2920,6 +2977,24 @@ export async function executeLaneV2(
 				? (rawAutonomy as LaneRunnerConfig["supervisorAutonomy"])
 				: "autonomous";
 
+		// Review-boundary notifications: parse the severity vocabulary + spiral
+		// tuning forwarded by buildReviewerEnv (best-effort; lane-runner applies
+		// defaults when absent or unparseable).
+		let reviewSeverityLabels: string[] | undefined;
+		let reviewSpiral: import("./config-schema.ts").ReviewSpiralConfig | undefined;
+		if (extraEnvVars?.TASKPLANE_REVIEW_ANALYSIS) {
+			try {
+				const parsed = JSON.parse(extraEnvVars.TASKPLANE_REVIEW_ANALYSIS) as {
+					severityLabels?: string[];
+					spiral?: import("./config-schema.ts").ReviewSpiralConfig;
+				};
+				if (Array.isArray(parsed.severityLabels)) reviewSeverityLabels = parsed.severityLabels;
+				if (parsed.spiral && typeof parsed.spiral === "object") reviewSpiral = parsed.spiral;
+			} catch {
+				/* best effort — fall back to lane-runner defaults */
+			}
+		}
+
 		const laneRunnerConfig: LaneRunnerConfig = {
 			batchId,
 			agentIdPrefix,
@@ -2928,12 +3003,18 @@ export async function executeLaneV2(
 			branch: lane.branch,
 			repoId: lane.repoId ?? "default",
 			stateRoot,
+			reviewSeverityLabels,
+			reviewSpiral,
 			workerModel: extraEnvVars?.TASKPLANE_WORKER_MODEL || "",
 			// TP-184: This is the user-tools default. Engine bridge tools are NOT
 			// added here — buildWorkerToolsAllowlist() at the lane-runner spawn
 			// site appends ENGINE_BRIDGE_TOOLS exactly once, regardless of source.
 			workerTools: extraEnvVars?.TASKPLANE_WORKER_TOOLS || DEFAULT_WORKER_USER_TOOLS,
 			workerThinking: extraEnvVars?.TASKPLANE_WORKER_THINKING || "",
+			exitInterceptTimeoutSec: (() => {
+				const n = Number.parseInt(extraEnvVars?.TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC ?? "", 10);
+				return Number.isFinite(n) && n >= 15 ? Math.min(1800, n) : 60;
+			})(),
 			workerSystemPrompt,
 			workerSegmentPrompt,
 			reviewerModel: extraEnvVars?.TASKPLANE_REVIEWER_MODEL || "",

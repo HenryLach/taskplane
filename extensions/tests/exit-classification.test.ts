@@ -487,9 +487,10 @@ describe("classifyExit — edge cases", () => {
 // ── 4. Constants Verification ────────────────────────────────────────
 
 describe("EXIT_CLASSIFICATIONS constant", () => {
-	it("contains exactly 11 values", () => {
+	it("contains exactly 12 values", () => {
 		// TP-190 (#561): added "spawn_failure" for Runtime V2 spawn-stage errors.
-		expect(EXIT_CLASSIFICATIONS).toHaveLength(11);
+		// #629: added "review_gate_refusal" (governance refusal, not a crash).
+		expect(EXIT_CLASSIFICATIONS).toHaveLength(12);
 	});
 
 	it("includes all expected values", () => {
@@ -504,6 +505,7 @@ describe("EXIT_CLASSIFICATIONS constant", () => {
 			"stall_timeout",
 			"user_killed",
 			"spawn_failure",
+			"review_gate_refusal",
 			"unknown",
 		];
 		for (const val of expected) {

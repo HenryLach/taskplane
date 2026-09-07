@@ -7,6 +7,192 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New
+
+- **Supervisor is now actively notified at every review boundary, with
+  spiral detection and adjudication signals.** Previously the supervisor was
+  never told when worker↔reviewer reviews happened, so it couldn't break the
+  revision spirals that stall complex tasks unless the operator noticed and
+  poked it — the opposite of autonomous execution. Now:
+  - **Every review start/end is surfaced** to the supervisor (all autonomy
+    levels) so it can adjudicate each revision case-by-case, carrying the
+    normalized disposition (APPROVE/REVISE/RETHINK/REFUSED/UNAVAILABLE), the
+    per-step review round, and — when the reviewer emits an `Issues Found`
+    section — finding counts by severity plus a converging-vs-circling
+    severity **trend** (dropping/flat/rising, with a `mixed` flag). These are
+    the signals an adjudicating supervisor uses to tell "healthy deepening,
+    severity dropping (let it run)" from "circling the same class
+    (intervene)" at a glance.
+  - **Revision-spiral escalation:** after a configurable number of
+    consecutive non-APPROVE reviews on the *same step* (default 3), the
+    supervisor gets an urgent, steer-delivered `review-intervention-needed`
+    alert with the disposition history and finding trend, so it can steer the
+    worker to a resolution (implement the remaining legitimate findings, or
+    stop and log a blocker). Re-escalation is trend-gated + cooldown-spaced:
+    a converging spiral is left to run; only a flat/rising one re-interrupts.
+  - **Order-of-operations violations** (a step marked complete before code
+    review ran) escalate immediately as a distinct signal, kept out of the
+    revision-spiral count.
+  - **Reviewer-unavailable** is surfaced as a separate broken-reviewer
+    signal, never counted toward a spiral.
+  - Detection state is **reconstructed from event history on resume**, so an
+    in-progress spiral survives a pause/resume. Severity vocabulary and
+    spiral tuning are configurable under `taskRunner.reviewer`
+    (`severityLabels`, `spiral.{enabled,threshold,cooldownReviews,
+    treatUnavailableAsNonApprove}`); the core default vocabulary is generic
+    (critical/important/minor).
+
+### Fixed
+
+- **`orch_retry_task` could not re-drive a v2 batch after a finalize-gate
+  refusal** (#629). On the segment runtime `segments[]` is authoritative —
+  resume re-derives task status from it — so a retry that reset only the task
+  record was silently undone: the wave was counted done and `orch_resume`
+  no-op'd. Retry/skip now update the segment records too (worktree identity
+  preserved so resume re-executes in place); resume's re-execute path
+  transitions the *executed* segment on success/failure, treats a pause as
+  still-pending (not failed/unretryable-skipped), and keeps the real lane
+  outcome. Also from the same incident:
+  - **Review-gate remediation spawn.** With every checkbox already checked
+    the lane never launched a worker after retry, so the alert's "have the
+    worker address the findings" remedy was unreachable. The lane now spawns
+    a bounded (2) remediation iteration focused on the outstanding gate's
+    step; `review_step`'s complete-step guard exempts a re-review whose
+    latest verdict is REVISE/RETHINK.
+  - New exit classification `review_gate_refusal` (exit code 0) — a
+    governance refusal is no longer recorded as a worker crash, and tier-0
+    auto-retry never retries it.
+  - Diagnostic reports are no longer clobbered by a no-op resume ($55/1h42m
+    reported as $0/0s): field-wise evidence merge with the prior report; cost
+    now comes from outcome telemetry.
+  - `skip-dependents` no longer names tasks outside the batch (the dependency
+    graph is repo-wide; blocked IDs are now scoped to the wave plan).
+- **Duplicate review notifications.** A repeated `review_completed` for the
+  same review file (retried tool turn / re-invoked `review_step` / doubled RPC
+  event) reached the supervisor twice and would have advanced the spiral
+  streak twice (firing a round early). The review-boundary bridge is now
+  idempotent per (step, type, review file): one file = one review.
+- **Build marker.** `.pi/runtime/<batchId>/engine.json` now records
+  `taskplaneVersion` and `taskplaneBuild` (sha256 prefix of the loaded
+  extension sources), and the takeover summary shows them — a local
+  pre-release deploy is distinguishable from the published version without
+  grepping for tool names.
+- **`orch_pause` on an owned single-wave batch with a holding lane completed
+  the batch 0/1, skipped the task and removed its worktree** (penster
+  20260906T194514). Two writers turned a paused task into `skipped`, and pause
+  was only honoured before the *next* wave. Paused tasks are now `pending`;
+  a wave with paused tasks finalizes the batch as `paused` (worktrees
+  preserved, no merge); pause causes are tracked so Tier-0 recovery can never
+  clear an operator pause. On resume, tasks that succeeded before the pause are
+  merged by a catch-up step; a failed merge on resume pauses again instead of
+  completing with work unmerged. `orch_retry_task` accepts `skipped` tasks and
+  reopens a wrongly-completed batch; provenance branches are reported, not
+  cleared. Hold exits no longer consume the iteration budget (interim until
+  #627). The batch-complete alert reports outcomes and the orch branch state
+  separately and never says "merged" when nothing was (workspace-aware).
+- **Stale "Ready for integration" banner and supervised "Integration Plan"
+  prompt after the batch was already integrated** (#610). When the engine
+  finished while the supervisor was mid-turn, the batch-end epilogue was
+  deferred (#621); if the supervisor integrated within that turn, the deferred
+  epilogue still fired at settle with content computed for an orch branch that
+  no longer existed. Integration (manual and auto) now supersedes the deferred
+  epilogue and marks the batch integrated; the epilogue also re-resolves at
+  dispatch time and skips when the orch branch is gone.
+- **A worker that held for a supervisor ruling was relaunched with the
+  "work continuously" nag, or died silently** (#630). `escalate_to_supervisor`
+  is fire-and-forget; a correctly-holding worker ends its turn and exits. The
+  lane now recognises a clean exit after an unanswered escalation as a HOLD
+  exit: not a stall, relaunched with a hold-resume prompt (act on a delivered
+  ruling; never proceed past the hold / self-approve / `.DONE`), bounded to 3
+  relaunches, then the task fails with an explicit `Hold unresolved` reason and
+  supervisor alert instead of a frozen `running` lane. A ruling delivered as a
+  steer, or consumed by the exit-intercept, releases the hold (reply watermark
+  by message timestamp). **Acknowledgement contract:** `send_agent_message`
+  with `type="info"` acknowledges ("received, ruling pending") — the worker
+  stays on hold and its relaunch budget resets, so an hours-long operator
+  ruling neither burns the budget nor is mistaken for a ruling; `type="steer"`
+  is the ruling and releases the hold. `send_agent_message` to a dead-pid agent now returns a
+  distinct error (pid, last registry update, resume guidance). The in-tool
+  wait / first-class `held` state is the #627 follow-up.
+- **A replacement supervisor could not resume the batch it inherited** (#631).
+  Takeover imported `phase: executing` into memory and every recovery tool
+  refused, although persisted `executing` means "orchestrator disconnected"
+  and is resumable. The engine is a forked child that can outlive its
+  supervisor, so the fix verifies engine shutdown instead of inferring it:
+  - Every engine publishes an identity (`.pi/runtime/<batchId>/engine.json`:
+    pid, supervisor pid, start/exit) **before it starts**; the batch id is
+    preallocated by the supervisor and the engine refuses to resume any other
+    batch. Exit marking is pid-scoped (a stale callback cannot mark a newer
+    engine exited).
+  - **One ownership gate** for `orch_resume`, `orch_retry_task`,
+    `orch_skip_task`, `orch_force_merge`, `orch_pause` (inherited),
+    `orch_abort`, `orch_integrate` and a fresh `/orch`: refused while an
+    engine is attached to this session (running *or still exiting*); refused
+    while the target's recorded engine is alive elsewhere; refused when no
+    identity is recorded; allowed once verified dead/exited. `force` never
+    bypasses it. The gate runs against the batch that would actually be acted
+    on (persisted, or reconstructed on force-resume), never a cached phase.
+  - `orch_pause` on an inherited batch with a verified-dead engine performs an
+    **administrative pause** (persists `paused`) — the non-destructive stop
+    that previously required hand-editing `batch-state.json`.
+  - Abort verifies the local engine has actually exited (grace → SIGTERM →
+    SIGKILL) before persisting/deleting state, and refuses otherwise; agents
+    still alive before a lane re-executes are terminated with verification.
+  - An orphaned engine (supervisor gone) winds itself down as `paused`
+    instead of running headless; IPC after the channel closes no longer
+    crashes it.
+  - New `orch_confirm_engine_shutdown(note)` tool /
+    `/orch-confirm-engine-shutdown <note>` command: the explicit, audited
+    path for batches with **no** engine identity (pre-0.30.6). **Migration
+    note:** the first recovery/start against a pre-0.30.6 batch requires this
+    one-time confirmation after verifying no engine process exists.
+  - The takeover summary now reports engine liveness and dead-but-"running"
+    registry agents (no registry hand-edit needed; resume reconciles them).
+  - `isProcessAlive` treats only ESRCH as dead (EPERM/unknown fail closed).
+
+- **Worker mail to the supervisor was only surfaced after the worker exited,
+  not live during the run.** A worker that mailed the supervisor mid-run
+  (via `notify_supervisor`/`escalate_to_supervisor` — e.g. asking for help to
+  break a review spiral) sat unread in its outbox until it exited, so the
+  supervisor "woke up" too late. The lane-runner now polls the worker outbox
+  on a live timer during the run (in addition to the post-exit drain), acking
+  each surfaced message so nothing is double-delivered. (Segment-expansion
+  requests were already scanned live; reply/escalate mail was not — that
+  asymmetry was the bug.)
+
+- **Engine-worker IPC crashed Pi on a stale extension context (#620,
+  reported by @daemons2000):** The asynchronous engine-worker IPC handlers
+  (`child.on("message"|"error"|"exit")`), the widget refresh
+  (`updateOrchWidget`), the batch-end epilogue dispatch, and the
+  supervisor-alert delivery all used a captured `ExtensionContext` /
+  `ExtensionAPI` after Pi had invalidated it — on session replacement/reload,
+  or at the end of a headless `-p` run while the forked engine worker was
+  still emitting IPC. Every `ctx` accessor (`ctx.ui`, `ctx.isIdle()`) and the
+  `pi.send*` methods call Pi's `assertActive`, which throws `"This extension
+  ctx is stale after session replacement or reload"`. That throw, uncaught
+  inside a `child_process` callback, became a process-fatal
+  `uncaughtException` that exited the supervising Pi process mid-batch;
+  recovery required a restart.
+
+  Fixed by generalizing the #597 hardening pattern to any thunk
+  (`safeCtxCallFromCallback`) and routing all four stale-sensitive vectors
+  through it: `ctx.ui.notify` (all worker-IPC callbacks + the main-thread
+  fallback path), `ctx.ui.setWidget` (guarded inside `updateOrchWidget`, the
+  single choke point), `ctx.isIdle()` (the batch-end epilogue now skips
+  dispatch and stops monitoring when the ctx is stale), and
+  `pi.sendUserMessage` (both supervisor-alert callbacks — #597's
+  `sendMessage`-only wrapper did not cover it). The guard no-ops **only** on
+  Pi's exact stale-ctx error (via `isStaleExtensionCtx`), logs any other
+  error so real failures still surface, and never rethrows (a throw from an
+  IPC callback is the very crash this fixes). The `"error"` IPC branch now
+  persists the failed batch state **before** touching the UI, so a dead UI
+  sink can never prevent the dashboard/resume from seeing the failure.
+  Engine state, review, verification, retries, and failure propagation are
+  unchanged. This is the same class as #597 (stale captured handle in a
+  background callback) but a distinct path — timers/`pi.sendMessage` there,
+  child-process IPC/`ctx.ui.*` here. 7 new regression tests (wrapper
+  behavior + wiring assertions for all four vectors).
+
 ## [0.30.5] - 2026-08-27
 
 ### Fixed

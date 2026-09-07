@@ -55,6 +55,7 @@ import {
 	createWorktree,
 	resetWorktree,
 	removeWorktree,
+	forceCleanupWorktree,
 	// Bulk operations
 	listWorktrees,
 	createLaneWorktrees,
@@ -755,6 +756,51 @@ describe("5.4 removeWorktree — happy path", () => {
 
 		// Verify not registered
 		assert(!isRegisteredWorktree(wt.path, repoDir), "should not be registered after removal");
+
+		cleanupTestRepo(repoDir);
+	});
+});
+
+describe("5.4d removeWorktree — #628 uncommitted-work guard", () => {
+	let repoDir: string;
+
+	test("refuses to remove a worktree with uncommitted changes (preserves work)", () => {
+		repoDir = initTestRepo("remove-dirty");
+
+		const wt = createWorktree(
+			{
+				laneNumber: 1,
+				batchId: "rem628",
+				baseBranch: "develop",
+				opId: "test",
+				prefix: basename(repoDir),
+			},
+			repoDir,
+		);
+
+		// Simulate the incident: uncommitted worker files in the lane worktree.
+		writeFileSync(join(wt.path, "uncommitted-helper.ts"), "export const wip = true;\n");
+
+		const result = removeWorktree(wt, repoDir);
+
+		assertEqual(result.removed, false, "removed flag (refused)");
+		assertEqual(result.refusedDirty, true, "refusedDirty flag");
+		assert((result.dirtyFileCount ?? 0) >= 1, "dirtyFileCount reported");
+		// The worktree, its branch, and the uncommitted work must be preserved.
+		assert(existsSync(wt.path), "worktree dir preserved");
+		assert(existsSync(join(wt.path, "uncommitted-helper.ts")), "uncommitted file preserved");
+		const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${wt.branch}`], repoDir);
+		assert(branchCheck.ok, "branch preserved");
+
+		// forceCleanupWorktree (the raw-rmSync last resort) honors the same guard.
+		forceCleanupWorktree(wt, repoDir, "rem628");
+		assert(existsSync(wt.path), "force-cleanup also refuses while dirty");
+		assert(existsSync(join(wt.path, "uncommitted-helper.ts")), "uncommitted file still preserved");
+
+		// Explicit opt-in (caller has preserved progress) still removes.
+		const forced = removeWorktree(wt, repoDir, undefined, { allowDirty: true });
+		assertEqual(forced.removed, true, "allowDirty removal succeeds");
+		assert(!existsSync(wt.path), "worktree dir removed with allowDirty");
 
 		cleanupTestRepo(repoDir);
 	});

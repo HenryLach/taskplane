@@ -1,0 +1,30 @@
+Event types emitted by emitEvent() in extensions/taskplane/agent-host.ts
+
+Emitted via string literals passed directly to emitEvent():
+1. message_delivered      (line 669)
+2. review_failed          (lines 778, 942)
+3. assistant_message      (line 843)
+4. tool_call              (line 895)
+5. review_requested       (line 913)
+6. tool_result            (line 922)
+7. review_completed       (line 944)
+8. retry_started          (line 952)
+9. compaction_started     (line 960)
+10. context_usage         (line 969)
+11. exit_intercepted      (lines 1012, 1026, 1039, 1053)
+12. agent_started         (line 1092)
+13. prompt_sent           (line 1094)
+
+Emitted via the `exitEventType` variable (line 786), which resolves to one of
+these RuntimeAgentEventType lifecycle values depending on how the agent ended:
+14. agent_timeout   (when timedOut)
+15. agent_killed    (when killed)
+16. agent_exited    (when exitCode === 0 && agentEnded)
+17. agent_crashed   (otherwise)
+
+Distinct event types emitted: 17
+
+Note: The full RuntimeAgentEventType union (defined in types.ts) also declares
+event types not currently emitted by this emitEvent() call site, including:
+usage_delta, retry_finished, compaction_finished, reply_sent, and
+escalation_sent.

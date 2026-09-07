@@ -61,6 +61,7 @@ import {
 	startHeartbeat,
 	isStaleExtensionCtx,
 	safeSendMessageFromTimer,
+	safeCtxCallFromCallback,
 	deactivateSupervisor,
 	EVENT_POLL_INTERVAL_MS,
 	TASK_DIGEST_INTERVAL_MS,
@@ -1878,6 +1879,135 @@ describe("8.x — Activation/deactivation: state lifecycle", () => {
 		} finally {
 			rmSync(tmpRoot, { recursive: true, force: true });
 		}
+	});
+
+	// ── #620: safeCtxCallFromCallback — engine-worker IPC stale-ctx guard ──
+	// Generalizes the #597 pattern to any thunk so the async worker-IPC
+	// callbacks (ctx.ui.notify / ctx.ui.setWidget / pi.sendUserMessage) cannot
+	// crash Pi when the captured ctx/pi handle goes stale.
+
+	it("8.23 (#620): safeCtxCallFromCallback runs the thunk and returns true on success", () => {
+		let ran = false;
+		const result = safeCtxCallFromCallback(() => {
+			ran = true;
+		}, "ipc.notify");
+		expect(result).toBe(true);
+		expect(ran).toBe(true);
+	});
+
+	it("8.24 (#620): safeCtxCallFromCallback swallows a stale-ctx throw and returns false", () => {
+		// Simulate Pi's assertActive throw exactly (as ctx.ui getter would).
+		const staleErr = new Error("This extension ctx is stale after session replacement or reload.");
+		let caughtThrow: unknown = null;
+		let result: boolean | null = null;
+		try {
+			result = safeCtxCallFromCallback(() => {
+				throw staleErr;
+			}, "ipc.notify");
+		} catch (e) {
+			caughtThrow = e;
+		}
+		// MUST NOT throw — a throw here from an IPC callback is the #620 crash.
+		expect(caughtThrow).toBe(null);
+		expect(result).toBe(false);
+	});
+
+	it("8.25 (#620): safeCtxCallFromCallback logs but does NOT throw or return false on non-stale errors", () => {
+		const otherErr = new Error("widget renderer blew up");
+		const originalError = console.error;
+		const logged: string[] = [];
+		console.error = (...args: unknown[]) => {
+			logged.push(args.map(String).join(" "));
+		};
+		let caughtThrow: unknown = null;
+		let result: boolean | null = null;
+		try {
+			result = safeCtxCallFromCallback(() => {
+				throw otherErr;
+			}, "widget.setWidget");
+		} catch (e) {
+			caughtThrow = e;
+		} finally {
+			console.error = originalError;
+		}
+		expect(caughtThrow).toBe(null);
+		// Non-stale: surfaced (logged with the label) but does not crash the host.
+		expect(result).toBe(true);
+		expect(logged.length).toBe(1);
+		expect(logged[0]).toContain("widget.setWidget");
+		expect(logged[0]).toContain("widget renderer blew up");
+	});
+
+	// ── #620: wiring assertions for the 4 stale-ctx vectors in extension.ts ──
+	// Source-based (like 8.19/8.20) because these live in async closures inside
+	// the extension factory that have no unit harness. They verify each fragile
+	// sink call is routed through the guard rather than accessed bare.
+
+	it("8.26 (#620): engine-worker IPC ctx.ui.notify calls are stale-guarded", () => {
+		const src = readSource("extension.ts");
+		const startFn = src.substring(
+			src.indexOf("export function startBatchInWorker("),
+			src.indexOf("export function buildIntegrationExecutor("),
+		);
+		// Normalize whitespace so single-line and multi-line wrappings compare
+		// identically, then assert EVERY ctx.ui.notify in the worker-IPC callbacks
+		// is immediately preceded by the guard arrow (none called bare).
+		const flat = startFn.replace(/\s+/g, " ");
+		const total = (flat.match(/ctx\.ui\.notify\(/g) ?? []).length;
+		const wrapped = (flat.match(/=> ctx\.ui\.notify\(/g) ?? []).length;
+		expect(startFn).toContain("safeCtxCallFromCallback");
+		expect(total).toBeGreaterThanOrEqual(1);
+		expect(wrapped).toBe(total);
+	});
+
+	it("8.27 (#620): updateOrchWidget guards ctx.ui.setWidget", () => {
+		const src = readSource("extension.ts");
+		const fn = src.substring(
+			src.indexOf("function updateOrchWidget()"),
+			src.indexOf("function updateOrchWidget()") + 900,
+		);
+		const flat = fn.replace(/\s+/g, " ");
+		expect(flat).toContain("safeCtxCallFromCallback");
+		// setWidget must be inside the wrapper, not called bare.
+		expect(flat).toContain("=> ctx.ui.setWidget(");
+	});
+
+	it("8.28 (#620): dispatchBatchEndEpilogue guards ctx.isIdle() and skips on stale", () => {
+		const src = readSource("extension.ts");
+		const fn = src.substring(
+			src.indexOf("function dispatchBatchEndEpilogue("),
+			src.indexOf("function dispatchBatchEndEpilogue(") + 1200,
+		);
+		// isIdle must be inside a try/catch that checks isStaleExtensionCtx.
+		expect(fn).toContain("ctx.isIdle()");
+		expect(fn).toContain("isStaleExtensionCtx");
+		// On stale it must stop monitoring + invalidate the gate and return.
+		expect(fn).toContain("stopBatchMonitoring(supervisorState)");
+		expect(fn).toContain("noticeGate.invalidate()");
+	});
+
+	it("8.29 (#620): supervisor-alert pi.sendUserMessage is stale-guarded (both start + resume)", () => {
+		const src = readSource("extension.ts");
+		// Both alert callbacks route sendUserMessage through the guard. Normalize
+		// whitespace so the multi-line wrapper is matched reliably.
+		const flat = src.replace(/\s+/g, " ");
+		const total = (flat.match(/pi\.sendUserMessage\(alert\.summary/g) ?? []).length;
+		const wrapped = (flat.match(/=> pi\.sendUserMessage\(alert\.summary/g) ?? []).length;
+		expect(total).toBe(2);
+		expect(wrapped).toBe(2);
+	});
+
+	it("8.30 (#620): startBatchAsync .catch ctx.ui.notify is stale-guarded (Sage review follow-up)", () => {
+		const src = readSource("extension.ts");
+		const fn = src.substring(
+			src.indexOf("export function startBatchAsync("),
+			src.indexOf("export function startBatchInWorker("),
+		);
+		const flat = fn.replace(/\s+/g, " ");
+		const total = (flat.match(/ctx\.ui\.notify\(/g) ?? []).length;
+		const wrapped = (flat.match(/=> ctx\.ui\.notify\(/g) ?? []).length;
+		expect(total).toBeGreaterThanOrEqual(1);
+		expect(wrapped).toBe(total);
 	});
 });
 

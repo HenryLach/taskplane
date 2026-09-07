@@ -167,7 +167,10 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 		// doesn't break literal-string indexOf lookups for multi-arg call sites.
 		const normSrc = laneRunnerSrc.replace(/\s+/g, " ");
 		const declIdx = normSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
-		const loopIdx = normSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
+		// Productive-iteration loop (hold exits don't consume the budget; see lane-runner).
+		const loopIdx = normSrc.indexOf(
+			"for (; productiveIterations < config.maxIterations; productiveIterations++)",
+		);
 		const postLoopUseIdx = normSrc.lastIndexOf(
 			"config, statusPath, reviewerStatePath, lastTelemetry",
 		);
@@ -439,7 +442,8 @@ describe("11.x: Merge V2 liveness + abort correctness", () => {
 	it("11.8: /orch-abort helper delegates to executeAbort without tmux kill-session", () => {
 		const fnIdx = extensionSrc.indexOf("function doOrchAbort(");
 		expect(fnIdx).toBeGreaterThan(-1);
-		const block = extensionSrc.slice(fnIdx, fnIdx + 2600);
+		// #631 added an ownership gate + verified engine exit ahead of executeAbort; widen the window.
+		const block = extensionSrc.slice(fnIdx, fnIdx + 6000);
 		expect(block).toContain("await executeAbort(");
 		expect(block).toContain("ORCH_MESSAGES.abortNoBatch()");
 		expect(block).not.toContain("tmux list-sessions");

@@ -717,7 +717,11 @@ describe("root-consistency regression", () => {
 			const isAbortFallback = line.includes("execCtx?.repoRoot ?? ctx.cwd");
 			// TP-053: doOrch* helpers and tool handlers pass ctx.cwd as fallback
 			const isDoOrchCall = line.includes("doOrchStatus(ctx.cwd") || line.includes("doOrchAbort(");
-			expect(isBuildContext || isAbortFallback || isDoOrchCall).toBe(true);
+			// #631: canonical-root helpers take ctx.cwd as the LAST-resort fallback
+			// (execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? fallback) — same contract.
+			const isCanonicalRootFallback =
+				line.includes("canonicalStateRoot(ctx.cwd") || line.includes("conflictingRootsRefusal(");
+			expect(isBuildContext || isAbortFallback || isDoOrchCall || isCanonicalRootFallback).toBe(true);
 		}
 	});
 

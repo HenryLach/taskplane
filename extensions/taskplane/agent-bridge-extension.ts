@@ -23,13 +23,22 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
-import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
+import {
+	writeFileSync,
+	readFileSync,
+	readdirSync,
+	existsSync,
+	mkdirSync,
+	renameSync,
+	unlinkSync,
+} from "fs";
 import { join, dirname } from "path";
 import { spawn as nodeSpawn } from "child_process";
 import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import { randomBytes } from "crypto";
 import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.ts";
+import { latestReviewFilesPerGate, parseReviewVerdict } from "./review-analysis.ts";
 
 /**
  * Resolve the outbox directory from environment variables.
@@ -174,6 +183,28 @@ function writeSegmentExpansionRequest(request: SegmentExpansionRequest): string 
  * @param stepNum the step number being reviewed
  * @returns true iff the step is marked Complete in STATUS.md
  */
+/**
+ * #629: does the LATEST review file for `{type}-step{N}` read REVISE/RETHINK?
+ * Used to exempt a remediation re-review from the TP-186 complete-step guard.
+ * Fail-closed: unreadable dir/file → false (guard stays in force).
+ */
+export function hasOutstandingNonApproveReview(
+	reviewsDir: string,
+	reviewType: string,
+	stepNum: number,
+): boolean {
+	try {
+		if (!existsSync(reviewsDir)) return false;
+		const latest = latestReviewFilesPerGate(readdirSync(reviewsDir));
+		const filename = latest.get(`${reviewType.toLowerCase()}-step${stepNum}`);
+		if (!filename) return false;
+		const verdict = parseReviewVerdict(readFileSync(join(reviewsDir, filename), "utf-8"));
+		return verdict === "REVISE" || verdict === "RETHINK";
+	} catch {
+		return false;
+	}
+}
+
 export function isStepMarkedComplete(statusPath: string, stepNum: number): boolean {
 	let content: string;
 	try {
@@ -822,7 +853,18 @@ export default function (pi: ExtensionAPI) {
 			// violated the Order of Operations contract; the only safe path
 			// is to revert STATUS first, then re-call review_step. Plan
 			// reviews are exempt because they fire BEFORE implementation.
-			if (reviewType !== "plan" && isStepMarkedComplete(statusPath, stepNum)) {
+			//
+			// #629 exemption: when the step is Complete but the LATEST review for
+			// this gate is REVISE/RETHINK, the runtime's finalize gate has refused
+			// (or will refuse) the task and spawned a remediation iteration whose
+			// whole purpose is to re-run this review. That state IS the anomaly
+			// being repaired — a re-review is the correct action, not an order
+			// violation. Refusing here would make the documented remedy unreachable.
+			if (
+				reviewType !== "plan" &&
+				isStepMarkedComplete(statusPath, stepNum) &&
+				!hasOutstandingNonApproveReview(reviewsDir, reviewType, stepNum)
+			) {
 				const taskIdMatch = statusPath.match(/[\\/]([A-Z]{2,}-\d+)[^\\/]*[\\/]STATUS\.md$/);
 				const taskId = taskIdMatch ? taskIdMatch[1] : "<TASK-ID>";
 				const refusal = [
@@ -944,13 +986,23 @@ export default function (pi: ExtensionAPI) {
 				// Read review output and extract verdict
 				if (existsSync(outputPath)) {
 					const reviewContent = readFileSync(outputPath, "utf-8");
-					const verdictMatch = reviewContent.match(/###?\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
-					let verdict = verdictMatch ? verdictMatch[1].toUpperCase() : "UNKNOWN";
+					// #624 (severity upgrade): robust, FAIL-CLOSED verdict extraction. The
+					// old regex ('###?\s*Verdict[:\s]*…') missed common reviewer format
+					// variants, and its fallback checked the substring "approve" FIRST — so
+					// a REVISE review whose body merely contained "approve" (e.g. "cannot
+					// approve") was returned to the worker as APPROVE. Workers then marked
+					// steps complete and advanced past unaddressed findings. The review
+					// gate must NEVER fail open: APPROVE is only ever taken from an
+					// explicit Verdict line (parseReviewVerdict handles heading/bold/plain/
+					// dash/bracket variants and skips the template placeholder). The body
+					// fallback below may only produce fail-closed guesses (REVISE/RETHINK).
+					const parsedVerdict = parseReviewVerdict(reviewContent);
+					let verdict: string = parsedVerdict ?? "UNKNOWN";
 					if (verdict === "UNKNOWN") {
 						const lower = reviewContent.toLowerCase();
-						if (lower.includes("approve") && !lower.includes("do not approve")) verdict = "APPROVE";
-						else if (lower.includes("revise") || lower.includes("changes requested")) verdict = "REVISE";
-						else if (lower.includes("rethink")) verdict = "RETHINK";
+						if (/\brevise\b/.test(lower) || lower.includes("changes requested")) verdict = "REVISE";
+						else if (/\brethink\b/.test(lower)) verdict = "RETHINK";
+						// NO approve fallback — an approval must be explicit.
 					}
 
 					// Log review in STATUS.md execution log
@@ -986,7 +1038,13 @@ export default function (pi: ExtensionAPI) {
 					} else {
 						return {
 							content: [
-								{ type: "text" as const, text: `Review complete (verdict unclear). See ${reviewFile}` },
+								{
+									type: "text" as const,
+									text:
+										`Review complete (verdict unclear). Read ${reviewFile} and follow its ` +
+										`Verdict line — do NOT treat this as an approval or mark the step complete ` +
+										`without an explicit APPROVE.`,
+								},
 							],
 							details: undefined,
 						};

@@ -50,6 +50,12 @@ import {
 	rename as fsRename,
 } from "fs/promises";
 import { execFileSync } from "child_process";
+import { assessEngineLiveness } from "./engine-identity.ts";
+import {
+	isProcessAlive as registryIsProcessAlive,
+	isTerminalStatus as registryIsTerminalStatus,
+	readRegistrySnapshot,
+} from "./process-registry.ts";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
 import type {
@@ -2383,6 +2389,15 @@ Use these to:
    issue using the patterns in supervisor-primer.md and take appropriate
    recovery action based on your autonomy level (${autonomyLabel}).
 
+2a. **Adjudicate reviews.** You are notified at every review boundary, and get
+   an urgent (steer) \`review-intervention-needed\` alert when a step's reviews
+   spiral (repeated non-approve) or a worker trips the order-of-operations guard.
+   Actively adjudicate — don't just relay to the operator. Use the finding
+   **trend** to tell converging (\`dropping\` — let it run) from circling
+   (\`flat\`/\`rising\` — intervene), then steer the worker to a resolution
+   (implement the remaining valid findings, or stop and log a blocker) via
+   \`send_agent_message\`. Follow **Playbook D** in supervisor-primer.md.
+
 3. **Keep the operator informed.** Provide clear, natural status updates.
    When the operator asks "how's it going?" — read batch state and summarize.
 
@@ -2430,24 +2445,23 @@ ${autonomyGuidance}
 
 ## Audit Trail
 
-Log every recovery action to \`${actionsPath}\` as a single-line JSON entry.
+Log every recovery action with the **\`log_recovery_action\` tool** — it appends
+to \`${actionsPath}\` with a **code-stamped timestamp and batchId**.
 
-**Format** (one JSON object per line):
-\`\`\`json
-{"ts":"<ISO 8601>","action":"<action_name>","classification":"<diagnostic|tier0_known|destructive>","context":"<why>","command":"<what>","result":"<pending|success|failure|skipped>","detail":"<outcome>","batchId":"${batchState.batchId || "BATCH_ID"}"}
-\`\`\`
+**NEVER hand-write \`actions.jsonl\`** (no bash \`echo >>\`): you have no reliable
+clock, so hand-written entries carry fabricated timestamps and break the audit
+trail's integrity as evidence.
 
 **Rules:**
-1. For **destructive** actions: write a "pending" entry BEFORE executing, then
-   write a result entry AFTER with "success" or "failure" and detail.
-2. For **diagnostic** and **tier0_known** actions: write a single result entry
-   AFTER execution.
-3. Include optional fields when relevant: \`waveIndex\`, \`laneNumber\`, \`taskId\`, \`durationMs\`.
-4. Use the \`bash\` tool to append entries. Example:
-   \`echo '{"ts":"...","action":"merge_retry","classification":"tier0_known","context":"merge timeout on wave 2","command":"git merge --no-ff task/lane-2","result":"success","detail":"merged with 0 conflicts","batchId":"..."}' >> ${actionsPath}\`
+1. For **destructive** actions: call \`log_recovery_action(..., result="pending")\`
+   BEFORE executing, then call again AFTER with \`"success"\` or \`"failure"\` and detail.
+2. For **diagnostic** and **tier0_known** actions: one call AFTER execution.
+3. Include \`waveIndex\`, \`laneNumber\`, \`taskId\` when relevant.
+4. Stick to the schema fields — do not invent ad-hoc field names.
 
 **Why this matters:** When you're taken over by another session or the operator
-asks "what did you do?", the audit trail is the definitive record.
+asks "what did you do?", the audit trail is the definitive record — and its
+timestamps are only trustworthy because code stamps them.
 
 ## Operational Knowledge
 
@@ -3563,8 +3577,12 @@ export function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
-	} catch {
-		return false;
+	} catch (err: unknown) {
+		// #631: only ESRCH (no such process) is "dead". EPERM = exists without
+		// signal permission; unknown errors fail closed (alive) — this feeds the
+		// lock-takeover ownership decision.
+		const code = (err as { code?: string } | null)?.code;
+		return code !== "ESRCH";
 	}
 }
 
@@ -3696,6 +3714,64 @@ export function buildTakeoverSummary(stateRoot: string, batchState: PersistedBat
 	lines.push(
 		`**Tasks:** ${succeeded} succeeded, ${failed} failed, ${running} running, ${pending} pending`,
 	);
+
+	// #631: ownership evidence — is the previous ENGINE still running? A dead
+	// supervisor pid does not imply a dead engine (forked child). This line is
+	// what tells the replacement operator whether orch_resume can proceed.
+	const activePhase =
+		batchState.phase === "executing" ||
+		batchState.phase === "launching" ||
+		batchState.phase === "merging" ||
+		batchState.phase === "planning";
+	const liveness = assessEngineLiveness(stateRoot, batchState.batchId);
+	if (liveness.identity?.taskplaneBuild) {
+		lines.push(
+			`**Build:** taskplane ${liveness.identity.taskplaneVersion ?? "?"} (build ${liveness.identity.taskplaneBuild}) drove this batch`,
+		);
+	}
+	if (liveness.status === "alive") {
+		lines.push(
+			`**Engine:** ⚠️ PID ${liveness.identity!.pid} is still ALIVE (forked by supervisor PID ${liveness.identity!.supervisorPid}). ` +
+				`This session has no engine attached; recovery tools will refuse until it exits (it pauses itself on supervisor disconnect) or is terminated.`,
+		);
+	} else if (liveness.status === "dead" || liveness.status === "exited") {
+		lines.push(
+			`**Engine:** PID ${liveness.identity!.pid} is ${liveness.status}${liveness.identity!.exitReason ? ` (${liveness.identity!.exitReason})` : ""}` +
+				(activePhase
+					? ` — persisted phase "${batchState.phase}" is an orphan; orch_resume(force=true) reconciles and re-drives it.`
+					: "."),
+		);
+	} else if (activePhase) {
+		lines.push(
+			`**Engine:** no identity recorded for this batch (pre-#631 engine or never forked). Recovery tools decide from the previous supervisor's liveness.`,
+		);
+	}
+
+	// #631/#630: workers the registry still calls "running" whose process is gone.
+	// Operators should NOT hand-edit registry.json for these — resume's liveness
+	// check (`!terminal && isProcessAlive(pid)`) already treats them as dead.
+	try {
+		const registry = readRegistrySnapshot(stateRoot, batchState.batchId);
+		if (registry) {
+			const deadRunning = Object.values(registry.agents).filter(
+				(m) => !registryIsTerminalStatus(m.status) && !registryIsProcessAlive(m.pid),
+			);
+			if (deadRunning.length > 0) {
+				lines.push("");
+				lines.push(
+					`**Dead agents still marked ${deadRunning[0].status} in the registry** (${deadRunning.length}):`,
+				);
+				for (const m of deadRunning) {
+					lines.push(
+						`  - ${m.agentId} (${m.role}${m.taskId ? `, ${m.taskId}` : ""}) PID ${m.pid} — process gone; registry last updated ${new Date(registry.updatedAt).toISOString()}. ` +
+							`No registry edit needed: orch_resume reconciles it (re-execute in the existing worktree).`,
+					);
+				}
+			}
+		}
+	} catch {
+		/* best effort */
+	}
 
 	// Recent actions from audit trail (using readAuditTrail helper)
 	const recentActions = readAuditTrail(stateRoot, { limit: 5 });
@@ -3829,6 +3905,56 @@ export function safeSendMessageFromTimer(
 			}`,
 		);
 		return true; // not stale; let the caller continue ticking
+	}
+}
+
+/**
+ * Stale-safe wrapper for a UI / side-effect call that touches a possibly-stale
+ * `ExtensionContext` or `ExtensionAPI` from a long-lived ASYNC callback —
+ * engine-worker IPC handlers (`child.on("message"|"error"|"exit")`), widget
+ * refresh, the batch-end epilogue, and supervisor-alert delivery (#620).
+ *
+ * Pi invalidates captured `ctx`/`pi` handles on session replacement/reload, and
+ * also at the end of headless `-p` runs while the forked engine worker is still
+ * emitting IPC. Every `ctx` accessor (`ctx.ui`, `ctx.isIdle()`, …) and the
+ * `pi.send*` methods then call Pi's `assertActive`, which throws
+ * `"This extension ctx is stale after session replacement or reload"`. Such a
+ * throw inside a `child_process` / EventEmitter callback is an
+ * `uncaughtException` that kills the supervising Pi process.
+ *
+ * Return value semantics (to prevent caller misuse):
+ *   - `false`  → STALE only. The session is gone; caller should skip any
+ *              further UI work for this event.
+ *   - `true`   → success OR a non-stale failure that was logged. NOT a
+ *              success-only signal — a `true` may mean "logged and continued".
+ *
+ * Any non-stale error is logged (so genuine failures still surface in
+ * stderr/telemetry) but is deliberately NOT rethrown:
+ * rethrowing from an IPC/EventEmitter callback would re-introduce the exact
+ * process-fatal crash class this guards against. This mirrors the proven #597
+ * `safeSendMessageFromTimer` contract, generalized to any thunk so it can wrap
+ * `ctx.ui.notify`, `ctx.ui.setWidget`, and `pi.sendUserMessage` alike.
+ *
+ * @since #620
+ */
+export function safeCtxCallFromCallback(fn: () => void, label = "ui"): boolean {
+	try {
+		fn();
+		return true;
+	} catch (err) {
+		if (isStaleExtensionCtx(err)) {
+			// Pi replaced/ended the session — no live UI sink. Skip, never crash.
+			return false;
+		}
+		// Not stale: surface it (so real failures are visible) but do not rethrow,
+		// because a throw from an async IPC callback is a process-fatal uncaught
+		// exception — the very failure mode #620 fixes.
+		console.error(
+			`[taskplane] ${label} call from async callback threw (non-stale): ${
+				err instanceof Error ? (err.stack ?? err.message) : String(err)
+			}`,
+		);
+		return true;
 	}
 }
 
@@ -3983,6 +4109,18 @@ interface ParsedEvent {
 	suggestion?: string;
 	affectedTaskIds?: string[];
 	message?: string;
+	// ── Review-boundary optional fields ──────────────────────────
+	agentId?: string;
+	reviewStep?: number;
+	reviewType?: string;
+	disposition?: string;
+	reviewRound?: number;
+	reviewLabel?: string;
+	reviewPath?: string;
+	findingCounts?: Record<string, number>;
+	findingTrend?: "dropping" | "flat" | "rising";
+	findingDeltas?: Record<string, number>;
+	findingMixed?: boolean;
 }
 
 /**
@@ -4007,6 +4145,11 @@ const SIGNIFICANT_EVENT_TYPES = new Set<UnifiedEventType>([
 	"batch_complete",
 	"batch_paused",
 	"tier0_escalation",
+	// Review boundaries: surfaced at EVERY start/end so the supervisor can
+	// adjudicate each revision case-by-case (not coalesced into digests).
+	"review_started",
+	"review_completed",
+	"review_failed",
 ]);
 
 /**
@@ -4248,6 +4391,38 @@ export function parseJsonlLines(data: string, partialLine: string): [ParsedEvent
  *
  * @since TP-041
  */
+/**
+ * Compact "where" descriptor for a review-boundary notification: task, step,
+ * and lane so the supervisor can address the right worker when adjudicating.
+ */
+function reviewLocation(event: ParsedEvent): string {
+	const parts: string[] = [];
+	if (event.taskId) parts.push(`task ${event.taskId}`);
+	if (typeof event.reviewStep === "number") parts.push(`step ${event.reviewStep}`);
+	if (typeof event.laneNumber === "number") parts.push(`lane ${event.laneNumber}`);
+	return parts.length > 0 ? parts.join(", ") : "a step";
+}
+
+/**
+ * Compact adjudication signals for a review notification: round, finding counts,
+ * and severity trend — the three signals an adjudicating supervisor uses to tell
+ * "converging (let it run)" from "circling (intervene)" at a glance.
+ */
+function reviewSignals(event: ParsedEvent): string {
+	const bits: string[] = [];
+	if (typeof event.reviewRound === "number") bits.push(`round ${event.reviewRound}`);
+	if (event.findingCounts && Object.keys(event.findingCounts).length > 0) {
+		const counts = Object.entries(event.findingCounts)
+			.map(([k, v]) => `${k}:${v}`)
+			.join(" ");
+		const trend = event.findingTrend
+			? `, trend ${event.findingTrend}${event.findingMixed ? " (mixed)" : ""}`
+			: "";
+		bits.push(`findings ${counts}${trend}`);
+	}
+	return bits.length > 0 ? ` [${bits.join("; ")}]` : "";
+}
+
 export function formatEventNotification(
 	event: ParsedEvent,
 	autonomy: SupervisorAutonomyLevel,
@@ -4292,6 +4467,31 @@ export function formatEventNotification(
 			const lane = event.laneNumber !== undefined ? event.laneNumber : "?";
 			const mins = event.stalledMinutes ?? "?";
 			return `🔒 Merge agent on lane ${lane} appears stuck (no output for ${mins} min). Consider killing and retrying.`;
+		}
+		case "review_started": {
+			const loc = reviewLocation(event);
+			const typeLabel = event.reviewType ? `${event.reviewType} ` : "";
+			return `🔍 **Review starting** — ${typeLabel}review of ${loc}.`;
+		}
+		case "review_completed": {
+			const loc = reviewLocation(event);
+			const disp = (event.disposition || "UNKNOWN").toUpperCase();
+			const icon =
+				disp === "APPROVE" ? "✅" : disp === "REFUSED" ? "⛔" : disp === "UNKNOWN" ? "❔" : "🔁";
+			const tail =
+				disp === "APPROVE"
+					? ""
+					: disp === "REFUSED"
+						? " — reviewer refused (step marked complete before review). The worker must revert and re-review."
+						: " — changes requested. Watch for repeated revisions on this step.";
+			return `${icon} **Review ${disp}** — ${loc}.${reviewSignals(event)}${tail}`;
+		}
+		case "review_failed": {
+			const loc = reviewLocation(event);
+			return (
+				`⚠️ **Reviewer unavailable** — ${loc}. The reviewer subprocess failed or produced no ` +
+				`verdict (not a revision spiral — a broken-reviewer signal). Consider checking reviewer config.`
+			);
 		}
 		case "batch_complete": {
 			const parts: string[] = [];
@@ -4414,14 +4614,22 @@ export function shouldNotify(
 	eventType: UnifiedEventType,
 	autonomy: SupervisorAutonomyLevel,
 ): boolean {
-	// Always notify for terminal/failure events regardless of autonomy
+	// Always notify for terminal/failure events regardless of autonomy.
+	// Review boundaries are included on purpose: the supervisor must be informed
+	// at EVERY review start/end in ALL autonomy levels — in autonomous mode this
+	// is precisely when it adjudicates revisions case-by-case (operator-as-alarm
+	// is the opposite of autonomous execution). Suppressing review_* in
+	// autonomous mode would silently disable the feature where it matters most.
 	if (
 		eventType === "batch_complete" ||
 		eventType === "batch_paused" ||
 		eventType === "merge_failed" ||
 		eventType === "merge_health_dead" ||
 		eventType === "merge_health_stuck" ||
-		eventType === "tier0_escalation"
+		eventType === "tier0_escalation" ||
+		eventType === "review_started" ||
+		eventType === "review_completed" ||
+		eventType === "review_failed"
 	) {
 		return true;
 	}

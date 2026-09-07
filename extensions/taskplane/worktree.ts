@@ -9,7 +9,8 @@ import { join, basename, resolve } from "path";
 import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
+import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError, runtimeRoot } from "./types.ts";
+import { assessEngineLiveness } from "./engine-identity.ts";
 import type {
 	AllocatedLane,
 	BulkWorktreeError,
@@ -716,10 +717,48 @@ export function runWindowsCmdRd(absolutePath: string): {
  * @throws WorktreeError with WORKTREE_REMOVE_FAILED for terminal (non-retriable) errors
  * @throws WorktreeError with WORKTREE_BRANCH_DELETE_FAILED if branch cleanup fails
  */
+/**
+ * #628: does this worktree have uncommitted changes? Returns the count, 0 for
+ * clean, or null when it CANNOT be assessed — e.g. the path is a corrupted or
+ * orphaned worktree whose git context resolves to the PARENT repo (running
+ * `git status` there would report the parent's state, a false positive).
+ * Callers treat null as "proceed with removal" so corruption-recovery paths
+ * keep working; only a confirmed-dirty, functioning worktree refuses.
+ */
+function worktreeUncommittedCount(worktreePath: string): number | null {
+	const top = runGit(["rev-parse", "--show-toplevel"], worktreePath);
+	if (!top.ok) return null;
+	const norm = (p: string) => {
+		// realpathSync.native expands Windows 8.3 short names (HENRYL~1 → HenryLach)
+		// so git's long-form output compares equal to a short-form input path.
+		let r: string;
+		try {
+			r = realpathSync.native(p.trim());
+		} catch {
+			r = resolve(p.trim());
+		}
+		r = r.replace(/[\\/]+/g, "/");
+		return process.platform === "win32" ? r.toLowerCase() : r;
+	};
+	if (norm(top.stdout) !== norm(worktreePath)) return null; // not this dir's own repo context
+	const st = runGit(["status", "--porcelain"], worktreePath);
+	if (!st.ok) return null;
+	const t = st.stdout.trim();
+	return t.length === 0 ? 0 : t.split(/\r?\n/).length;
+}
+
 export function removeWorktree(
 	worktree: WorktreeInfo,
 	repoRoot: string,
 	targetBranch?: string,
+	options?: {
+		/**
+		 * #628: permit removal even when the worktree has uncommitted changes.
+		 * Only pass true when the caller has ALREADY preserved progress (commit,
+		 * stash, or progress branch). Default false = refuse when dirty.
+		 */
+		allowDirty?: boolean;
+	},
 ): RemoveWorktreeResult {
 	const { path: worktreePath, branch } = worktree;
 
@@ -753,6 +792,33 @@ export function removeWorktree(
 			savedBranch: branchResult.savedBranch,
 			unmergedCount: branchResult.unmergedCount,
 		};
+	}
+
+	// ── #628: uncommitted-work guard ────────────────────────────
+	// Removal uses `git worktree remove --force`, which destroys uncommitted
+	// changes. In the reported incident a takeover path removed a held lane's
+	// worktree and the worker's uncommitted files were lost (recovered only via
+	// dangling objects). Safety invariant: NEVER remove a worktree with
+	// uncommitted changes unless the caller explicitly opts in after preserving
+	// progress. Refusal is non-fatal — callers already handle removed:false.
+	if (pathExists && !options?.allowDirty) {
+		const dirtyFileCount = worktreeUncommittedCount(worktreePath);
+		if (dirtyFileCount !== null && dirtyFileCount > 0) {
+			execLog(
+				"cleanup",
+				"worktree",
+				`REFUSED to remove worktree with ${dirtyFileCount} uncommitted change(s) — commit/stash or pass allowDirty after preserving progress (#628)`,
+				{ path: worktreePath, branch },
+			);
+			return {
+				removed: false,
+				alreadyRemoved: false,
+				branchDeleted: false,
+				branchPreserved: true,
+				refusedDirty: true,
+				dirtyFileCount,
+			};
+		}
 	}
 
 	// ── Attempt removal with retry/backoff ───────────────────────
@@ -2105,8 +2171,30 @@ export function forceCleanupWorktree(
 	worktree: WorktreeInfo,
 	repoRoot: string,
 	batchId: string,
+	options?: {
+		/** #628: permit force-removal even with uncommitted changes. Only after preserving progress. */
+		allowDirty?: boolean;
+	},
 ): void {
 	const { path: worktreePath, branch, laneNumber } = worktree;
+
+	// ── #628: uncommitted-work guard (same invariant as removeWorktree) ───
+	// This is the raw-rmSync last resort — without the guard it silently
+	// destroys uncommitted worker files (e.g. batch-start cleanup of a prior
+	// batch's held lane). "Force" here means stubborn-removal MECHANICS
+	// (Windows reserved names), not overriding the data-safety invariant.
+	if (existsSync(worktreePath) && !options?.allowDirty) {
+		const dirtyFileCount = worktreeUncommittedCount(worktreePath);
+		if (dirtyFileCount !== null && dirtyFileCount > 0) {
+			execLog(
+				"cleanup",
+				`lane-${laneNumber}`,
+				`REFUSED force-cleanup: worktree has ${dirtyFileCount} uncommitted change(s) — preserve progress first (#628)`,
+				{ path: worktreePath, branch, batchId },
+			);
+			return;
+		}
+	}
 
 	// Step 1: Force-remove the directory
 	if (existsSync(worktreePath)) {
@@ -2615,6 +2703,33 @@ export interface StaleBranchCleanupResult {
 	deletedSavedBranches: string[];
 	/** Branches that failed to delete (best-effort) */
 	failedDeletes: string[];
+	/**
+	 * #631: branches of OTHER batches that were kept because that batch's engine
+	 * is alive, or its ownership is unknown (runtime dir present, no identity).
+	 */
+	skippedOwnedBranches?: string[];
+}
+
+/**
+ * #631: may a lane branch belonging to ANOTHER batch be swept as an orphan?
+ * The TP-051 operator-wide sweep is kept (orphans from finished batches do
+ * accumulate), but never for a batch whose engine is alive, nor for one whose
+ * ownership is unknown (a runtime dir exists with no engine identity — a
+ * pre-#631 engine of unknown state). No runtime dir at all = no engine
+ * evidence anywhere → a pure leftover → sweepable.
+ */
+function otherBatchBranchSweepable(ownershipRoot: string, otherBatchId: string): boolean {
+	const liveness = assessEngineLiveness(ownershipRoot, otherBatchId);
+	if (liveness.status === "alive") return false;
+	if (liveness.status === "none" && existsSync(runtimeRoot(ownershipRoot, otherBatchId)))
+		return false;
+	return true;
+}
+
+/** `task/{opId}-lane-{N}-{batchId}` / `saved/task/…-{batchId}` → batchId (last dash segment). */
+function laneBranchBatchId(branch: string): string | null {
+	const m = /-lane-\d+-([A-Za-z0-9._]+)$/.exec(branch);
+	return m ? m[1] : null;
 }
 
 /**
@@ -2645,10 +2760,34 @@ export function deleteStaleBranches(
 	repoRoot: string,
 	opId: string,
 	batchId: string,
+	/**
+	 * #631: root under which `.pi/runtime/<batchId>/engine.json` lives (workspace
+	 * root in workspace mode). Defaults to repoRoot.
+	 */
+	ownershipRoot: string = repoRoot,
 ): StaleBranchCleanupResult {
 	const deletedTaskBranches: string[] = [];
 	const deletedSavedBranches: string[] = [];
 	const failedDeletes: string[] = [];
+	const skippedOwnedBranches: string[] = [];
+	// #631: a lane branch of another batch is only swept when that batch's engine
+	// is verifiably gone and its ownership is not unknown.
+	const guardOtherBatch = (branch: string): boolean => {
+		const other = laneBranchBatchId(branch);
+		if (!other || other === batchId) return true;
+		if (otherBatchBranchSweepable(ownershipRoot, other)) return true;
+		skippedOwnedBranches.push(branch);
+		execLog(
+			"cleanup",
+			batchId,
+			`kept lane branch of another batch (engine alive or ownership unknown, #631)`,
+			{
+				branch,
+				otherBatchId: other,
+			},
+		);
+		return false;
+	};
 
 	// 1. Delete task/{opId}-lane-* branches
 	const taskBranchResult = runGit(["branch", "--list", `task/${opId}-lane-*`], repoRoot);
@@ -2659,6 +2798,7 @@ export function deleteStaleBranches(
 			.filter(Boolean);
 
 		for (const branch of branches) {
+			if (!guardOtherBatch(branch)) continue;
 			const deleted = deleteBranchBestEffort(branch, repoRoot);
 			if (deleted) {
 				deletedTaskBranches.push(branch);
@@ -2677,6 +2817,7 @@ export function deleteStaleBranches(
 			.filter(Boolean);
 
 		for (const branch of branches) {
+			if (!guardOtherBatch(branch)) continue;
 			const deleted = deleteBranchBestEffort(branch, repoRoot);
 			if (deleted) {
 				deletedSavedBranches.push(branch);
@@ -2721,5 +2862,5 @@ export function deleteStaleBranches(
 		});
 	}
 
-	return { deletedTaskBranches, deletedSavedBranches, failedDeletes };
+	return { deletedTaskBranches, deletedSavedBranches, failedDeletes, skippedOwnedBranches };
 }
