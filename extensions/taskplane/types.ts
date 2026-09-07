@@ -1172,6 +1172,8 @@ export interface WaveExecutionResult {
 	 * complete; the engine finalizes the batch as `paused` instead of merging.
 	 */
 	pausedTaskIds?: string[];
+	/** #627: task IDs that ended the wave held (awaiting a ruling; non-terminal, never merged). */
+	heldTaskIds?: string[];
 	/** Task IDs that succeeded */
 	succeededTaskIds: string[];
 	/** Task IDs blocked for future waves (transitive dependents of failed tasks) */
@@ -4241,8 +4243,8 @@ export interface RuntimeLaneSnapshot {
 	taskId: string | null;
 	/** Current segment ID (null for whole-task execution) */
 	segmentId: string | null;
-	/** Lane execution status */
-	status: "idle" | "running" | "complete" | "failed";
+	/** Lane execution status. `held` (#627): unit awaits a ruling, no worker process, runner alive. */
+	status: "idle" | "running" | "complete" | "failed" | "held";
 	/** Worker agent snapshot (null when no worker is active) */
 	worker: RuntimeAgentTelemetrySnapshot | null;
 	/** Reviewer agent snapshot (null when no reviewer is active) */

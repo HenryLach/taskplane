@@ -540,3 +540,80 @@ export function isValidHoldRecord(obj: unknown): obj is HoldRecord {
 	}
 	return true;
 }
+
+// ── Store contract ────────────────────────────────────────────────────
+
+/**
+ * Hold persistence contract handed to the lane-runner by the engine.
+ *
+ * Transitions that open or release a hold MUST be durable before the runner
+ * acts on them (acks the escalation, spawns with a ruling, completes): `open`
+ * and `update` therefore persist synchronously and THROW on failure. This is
+ * deliberately not the best-effort `persistRuntimeState()` path — a lost hold
+ * is a released hold.
+ */
+export interface HoldStore {
+	/** Current hold table (all units of the batch). Returns a fresh array. */
+	list(): HoldRecord[];
+	/** Persist a new hold. Idempotent on escalation id. Throws on persistence failure. */
+	open(record: HoldRecord): void;
+	/** Persist a transitioned record (must already exist). Throws on persistence failure. */
+	update(record: HoldRecord): void;
+}
+
+export class HoldPersistenceError extends Error {
+	readonly escalationId: string;
+	constructor(escalationId: string, cause: unknown) {
+		super(
+			`hold ${escalationId} could not be persisted: ${cause instanceof Error ? cause.message : String(cause)}`,
+		);
+		this.name = "HoldPersistenceError";
+		this.escalationId = escalationId;
+	}
+}
+
+/**
+ * Build a store over a mutable owner (the engine's runtime batch state).
+ * `persist` must write the WHOLE batch state durably and throw on failure;
+ * on failure the in-memory table is rolled back so memory never claims a
+ * hold the disk does not have.
+ */
+export function createHoldStore(
+	owner: { holds?: HoldRecord[] },
+	persist: (reason: string) => void,
+): HoldStore {
+	const commit = (next: HoldRecord[], reason: string, escalationId: string): void => {
+		const prev = owner.holds;
+		owner.holds = next;
+		try {
+			persist(reason);
+		} catch (err) {
+			owner.holds = prev;
+			throw new HoldPersistenceError(escalationId, err);
+		}
+	};
+	return {
+		list: () => (owner.holds ?? []).map((h) => ({ ...h })),
+		open: (record) => {
+			const current = owner.holds ?? [];
+			if (current.some((h) => h.escalationId === record.escalationId)) return; // idempotent
+			commit([...current, { ...record }], `hold-open:${record.escalationId}`, record.escalationId);
+		},
+		update: (record) => {
+			const current = owner.holds ?? [];
+			if (!current.some((h) => h.escalationId === record.escalationId)) {
+				throw new HoldPersistenceError(record.escalationId, new Error("unknown hold"));
+			}
+			commit(
+				upsertHold(current, { ...record }),
+				`hold-${record.phase}:${record.escalationId}`,
+				record.escalationId,
+			);
+		},
+	};
+}
+
+/** Volatile store for tests and legacy callers that run without an engine. */
+export function createInMemoryHoldStore(initial: HoldRecord[] = []): HoldStore {
+	return createHoldStore({ holds: [...initial] }, () => {});
+}

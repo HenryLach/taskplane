@@ -147,12 +147,14 @@ import {
 	hasTaskDoneMarker,
 	loadBatchState,
 	persistRuntimeState,
+	persistRuntimeStateStrict,
 	reconstructBatchStateFromRuntime,
 	saveBatchState,
 	seedPendingOutcomesForAllocatedLanes,
 	syncTaskOutcomesFromMonitor,
 	upsertTaskOutcome,
 } from "./persistence.ts";
+import { createHoldStore } from "./hold-state.ts";
 import {
 	buildBatchProgressSnapshot,
 	buildSupervisorSegmentFrontierSnapshot,
@@ -1725,6 +1727,9 @@ export async function resumeOrchBatch(
 	);
 	// v4: Carry forward segment records (including dynamically expanded segments)
 	batchState.segments = [...(persistedState.segments ?? [])];
+	// #627: holds are authoritative and survive resume verbatim. Retry is not
+	// release; only a ruling, an abort, or an acknowledged delivery closes one.
+	batchState.holds = (persistedState.holds ?? []).map((h) => ({ ...h }));
 	// Carry forward unknown fields for roundtrip preservation
 	if (persistedState._extraFields) {
 		batchState._extraFields = persistedState._extraFields;
@@ -2397,6 +2402,20 @@ export async function resumeOrchBatch(
 	// Initialized from collectRepoRoots() helper for parity with other callers.
 	const encounteredRepoRoots = new Set(collectRepoRoots(persistedState, repoRoot, workspaceConfig));
 
+	// #627: durable hold store for resumed lanes — strict persistence, same
+	// contract as the engine's (see engine.ts).
+	const holdStore = createHoldStore(batchState, (reason) =>
+		persistRuntimeStateStrict(
+			reason,
+			batchState,
+			wavePlan,
+			latestAllocatedLanes,
+			allTaskOutcomes,
+			discovery ?? null,
+			stateRoot,
+		),
+	);
+
 	// Build outcomes from reconciled tasks
 	for (const task of reconciledTasks) {
 		const persistedTask = persistedState.tasks.find((t) => t.taskId === task.taskId);
@@ -2837,6 +2856,7 @@ export async function resumeOrchBatch(
 			runnerConfig.workerExcludeExtensions ?? [],
 			onLaneTerminated ?? undefined,
 			onLaneRespawned ?? undefined,
+			holdStore,
 		);
 
 		batchState.waveResults.push(waveResult);

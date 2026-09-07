@@ -44,12 +44,14 @@ import {
 	loadBatchHistory,
 	loadBatchState,
 	persistRuntimeState,
+	persistRuntimeStateStrict,
 	saveBatchHistory,
 	saveBatchMetaRuntimeArtifact,
 	seedPendingOutcomesForAllocatedLanes,
 	syncTaskOutcomesFromMonitor,
 	upsertTaskOutcome,
 } from "./persistence.ts";
+import { createHoldStore } from "./hold-state.ts";
 import {
 	readRegistrySnapshot,
 	isTerminalStatus,
@@ -2219,6 +2221,7 @@ async function attemptStaleWorktreeRecovery(
 	runnerConfig?: TaskRunnerConfig,
 	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
 	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
+	holdStore?: import("./hold-state.ts").HoldStore,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -2368,6 +2371,7 @@ async function attemptStaleWorktreeRecovery(
 		runnerConfig?.workerExcludeExtensions ?? [],
 		onLaneTerminated,
 		onLaneRespawned,
+		holdStore,
 	);
 
 	return retryResult;
@@ -2595,6 +2599,21 @@ export async function executeOrchBatch(
 	const terminalSegmentTasks = new Set<string>();
 	// Reference to discovery result for enriching taskFolder paths.
 	let discoveryRef: DiscoveryResult | null = null;
+	// #627: durable hold store. Hold open/release transitions persist the whole
+	// batch state STRICTLY (throw on failure) before the lane-runner acts on
+	// them — never the best-effort persistRuntimeState path.
+	if (!batchState.holds) batchState.holds = [];
+	const holdStore = createHoldStore(batchState, (reason) =>
+		persistRuntimeStateStrict(
+			reason,
+			batchState,
+			wavePlan,
+			latestAllocatedLanes,
+			allTaskOutcomes,
+			discoveryRef,
+			stateRoot,
+		),
+	);
 	// TP-029: Track all repo roots encountered during execution.
 	// Maps repoRoot → repoId (undefined for primary/repo-mode).
 	// Used by inter-wave reset and terminal cleanup to iterate ALL repos
@@ -3143,6 +3162,7 @@ export async function executeOrchBatch(
 			runnerConfig?.workerExcludeExtensions ?? [],
 			emitLaneTerminated,
 			onLaneRespawned ?? undefined,
+			holdStore,
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -3168,6 +3188,7 @@ export async function executeOrchBatch(
 				runnerConfig,
 				emitLaneTerminated,
 				onLaneRespawned ?? undefined,
+				holdStore,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;
@@ -3967,13 +3988,18 @@ export async function executeOrchBatch(
 		const notAborting =
 			batchState.pauseSignal.cause !== "abort" && waveResult.overallStatus !== "aborted";
 		const operatorPaused = batchState.pauseSignal.paused && notAborting;
-		if (notAborting && ((waveResult.pausedTaskIds?.length ?? 0) > 0 || operatorPaused)) {
+		const heldIds = waveResult.heldTaskIds ?? [];
+		if (
+			notAborting &&
+			((waveResult.pausedTaskIds?.length ?? 0) > 0 || heldIds.length > 0 || operatorPaused)
+		) {
 			batchState.phase = "paused";
 			preserveWorktreesForResume = true;
 			const pausedIds = waveResult.pausedTaskIds ?? [];
 			execLog("batch", batchState.batchId, `batch paused during wave ${waveIdx + 1}`, {
 				cause: batchState.pauseSignal.cause ?? "operator",
 				pendingTasks: pausedIds.join(",") || "(none)",
+				heldTasks: heldIds.join(",") || "(none)",
 				succeeded: waveResult.succeededTaskIds.length,
 				failed: waveResult.failedTaskIds.length,
 			});
@@ -3992,6 +4018,7 @@ export async function executeOrchBatch(
 				const { displayWave } = resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount);
 				onNotify(
 					`⏸️  Batch paused during wave ${displayWave}: ${pausedIds.length} task(s) remain pending` +
+						`${heldIds.length > 0 ? `, ${heldIds.length} held awaiting a ruling (${heldIds.join(", ")})` : ""}` +
 						`${waveResult.succeededTaskIds.length > 0 ? `, ${waveResult.succeededTaskIds.length} succeeded (unmerged until resume)` : ""}. ` +
 						`Worktrees preserved. Use orch_resume() to continue.`,
 					"warning",

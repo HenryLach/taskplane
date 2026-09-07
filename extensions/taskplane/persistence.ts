@@ -365,6 +365,48 @@ export function persistRuntimeState(
 	repoRoot: string,
 ): void {
 	try {
+		persistRuntimeStateStrict(
+			reason,
+			batchState,
+			wavePlan,
+			lanes,
+			allTaskOutcomes,
+			discovery,
+			repoRoot,
+		);
+	} catch (err: unknown) {
+		const msg =
+			err instanceof StateFileError
+				? `[${err.code}] ${err.message}`
+				: err instanceof Error
+					? err.message
+					: String(err);
+		execLog("state", batchState.batchId, `write failed: ${msg}`, {
+			reason,
+			phase: batchState.phase,
+		});
+		batchState.errors.push(`State persistence failed (${reason}): ${msg}`);
+	}
+}
+
+/**
+ * Strict variant of {@link persistRuntimeState}: identical serialization and
+ * discovery enrichment, but write failures THROW instead of being swallowed.
+ *
+ * Used for governance transitions that must be durable before the runtime
+ * acts on them — opening or releasing an escalation hold (#627). A hold that
+ * exists only in memory is a hold the next engine will not know about.
+ */
+export function persistRuntimeStateStrict(
+	reason: string,
+	batchState: OrchBatchRuntimeState,
+	wavePlan: string[][],
+	lanes: AllocatedLane[],
+	allTaskOutcomes: LaneTaskOutcome[],
+	discovery: DiscoveryResult | null,
+	repoRoot: string,
+): void {
+	{
 		const json = serializeBatchState(batchState, wavePlan, lanes, allTaskOutcomes);
 
 		// Enrich task records with folder paths and repo fields from discovery
@@ -411,18 +453,6 @@ export function persistRuntimeState(
 			phase: batchState.phase,
 			waveIndex: batchState.currentWaveIndex,
 		});
-	} catch (err: unknown) {
-		const msg =
-			err instanceof StateFileError
-				? `[${err.code}] ${err.message}`
-				: err instanceof Error
-					? err.message
-					: String(err);
-		execLog("state", batchState.batchId, `write failed: ${msg}`, {
-			reason,
-			phase: batchState.phase,
-		});
-		batchState.errors.push(`State persistence failed (${reason}): ${msg}`);
 	}
 }
 

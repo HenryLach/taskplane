@@ -905,6 +905,13 @@ export async function resolveTaskMonitorState(
 	runtimeBackend?: RuntimeBackend,
 	v2Context?: { stateRoot: string; batchId: string; laneNumber: number },
 	multiSegmentContext?: { isFinalSegment: boolean; segmentId: string },
+	/**
+	 * #627: completion authority for this unit from the durable hold table.
+	 * Evaluated BEFORE `.DONE`, dead-pid and stall checks: a hold-blocked unit
+	 * is `held` regardless of what the worktree says, and the stall clock is
+	 * reset because a held unit has no worker to stall.
+	 */
+	holdAuthority?: import("./hold-state.ts").CompletionAuthority,
 ): Promise<TaskMonitorSnapshot> {
 	// TP-115/TP-127: Backend-aware liveness check.
 	// V2: read the lane snapshot file written by lane-runner every second.
@@ -978,7 +985,7 @@ export async function resolveTaskMonitorState(
 				});
 				sessionAlive = false;
 			} else {
-				sessionAlive = snap.status === "running";
+				sessionAlive = snap.status === "running" || snap.status === "held";
 			}
 		}
 	} else {
@@ -1041,6 +1048,32 @@ export async function resolveTaskMonitorState(
 				tracker.stallTimerStart = now;
 			}
 		}
+	}
+
+	// ── Priority 0 (#627): hold-blocked → held ───────────────────
+	// The runner owns the hold; the monitor must neither accept `.DONE` (a
+	// worker-written claim), nor kill the lane as stalled, nor fail it because
+	// the worker process is gone (that is the point). Stall accounting restarts
+	// when work actually resumes.
+	if (holdAuthority?.blocked) {
+		tracker.stallTimerStart = null;
+		return {
+			taskId,
+			status: "held",
+			currentStepName,
+			currentStepNumber,
+			totalSteps,
+			totalChecked,
+			totalItems,
+			sessionAlive: true, // runner alive; worker intentionally absent
+			doneFileFound,
+			stallReason: null,
+			lastHeartbeat: tracker.lastMtime,
+			observedAt: now,
+			parseError,
+			iteration,
+			reviewCounter,
+		};
 	}
 
 	// ── Priority 1: .DONE file found → succeeded ────────────────
@@ -1206,6 +1239,8 @@ export async function monitorLanes(
 	runtimeBackend?: RuntimeBackend,
 	batchId?: string,
 	stateRootForRegistry?: string,
+	/** #627: hold table; a hold-blocked unit is `held`, never `.DONE`-succeeded, never stalled. */
+	holdStore?: HoldStore,
 ): Promise<MonitorState> {
 	const pollIntervalMs = (config.monitoring.poll_interval || 5) * 1000;
 	const stallTimeoutMs = (config.failure.stall_timeout || 30) * 60_000;
@@ -1374,6 +1409,13 @@ export async function monitorLanes(
 								}
 							: undefined,
 						multiSegmentContext,
+						holdStore
+							? evaluateCompletionAuthority(
+									holdStore.list(),
+									task.taskId,
+									task.task.activeSegmentId ?? null,
+								)
+							: undefined,
 					);
 
 					currentTaskSnapshot = snapshot;
@@ -1959,6 +2001,8 @@ export async function executeWave(
 	workerExcludeExtensions?: string[],
 	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
 	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
+	/** #627: durable hold store (engine-owned). Absent only for legacy/unit-test callers. */
+	holdStore?: HoldStore,
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -2100,6 +2144,7 @@ export async function executeWave(
 			onSupervisorAlert,
 			onLaneTerminated,
 			onLaneRespawned,
+			holdStore,
 		),
 	);
 
@@ -2117,6 +2162,7 @@ export async function executeWave(
 		backend,
 		batchId,
 		monitorStateRoot,
+		holdStore,
 	);
 
 	// ── Stage 4: Wait for all lanes + apply policy ───────────────
@@ -2188,6 +2234,7 @@ export async function executeWave(
 	const failedTaskIds: string[] = [];
 	const skippedTaskIds: string[] = [];
 	const pausedTaskIds: string[] = [];
+	const heldTaskIds: string[] = [];
 	const succeededTaskIds: string[] = [];
 
 	for (const lr of laneResults) {
@@ -2200,6 +2247,10 @@ export async function executeWave(
 				skippedTaskIds.push(t.taskId);
 			} else if (t.status === "pending") {
 				pausedTaskIds.push(t.taskId);
+			} else if (t.status === "held") {
+				// #627: held is interrupted-not-complete, like paused — never merged,
+				// never failed, never skipped.
+				heldTaskIds.push(t.taskId);
 			}
 		}
 	}
@@ -2209,6 +2260,7 @@ export async function executeWave(
 	skippedTaskIds.sort();
 	succeededTaskIds.sort();
 	pausedTaskIds.sort();
+	heldTaskIds.sort();
 
 	// Compute blocked tasks for future waves (skip-dependents policy)
 	let blockedTaskIds: string[] = [];
@@ -2235,9 +2287,9 @@ export async function executeWave(
 	let overallStatus: WaveExecutionResult["overallStatus"];
 	if (policy === "stop-all" && failedTaskIds.length > 0) {
 		overallStatus = "aborted";
-	} else if (pausedTaskIds.length > 0 && failedTaskIds.length === 0) {
-		// Interrupted, not succeeded: a wave with paused (pending) tasks is not
-		// complete. The engine finalizes as `paused` and does not merge.
+	} else if ((pausedTaskIds.length > 0 || heldTaskIds.length > 0) && failedTaskIds.length === 0) {
+		// Interrupted, not succeeded: a wave with paused (pending) or held tasks is
+		// not complete. The engine finalizes as `paused` and does not merge.
 		overallStatus = succeededTaskIds.length > 0 ? "partial" : "failed";
 	} else if (failedTaskIds.length === 0) {
 		overallStatus = "succeeded";
@@ -2255,6 +2307,7 @@ export async function executeWave(
 		failed: failedTaskIds.length,
 		skipped: skippedTaskIds.length,
 		paused: pausedTaskIds.length,
+		held: heldTaskIds.length,
 		blocked: blockedTaskIds.length,
 		elapsed: `${elapsedSec}s`,
 		stoppedEarly,
@@ -2269,6 +2322,7 @@ export async function executeWave(
 		stoppedEarly,
 		failedTaskIds,
 		pausedTaskIds,
+		heldTaskIds,
 		skippedTaskIds,
 		succeededTaskIds,
 		blockedTaskIds,
@@ -2742,7 +2796,11 @@ export function resolveRuntimeStateRoot(repoRoot: string, workspaceRoot?: string
 // ── Runtime V2 Lane Execution (TP-105) ────────────────────────────
 
 import { executeTaskV2, type LaneRunnerConfig, type LaneRunnerTaskResult } from "./lane-runner.ts";
-import { normalizeHoldTimeoutMinutes } from "./hold-state.ts";
+import {
+	evaluateCompletionAuthority,
+	type HoldStore,
+	normalizeHoldTimeoutMinutes,
+} from "./hold-state.ts";
 import { DEFAULT_WORKER_USER_TOOLS } from "./agent-host.ts";
 
 /**
@@ -2891,11 +2949,15 @@ export async function executeLaneV2(
 	 * terminated (e.g., in a prior wave).
 	 */
 	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
+	/** #627: durable hold store handed to each lane run. */
+	holdStore?: HoldStore,
 ): Promise<LaneExecutionResult> {
 	const laneId = lane.laneId;
 	const laneStartTime = Date.now();
 	const outcomes: LaneTaskOutcome[] = [];
 	let shouldSkipRemaining = false;
+	/** #627: a held unit on this lane leaves the remaining lane tasks PENDING, never skipped. */
+	let laneHeld = false;
 
 	const stateRoot = resolveRuntimeStateRoot(repoRoot, workspaceRoot);
 	const batchId = config.orchestrator?.batchId || extraEnvVars?.ORCH_BATCH_ID || String(Date.now());
@@ -2956,15 +3018,17 @@ export async function executeLaneV2(
 
 	for (const task of lane.tasks) {
 		const taskSegmentId = task.task.activeSegmentId ?? null;
-		if (shouldSkipRemaining || pauseSignal.paused) {
-			// A pause leaves the remaining lane tasks PENDING (they never ran); only a
-			// prior failure in the lane skips them.
-			const reason = pauseSignal.paused
-				? "Paused by user"
-				: "Skipped due to prior task failure in lane";
+		if (shouldSkipRemaining || pauseSignal.paused || laneHeld) {
+			// A pause (or a held unit earlier on this lane) leaves the remaining lane
+			// tasks PENDING (they never ran); only a prior failure in the lane skips them.
+			const reason = laneHeld
+				? "Lane held — awaiting ruling on an earlier task"
+				: pauseSignal.paused
+					? "Paused by user"
+					: "Skipped due to prior task failure in lane";
 			outcomes.push({
 				taskId: task.taskId,
-				status: pauseSignal.paused && !shouldSkipRemaining ? "pending" : "skipped",
+				status: (pauseSignal.paused || laneHeld) && !shouldSkipRemaining ? "pending" : "skipped",
 				segmentId: taskSegmentId,
 				startTime: null,
 				endTime: null,
@@ -3025,6 +3089,9 @@ export async function executeLaneV2(
 				const n = Number.parseInt(extraEnvVars?.TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC ?? "", 10);
 				return Number.isFinite(n) && n >= 15 ? Math.min(1800, n) : 60;
 			})(),
+			// #627
+			holdStore,
+			holdTimeoutMinutes: normalizeHoldTimeoutMinutes(extraEnvVars?.TASKPLANE_HOLD_TIMEOUT_MIN),
 			workerSystemPrompt,
 			workerSegmentPrompt,
 			reviewerModel: extraEnvVars?.TASKPLANE_REVIEWER_MODEL || "",
@@ -3077,6 +3144,9 @@ export async function executeLaneV2(
 
 			if (result.outcome.status === "failed" || result.outcome.status === "stalled") {
 				shouldSkipRemaining = true;
+			}
+			if (result.outcome.status === "held") {
+				laneHeld = true;
 			}
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);

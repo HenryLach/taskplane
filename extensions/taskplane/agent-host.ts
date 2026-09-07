@@ -646,6 +646,11 @@ export function spawnAgent(
 					// Validate 'to' field: own inbox requires exact match, broadcast accepts "_broadcast"
 					if (!isBroadcast && msg.to !== expectedSessionName) continue;
 					if (isBroadcast && msg.to !== "_broadcast") continue;
+					// #627: rulings are hold-control mail with exactly one consumer — the
+					// lane-runner's hold loop, which validates correlation and authority and
+					// delivers the ruling in the next worker's INITIAL input. Never steer it
+					// into a running session (and never ack it away here).
+					if (msg.type === "ruling") continue;
 
 					mkdirSync(ackDir, { recursive: true });
 					const ackPath = join(ackDir, filename);
