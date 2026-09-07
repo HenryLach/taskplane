@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.6] - 2026-09-07
+
 ### New
 
 - **Supervisor is now actively notified at every review boundary, with
@@ -150,6 +152,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     registry agents (no registry hand-edit needed; resume reconciles them).
   - `isProcessAlive` treats only ESRCH as dead (EPERM/unknown fail closed).
 
+- **`review_step` could fail OPEN to APPROVE, and every successful review
+  emitted a spurious "Reviewer unavailable"** (#624). The review-boundary
+  path only handled string tool results (structured content → "" → UNKNOWN,
+  conflated with UNAVAILABLE), and the worker-facing gate's APPROVE-first
+  substring fallback flipped REVISE reviews to APPROVE — workers advanced
+  past open P1 findings. One shared, line-oriented `parseReviewVerdict`
+  (heading / bold / plain / bracket / next-line variants; skips the
+  `[APPROVE | REVISE | RETHINK]` placeholder) serves the tool, the
+  lane-runner and the supervisor; APPROVE only from an explicit Verdict
+  line; body-text fallback can guess REVISE/RETHINK but never approve; the
+  review file's verdict is authoritative over the tool-return parse.
+- **A task could finalize over an outstanding REVISE/RETHINK** (#626,
+  minimal cut). Both a worker-written `.DONE` (TP-2037) and the runtime's
+  checkbox heuristic (TP-2039) merged unreviewed work. Before `.DONE` is
+  created or accepted, each gate's LATEST review file must not read
+  REVISE/RETHINK; otherwise the task fails (`review_gate_refusal`) with a
+  steer-delivered `unresolved-verdict` alert and remediation guidance. Steps
+  with no review at all are not blocked by this cut (full coverage gate is
+  the designed follow-up).
+- **A REVISE'd step kept flipping back to `✅ Complete`** — an uncommitted
+  STATUS edit "never authored by the worker". The lane-runner's checkbox
+  heuristic marked any fully-checked step Complete regardless of its review
+  verdict; the worker correctly reverted it per the recovery recipe and the
+  runtime flipped it back on every relaunch (also tripping `review_step`'s
+  complete-step guard). Step completion is now review-gated (same rule as
+  the finalize gate); STATUS logs `Step completion withheld`.
+- **Worktree cleanup could destroy uncommitted work** (#628, minimal cut).
+  `removeWorktree` and `forceCleanupWorktree` now refuse a worktree with
+  uncommitted changes (opt-in `allowDirty` only after preserving progress);
+  a toplevel-identity check keeps corrupted/orphaned-worktree recovery
+  working; engine/resume cleanup paths surface a refusal loudly and never
+  force-clean past it. The takeover state-machine half of #628 remains open.
+- **Supervisor audit-trail timestamps were fabricated by the LLM** (#625).
+  The system prompt literally instructed `echo '{"ts":…}' >> actions.jsonl`.
+  New `log_recovery_action` tool code-stamps `ts` and `batchId` and enforces
+  the entry schema; the prompt and primer now mandate it (including for
+  hand-remediation under operator rulings) and forbid hand-writing the file.
+- **Exit-intercept reply window is configurable:**
+  `taskRunner.worker.exitInterceptTimeoutSec` (`.pi/taskplane-config.json`;
+  YAML `exit_intercept_timeout_sec`; default 60, 15..1800) — a supervisor
+  inside a long tool call could not answer in 60 s. Resume's reconnect and
+  re-execute paths now forward the worker env (model, thinking, tools and
+  this window) — previously dropped on retry+resume.
 - **Worker mail to the supervisor was only surfaced after the worker exited,
   not live during the run.** A worker that mailed the supervisor mid-run
   (via `notify_supervisor`/`escalate_to_supervisor` — e.g. asking for help to
