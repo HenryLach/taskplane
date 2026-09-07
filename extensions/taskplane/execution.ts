@@ -2215,6 +2215,10 @@ export async function executeWave(
 				lr.tasks.some((t) => t.status === "failed" || t.status === "stalled"),
 			);
 			if (hasFailure) {
+				// Stamp the policy cause so consumers (Tier-0 retry's linked signal,
+				// the pause finalizer) can tell it from an operator/hold pause. Never
+				// overwrite a cause that is already set (Sage review round 2, D).
+				if (!wavePauseSignal.paused) wavePauseSignal.cause = "stop-wave";
 				wavePauseSignal.paused = true;
 				execLog("wave", `W${waveIndex}`, `stop-wave policy triggered — pausing after this wave`);
 			}

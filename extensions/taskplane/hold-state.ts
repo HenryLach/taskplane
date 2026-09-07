@@ -20,6 +20,7 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import type { MailboxMessage } from "./types.ts";
+import { isValidMailboxMessage } from "./mailbox.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -458,12 +459,16 @@ export function escalationMatchesUnit(
 	m: Pick<MailboxMessage, "scope" | "timestamp">,
 	filter: EscalationScopeFilter,
 ): boolean {
+	const writtenThisRun = filter.sinceTs !== undefined && m.timestamp >= filter.sinceTs;
 	if (m.scope) {
-		return (
-			m.scope.taskId === filter.taskId && (m.scope.segmentId ?? null) === (filter.segmentId ?? null)
-		);
+		if (m.scope.taskId !== filter.taskId) return false;
+		if ((m.scope.segmentId ?? null) === (filter.segmentId ?? null)) return true;
+		// Same task, different/blank segment stamp: only the CURRENT run's own
+		// worker can have written it (segment cues may be blank in FULL_TASK mode
+		// — Sage review round 2, blocker A). A stale one from another run is not ours.
+		return writtenThisRun;
 	}
-	return filter.sinceTs !== undefined && m.timestamp >= filter.sinceTs;
+	return writtenThisRun;
 }
 
 /**
@@ -725,13 +730,8 @@ export function reconstructHoldsFromMailbox(
 		const out: MailboxMessage[] = [];
 		for (const f of entries.sort()) {
 			try {
-				const parsed = JSON.parse(readFileSync(join(dir, f), "utf-8")) as MailboxMessage;
-				if (
-					!parsed ||
-					typeof parsed !== "object" ||
-					typeof parsed.id !== "string" ||
-					typeof parsed.type !== "string"
-				) {
+				const parsed = JSON.parse(readFileSync(join(dir, f), "utf-8")) as unknown;
+				if (!isValidMailboxMessage(parsed)) {
 					return { error: `${join(dir, f)}: malformed mailbox message` };
 				}
 				if (parsed.batchId !== batchId) continue;

@@ -580,6 +580,64 @@ describe("#627 — held state (lane-runner behavioural)", () => {
 		expect(readdirSync(outboxDir).filter((f) => f.endsWith(".msg.json")).length).toBe(1);
 	});
 
+	it("Sage round 2 A: a singleton unit (segmentId 'TP-H::default') whose worker stamps a blank/absent segment scope still gets its own escalation recorded — never fails open", async () => {
+		let escId = "";
+		onSpawn = (i) => {
+			if (i === 0) {
+				// The bridge in FULL_TASK mode used to stamp segmentId null (prompt cues blank).
+				escId = writeOutboxMessage(tmpRoot, BATCH, AGENT, {
+					from: AGENT,
+					type: "escalate",
+					content: "own escalation, blank segment stamp",
+					expectsReply: true,
+					scope: { taskId: "TP-H", segmentId: null },
+				}).id;
+				checkBox();
+				writeFileSync(join(taskFolder, ".DONE"), "claim");
+			}
+		};
+		const { unit, config } = buildUnitAndConfig();
+		(unit as { segmentId: string | null }).segmentId = "TP-H::default";
+		const pause = { paused: false };
+		const p = run(config, unit, pause);
+		await untilHeld();
+		expect(holds().length).toBe(1);
+		expect(holds()[0].escalationId).toBe(escId);
+		expect(holds()[0].segmentId).toBe("TP-H::default"); // the runner's unit, not the stamp
+		expect(existsSync(join(taskFolder, ".DONE"))).toBe(false);
+		// ...while a stale one from a PREVIOUS run for the same task is not adopted
+		pause.paused = true;
+		const r = await p;
+		expect(r.outcome.status).toBe("held");
+	});
+
+	it("Sage round 2 C: a ruling delivery iteration spawns even when the segment's checkboxes are already complete (completed-segment shortcut bypassed)", async () => {
+		let escId = "";
+		onSpawn = (i) => {
+			if (i === 0) {
+				escId = escalate("done but need ruling");
+				checkBox(); // all boxes complete before the hold
+			}
+			if (i === 1) {
+				expect(spawnPrompts[1].startsWith("## Ruling received")).toBe(true);
+				writeOutboxMessage(tmpRoot, BATCH, AGENT, {
+					from: AGENT,
+					type: "reply",
+					content: "ack",
+					replyTo: holds()[0].ruling!.id,
+				});
+			}
+		};
+		const { unit, config } = buildUnitAndConfig();
+		const p = run(config, unit);
+		await untilHeld();
+		ruling(escId);
+		const r = await p;
+		expect(r.outcome.status).toBe("succeeded");
+		expect(spawnPrompts.length).toBe(2);
+		expect(holds()[0].deliveryState).toBe("acknowledged");
+	});
+
 	it("a worker-written .DONE while held is quarantined, never accepted; step check-off is withheld; the monitor reports `held` instead of succeeded/stalled", async () => {
 		onSpawn = (i) => {
 			if (i === 0) {

@@ -1644,6 +1644,7 @@ export async function executeTaskV2(
 		//      helper `shouldSkipSpawnForCompleteSegment`).
 		if (
 			remediationGates.length === 0 &&
+			undeliveredRulings.length === 0 && // #627: a ruling delivery iteration must spawn (Sage round 2, C)
 			shouldSkipSpawnForCompleteSegment(iterStatusContent, repoStepNumbers, currentRepoId)
 		) {
 			logExecution(
@@ -1979,6 +1980,11 @@ export async function executeTaskV2(
 				// explicitly clear them to prevent env inheritance leaking segment cues.
 				TASKPLANE_ACTIVE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : "",
 				TASKPLANE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : "",
+				// #627: the execution unit's REAL segment identity for mailbox scope
+				// stamping. The two vars above are prompt-visibility cues and are
+				// deliberately blank in FULL_TASK mode even for singleton units like
+				// "TP-1::default" (Sage review round 2, blocker A).
+				TASKPLANE_UNIT_SEGMENT_ID: segmentId ?? "",
 				TASKPLANE_SUPERVISOR_AUTONOMY: config.supervisorAutonomy || "autonomous",
 				ORCH_BATCH_ID: config.batchId,
 				...(config.reviewerModel ? { TASKPLANE_REVIEWER_MODEL: config.reviewerModel } : {}),

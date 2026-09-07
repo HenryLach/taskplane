@@ -94,7 +94,8 @@ function writeOutbox(
 			? {
 					scope: {
 						taskId: process.env.TASKPLANE_TASK_ID,
-						segmentId: process.env.TASKPLANE_ACTIVE_SEGMENT_ID || null,
+						segmentId:
+							process.env.TASKPLANE_UNIT_SEGMENT_ID || process.env.TASKPLANE_ACTIVE_SEGMENT_ID || null,
 					},
 				}
 			: {}),

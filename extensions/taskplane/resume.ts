@@ -2,7 +2,7 @@
  * Resume logic for paused/interrupted batches
  * @module orch/resume
  */
-import { existsSync } from "fs";
+import { existsSync, renameSync } from "fs";
 import { join } from "path";
 
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
@@ -163,7 +163,7 @@ import {
 	selectUnrecordedEscalations,
 	taskCompletionBlocked,
 } from "./hold-state.ts";
-import { readOutbox } from "./mailbox.ts";
+import { readOutboxStrict } from "./mailbox.ts";
 import {
 	buildBatchProgressSnapshot,
 	buildSupervisorSegmentFrontierSnapshot,
@@ -849,6 +849,49 @@ export function replayUnrecordedEscalations(
  * marks the task `held`, so the execution unit built for re-execution is the
  * held segment — not the whole task or a heuristically chosen sibling.
  */
+/**
+ * #627: rename `.DONE` markers of hold-bound tasks to `.DONE.unauthorized-<ts>`
+ * at the canonical task folder AND the lane-worktree-resolved path — the two
+ * locations resume's discovery / .DONE collection consult. Returns the paths
+ * moved. A rename failure is logged by the caller via the returned list being
+ * short; the marker is then still refused by reconciliation (hold-first).
+ */
+export function quarantineUnauthorizedDoneMarkers(
+	persistedState: PersistedBatchState,
+	repoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): string[] {
+	const moved: string[] = [];
+	const bound = new Set((persistedState.holds ?? []).filter(isHoldUnresolved).map((h) => h.taskId));
+	if (bound.size === 0) return moved;
+	for (const task of persistedState.tasks) {
+		if (!bound.has(task.taskId) || !task.taskFolder) continue;
+		const candidates = new Set<string>([join(task.taskFolder, ".DONE")]);
+		const laneRec = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
+		if (laneRec?.worktreePath) {
+			try {
+				candidates.add(
+					resolveCanonicalTaskPaths(task.taskFolder, laneRec.worktreePath, repoRoot, !!workspaceConfig)
+						.donePath,
+				);
+			} catch {
+				/* unresolvable path — canonical candidate still covered */
+			}
+		}
+		for (const donePath of candidates) {
+			if (!existsSync(donePath)) continue;
+			const target = `${donePath}.unauthorized-${Date.now()}`;
+			try {
+				renameSync(donePath, target);
+				moved.push(target);
+			} catch {
+				/* leave it; reconciliation is hold-first and will not accept it */
+			}
+		}
+	}
+	return moved;
+}
+
 export function pinHeldSegments(persistedState: PersistedBatchState): string[] {
 	const pinned: string[] = [];
 	for (const hold of persistedState.holds ?? []) {
@@ -1631,7 +1674,7 @@ export async function resumeOrchBatch(
 	// reconciliation. Ambiguous legacy (unscoped) messages refuse the resume.
 	{
 		const replay = replayUnrecordedEscalations(persistedState, (agentId) =>
-			readOutbox(stateRoot, persistedState.batchId, agentId),
+			readOutboxStrict(stateRoot, persistedState.batchId, agentId),
 		);
 		if (replay.ok === false) {
 			throw new ResumeError("RESUME_INVALID_STATE", replay.error);
@@ -1645,6 +1688,14 @@ export async function resumeOrchBatch(
 			// Strict: a hold that exists only in memory is a released hold.
 			saveBatchState(JSON.stringify(persistedState, null, 2), stateRoot);
 		}
+	}
+
+	// ── 2c'. #627: a worker-written .DONE under a hold is a claim, not authority.
+	// Quarantine it at every location discovery / .DONE collection consult, so
+	// the task stays pending in discovery and is re-executed into the hold loop
+	// (Sage review round 2, blocker B).
+	for (const q of quarantineUnauthorizedDoneMarkers(persistedState, repoRoot, workspaceConfig)) {
+		execLog("resume", persistedState.batchId, `hold-first: quarantined unauthorized .DONE ${q}`);
 	}
 
 	const segmentFrontierByTask = reconstructSegmentFrontier(persistedState);
@@ -1925,7 +1976,36 @@ export async function resumeOrchBatch(
 		sessionName: t.sessionName,
 		doneFileFound: t.doneFileFound,
 		laneNumber: t.laneNumber || undefined,
+		// Recovery metadata must survive a strict checkpoint (Sage round 2, E).
+		...(t.partialProgressCommits !== undefined
+			? { partialProgressCommits: t.partialProgressCommits }
+			: {}),
+		...(t.partialProgressBranch !== undefined
+			? { partialProgressBranch: t.partialProgressBranch }
+			: {}),
+		...(t.exitDiagnostic !== undefined ? { exitDiagnostic: t.exitDiagnostic } : {}),
 	}));
+	// Synthetic discovery for pre-wave checkpoints: persistRuntimeStateStrict
+	// enriches taskFolder / repo fields / segment ids from `discovery.pending`;
+	// without it a checkpoint would write taskFolder "" for every task.
+	const preWaveDiscovery = {
+		pending: new Map(
+			persistedState.tasks.map((t) => [
+				t.taskId,
+				{
+					taskId: t.taskId,
+					taskFolder: t.taskFolder,
+					promptRepoId: t.repoId,
+					resolvedRepoId: t.resolvedRepoId,
+					packetRepoId: t.packetRepoId,
+					packetTaskPath: t.packetTaskPath,
+					segmentIds: t.segmentIds,
+					activeSegmentId: t.activeSegmentId,
+				},
+			]),
+		),
+		completed: new Map(),
+	} as unknown as import("./types.ts").DiscoveryResult;
 	const preWaveLanes = reconstructAllocatedLanes(persistedState.lanes, persistedState.tasks);
 	const holdPersistCtx: {
 		wavePlan: () => string[][];
@@ -1936,7 +2016,7 @@ export async function resumeOrchBatch(
 		wavePlan: () => runtimeWavePlan,
 		lanes: () => preWaveLanes,
 		outcomes: () => preWaveOutcomes,
-		discovery: () => null,
+		discovery: () => preWaveDiscovery,
 	};
 	const holdStore = createHoldStore(batchState, (reason) =>
 		persistRuntimeStateStrict(
@@ -4026,6 +4106,38 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 11. Cleanup and terminal state ───────────────────────────
+
+	// #627 (Sage review round 2, blocker B): an unresolved hold is a hard gate on
+	// completion, cleanup and state deletion — mirrors engine.ts. A task hidden
+	// from discovery (e.g. by a .DONE at its canonical path) must not let the
+	// batch fall through as complete with its hold still open.
+	{
+		const unresolved = (batchState.holds ?? []).filter(isHoldUnresolved);
+		if (unresolved.length > 0) {
+			preserveWorktreesForResume = true;
+			if (
+				(batchState.phase as OrchBatchPhase) === "executing" ||
+				(batchState.phase as OrchBatchPhase) === "merging" ||
+				(batchState.phase as OrchBatchPhase) === "completed"
+			) {
+				batchState.phase = "paused";
+				if (!batchState.pauseSignal.paused) {
+					batchState.pauseSignal.paused = true;
+					batchState.pauseSignal.cause = "hold-timeout";
+				}
+			}
+			execLog(
+				"resume",
+				batchState.batchId,
+				`terminal gate: ${unresolved.length} unresolved hold(s) — batch parked, worktrees/branches preserved, no cleanup`,
+				{ holds: unresolved.map((h) => `${h.escalationId}→${h.taskId}`).join(",") },
+			);
+			onNotify(
+				`⏸️  ${unresolved.length} unit(s) still held awaiting a ruling (${unresolved.map((h) => h.taskId).join(", ")}). Batch parked; rule then orch_resume(force=true).`,
+				"warning",
+			);
+		}
+	}
 
 	// ── TP-028: Preserve partial progress before terminal cleanup ──
 	if (!preserveWorktreesForResume) {

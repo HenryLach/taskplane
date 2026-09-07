@@ -20,6 +20,8 @@ import {
 	replayUnrecordedEscalations,
 } from "../taskplane/resume.ts";
 import { reconstructHoldsFromMailbox } from "../taskplane/hold-state.ts";
+import { quarantineUnauthorizedDoneMarkers } from "../taskplane/resume.ts";
+import { readOutboxStrict } from "../taskplane/mailbox.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { drainAgentOutbox, writeOutboxMessage, sessionOutboxDir } from "../taskplane/mailbox.ts";
 import { applyRuling, createHoldRecord, type HoldRecord } from "../taskplane/hold-state.ts";
@@ -569,5 +571,127 @@ describe("#627 — Sage regressions: replay attribution, segment pinning, recons
 			'if (msg.type === "escalate" && !escalationMatchesUnit(msg, escalationFilter)) {',
 		);
 		expect(readSrc("agent-bridge-extension.ts")).toContain("taskId: process.env.TASKPLANE_TASK_ID,");
+	});
+});
+
+describe("#627 — Sage round 2 regressions", () => {
+	let root: string;
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "tp627-r2-"));
+	});
+	afterEach(() => {
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("B: quarantineUnauthorizedDoneMarkers moves a held task's .DONE at the canonical folder so discovery keeps the task pending", () => {
+		const taskFolder = join(root, "taskplane-tasks", "TP-1");
+		mkdirSync(taskFolder, { recursive: true });
+		writeFileSync(join(taskFolder, ".DONE"), "claim");
+		const st = {
+			holds: [hold()],
+			tasks: [
+				{
+					taskId: "TP-1",
+					taskFolder,
+					laneNumber: 1,
+					sessionName: "s",
+					status: "held",
+					startedAt: 1,
+					endedAt: null,
+					doneFileFound: true,
+					exitReason: "",
+				},
+			],
+			lanes: [],
+		} as unknown as PersistedBatchState;
+		const moved = quarantineUnauthorizedDoneMarkers(st, root, null);
+		expect(moved.length).toBe(1);
+		expect(existsSync(join(taskFolder, ".DONE"))).toBe(false);
+		expect(readdirSync(taskFolder).some((f) => f.startsWith(".DONE.unauthorized-"))).toBe(true);
+		// a task without a hold is untouched
+		const other = join(root, "taskplane-tasks", "TP-2");
+		mkdirSync(other, { recursive: true });
+		writeFileSync(join(other, ".DONE"), "legit");
+		st.tasks.push({ taskId: "TP-2", taskFolder: other } as never);
+		expect(quarantineUnauthorizedDoneMarkers(st, root, null).length).toBe(0);
+		expect(existsSync(join(other, ".DONE"))).toBe(true);
+	});
+
+	it("B: resume's terminal gate parks a batch with unresolved holds before cleanup / completion (source order)", () => {
+		const src = readSrc("resume.ts");
+		const gate = src.indexOf("terminal gate: " + "$" + "{unresolved.length} unresolved hold(s)");
+		const preserve = src.indexOf(
+			"// ── TP-028: Preserve partial progress before terminal cleanup ──",
+		);
+		const completed = src.indexOf('batchState.phase = "completed";');
+		expect(gate).toBeGreaterThan(-1);
+		expect(gate).toBeLessThan(preserve);
+		expect(gate).toBeLessThan(completed);
+		const flat = src.replace(/\s+/g, " ");
+		expect(flat).toContain(
+			'(batchState.phase as OrchBatchPhase) === "completed" ) { batchState.phase = "paused";',
+		);
+		// quarantine runs BEFORE discovery / .DONE collection
+		expect(
+			src.indexOf("quarantineUnauthorizedDoneMarkers(persistedState, repoRoot, workspaceConfig)"),
+		).toBeLessThan(src.indexOf("const doneTaskIds = collectDoneTaskIdsForResume("));
+	});
+
+	it("D: the stop-wave producer stamps its cause without overwriting an existing one; the linked retry signal ignores exactly that cause", async () => {
+		const exec = readSrc("execution.ts").replace(/\s+/g, " ");
+		expect(exec).toContain(
+			'if (!wavePauseSignal.paused) wavePauseSignal.cause = "stop-wave"; wavePauseSignal.paused = true;',
+		);
+		// behavioural: build the proxy the way engine.ts does and check both directions
+		const src = readSrc("engine.ts");
+		const fnStart = src.indexOf("function linkedPauseSignal(");
+		const fnEnd = src.indexOf("\n}\n", fnStart) + 3;
+		const fnSrc = src
+			.slice(fnStart, fnEnd)
+			.replace(/: PauseSignal/g, "")
+			.replace(/\(target\)/, "(target)")
+			.replace(/set paused\(v: boolean\)/, "set paused(v)")
+			.replace(/set cause\(v[^)]*\)/, "set cause(v)");
+		const linked = new Function(`${fnSrc}; return linkedPauseSignal;`)();
+		const batch: { paused: boolean; cause?: string } = { paused: true, cause: "stop-wave" };
+		const proxy = linked(batch);
+		expect(proxy.paused).toBe(false); // retry runs despite stop-wave
+		batch.cause = "operator";
+		expect(proxy.paused).toBe(true); // any other pause unwinds the retry
+		proxy.paused = true;
+		proxy.cause = "hold-timeout";
+		expect(batch.cause).toBe("hold-timeout"); // a held retry parks the BATCH
+	});
+
+	it("E: pre-wave checkpoint context carries recovery metadata and a synthetic discovery for task folders", () => {
+		const flat = readSrc("resume.ts").replace(/\s+/g, " ");
+		expect(flat).toContain(
+			"...(t.partialProgressCommits !== undefined ? { partialProgressCommits: t.partialProgressCommits } : {}),",
+		);
+		expect(flat).toContain(
+			"...(t.exitDiagnostic !== undefined ? { exitDiagnostic: t.exitDiagnostic } : {}),",
+		);
+		expect(flat).toContain("discovery: () => preWaveDiscovery,");
+		expect(flat).toContain("taskFolder: t.taskFolder, promptRepoId: t.repoId,");
+	});
+
+	it("F: readOutboxStrict throws on a malformed message where readOutbox swallows; resume replay and reconstruction refuse", async () => {
+		const dir = join(root, ".pi", "mailbox", "b", "orch-op-lane-1-worker", "outbox");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "bad.msg.json"), JSON.stringify({ id: "x", type: "escalate" })); // no batchId/from/to/timestamp/content
+		expect(() => readOutboxStrict(root, "b", "orch-op-lane-1-worker")).toThrow(
+			/malformed mailbox message/,
+		);
+		const { readOutbox } = await import("../taskplane/mailbox.ts");
+		expect(readOutbox(root, "b", "orch-op-lane-1-worker").length).toBe(0); // the permissive reader hides it
+		const r = reconstructHoldsFromMailbox(root, "b", {
+			knownTaskIds: new Set(["TP-1"]),
+			hasSegmentTopology: false,
+			laneNumberForAgent: () => 1,
+		});
+		expect(r.ok).toBe(false);
+		expect(readSrc("resume.ts")).toContain(
+			"readOutboxStrict(stateRoot, persistedState.batchId, agentId)",
+		);
 	});
 });

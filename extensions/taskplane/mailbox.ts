@@ -443,6 +443,32 @@ export function writeOutboxMessage(
  *
  * @since TP-106
  */
+/**
+ * Strict variant of {@link readOutbox} for RECOVERY readers (#627): every
+ * *.msg.json in the outbox (pending only) must be readable and structurally
+ * valid, otherwise it THROWS. Hold authority must never be inferred from a
+ * silently-empty history.
+ */
+export function readOutboxStrict(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+): MailboxMessage[] {
+	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
+	if (!existsSync(outboxDir)) return [];
+	const entries = readdirSync(outboxDir).filter((f) => f.endsWith(".msg.json"));
+	const out: MailboxMessage[] = [];
+	for (const f of entries.sort()) {
+		const raw = readFileSync(join(outboxDir, f), "utf-8");
+		const parsed = JSON.parse(raw) as unknown;
+		if (!isValidMailboxMessage(parsed)) {
+			throw new Error(`malformed mailbox message ${join(outboxDir, f)}`);
+		}
+		out.push(parsed);
+	}
+	return out;
+}
+
 export function readOutbox(stateRoot: string, batchId: string, agentId: string): MailboxMessage[] {
 	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
 	if (!existsSync(outboxDir)) return [];
