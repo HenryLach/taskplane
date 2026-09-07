@@ -1597,6 +1597,7 @@ describe("orchestrator pointer threading", () => {
 		const now = Date.now();
 		const validState = JSON.stringify({
 			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
+			holds: [],
 			phase: "executing",
 			batchId: "20260317T120000",
 			baseBranch: "main",
@@ -1699,6 +1700,7 @@ describe("orchestrator pointer threading", () => {
 		const now = Date.now();
 		const validState = JSON.stringify({
 			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
+			holds: [],
 			phase: "paused",
 			batchId: "20260317T130000",
 			baseBranch: "main",

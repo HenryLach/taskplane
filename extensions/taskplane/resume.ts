@@ -2,7 +2,7 @@
  * Resume logic for paused/interrupted batches
  * @module orch/resume
  */
-import { existsSync } from "fs";
+import { existsSync, renameSync } from "fs";
 import { join } from "path";
 
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
@@ -147,6 +147,7 @@ import {
 	hasTaskDoneMarker,
 	loadBatchState,
 	persistRuntimeState,
+	persistRuntimeStateStrict,
 	reconstructBatchStateFromRuntime,
 	saveBatchState,
 	seedPendingOutcomesForAllocatedLanes,
@@ -154,9 +155,20 @@ import {
 	upsertTaskOutcome,
 } from "./persistence.ts";
 import {
+	createHoldRecord,
+	createHoldStore,
+	HOLD_TIMEOUT_MINUTES_DEFAULT,
+	type HoldRecord,
+	isHoldUnresolved,
+	selectUnrecordedEscalations,
+	taskCompletionBlocked,
+} from "./hold-state.ts";
+import { readOutboxStrict } from "./mailbox.ts";
+import {
 	buildBatchProgressSnapshot,
 	buildSupervisorSegmentFrontierSnapshot,
 	defaultResilienceState,
+	ResumeError,
 	StateFileError,
 } from "./types.ts";
 import type {
@@ -165,6 +177,7 @@ import type {
 	LaneExecutionResult,
 	LaneTaskOutcome,
 	LaneTaskStatus,
+	MailboxMessage,
 	MergeWaveResult,
 	OrchBatchPhase,
 	OrchBatchRuntimeState,
@@ -759,16 +772,177 @@ export function reconstructSegmentFrontier(
  * @param doneTaskIds     - Set of task IDs whose .DONE files exist
  * @returns Array of reconciled task states in persisted order
  */
+/**
+ * #627 (Sage review, blocker 6): attribute unrecorded escalations to units
+ * from DURABLE evidence and open hold records for them.
+ *
+ * - Stamped scope (`msg.scope`) → that task/segment, provided the task exists.
+ * - Unscoped (pre-#627) → only if the lane's persisted `taskIds` (durable
+ *   assignment history) holds exactly one task; otherwise the replay is
+ *   AMBIGUOUS and the caller must refuse rather than guess.
+ *
+ * Pure apart from the injected outbox reader; mutates `persistedState.holds`.
+ */
+export function replayUnrecordedEscalations(
+	persistedState: PersistedBatchState,
+	readOutboxFor: (workerAgentId: string) => MailboxMessage[],
+	opts: { holdTimeoutMinutes?: number; now?: number } = {},
+): { ok: true; opened: HoldRecord[] } | { ok: false; error: string } {
+	const holds = (persistedState.holds ??= []);
+	const opened: HoldRecord[] = [];
+	const taskIds = new Set(persistedState.tasks.map((t) => t.taskId));
+	for (const lane of persistedState.lanes) {
+		const workerAgentId = `${lane.laneSessionId}-worker`;
+		let outbox: MailboxMessage[];
+		try {
+			outbox = readOutboxFor(workerAgentId);
+		} catch (err) {
+			return {
+				ok: false,
+				error: `hold authority cannot be verified: outbox of ${workerAgentId} is unreadable (${err instanceof Error ? err.message : String(err)})`,
+			};
+		}
+		for (const msg of selectUnrecordedEscalations(outbox, holds)) {
+			let taskId: string;
+			let segmentId: string | null;
+			if (msg.scope) {
+				if (!taskIds.has(msg.scope.taskId)) {
+					return {
+						ok: false,
+						error: `hold authority cannot be recovered: escalation ${msg.id} in ${workerAgentId}'s outbox names unknown task ${msg.scope.taskId}`,
+					};
+				}
+				taskId = msg.scope.taskId;
+				segmentId = msg.scope.segmentId ?? null;
+			} else if (lane.taskIds.length === 1) {
+				taskId = lane.taskIds[0];
+				segmentId = persistedState.tasks.find((t) => t.taskId === taskId)?.activeSegmentId ?? null;
+			} else {
+				return {
+					ok: false,
+					error:
+						`hold authority cannot be recovered: unscoped escalation ${msg.id} in ${workerAgentId}'s outbox (lane ${lane.laneNumber} ran ${lane.taskIds.join(", ") || "no tasks"}) — ` +
+						`it cannot be attributed to a task. Inspect the message, then either record a ruling for it out of band or move it out of the outbox.`,
+				};
+			}
+			const record = createHoldRecord({
+				escalation: msg,
+				batchId: persistedState.batchId,
+				taskId,
+				segmentId,
+				executionId: "replayed-on-resume",
+				agentId: workerAgentId,
+				laneNumber: lane.laneNumber,
+				holdTimeoutMinutes: opts.holdTimeoutMinutes ?? HOLD_TIMEOUT_MINUTES_DEFAULT,
+				now: opts.now,
+			});
+			holds.push(record);
+			opened.push(record);
+		}
+	}
+	return { ok: true, opened };
+}
+
+/**
+ * #627 (Sage review, blocker 5): a hold on a specific segment pins that segment
+ * as the task's active segment (unless the segment already succeeded), and
+ * marks the task `held`, so the execution unit built for re-execution is the
+ * held segment — not the whole task or a heuristically chosen sibling.
+ */
+/**
+ * #627: rename `.DONE` markers of hold-bound tasks to `.DONE.unauthorized-<ts>`
+ * at the canonical task folder AND the lane-worktree-resolved path — the two
+ * locations resume's discovery / .DONE collection consult. Returns the paths
+ * moved. A rename failure is logged by the caller via the returned list being
+ * short; the marker is then still refused by reconciliation (hold-first).
+ */
+export function quarantineUnauthorizedDoneMarkers(
+	persistedState: PersistedBatchState,
+	repoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): string[] {
+	const moved: string[] = [];
+	const bound = new Set((persistedState.holds ?? []).filter(isHoldUnresolved).map((h) => h.taskId));
+	if (bound.size === 0) return moved;
+	for (const task of persistedState.tasks) {
+		if (!bound.has(task.taskId) || !task.taskFolder) continue;
+		const candidates = new Set<string>([join(task.taskFolder, ".DONE")]);
+		const laneRec = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
+		if (laneRec?.worktreePath) {
+			try {
+				candidates.add(
+					resolveCanonicalTaskPaths(task.taskFolder, laneRec.worktreePath, repoRoot, !!workspaceConfig)
+						.donePath,
+				);
+			} catch {
+				/* unresolvable path — canonical candidate still covered */
+			}
+		}
+		for (const donePath of candidates) {
+			if (!existsSync(donePath)) continue;
+			const target = `${donePath}.unauthorized-${Date.now()}`;
+			try {
+				renameSync(donePath, target);
+				moved.push(target);
+			} catch {
+				/* leave it; reconciliation is hold-first and will not accept it */
+			}
+		}
+	}
+	return moved;
+}
+
+export function pinHeldSegments(persistedState: PersistedBatchState): string[] {
+	const pinned: string[] = [];
+	for (const hold of persistedState.holds ?? []) {
+		if (!isHoldUnresolved(hold)) continue;
+		const task = persistedState.tasks.find((t) => t.taskId === hold.taskId);
+		if (!task) continue;
+		if (hold.segmentId) {
+			const seg = persistedState.segments.find((s) => s.segmentId === hold.segmentId);
+			if (seg && seg.status === "succeeded") continue;
+			if (task.activeSegmentId !== hold.segmentId) {
+				task.activeSegmentId = hold.segmentId;
+				pinned.push(`${task.taskId}→${hold.segmentId}`);
+			}
+			if (seg && seg.status !== "held" && seg.status !== "running") seg.status = "held";
+		}
+		if (task.status !== "held") task.status = "held";
+	}
+	return pinned;
+}
+
 export function reconcileTaskStates(
 	persistedState: PersistedBatchState,
 	aliveSessions: ReadonlySet<string>,
 	doneTaskIds: ReadonlySet<string>,
 	existingWorktrees: ReadonlySet<string> = new Set(),
+	/**
+	 * #627: tasks with an unresolved hold (from the durable hold table, or an
+	 * escalation still sitting unrecorded in a worker outbox). Evaluated BEFORE
+	 * `.DONE`: a held task is never marked complete on resume — it is re-executed
+	 * so the lane-runner enters (or records) the hold, spawning nothing until a
+	 * ruling arrives.
+	 */
+	holdBlockedTaskIds: ReadonlySet<string> = new Set(),
 ): ReconciledTaskState[] {
 	return persistedState.tasks.map((task) => {
 		const sessionAlive = aliveSessions.has(task.sessionName);
 		const doneFileFound = doneTaskIds.has(task.taskId);
 		const worktreeExists = existingWorktrees.has(task.taskId);
+
+		// Precedence 0 (#627): hold-blocked → held (re-execute into the hold loop)
+		if (holdBlockedTaskIds.has(task.taskId)) {
+			return {
+				taskId: task.taskId,
+				persistedStatus: task.status,
+				liveStatus: "held" as LaneTaskStatus,
+				sessionAlive,
+				doneFileFound,
+				worktreeExists,
+				action: worktreeExists ? ("re-execute" as const) : ("pending" as const),
+			};
+		}
 
 		// Precedence 1: .DONE file found → task completed
 		if (doneFileFound) {
@@ -1493,7 +1667,43 @@ export async function resumeOrchBatch(
 
 	onNotify(ORCH_MESSAGES.resumeStarting(persistedState.batchId, persistedState.phase), "info");
 
+	// ── 2c. #627: validated mailbox replay → strict hold persistence ──────
+	// An escalation still sitting in a worker outbox with no hold record (crash
+	// between the outbox write and the strict persist) is attributed HERE —
+	// never guessed by a lane later — and persisted before frontier repair and
+	// reconciliation. Ambiguous legacy (unscoped) messages refuse the resume.
+	{
+		const replay = replayUnrecordedEscalations(persistedState, (agentId) =>
+			readOutboxStrict(stateRoot, persistedState.batchId, agentId),
+		);
+		if (replay.ok === false) {
+			throw new ResumeError("RESUME_INVALID_STATE", replay.error);
+		}
+		if (replay.opened.length > 0) {
+			execLog(
+				"resume",
+				persistedState.batchId,
+				`hold-first: replayed ${replay.opened.length} unrecorded escalation(s) into the hold table: ${replay.opened.map((h) => `${h.escalationId}→${h.taskId}${h.segmentId ? `::${h.segmentId}` : ""}`).join(", ")}`,
+			);
+			// Strict: a hold that exists only in memory is a released hold.
+			saveBatchState(JSON.stringify(persistedState, null, 2), stateRoot);
+		}
+	}
+
+	// ── 2c'. #627: a worker-written .DONE under a hold is a claim, not authority.
+	// Quarantine it at every location discovery / .DONE collection consult, so
+	// the task stays pending in discovery and is re-executed into the hold loop
+	// (Sage review round 2, blocker B).
+	for (const q of quarantineUnauthorizedDoneMarkers(persistedState, repoRoot, workspaceConfig)) {
+		execLog("resume", persistedState.batchId, `hold-first: quarantined unauthorized .DONE ${q}`);
+	}
+
 	const segmentFrontierByTask = reconstructSegmentFrontier(persistedState);
+	// ── 2d. #627: hold-aware frontier repair ─────────────────────────────
+	// A hold on a specific segment pins that segment as the task's active one
+	// (unless it already succeeded) so re-execution runs the HELD segment, not
+	// whatever the failed/pending heuristics chose.
+	pinHeldSegments(persistedState);
 	if (segmentFrontierByTask.size > 0) {
 		let completedSegments = 0;
 		let inFlightSegments = 0;
@@ -1554,12 +1764,31 @@ export async function resumeOrchBatch(
 		}
 	}
 
+	// ── 3c. #627: hold-first — which tasks are bound by an unresolved hold? ──
+	// The durable hold table is the only source here: unrecorded escalations
+	// were already replayed into it (validated attribution + strict persist)
+	// BEFORE frontier reconstruction, see step 2c above.
+	const holdBlockedTaskIds = new Set<string>();
+	for (const task of persistedState.tasks) {
+		if (taskCompletionBlocked(persistedState.holds ?? [], task.taskId)) {
+			holdBlockedTaskIds.add(task.taskId);
+		}
+	}
+	if (holdBlockedTaskIds.size > 0) {
+		execLog(
+			"resume",
+			persistedState.batchId,
+			`hold-first: ${[...holdBlockedTaskIds].join(", ")} bound by unresolved holds — re-executed into the hold loop (no spawn until a ruling)`,
+		);
+	}
+
 	// ── 4. Reconcile task states ─────────────────────────────────
 	const reconciledTasks = reconcileTaskStates(
 		persistedState,
 		aliveSessions,
 		doneTaskIds,
 		existingWorktreeTaskIds,
+		holdBlockedTaskIds,
 	);
 
 	// ── 4b. Clear stale session allocation for tasks reconciled as pending ──
@@ -1725,6 +1954,96 @@ export async function resumeOrchBatch(
 	);
 	// v4: Carry forward segment records (including dynamically expanded segments)
 	batchState.segments = [...(persistedState.segments ?? [])];
+	// #627: holds are authoritative and survive resume verbatim. Retry is not
+	// release; only a ruling, an abort, or an acknowledged delivery closes one.
+	batchState.holds = (persistedState.holds ?? []).map((h) => ({ ...h }));
+	// #627: durable hold store, available to the re-execution/reconnect phase
+	// below AND to the resumed waves. Strict persistence (throws), same
+	// contract as the engine's. The persistence context is upgraded once the
+	// wave-phase variables exist (see "holdPersistCtx" below).
+	// Thunks, not values (Sage review, blocker 4): a strict checkpoint during
+	// the re-execution phase must serialize the PERSISTED task table faithfully
+	// (an empty outcome list would rewrite every task as pending with an empty
+	// folder), and later checkpoints must follow `latestAllocatedLanes` /
+	// `allTaskOutcomes` as those variables are reassigned.
+	const preWaveOutcomes: LaneTaskOutcome[] = persistedState.tasks.map((t) => ({
+		taskId: t.taskId,
+		status: t.status,
+		segmentId: t.activeSegmentId ?? null,
+		startTime: t.startedAt,
+		endTime: t.endedAt,
+		exitReason: t.exitReason,
+		sessionName: t.sessionName,
+		doneFileFound: t.doneFileFound,
+		laneNumber: t.laneNumber || undefined,
+		// Recovery metadata must survive a strict checkpoint (Sage round 2, E).
+		...(t.partialProgressCommits !== undefined
+			? { partialProgressCommits: t.partialProgressCommits }
+			: {}),
+		...(t.partialProgressBranch !== undefined
+			? { partialProgressBranch: t.partialProgressBranch }
+			: {}),
+		...(t.exitDiagnostic !== undefined ? { exitDiagnostic: t.exitDiagnostic } : {}),
+	}));
+	// Synthetic discovery for pre-wave checkpoints: persistRuntimeStateStrict
+	// enriches taskFolder / repo fields / segment ids from `discovery.pending`;
+	// without it a checkpoint would write taskFolder "" for every task.
+	const preWaveDiscovery = {
+		pending: new Map(
+			persistedState.tasks.map((t) => [
+				t.taskId,
+				{
+					taskId: t.taskId,
+					taskFolder: t.taskFolder,
+					promptRepoId: t.repoId,
+					resolvedRepoId: t.resolvedRepoId,
+					packetRepoId: t.packetRepoId,
+					packetTaskPath: t.packetTaskPath,
+					segmentIds: t.segmentIds,
+					activeSegmentId: t.activeSegmentId,
+				},
+			]),
+		),
+		completed: new Map(),
+	} as unknown as import("./types.ts").DiscoveryResult;
+	/**
+	 * Merge fresh discovery WITH the persisted fallback (Sage review round 3):
+	 * discovery.pending only lists tasks still to run, so a checkpoint that
+	 * relied on it alone wrote taskFolder "" for every completed/archived task
+	 * — durable metadata loss on crash, and merge artifact staging skips tasks
+	 * with no folder. Fresh entries win; persisted entries fill the gaps.
+	 */
+	const withPersistedFallback = (
+		fresh: import("./types.ts").DiscoveryResult | null,
+	): import("./types.ts").DiscoveryResult => {
+		if (!fresh) return preWaveDiscovery;
+		const pending = new Map(preWaveDiscovery.pending);
+		for (const [id, task] of fresh.pending) pending.set(id, task);
+		return { ...fresh, pending } as import("./types.ts").DiscoveryResult;
+	};
+	const preWaveLanes = reconstructAllocatedLanes(persistedState.lanes, persistedState.tasks);
+	const holdPersistCtx: {
+		wavePlan: () => string[][];
+		lanes: () => AllocatedLane[];
+		outcomes: () => LaneTaskOutcome[];
+		discovery: () => import("./types.ts").DiscoveryResult | null;
+	} = {
+		wavePlan: () => runtimeWavePlan,
+		lanes: () => preWaveLanes,
+		outcomes: () => preWaveOutcomes,
+		discovery: () => preWaveDiscovery,
+	};
+	const holdStore = createHoldStore(batchState, (reason) =>
+		persistRuntimeStateStrict(
+			reason,
+			batchState,
+			holdPersistCtx.wavePlan(),
+			holdPersistCtx.lanes(),
+			holdPersistCtx.outcomes(),
+			holdPersistCtx.discovery(),
+			stateRoot,
+		),
+	);
 	// Carry forward unknown fields for roundtrip preservation
 	if (persistedState._extraFields) {
 		batchState._extraFields = persistedState._extraFields;
@@ -1770,12 +2089,14 @@ export async function resumeOrchBatch(
 	// ── 7. Re-run discovery for ParsedTask metadata ──────────────
 	// We need fresh ParsedTask data (taskFolder, promptPath) for execution.
 	// Use "all" to discover all areas.
+	// (holdPersistCtx.discovery is upgraded right after this call — see below)
 	const discovery = runDiscovery("all", runnerConfig.task_areas, cwd, {
 		refreshDependencies: false,
 		dependencySource: orchConfig.dependencies.source,
 		useDependencyCache: orchConfig.dependencies.cache,
 		workspaceConfig: workspaceConfig ?? null,
 	});
+	holdPersistCtx.discovery = () => withPersistedFallback(discovery);
 
 	// Build dependency graph for skip-dependents policy
 	const depGraph = buildDependencyGraph(discovery.pending, discovery.completed);
@@ -1864,6 +2185,9 @@ export async function resumeOrchBatch(
 						...buildWorkerExcludeEnv(runnerConfig.workerExcludeExtensions),
 					},
 					emitAlert,
+					undefined,
+					undefined,
+					holdStore,
 				);
 				const taskResult = laneResult.tasks.find((t) => t.taskId === task.taskId);
 				if (taskResult?.status === "succeeded") {
@@ -1912,12 +2236,24 @@ export async function resumeOrchBatch(
 			"info",
 		);
 
+		// #627 (Sage design review): re-execution was task-SERIAL — a restored
+		// hold in the first slot would have parked every other interrupted lane
+		// behind it. Run lanes in PARALLEL, serial WITHIN a lane (one worktree,
+		// one worker at a time). Shared bookkeeping below is mutated only between
+		// awaits, so it needs no locking.
+		const reExecByLane = new Map<number, typeof reExecuteTasks>();
 		for (const task of reExecuteTasks) {
+			const laneRecord = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
+			const key = laneRecord?.laneNumber ?? -1;
+			if (!reExecByLane.has(key)) reExecByLane.set(key, []);
+			reExecByLane.get(key)!.push(task);
+		}
+		const reExecuteOne = async (task: (typeof reExecuteTasks)[number]): Promise<void> => {
 			const parsedTask = discovery.pending.get(task.taskId);
-			if (!parsedTask) continue;
+			if (!parsedTask) return;
 
 			const laneRecord = persistedState.lanes.find((l) => l.taskIds.includes(task.taskId));
-			if (!laneRecord) continue;
+			if (!laneRecord) return;
 
 			const allocatedTask: AllocatedTask = {
 				taskId: task.taskId,
@@ -1964,6 +2300,9 @@ export async function resumeOrchBatch(
 						...buildWorkerExcludeEnv(runnerConfig.workerExcludeExtensions),
 					},
 					emitAlert,
+					undefined,
+					undefined,
+					holdStore,
 				);
 				const taskResult = laneResult.tasks.find((t) => t.taskId === task.taskId);
 				const pollResult: { status: LaneTaskStatus; exitReason: string; doneFileFound: boolean } = {
@@ -1971,6 +2310,15 @@ export async function resumeOrchBatch(
 					exitReason: taskResult?.exitReason ?? "V2 re-execution completed",
 					doneFileFound: taskResult?.doneFileFound ?? false,
 				};
+				// #627: a HELD outcome (pause or hold-timeout while awaiting a ruling)
+				// is interrupted-not-complete: the task stays held, segments untouched,
+				// worktree preserved; the next resume re-enters the hold loop.
+				if (pollResult.status === "held") {
+					reExecuteFinalStatus.set(task.taskId, "held");
+					if (taskResult) reExecuteOutcome.set(task.taskId, taskResult);
+					execLog("resume", task.taskId, `re-execution held — ${pollResult.exitReason}`);
+					return;
+				}
 				// #629: a PAUSE during re-execution surfaces as `skipped` from
 				// executeLaneV2. That is not a terminal outcome: leave the task and
 				// its segments pending/re-executable (the previous code marked the
@@ -1987,7 +2335,7 @@ export async function resumeOrchBatch(
 						task.taskId,
 						"re-execution paused — task remains pending for the next resume",
 					);
-					continue;
+					return;
 				}
 				if (taskResult) reExecuteOutcome.set(task.taskId, taskResult);
 
@@ -2076,7 +2424,14 @@ export async function resumeOrchBatch(
 					exitReason: `re-execution error: ${msg}`,
 				});
 			}
-		}
+		};
+		await Promise.all(
+			[...reExecByLane.values()].map(async (laneTasks) => {
+				for (const task of laneTasks) {
+					await reExecuteOne(task);
+				}
+			}),
+		);
 	}
 
 	// ── 8c. Merge re-executed lane branches before cleanup ───────
@@ -2397,6 +2752,12 @@ export async function resumeOrchBatch(
 	// Initialized from collectRepoRoots() helper for parity with other callers.
 	const encounteredRepoRoots = new Set(collectRepoRoots(persistedState, repoRoot, workspaceConfig));
 
+	// #627: from here on, hold persistence carries the full wave-phase context.
+	holdPersistCtx.wavePlan = () => wavePlan;
+	holdPersistCtx.lanes = () => latestAllocatedLanes;
+	holdPersistCtx.outcomes = () => allTaskOutcomes;
+	holdPersistCtx.discovery = () => withPersistedFallback(discovery ?? null);
+
 	// Build outcomes from reconciled tasks
 	for (const task of reconciledTasks) {
 		const persistedTask = persistedState.tasks.find((t) => t.taskId === task.taskId);
@@ -2426,6 +2787,22 @@ export async function resumeOrchBatch(
 					: task.liveStatus;
 		const isTerminal =
 			status === "succeeded" || status === "failed" || status === "stalled" || status === "skipped";
+		if (status === "held") {
+			// #627: keep the runner's own held outcome (reason, telemetry) when present.
+			const heldOutcome = reExecuteOutcome.get(task.taskId);
+			allTaskOutcomes.push(
+				heldOutcome ?? {
+					taskId: task.taskId,
+					status: "held",
+					startTime: persistedTask?.startedAt ?? null,
+					endTime: null,
+					exitReason: "Held — awaiting a ruling (resume)",
+					sessionName: persistedTask?.sessionName ?? "",
+					doneFileFound: false,
+				},
+			);
+			continue;
+		}
 		allTaskOutcomes.push({
 			taskId: task.taskId,
 			status,
@@ -2837,6 +3214,7 @@ export async function resumeOrchBatch(
 			runnerConfig.workerExcludeExtensions ?? [],
 			onLaneTerminated ?? undefined,
 			onLaneRespawned ?? undefined,
+			holdStore,
 		);
 
 		batchState.waveResults.push(waveResult);
@@ -2952,15 +3330,17 @@ export async function resumeOrchBatch(
 		// Finalize as paused (worktrees preserved, no merge) and stop.
 		{
 			const pausedIds = waveResult.pausedTaskIds ?? [];
+			const heldIds = waveResult.heldTaskIds ?? []; // #627
 			const notAborting =
 				batchState.pauseSignal.cause !== "abort" && waveResult.overallStatus !== "aborted";
 			const operatorPaused = batchState.pauseSignal.paused && notAborting;
-			if (notAborting && (pausedIds.length > 0 || operatorPaused)) {
+			if (notAborting && (pausedIds.length > 0 || heldIds.length > 0 || operatorPaused)) {
 				batchState.phase = "paused";
 				preserveWorktreesForResume = true;
 				execLog("resume", batchState.batchId, `batch paused during wave ${waveIdx + 1}`, {
 					cause: batchState.pauseSignal.cause ?? "operator",
 					pendingTasks: pausedIds.join(",") || "(none)",
+					heldTasks: heldIds.join(",") || "(none)",
 				});
 				persistRuntimeState(
 					"pause-during-wave",
@@ -3741,6 +4121,38 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 11. Cleanup and terminal state ───────────────────────────
+
+	// #627 (Sage review round 2, blocker B): an unresolved hold is a hard gate on
+	// completion, cleanup and state deletion — mirrors engine.ts. A task hidden
+	// from discovery (e.g. by a .DONE at its canonical path) must not let the
+	// batch fall through as complete with its hold still open.
+	{
+		const unresolved = (batchState.holds ?? []).filter(isHoldUnresolved);
+		if (unresolved.length > 0) {
+			preserveWorktreesForResume = true;
+			if (
+				(batchState.phase as OrchBatchPhase) === "executing" ||
+				(batchState.phase as OrchBatchPhase) === "merging" ||
+				(batchState.phase as OrchBatchPhase) === "completed"
+			) {
+				batchState.phase = "paused";
+				if (!batchState.pauseSignal.paused) {
+					batchState.pauseSignal.paused = true;
+					batchState.pauseSignal.cause = "hold-timeout";
+				}
+			}
+			execLog(
+				"resume",
+				batchState.batchId,
+				`terminal gate: ${unresolved.length} unresolved hold(s) — batch parked, worktrees/branches preserved, no cleanup`,
+				{ holds: unresolved.map((h) => `${h.escalationId}→${h.taskId}`).join(",") },
+			);
+			onNotify(
+				`⏸️  ${unresolved.length} unit(s) still held awaiting a ruling (${unresolved.map((h) => h.taskId).join(", ")}). Batch parked; rule then orch_resume(force=true).`,
+				"warning",
+			);
+		}
+	}
 
 	// ── TP-028: Preserve partial progress before terminal cleanup ──
 	if (!preserveWorktreesForResume) {

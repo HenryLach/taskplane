@@ -129,6 +129,7 @@ function buildTestPersistedState(overrides?: Partial<PersistedBatchState>): Pers
 			batchCost: 0,
 		},
 		segments: [],
+		holds: [],
 		...overrides,
 	};
 }
@@ -659,13 +660,13 @@ describe("6.x — doOrchForceMerge implementation verification", () => {
 
 	it("6.7 — doOrchForceMerge persists state with saveBatchState", () => {
 		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
-		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
+		const fnBlock = extensionSource.slice(fnStart, fnStart + 8500); // #627: held-wave refusal block
 		expect(fnBlock).toContain("saveBatchState(");
 	});
 
 	it("6.8 — doOrchForceMerge syncs in-memory orchBatchState", () => {
 		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
-		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
+		const fnBlock = extensionSource.slice(fnStart, fnStart + 8500); // #627
 		expect(fnBlock).toContain("orchBatchState.batchId");
 		expect(fnBlock).toContain("orchBatchState.failedTasks");
 	});

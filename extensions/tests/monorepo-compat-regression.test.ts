@@ -617,6 +617,7 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			resilience: defaultResilienceState(),
 			diagnostics: defaultBatchDiagnostics(),
 			segments: [],
+			holds: [],
 			errors: [],
 		};
 
@@ -673,6 +674,7 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			resilience: defaultResilienceState(),
 			diagnostics: defaultBatchDiagnostics(),
 			segments: [],
+			holds: [],
 			errors: [],
 		};
 
@@ -736,6 +738,7 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			resilience: defaultResilienceState(),
 			diagnostics: defaultBatchDiagnostics(),
 			segments: [],
+			holds: [],
 			errors: [],
 		};
 

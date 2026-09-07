@@ -27,6 +27,7 @@ import {
 	runtimeManifestPath,
 } from "./types.ts";
 import type { BatchHistorySummary, RuntimeAgentManifest } from "./types.ts";
+import { isValidHoldRecord, reconstructHoldsFromMailbox } from "./hold-state.ts";
 import type {
 	AllocatedLane,
 	DiscoveryResult,
@@ -297,6 +298,7 @@ export function syncTaskOutcomesFromMonitor(
 				failed: "failed",
 				stalled: "stalled",
 				skipped: "skipped",
+				held: "held",
 				unknown: existing?.status || "running",
 			};
 			const mappedStatus = monitorToLane[snap.status];
@@ -363,6 +365,48 @@ export function persistRuntimeState(
 	repoRoot: string,
 ): void {
 	try {
+		persistRuntimeStateStrict(
+			reason,
+			batchState,
+			wavePlan,
+			lanes,
+			allTaskOutcomes,
+			discovery,
+			repoRoot,
+		);
+	} catch (err: unknown) {
+		const msg =
+			err instanceof StateFileError
+				? `[${err.code}] ${err.message}`
+				: err instanceof Error
+					? err.message
+					: String(err);
+		execLog("state", batchState.batchId, `write failed: ${msg}`, {
+			reason,
+			phase: batchState.phase,
+		});
+		batchState.errors.push(`State persistence failed (${reason}): ${msg}`);
+	}
+}
+
+/**
+ * Strict variant of {@link persistRuntimeState}: identical serialization and
+ * discovery enrichment, but write failures THROW instead of being swallowed.
+ *
+ * Used for governance transitions that must be durable before the runtime
+ * acts on them — opening or releasing an escalation hold (#627). A hold that
+ * exists only in memory is a hold the next engine will not know about.
+ */
+export function persistRuntimeStateStrict(
+	reason: string,
+	batchState: OrchBatchRuntimeState,
+	wavePlan: string[][],
+	lanes: AllocatedLane[],
+	allTaskOutcomes: LaneTaskOutcome[],
+	discovery: DiscoveryResult | null,
+	repoRoot: string,
+): void {
+	{
 		const json = serializeBatchState(batchState, wavePlan, lanes, allTaskOutcomes);
 
 		// Enrich task records with folder paths and repo fields from discovery
@@ -409,18 +453,6 @@ export function persistRuntimeState(
 			phase: batchState.phase,
 			waveIndex: batchState.currentWaveIndex,
 		});
-	} catch (err: unknown) {
-		const msg =
-			err instanceof StateFileError
-				? `[${err.code}] ${err.message}`
-				: err instanceof Error
-					? err.message
-					: String(err);
-		execLog("state", batchState.batchId, `write failed: ${msg}`, {
-			reason,
-			phase: batchState.phase,
-		});
-		batchState.errors.push(`State persistence failed (${reason}): ${msg}`);
 	}
 }
 
@@ -447,6 +479,7 @@ export const VALID_TASK_STATUSES: ReadonlySet<string> = new Set([
 	"failed",
 	"stalled",
 	"skipped",
+	"held",
 ]);
 
 /** All valid merge result statuses for persisted state. */
@@ -530,6 +563,18 @@ export function upconvertV3toV4(obj: Record<string, unknown>): void {
 }
 
 /**
+ * Upconvert a v4 state object to v5 in-place (#627 held state).
+ *
+ * v5 adds the top-level `holds` table (durable escalation holds). A v4 batch
+ * never had runtime-tracked holds, so the table starts empty. Idempotent.
+ */
+export function upconvertV4toV5(obj: Record<string, unknown>): void {
+	if ((obj.schemaVersion as number) >= 5) return;
+	obj.schemaVersion = 5;
+	if (!Array.isArray(obj.holds)) obj.holds = [];
+}
+
+/**
  * Validate a parsed JSON object as a PersistedBatchState.
  *
  * Checks:
@@ -559,7 +604,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 	}
 	// Accept v1 (auto-upconvert to v2→v3→v4), v2 (upconvert to v3→v4), v3 (upconvert to v4), and v4 (current).
 	// Reject anything else — including future versions from newer runtimes.
-	const ACCEPTED_VERSIONS = [1, 2, 3, BATCH_STATE_SCHEMA_VERSION];
+	const ACCEPTED_VERSIONS = [1, 2, 3, 4, BATCH_STATE_SCHEMA_VERSION];
 	if (!ACCEPTED_VERSIONS.includes(obj.schemaVersion as number)) {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",
@@ -945,6 +990,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 	upconvertV1toV2(obj);
 	upconvertV2toV3(obj);
 	upconvertV3toV4(obj);
+	upconvertV4toV5(obj);
 
 	// ── Validate v3 resilience section ───────────────────────────
 	// After upconversion, resilience must be a valid object with correct types.
@@ -1266,6 +1312,31 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
+	// ── Holds (v5, #627) ─────────────────────────────────────────
+	if (!Array.isArray(obj.holds)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing or invalid "holds" field (expected array, got ${typeof obj.holds})`,
+		);
+	}
+	const holdIds = new Set<string>();
+	for (let i = 0; i < (obj.holds as unknown[]).length; i++) {
+		const h = (obj.holds as unknown[])[i];
+		if (!isValidHoldRecord(h)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`holds[${i}] is not a valid hold record (escalationId, unit identity, phase, deliveryState and — when released — a correlated ruling with a trusted actor are required)`,
+			);
+		}
+		if (holdIds.has(h.escalationId)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`holds[${i}] duplicates escalation id ${h.escalationId}`,
+			);
+		}
+		holdIds.add(h.escalationId);
+	}
+
 	// ── Capture unknown top-level fields for roundtrip preservation ──
 	// Any fields not in the known schema are preserved so they survive
 	// serialization. This protects against data loss from future schema
@@ -1297,6 +1368,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		"resilience",
 		"diagnostics",
 		"segments",
+		"holds",
 		"_extraFields",
 	]);
 	const extraFields: Record<string, unknown> = {};
@@ -1497,6 +1569,7 @@ export function serializeBatchState(
 		resilience: state.resilience ?? defaultResilienceState(),
 		diagnostics: state.diagnostics ?? defaultBatchDiagnostics(),
 		segments: state.segments ?? [],
+		holds: (state.holds ?? []).map((h) => ({ ...h })),
 	};
 
 	// Merge unknown fields from loaded state to preserve roundtrip fidelity.
@@ -2570,6 +2643,27 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 			});
 
 		const now = Date.now();
+		// #627 (Sage review, blocker 7): the hold table is AUTHORITY. Rebuild it
+		// from durable mailbox evidence; refuse the candidate when authority
+		// cannot be recovered (unscoped escalation, unknown task, segment-scoped
+		// evidence with no topology, unreadable mailbox) — never silently empty.
+		const holdRebuild = reconstructHoldsFromMailbox(stateRoot, cand.batchId, {
+			knownTaskIds,
+			hasSegmentTopology: false,
+			laneNumberForAgent: (agentId) => {
+				for (const lane of laneMap.values()) {
+					if (lane.agentId === agentId) return lane.laneNumber;
+				}
+				const m = /-lane-(d+)-worker$/.exec(agentId);
+				return m ? Number(m[1]) : undefined;
+			},
+		});
+		if (holdRebuild.ok === false) {
+			failures.push(`${cand.batchId}: ${holdRebuild.error}`);
+			continue;
+		}
+		const reconstructedHolds = holdRebuild.holds;
+
 		const reconstructed: PersistedBatchState = {
 			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
 			batchId: meta.batchId,
@@ -2594,6 +2688,7 @@ export function reconstructBatchStateFromRuntime(stateRoot: string): Reconstruct
 			blockedTaskIds: [],
 			errors: [],
 			segments: [],
+			holds: reconstructedHolds,
 			lastError: null,
 			resilience: { ...defaultResilienceState(), resumeForced: true },
 			diagnostics: defaultBatchDiagnostics(),

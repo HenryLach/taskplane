@@ -178,7 +178,8 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 		// to accommodate the typecheck-cleanup TP-195 comments documenting the
 		// `maxWorkerMinutes`/`projectName` field-name decisions.
 		// review-boundary: widened to 8500 for the TASKPLANE_REVIEW_ANALYSIS parse block.
-		const bodySection = executionSrc.slice(start, start + 8500);
+		// #627: widened to 9500 for the laneHeld pending branch and hold-store config.
+		const bodySection = executionSrc.slice(start, start + 9500);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});

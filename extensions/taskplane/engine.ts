@@ -44,12 +44,14 @@ import {
 	loadBatchHistory,
 	loadBatchState,
 	persistRuntimeState,
+	persistRuntimeStateStrict,
 	saveBatchHistory,
 	saveBatchMetaRuntimeArtifact,
 	seedPendingOutcomesForAllocatedLanes,
 	syncTaskOutcomesFromMonitor,
 	upsertTaskOutcome,
 } from "./persistence.ts";
+import { createHoldStore, isHoldUnresolved } from "./hold-state.ts";
 import {
 	readRegistrySnapshot,
 	isTerminalStatus,
@@ -80,6 +82,7 @@ import type {
 	EscalationContext,
 	LaneExecutionResult,
 	LaneTaskOutcome,
+	PauseSignal,
 	MergeWaveResult,
 	OrchBatchPhase,
 	OrchBatchRuntimeState,
@@ -1511,6 +1514,56 @@ export function buildSegmentFrontierWaves(
  *
  * @returns Object with retried count and updated task outcomes
  */
+/**
+ * #627: a pause signal that reads and writes THROUGH to the batch's signal.
+ * Retry helpers used to hand lanes a detached `{ paused: false }`; with holds
+ * that detaches the lane from the batch's park/unwind semantics.
+ */
+function linkedPauseSignal(target: PauseSignal): PauseSignal {
+	return {
+		// R002-4: a `stop-wave` pause is already set when a Tier-0 retry starts (the
+		// failure that triggered the retry set it). The retry must still run, so
+		// that cause is ignored on read; every other pause (operator, abort,
+		// merge-failure, hold-timeout) unwinds the retry like any lane.
+		get paused() {
+			return target.paused && target.cause !== "stop-wave";
+		},
+		set paused(v: boolean) {
+			target.paused = v;
+		},
+		get cause() {
+			return target.cause;
+		},
+		set cause(v: PauseSignal["cause"]) {
+			target.cause = v;
+		},
+	};
+}
+
+/**
+ * #627: a retried lane that ends HELD is neither succeeded nor failed. Move it
+ * out of the wave's failed set into heldTaskIds so the pause finalizer parks
+ * the batch (preserve worktrees, no merge) instead of counting it as a failure.
+ */
+function recordHeldRetryOutcome(
+	waveResult: WaveExecutionResult,
+	allTaskOutcomes: LaneTaskOutcome[],
+	taskId: string,
+	outcome: LaneTaskOutcome,
+): void {
+	const failIdx = waveResult.failedTaskIds.indexOf(taskId);
+	if (failIdx !== -1) waveResult.failedTaskIds.splice(failIdx, 1);
+	waveResult.heldTaskIds = [...(waveResult.heldTaskIds ?? []), taskId].sort();
+	for (const lr of waveResult.laneResults) {
+		const idx = lr.tasks.findIndex((t) => t.taskId === taskId);
+		if (idx !== -1) {
+			lr.tasks[idx] = outcome;
+			break;
+		}
+	}
+	upsertTaskOutcome(allTaskOutcomes, outcome);
+}
+
 async function attemptWorkerCrashRetry(
 	waveResult: WaveExecutionResult,
 	waveIdx: number,
@@ -1523,6 +1576,8 @@ async function attemptWorkerCrashRetry(
 	stateRoot: string,
 	runnerConfig?: TaskRunnerConfig,
 	runtimeBackend?: RuntimeBackend,
+	/** #627: strict hold store — a retried lane's escalation must enter authoritative state. */
+	holdStore?: import("./hold-state.ts").HoldStore,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	if (!batchState.resilience) {
 		batchState.resilience = defaultResilienceState();
@@ -1713,7 +1768,10 @@ async function attemptWorkerCrashRetry(
 			// Use a fresh pause signal for the retry — the batch pauseSignal
 			// may be paused due to stop-wave policy, but Tier 0 retry should
 			// attempt recovery before the stop decision takes effect (R002-4).
-			const retryPauseSignal = { paused: false };
+			// #627: proxy the BATCH pause signal (previously a detached { paused: false }).
+			// A retried lane that holds must be able to park the batch on hold-timeout,
+			// and a batch pause must unwind a held retry instead of leaving it waiting.
+			const retryPauseSignal = linkedPauseSignal(batchState.pauseSignal);
 			const retryResult = await executeLaneV2(
 				retryLane,
 				orchConfig,
@@ -1727,9 +1785,20 @@ async function attemptWorkerCrashRetry(
 					...buildReviewerEnv(runnerConfig?.reviewer),
 					...buildWorkerExcludeEnv(runnerConfig?.workerExcludeExtensions),
 				}, // TP-089: ensure mailbox works for retries
+				undefined,
+				undefined,
+				undefined,
+				holdStore,
 			);
 
 			const retryOutcome = retryResult.tasks[0];
+			if (retryOutcome && retryOutcome.status === "held") {
+				recordHeldRetryOutcome(waveResult, allTaskOutcomes, taskId, retryOutcome);
+				execLog("batch", batchState.batchId, `tier0: task ${taskId} retry is HELD awaiting a ruling`, {
+					scopeKey,
+				});
+				continue;
+			}
 			if (retryOutcome && retryOutcome.status === "succeeded") {
 				succeededRetries.push(taskId);
 
@@ -1903,6 +1972,8 @@ async function attemptModelFallbackRetry(
 	stateRoot: string,
 	runnerConfig?: TaskRunnerConfig,
 	runtimeBackend?: RuntimeBackend,
+	/** #627: strict hold store — a retried lane's escalation must enter authoritative state. */
+	holdStore?: import("./hold-state.ts").HoldStore,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	// Short-circuit: if model fallback is disabled, skip entirely
 	const modelFallbackMode = runnerConfig?.model_fallback ?? "inherit";
@@ -2034,7 +2105,10 @@ async function attemptModelFallbackRetry(
 		const wsRoot = workspaceConfig ? resolve(workspaceConfig.configPath, "..", "..") : undefined;
 
 		try {
-			const retryPauseSignal = { paused: false };
+			// #627: proxy the BATCH pause signal (previously a detached { paused: false }).
+			// A retried lane that holds must be able to park the batch on hold-timeout,
+			// and a batch pause must unwind a held retry instead of leaving it waiting.
+			const retryPauseSignal = linkedPauseSignal(batchState.pauseSignal);
 			// Pass TASKPLANE_MODEL_FALLBACK=1 as extra env var to signal
 			// the task-runner to use the session model instead of configured model.
 			// TP-089: Also include ORCH_BATCH_ID so mailbox steering works for retries.
@@ -2052,9 +2126,25 @@ async function attemptModelFallbackRetry(
 				wsRoot,
 				isWsMode,
 				modelFallbackEnv,
+				undefined,
+				undefined,
+				undefined,
+				holdStore,
 			);
 
 			const retryOutcome = retryResult.tasks[0];
+			if (retryOutcome && retryOutcome.status === "held") {
+				recordHeldRetryOutcome(waveResult, allTaskOutcomes, taskId, retryOutcome);
+				execLog(
+					"batch",
+					batchState.batchId,
+					`tier0: task ${taskId} model-fallback retry is HELD awaiting a ruling`,
+					{
+						scopeKey,
+					},
+				);
+				continue;
+			}
 			if (retryOutcome && retryOutcome.status === "succeeded") {
 				succeededRetries.push(taskId);
 
@@ -2219,6 +2309,7 @@ async function attemptStaleWorktreeRecovery(
 	runnerConfig?: TaskRunnerConfig,
 	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
 	onLaneRespawned?: (laneNumber: number, agentId: string, batchId: string) => void,
+	holdStore?: import("./hold-state.ts").HoldStore,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -2368,6 +2459,7 @@ async function attemptStaleWorktreeRecovery(
 		runnerConfig?.workerExcludeExtensions ?? [],
 		onLaneTerminated,
 		onLaneRespawned,
+		holdStore,
 	);
 
 	return retryResult;
@@ -2595,6 +2687,21 @@ export async function executeOrchBatch(
 	const terminalSegmentTasks = new Set<string>();
 	// Reference to discovery result for enriching taskFolder paths.
 	let discoveryRef: DiscoveryResult | null = null;
+	// #627: durable hold store. Hold open/release transitions persist the whole
+	// batch state STRICTLY (throw on failure) before the lane-runner acts on
+	// them — never the best-effort persistRuntimeState path.
+	if (!batchState.holds) batchState.holds = [];
+	const holdStore = createHoldStore(batchState, (reason) =>
+		persistRuntimeStateStrict(
+			reason,
+			batchState,
+			wavePlan,
+			latestAllocatedLanes,
+			allTaskOutcomes,
+			discoveryRef,
+			stateRoot,
+		),
+	);
 	// TP-029: Track all repo roots encountered during execution.
 	// Maps repoRoot → repoId (undefined for primary/repo-mode).
 	// Used by inter-wave reset and terminal cleanup to iterate ALL repos
@@ -3143,6 +3250,7 @@ export async function executeOrchBatch(
 			runnerConfig?.workerExcludeExtensions ?? [],
 			emitLaneTerminated,
 			onLaneRespawned ?? undefined,
+			holdStore,
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -3168,6 +3276,7 @@ export async function executeOrchBatch(
 				runnerConfig,
 				emitLaneTerminated,
 				onLaneRespawned ?? undefined,
+				holdStore,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;
@@ -3259,6 +3368,7 @@ export async function executeOrchBatch(
 				stateRoot,
 				runnerConfig,
 				selectedBackend,
+				holdStore,
 			);
 			if (modelFallbackOutcome.succeededRetries.length > 0) {
 				// Recompute blocked tasks after model fallback successes
@@ -3303,6 +3413,7 @@ export async function executeOrchBatch(
 				stateRoot,
 				undefined,
 				selectedBackend,
+				holdStore,
 			);
 			if (retryOutcome.succeededRetries.length > 0) {
 				// Recompute blockedTaskIds from remaining failures (R002-2).
@@ -3967,13 +4078,18 @@ export async function executeOrchBatch(
 		const notAborting =
 			batchState.pauseSignal.cause !== "abort" && waveResult.overallStatus !== "aborted";
 		const operatorPaused = batchState.pauseSignal.paused && notAborting;
-		if (notAborting && ((waveResult.pausedTaskIds?.length ?? 0) > 0 || operatorPaused)) {
+		const heldIds = waveResult.heldTaskIds ?? [];
+		if (
+			notAborting &&
+			((waveResult.pausedTaskIds?.length ?? 0) > 0 || heldIds.length > 0 || operatorPaused)
+		) {
 			batchState.phase = "paused";
 			preserveWorktreesForResume = true;
 			const pausedIds = waveResult.pausedTaskIds ?? [];
 			execLog("batch", batchState.batchId, `batch paused during wave ${waveIdx + 1}`, {
 				cause: batchState.pauseSignal.cause ?? "operator",
 				pendingTasks: pausedIds.join(",") || "(none)",
+				heldTasks: heldIds.join(",") || "(none)",
 				succeeded: waveResult.succeededTaskIds.length,
 				failed: waveResult.failedTaskIds.length,
 			});
@@ -3992,6 +4108,7 @@ export async function executeOrchBatch(
 				const { displayWave } = resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount);
 				onNotify(
 					`⏸️  Batch paused during wave ${displayWave}: ${pausedIds.length} task(s) remain pending` +
+						`${heldIds.length > 0 ? `, ${heldIds.length} held awaiting a ruling (${heldIds.join(", ")})` : ""}` +
 						`${waveResult.succeededTaskIds.length > 0 ? `, ${waveResult.succeededTaskIds.length} succeeded (unmerged until resume)` : ""}. ` +
 						`Worktrees preserved. Use orch_resume() to continue.`,
 					"warning",
@@ -5551,6 +5668,24 @@ export async function executeOrchBatch(
 	}
 
 	// ── Phase 3: Cleanup ─────────────────────────────────────────
+	// #627: an unresolved hold protects its worktree and branch even when they
+	// are git-clean — committed-but-unmerged held work is the evidence a ruling
+	// is about. Whatever path brought us here, holds mean preserve.
+	if (!preserveWorktreesForResume && (batchState.holds ?? []).some(isHoldUnresolved)) {
+		preserveWorktreesForResume = true;
+		execLog(
+			"batch",
+			batchState.batchId,
+			"pre-cleanup: unresolved hold(s) present, preserving worktrees/branches (never a completion path)",
+			{
+				holds: (batchState.holds ?? [])
+					.filter(isHoldUnresolved)
+					.map((h) => h.escalationId)
+					.join(","),
+			},
+		);
+	}
+
 	const prefix = orchConfig.orchestrator.worktree_prefix;
 
 	if (preserveWorktreesForResume) {

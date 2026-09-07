@@ -1145,21 +1145,51 @@ REVIEW INTERVENTION: {taskId} step {reviewStep} (lane {laneNumber})
     │             worker to implement the two outstanding findings").
 ```
 
-**Worker on HOLD for a ruling (#630 Tier-1 contract).** A worker that escalated
-and is waiting exits its turn; the runtime relaunches it (bounded, 3) with a
-hold-resume prompt instead of failing it as a stall. Your messages to it have
-two meanings, chosen by `send_agent_message` **type**:
+**Held lane — a worker escalated and is waiting for a ruling (#627).** The
+runtime holds the unit itself: the worker process exits and is NOT relaunched,
+the lane waits at zero cost (no iterations, no stall clock, no relaunch budget),
+the task shows `held` (⚖ in the dashboard; `⏸️ Lane held` alert names the
+escalation id), and its worktree/branch are preserved and never merged. The
+lane's agent id stays addressable even though no process exists. The hold is a
+durable record in `batch-state.json` (`holds[]`) — it survives pause, crash,
+resume and retry. Your messages to a held lane, chosen by `send_agent_message`
+**type**:
 
-- `type="info"` → **acknowledgement** ("received, ruling pending; expect ~N
-  hours"). The worker stays on hold; its relaunch budget resets. Use this for
-  any ruling that will take a while so the task does not fail as
-  `Hold unresolved` before the ruling exists.
-- `type="steer"` (default) → **the ruling / instruction**. Releases the hold;
-  the worker acts on it.
+- `type="ruling"` with `replyTo=<escalation id>` → **the ruling**. The ONLY
+  thing that releases the hold. Your text is placed at the top of the relaunched
+  worker's first prompt; the worker must acknowledge it
+  (`notify_supervisor(replyTo=<ruling id>)`) before the unit can complete.
+  A ruling releases execution; it does not approve the result — review gates
+  still apply afterwards.
+- `type="info"` → **acknowledgement** ("received, operator consulted"). Keeps
+  the hold; the deadline does NOT move. Optional — nothing times out because you
+  stayed silent for a while; the only clock is the hold deadline.
+- `type="query"` → the runner answers with the hold status (escalation text,
+  age, deadline) as an alert. Nothing is spawned.
+- `type="abort"` → cancels the hold (never approves) and fails the task.
+- `type="steer"` → does **not** release a hold. It is ordinary mail for the
+  next worker session.
 
-If neither arrives within 3 relaunches the task fails with `Hold unresolved`
-(work preserved in the worktree); after ruling, `orch_retry_task` +
-`orch_resume(force=true)`.
+Only the operator can issue an **operator** ruling: `/orch-rule <escalation id>
+<text>` (typed by the operator; a model cannot claim that role). Decisions
+reserved to the operator (per the project's overlay) go that way; everything
+else is your `type="ruling"`.
+
+**Deadline.** `taskRunner.worker.holdTimeoutMinutes` (default 240). If no
+ruling arrives the batch parks with pause cause `hold-timeout` (⏰ alert), the
+hold stays OPEN and the worktree is preserved. Rule on it, then
+`orch_resume(force=true)` — the lane resumes straight into the hold loop and
+delivers your ruling. `orch_retry_task` on a held task is refused (retry is not
+release); `orch_force_merge` refuses a wave with held units;
+`supervisor_takeover` reports held units and never drains escalations.
+
+**Recipe:** ⏸️ Lane held alert → read the escalation (in the alert, or
+`read_agent_replies`) → decide (or escalate to the operator with the escalation
+id) → `send_agent_message(to=<agentId>, type="ruling", replyTo=<escalation id>,
+content=<instructions>)` → `log_recovery_action` → watch for `Ruling
+acknowledged` in STATUS.md. If the ruling is rejected (`⚠️ Ruling rejected`
+alert), the reason names what was wrong (missing replyTo, wrong lane, hold
+already released).
 
 **kind = "unresolved-verdict"** (finalize refused): the task tried to complete
 while some gate's LATEST review file still reads REVISE/RETHINK — the runtime

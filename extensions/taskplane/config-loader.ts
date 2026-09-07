@@ -1271,6 +1271,9 @@ export function toTaskRunnerConfig(config: TaskplaneConfig): import("./types.ts"
 			...(typeof config.taskRunner.worker.exitInterceptTimeoutSec === "number"
 				? { exitInterceptTimeoutSec: config.taskRunner.worker.exitInterceptTimeoutSec }
 				: {}),
+			...(typeof config.taskRunner.worker.holdTimeoutMinutes === "number"
+				? { holdTimeoutMinutes: config.taskRunner.worker.holdTimeoutMinutes }
+				: {}),
 		},
 		model_fallback: config.taskRunner.modelFallback ?? "inherit",
 		reviewer: {

@@ -190,6 +190,30 @@ Pause batch after current tasks finish.
 
 ---
 
+### `/orch-rule <escalation id> <ruling text>`
+
+Issue an **operator** ruling that releases a **held** lane. When a worker
+escalates (`escalate_to_supervisor`), the runtime holds the unit: no worker
+process, no relaunch, no merge, no `.DONE` until a typed ruling arrives. The
+supervisor rules with `send_agent_message(type="ruling", replyTo=<escalation id>)`;
+decisions reserved to the operator go through this command, which is the only
+path that stamps the ruling with role `operator` (a model cannot claim it).
+
+**Syntax**
+
+```text
+/orch-rule 1788817706765-cd7b6 Accept the remaining P1 as a documented risk; add the note to README §Security and finish step 5.
+```
+
+The escalation id is in the `⏸️ Lane held` alert, in the task's STATUS.md
+(`Hold opened`), or via `send_agent_message(type="query")`. The ruling is
+placed at the top of the relaunched worker's first prompt; the worker must
+acknowledge it before the unit can complete. A ruling releases execution — it
+does not approve the result; review gates still apply. If the batch is parked
+(`hold-timeout`), follow with `orch_resume(force=true)`.
+
+---
+
 ### `/orch-confirm-engine-shutdown [--batch <batchId>] <note>`
 
 Record that the operator verified **no engine process is running** for a batch

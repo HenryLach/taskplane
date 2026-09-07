@@ -194,10 +194,12 @@ describe("owned-batch pause — wiring (tally, engine/resume finalizers, cause-a
 	it("execution.ts: pause leaves remaining lane tasks pending; tally exposes pausedTaskIds; all-pending wave is not 'succeeded'", () => {
 		const flat = readSrc("execution.ts").replace(/\s+/g, " ");
 		expect(flat).toContain(
-			'status: pauseSignal.paused && !shouldSkipRemaining ? "pending" : "skipped"',
+			'status: (pauseSignal.paused || laneHeld) && !shouldSkipRemaining ? "pending" : "skipped"',
 		);
 		expect(flat).toContain('} else if (t.status === "pending") { pausedTaskIds.push(t.taskId); }');
-		expect(flat).toContain("} else if (pausedTaskIds.length > 0 && failedTaskIds.length === 0) {");
+		expect(flat).toContain(
+			"} else if ((pausedTaskIds.length > 0 || heldTaskIds.length > 0) && failedTaskIds.length === 0) {",
+		);
 		expect(flat).toContain('pauseSignal.cause = "abort";');
 	});
 
@@ -816,14 +818,13 @@ describe("recovery from the incident state", () => {
 		expect(r.resetSegmentIds).toEqual(["T::default"]);
 	});
 
-	it("interim for long holds: hold exits do not consume the productive-iteration budget", () => {
+	it("held units do not consume the productive-iteration budget (#627: no worker exists while held)", () => {
 		const flat = readSrc("lane-runner.ts").replace(/\s+/g, " ");
 		expect(flat).toContain(
 			"for (; productiveIterations < config.maxIterations; productiveIterations++) {",
 		);
-		expect(flat).toContain(
-			"does not consume a productive iteration. productiveIterations--; continue;",
-		);
+		expect(flat).toContain("not counted toward stall or iteration budget");
+		expect(flat).toContain("productiveIterations--; continue; }");
 	});
 });
 

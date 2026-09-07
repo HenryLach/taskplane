@@ -220,6 +220,27 @@ Replies that arrive after the 60-second timeout are ignored; the lane proceeds
 with its corrective re-spawn behavior. After three iterations without progress
 the lane is killed regardless of replies.
 
+## Held lanes and rulings (#627)
+
+When a worker calls `escalate_to_supervisor`, the runtime **holds** the unit:
+the worker exits and is not relaunched, the lane waits at zero cost, the task
+shows `held`, and you get a `⏸️ Lane held` alert naming the **escalation id**.
+The lane's agent id stays addressable with no process running. Only one thing
+releases a hold:
+
+- `send_agent_message(to=<agentId>, type="ruling", replyTo=<escalation id>, content=<instructions>)`
+  — your text is placed at the top of the relaunched worker's first prompt.
+  A ruling releases execution; it does not approve the result.
+- `type="info"` acknowledges without releasing (deadline unchanged); `type="query"`
+  returns the hold status; `type="abort"` cancels (never approves) and fails the
+  task; `type="steer"` does **not** release a hold.
+- Decisions reserved to the operator: ask them to run `/orch-rule <escalation id> <text>`.
+
+If no ruling arrives within `holdTimeoutMinutes` (default 240) the batch parks
+with pause cause `hold-timeout` and the hold stays open — rule, then
+`orch_resume(force=true)`. `orch_retry_task` never releases a hold. Details:
+primer section "Held lane".
+
 ## Startup Checklist
 
 Now that you've activated:

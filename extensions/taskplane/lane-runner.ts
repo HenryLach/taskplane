@@ -15,8 +15,16 @@
  * @since TP-105
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from "fs";
-import { join, dirname, resolve, basename } from "path";
+import {
+	readFileSync,
+	writeFileSync,
+	existsSync,
+	mkdirSync,
+	unlinkSync,
+	readdirSync,
+	renameSync,
+} from "fs";
+import { join, dirname, basename } from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
@@ -92,6 +100,30 @@ import {
 	latestReviewFilesPerGate,
 	type ReviewStreakState,
 } from "./review-analysis.ts";
+import {
+	applyRuling,
+	buildHoldStatusSummary,
+	buildRulingPromptLines,
+	cancelHold,
+	classifyHoldMail,
+	createHoldRecord,
+	createInMemoryHoldStore,
+	evaluateCompletionAuthority,
+	expireHold,
+	findDeliveryAcknowledgements,
+	HoldPersistenceError,
+	type HoldRecord,
+	type HoldStore,
+	isHoldExpired,
+	markDeliveryAcknowledged,
+	markDeliveryInFlight,
+	normalizeHoldTimeoutMinutes,
+	escalationMatchesUnit,
+	recordAcknowledgement,
+	selectUnrecordedEscalations,
+	unresolvedHoldsForUnit,
+	validateRuling,
+} from "./hold-state.ts";
 // NOTE: emitEngineEvent is NOT statically imported from ./persistence.ts.
 // persistence.ts imports execLog from ./execution.ts, and execution.ts imports
 // executeTaskV2 from this module — a static import here would form a
@@ -122,14 +154,13 @@ const OUTBOX_LIVE_POLL_INTERVAL_MS = 3_000;
 const MAX_REVIEW_REMEDIATION_ITERATIONS = 2;
 
 /**
- * #630: how many times the lane relaunches a worker that exited while HOLDING
- * for a supervisor ruling (an `escalate_to_supervisor` with no reply delivered
- * since). Each relaunch re-checks for the ruling; beyond this the task fails
- * with an explicit "hold unresolved" reason so the supervisor sees a dead
- * lane as a governance signal, not as silence. (A first-class `held` state
- * with an in-tool wait is the #627 design follow-up.)
+ * #627: how often the runner-owned hold loop polls the held unit's inbox for a
+ * ruling / acknowledgement / query / abort, checks the deadline and the pause
+ * signal. No worker process exists while holding; this is the only cost.
  */
-const MAX_HOLD_RELAUNCHES = 3;
+const HOLD_POLL_INTERVAL_MS = 5_000;
+/** #627: lane-snapshot heartbeat cadence while held (runner health, not worker liveness). */
+const HOLD_HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** A review gate whose LATEST review file carries a non-APPROVE verdict. */
 interface BlockingReviewGate {
@@ -498,6 +529,16 @@ export interface LaneRunnerConfig {
 	noProgressLimit: number;
 	/** Exit-intercept supervisor-reply window (seconds; default 60; 15..1800). */
 	exitInterceptTimeoutSec?: number;
+	/**
+	 * #627: durable hold store supplied by the engine. When absent (legacy
+	 * callers, unit tests) a volatile in-memory store is used — holds then do
+	 * not survive the lane run, which is the pre-#627 behaviour.
+	 */
+	holdStore?: HoldStore;
+	/** #627: minutes an open hold may wait for a ruling before the batch parks. Default 240. */
+	holdTimeoutMinutes?: number;
+	/** #627: hold-loop poll cadence (ms). Tests lower it; default HOLD_POLL_INTERVAL_MS. */
+	holdPollIntervalMs?: number;
 	/** Max worker time in minutes per iteration */
 	maxWorkerMinutes: number;
 	/** Context pressure warn threshold (0-100) */
@@ -571,6 +612,68 @@ export async function executeTaskV2(
 	const segmentId = unit.segmentId;
 	const workerAgentId = buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker");
 
+	// ── #627 hold state ────────────────────────────────────────────────────────────
+	// Holds are durable records owned by the runner and persisted by the engine
+	// (config.holdStore). A worker escalation opens one BEFORE the escalation is
+	// acked; only a typed, correlated ruling releases it; every completion path
+	// in this function consults evaluateCompletionAuthority(). See
+	// docs/specifications/taskplane/held-state-spec.md.
+	const holdStore: HoldStore = config.holdStore ?? createInMemoryHoldStore();
+	const executionId = `${taskId}${segmentId ? `::${segmentId}` : ""}@${startTime.toString(36)}`;
+	const holdTimeoutMinutes = normalizeHoldTimeoutMinutes(config.holdTimeoutMinutes);
+	/**
+	 * Which escalations in this lane's outbox belong to THIS unit: stamped scope
+	 * must match; an unscoped (pre-#627) message counts only if written during
+	 * this run. Anything else is another unit's business (resume attributes and
+	 * persists those before any lane runs) and is never guessed into this hold.
+	 */
+	const escalationFilter = { taskId, segmentId, sinceTs: startTime };
+	const foreignEscalationsLogged = new Set<string>();
+	const unitHolds = (): HoldRecord[] => unresolvedHoldsForUnit(holdStore.list(), taskId, segmentId);
+	const completionAuthority = () => evaluateCompletionAuthority(holdStore.list(), taskId, segmentId);
+	const holdAlert = (
+		category: "agent-message" | "task-failure",
+		summary: string,
+		extra: Record<string, unknown> = {},
+	): void => {
+		if (!config.onSupervisorAlert) return;
+		try {
+			config.onSupervisorAlert({
+				category,
+				summary,
+				context: {
+					taskId,
+					laneId: `lane-${config.laneNumber}`,
+					laneNumber: config.laneNumber,
+					agentId: workerAgentId,
+					...extra,
+				},
+			} as Parameters<SupervisorAlertCallback>[0]);
+		} catch {
+			/* best effort */
+		}
+	};
+	/**
+	 * Quarantine a `.DONE` that exists while the unit is hold-blocked. A
+	 * worker-written `.DONE` is a claim, not authority (TP-2037); failing to
+	 * remove it must never make it authoritative elsewhere, so the rename is
+	 * attempted and the refusal is logged either way.
+	 */
+	const quarantineUnauthorizedDone = (why: string): void => {
+		if (!existsSync(donePath)) return;
+		const target = `${donePath}.unauthorized-${Date.now()}`;
+		try {
+			renameSync(donePath, target);
+			logExecution(statusPath, ".DONE quarantined", `${why} — moved to ${basename(target)}`);
+		} catch (err) {
+			logExecution(
+				statusPath,
+				".DONE quarantine failed",
+				`${why} — could not move: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	};
+
 	// ── Live outbox surfacing (mail-recognition fix) ─────────────────
 	// Worker reply/escalate mail (notify_supervisor / escalate_to_supervisor
 	// → *.msg.json) must reach the supervisor WHILE the worker is still
@@ -590,9 +693,86 @@ export async function executeTaskV2(
 		outboxDraining = true;
 		try {
 			const outboxMessages = readOutbox(config.stateRoot, config.batchId, workerAgentId);
+
+			// #627: a worker reply with replyTo=<rulingId> acknowledges delivery of a
+			// ruling. Persist (strict) before acking the reply so a crash here leaves
+			// the reply to be re-read, never a lost acknowledgement.
+			for (const hold of findDeliveryAcknowledgements(
+				outboxMessages,
+				holdStore.list(),
+				taskId,
+				segmentId,
+			)) {
+				try {
+					holdStore.update(markDeliveryAcknowledged(hold));
+					logExecution(
+						statusPath,
+						"Ruling acknowledged",
+						`worker acknowledged ruling ${hold.ruling?.id} (escalation ${hold.escalationId}); completion authority restored for this hold`,
+					);
+				} catch (err) {
+					logExecution(
+						statusPath,
+						"Hold persist failed",
+						`could not record ruling acknowledgement for ${hold.escalationId}: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+			}
+
 			for (const msg of outboxMessages) {
 				const sanitized = msg.content.replace(/\r?\n/g, " / ").slice(0, 200);
 				logExecution(statusPath, `Agent ${msg.type}`, sanitized);
+
+				// #627: an escalation opens a durable hold BEFORE the message is acked.
+				// If the hold cannot be persisted the message stays in the outbox and
+				// the next drain retries — an unpersisted hold must never be acked away.
+				if (msg.type === "escalate" && !escalationMatchesUnit(msg, escalationFilter)) {
+					// Another unit's (or an ambiguous legacy) escalation: leave it in the
+					// outbox — never open a hold under the wrong task, never ack it away.
+					if (!foreignEscalationsLogged.has(msg.id)) {
+						foreignEscalationsLogged.add(msg.id);
+						logExecution(
+							statusPath,
+							"Escalation not for this unit",
+							`${msg.id} (scope ${msg.scope ? `${msg.scope.taskId}${msg.scope.segmentId ? `::${msg.scope.segmentId}` : ""}` : "none, pre-run"}) left in outbox`,
+						);
+					}
+					continue;
+				}
+				if (msg.type === "escalate") {
+					const record = createHoldRecord({
+						escalation: msg,
+						batchId: config.batchId,
+						taskId,
+						segmentId,
+						executionId,
+						agentId: workerAgentId,
+						laneNumber: config.laneNumber,
+						holdTimeoutMinutes,
+					});
+					try {
+						holdStore.open(record);
+					} catch (err) {
+						const reason = err instanceof Error ? err.message : String(err);
+						logExecution(
+							statusPath,
+							"Hold persist failed",
+							`escalation ${msg.id} left in outbox for retry: ${reason}`,
+						);
+						holdAlert(
+							"task-failure",
+							`⚠️ **Hold could not be persisted** — ${taskId} (lane ${config.laneNumber}) escalated (${msg.id}) but batch state could not be written: ${reason}. The escalation stays queued and will be retried; check disk/state-file health.`,
+							{ messageId: msg.id, exitReason: `hold_persist_failed: ${reason}` },
+						);
+						continue; // do NOT ack
+					}
+					updateStatusField(statusPath, "Status", "⏸️ Held — ruling outstanding");
+					logExecution(
+						statusPath,
+						"Hold opened",
+						`escalation ${msg.id} recorded; completion withheld until a ruling (deadline ${new Date(record.deadline).toISOString()})`,
+					);
+				}
 
 				if (msg.type === "reply" || msg.type === "escalate") {
 					appendAgentEvent(config.stateRoot, config.batchId, workerAgentId, {
@@ -620,15 +800,6 @@ export async function executeTaskV2(
 						contentPreview: sanitized,
 					});
 
-					if (msg.type === "escalate" && msg.timestamp > lastSupervisorReplyTs) {
-						// #630: the worker is now waiting for a ruling. Remember it so an
-						// exit before a reply is treated as a hold, not a premature stop.
-						// Causal timestamp = the message's own creation time (a reply created after
-						// the escalation but before this drain must still count as a ruling).
-						// An escalation older than the last reply we saw was already answered
-						// (e.g. consumed by the exit-intercept before this drain) — no hold.
-						pendingEscalation = { id: msg.id, ts: msg.timestamp, preview: sanitized };
-					}
 					if (config.onSupervisorAlert) {
 						const isEscalation = msg.type === "escalate";
 						try {
@@ -992,21 +1163,8 @@ export async function executeTaskV2(
 		unit.task.segmentIds[unit.task.segmentIds.length - 1] !== segmentId;
 	/** #629: review-gate remediation iterations spent (bounded). */
 	let remediationIterations = 0;
-	/**
-	 * #630: the most recent escalation the worker filed that has NOT yet been
-	 * answered by a steer (set when surfaced; cleared when a steer is delivered
-	 * after it). While set, a clean worker exit is a HOLD exit, not a stall.
-	 */
-	let pendingEscalation: { id: string; ts: number; preview: string } | null = null;
-	/** #630: relaunches spent re-checking for a ruling (bounded). */
-	let holdRelaunches = 0;
-	/**
-	 * #630: creation timestamp of the most recent supervisor reply we have seen
-	 * (a steer delivered to the worker, or an instructional reply consumed by the
-	 * exit-intercept). An escalation drained LATER but CREATED before this reply
-	 * was already answered — it must not (re)create a hold.
-	 */
-	let lastSupervisorReplyTs = 0;
+	/** #627: rulings delivered to the CURRENT iteration's worker in its initial input (for the STATUS log). */
+	let rulingsInFlight: HoldRecord[] = [];
 	/** #629: gates the CURRENT iteration was spawned to remediate (empty = normal iteration). */
 	let remediationGates: BlockingReviewGate[] = [];
 	let totalIterations = 0;
@@ -1027,13 +1185,338 @@ export async function executeTaskV2(
 				})()
 			: null;
 
-	// Productive-iteration budget. Hold exits (worker idles awaiting a ruling)
-	// do NOT consume it — they are bounded separately (MAX_HOLD_RELAUNCHES,
-	// reset by acknowledgements). Without this, a correctly-holding lane hit
-	// maxIterations (10) inside an hour (penster 20260906T194514). Explicit
-	// counter rather than `iter--` so the two budgets stay legible.
+	// Productive-iteration budget. Hold exits (worker hands over to the runner's
+	// hold loop) do NOT consume it — while held there is no worker at all (#627).
+	// Without this, a correctly-holding lane hit maxIterations (10) inside an
+	// hour (penster 20260906T194514). Explicit counter rather than `iter--` so
+	// the two budgets stay legible.
 	let productiveIterations = 0;
+
+	/**
+	 * #627: the runner-owned hold loop. Runs whenever the unit has an OPEN hold
+	 * and no worker process exists. Publishes `held`, heartbeats the lane
+	 * snapshot (runner health), and polls the held unit's inbox:
+	 *   ruling (validated)  → release + persist (delivery pending) → spawn with it
+	 *   info                → acknowledgement recorded; nothing else changes
+	 *   query               → answered from stored state; no spawn, no release
+	 *   abort               → hold cancelled, never approved; task fails
+	 *   steer / other       → left in the inbox (ordinary mail for the next worker)
+	 * Pause (any cause) unwinds with a `held` outcome; the deadline expiring
+	 * parks the batch (`hold-timeout`) with the hold still open.
+	 */
+	const awaitHoldResolution = async (): Promise<
+		| { kind: "ruled" }
+		| { kind: "paused" }
+		| { kind: "expired"; hold: HoldRecord }
+		| { kind: "aborted"; reason: string }
+	> => {
+		const pollMs = Math.max(50, config.holdPollIntervalMs ?? HOLD_POLL_INTERVAL_MS);
+		const inboxDir = sessionInboxDir(config.stateRoot, config.batchId, workerAgentId);
+		const openHolds = () => unitHolds().filter((h) => h.phase === "open");
+
+		updateStatusField(statusPath, "Status", "⏸️ Held — awaiting ruling");
+		const initial = openHolds();
+		logExecution(
+			statusPath,
+			"Held",
+			`no worker process; awaiting ruling on ${initial.map((h) => h.escalationId).join(", ")} (reply with send_agent_message type="ruling" replyTo=<escalation id>; type="info" acknowledges without releasing)`,
+		);
+		emitSnapshot(
+			config,
+			taskId,
+			segmentId,
+			"held",
+			lastTelemetry,
+			statusPath,
+			reviewerStatePath,
+			snapshotSegmentCtx,
+		);
+		holdAlert(
+			"agent-message",
+			`⏸️ **Lane held** — ${taskId} (lane ${config.laneNumber}) is waiting for a ruling with no worker running (zero cost).\n` +
+				buildHoldStatusSummary(initial)
+					.split("\n")
+					.map((l) => `  ${l}`)
+					.join("\n") +
+				`\n  Rule: send_agent_message(to="${workerAgentId}", type="ruling", replyTo="${initial[0]?.escalationId ?? "<escalation id>"}", content=<instructions>).` +
+				`\n  Acknowledge without releasing: type="info". Ask for status: type="query". Cancel: type="abort".`,
+			{ messageId: initial[0]?.escalationId, exitReason: "lane_held" },
+		);
+
+		let lastHeartbeat = Date.now();
+		for (;;) {
+			if (pauseSignal.paused) return { kind: "paused" };
+
+			const now = Date.now();
+			let current = openHolds();
+			if (current.length === 0) return { kind: "ruled" };
+
+			// Inbox: only hold-control mail is consumed here.
+			let messages: ReturnType<typeof readInbox> = [];
+			try {
+				messages = readInbox(inboxDir, config.batchId);
+			} catch {
+				/* inbox not ready */
+			}
+			for (const { filename, message } of messages) {
+				const kind = classifyHoldMail(message, holdStore.list(), taskId, segmentId);
+				if (kind === "ignore") continue;
+				const consume = () => {
+					try {
+						ackMessage(inboxDir, filename);
+					} catch {
+						/* best effort */
+					}
+				};
+				if (kind === "ruling") {
+					const v = validateRuling(message, holdStore.list(), { taskId, segmentId });
+					if (v.ok === false) {
+						logExecution(statusPath, "Ruling rejected", `${message.id}: ${v.reason}`);
+						holdAlert(
+							"agent-message",
+							`⚠️ **Ruling rejected** for ${taskId} (lane ${config.laneNumber}): ${v.reason}. Re-send with type="ruling" and replyTo set to the open escalation id.`,
+							{ messageId: message.id, exitReason: `ruling_rejected: ${v.code}` },
+						);
+						consume();
+						continue;
+					}
+					try {
+						holdStore.update(applyRuling(v.hold, message, now));
+					} catch (err) {
+						// Leave the ruling in the inbox; the next poll retries the persist.
+						logExecution(
+							statusPath,
+							"Hold persist failed",
+							`ruling ${message.id} not applied (left in inbox): ${err instanceof Error ? err.message : String(err)}`,
+						);
+						continue;
+					}
+					consume();
+					logExecution(
+						statusPath,
+						"Ruling accepted",
+						`${message.id} by ${message.actor?.role} resolves ${v.hold.escalationId}; relaunching worker with the ruling in its initial input`,
+					);
+					appendMailboxAuditEvent(config.stateRoot, config.batchId, {
+						type: "message_delivered",
+						from: message.from,
+						to: workerAgentId,
+						messageId: message.id,
+						messageType: "ruling",
+						contentPreview: message.content.slice(0, 200),
+					});
+				} else if (kind === "ack") {
+					consume();
+					for (const h of openHolds()) {
+						try {
+							holdStore.update(recordAcknowledgement(h, now));
+						} catch {
+							/* informational only */
+						}
+					}
+					logExecution(
+						statusPath,
+						"Hold acknowledged",
+						`supervisor acknowledged (${message.id}); still holding — deadline unchanged`,
+					);
+				} else if (kind === "query") {
+					consume();
+					holdAlert(
+						"agent-message",
+						`ℹ️ **Hold status** for ${taskId} (lane ${config.laneNumber}), answered by the runner (no worker spawned):\n` +
+							buildHoldStatusSummary(unitHolds(), now)
+								.split("\n")
+								.map((l) => `  ${l}`)
+								.join("\n"),
+						{ messageId: message.id, exitReason: "hold_query" },
+					);
+					logExecution(statusPath, "Hold query", `answered ${message.id} from stored hold state`);
+				} else if (kind === "abort") {
+					const reason = `abort by ${message.from}: ${message.content.slice(0, 120)}`;
+					let persisted = true;
+					for (const h of openHolds()) {
+						try {
+							holdStore.update(cancelHold(h, reason, now));
+						} catch (err) {
+							persisted = false;
+							logExecution(
+								statusPath,
+								"Hold persist failed",
+								`could not cancel ${h.escalationId}: ${err instanceof Error ? err.message : String(err)}`,
+							);
+						}
+					}
+					if (!persisted) continue; // retry next poll; abort stays in inbox
+					consume();
+					return { kind: "aborted", reason };
+				}
+			}
+
+			current = openHolds();
+			if (current.length === 0) return { kind: "ruled" };
+
+			// Deadline — checked AFTER the inbox pass so a ruling queued while the
+			// batch was parked on hold-timeout is consumed on resume instead of the
+			// lane re-parking with the ruling unread (Sage review, blocker 1).
+			// Expiry parks the batch; the hold stays open.
+			const expired = current.find((h) => isHoldExpired(h, now));
+			if (expired) {
+				if (expired.expiredAt === undefined) {
+					try {
+						holdStore.update(expireHold(expired, now));
+					} catch (err) {
+						logExecution(
+							statusPath,
+							"Hold persist failed",
+							`could not record expiry of ${expired.escalationId}: ${err instanceof Error ? err.message : String(err)}`,
+						);
+					}
+				}
+				return { kind: "expired", hold: expired };
+			}
+
+			if (Date.now() - lastHeartbeat >= HOLD_HEARTBEAT_INTERVAL_MS) {
+				lastHeartbeat = Date.now();
+				emitSnapshot(
+					config,
+					taskId,
+					segmentId,
+					"held",
+					lastTelemetry,
+					statusPath,
+					reviewerStatePath,
+					snapshotSegmentCtx,
+				);
+			}
+			await new Promise((r) => setTimeout(r, pollMs));
+		}
+	};
+
 	for (; productiveIterations < config.maxIterations; productiveIterations++) {
+		// ── #627: unrecorded escalations block everything ───────────────────────
+		// An escalation whose hold could not be persisted (drain left it in the
+		// outbox) must never be followed by a spawn, a no-progress kill, or an
+		// outbox drain that would destroy it. Retry the persist; if it still
+		// fails, wait — unwinding only on pause. Fail closed, not open.
+		{
+			const unrecorded = selectUnrecordedEscalations(
+				readOutbox(config.stateRoot, config.batchId, workerAgentId),
+				holdStore.list(),
+				escalationFilter,
+			);
+			if (unrecorded.length > 0) {
+				drainAndSurfaceOutbox(); // retries holdStore.open() for each
+				const stillUnrecorded = selectUnrecordedEscalations(
+					readOutbox(config.stateRoot, config.batchId, workerAgentId),
+					holdStore.list(),
+				);
+				if (stillUnrecorded.length > 0) {
+					if (pauseSignal.paused) {
+						logExecution(
+							statusPath,
+							"Paused",
+							`paused with ${stillUnrecorded.length} unrecorded escalation(s) still in the outbox — task remains pending; the hold will be recorded on resume`,
+						);
+						return makeResult(
+							taskId,
+							segmentId,
+							workerAgentId,
+							"pending",
+							startTime,
+							"Paused with unrecorded escalation",
+							false,
+							totalIterations,
+							cumulativeCostUsd,
+							cumulativeTokens,
+							config,
+							statusPath,
+							reviewerStatePath,
+							lastTelemetry,
+							snapshotSegmentCtx,
+						);
+					}
+					productiveIterations--;
+					await new Promise((r) =>
+						setTimeout(r, Math.max(50, config.holdPollIntervalMs ?? HOLD_POLL_INTERVAL_MS)),
+					);
+					continue;
+				}
+			}
+		}
+
+		// ── #627: hold gate — evaluated before pause, before remaining-steps, before spawn.
+		// A unit with an open hold never spawns a worker and never completes.
+		if (unitHolds().some((h) => h.phase === "open")) {
+			quarantineUnauthorizedDone("unit is held");
+			const outcome = await awaitHoldResolution();
+			if (outcome.kind === "paused" || outcome.kind === "expired") {
+				const open = unitHolds().filter((h) => h.phase === "open");
+				let reason: string;
+				if (outcome.kind === "expired") {
+					reason = `Hold timeout: escalation ${outcome.hold.escalationId} received no ruling within ${holdTimeoutMinutes} min — batch parked (hold-timeout); the hold remains open`;
+					logExecution(statusPath, "Hold expired", reason);
+					updateStatusField(statusPath, "Status", "⏸️ Held — deadline passed, batch parked");
+					holdAlert(
+						"task-failure",
+						`⏰ **Hold timeout** — ${taskId} (lane ${config.laneNumber}) waited ${holdTimeoutMinutes} min for a ruling on ${outcome.hold.escalationId} ("${outcome.hold.escalation.slice(0, 160)}"). ` +
+							`The batch is parking (pause cause hold-timeout) with the hold OPEN and the worktree preserved. ` +
+							`Rule on it (send_agent_message type="ruling" replyTo="${outcome.hold.escalationId}") and orch_resume(force=true).`,
+						{ messageId: outcome.hold.escalationId, exitReason: "hold_timeout" },
+					);
+					// Park the batch. Other lanes observe the signal at their next
+					// iteration boundary and return `pending`; the engine's pause
+					// finalizer preserves every worktree. The cause is NOT a policy
+					// cause, so Tier-0 recovery never clears it silently.
+					pauseSignal.paused = true;
+					pauseSignal.cause = "hold-timeout";
+				} else {
+					reason = `Held (${open.map((h) => h.escalationId).join(", ")}) — batch paused${pauseSignal.cause ? ` (${pauseSignal.cause})` : ""}; hold preserved`;
+					logExecution(statusPath, "Held — paused", reason);
+				}
+				return makeResult(
+					taskId,
+					segmentId,
+					workerAgentId,
+					"held",
+					startTime,
+					reason,
+					false,
+					totalIterations,
+					cumulativeCostUsd,
+					cumulativeTokens,
+					config,
+					statusPath,
+					reviewerStatePath,
+					lastTelemetry,
+					snapshotSegmentCtx,
+				);
+			}
+			if (outcome.kind === "aborted") {
+				const reason = `Hold cancelled: ${outcome.reason}`;
+				logExecution(statusPath, "Hold cancelled", reason);
+				updateStatusField(statusPath, "Status", "❌ Failed — hold aborted");
+				return makeResult(
+					taskId,
+					segmentId,
+					workerAgentId,
+					"failed",
+					startTime,
+					reason,
+					false,
+					totalIterations,
+					cumulativeCostUsd,
+					cumulativeTokens,
+					config,
+					statusPath,
+					reviewerStatePath,
+					lastTelemetry,
+					snapshotSegmentCtx,
+				);
+			}
+			// ruled — fall through: the spawn below carries the ruling in its initial input.
+			updateStatusField(statusPath, "Status", "🔄 In Progress");
+		}
+
 		if (pauseSignal.paused) {
 			// A pause is NOT a terminal outcome. Returning "skipped" here converted a
 			// correctly-holding task into a skipped one and let a single-wave batch
@@ -1101,7 +1584,21 @@ export async function executeTaskV2(
 		// re-runs review_step to obtain an APPROVE. Segment-scoped iterations
 		// (non-final segments) never finalize, so the gate does not apply there.
 		remediationGates = [];
-		if (remainingSteps.length === 0) {
+		// #627: rulings released but not yet acknowledged by a worker must be
+		// DELIVERED before the unit can finalize — even when every box is checked.
+		const undeliveredRulings = unitHolds().filter(
+			(h) => h.phase === "released" && h.deliveryState !== "acknowledged",
+		);
+		if (remainingSteps.length === 0 && undeliveredRulings.length > 0) {
+			const focusStep = parsed.steps[parsed.steps.length - 1];
+			remainingSteps = focusStep ? [focusStep] : [];
+			if (remainingSteps.length === 0) break; // no parseable steps — finalize gate will refuse
+			logExecution(
+				statusPath,
+				"Ruling delivery iteration",
+				`all steps checked but ruling(s) ${undeliveredRulings.map((h) => h.ruling?.id).join(", ")} not yet acknowledged — spawning to deliver`,
+			);
+		} else if (remainingSteps.length === 0) {
 			const isFinalizingIteration = !isNonFinalSegment;
 			const blocking = isFinalizingIteration ? findBlockingReviewGates(unit.packet.reviewsDir) : [];
 			if (blocking.length === 0) break; // All done
@@ -1147,6 +1644,7 @@ export async function executeTaskV2(
 		//      helper `shouldSkipSpawnForCompleteSegment`).
 		if (
 			remediationGates.length === 0 &&
+			undeliveredRulings.length === 0 && // #627: a ruling delivery iteration must spawn (Sage round 2, C)
 			shouldSkipSpawnForCompleteSegment(iterStatusContent, repoStepNumbers, currentRepoId)
 		) {
 			logExecution(
@@ -1349,23 +1847,43 @@ export async function executeTaskV2(
 			);
 		}
 
-		if (pendingEscalation && totalIterations > 1) {
-			// #630: the previous session exited while HOLDING for a ruling. The
-			// generic "you exited prematurely — work continuously" nag is the WRONG
-			// prompt here: it pushes a correctly-holding worker toward self-release
-			// (the TP-2037 class). Give a hold-resume prompt instead.
-			const ago = Math.max(1, Math.round((Date.now() - pendingEscalation.ts) / 60_000));
-			promptLines.push(
-				``,
-				`⏸️ YOU ARE ON HOLD awaiting a supervisor ruling.`,
-				`You escalated ${ago} min ago (escalation ${pendingEscalation.id}: "${pendingEscalation.preview.slice(0, 160)}").`,
-				`If a supervisor reply is delivered to you at the start of this session (as a steering message), act on it.`,
-				`If NO reply (or only an acknowledgement) has arrived: do NOT proceed past the hold, do NOT self-approve or`,
-				`write .DONE, and do NOT re-send the escalation. Work on anything that does not depend on the ruling`,
-				`(other remediable findings, unaffected checkboxes); otherwise add a one-line status note with`,
-				`notify_supervisor(replyTo="${pendingEscalation.id}") and end your turn; the runtime will relaunch you to re-check.`,
+		// #627: rulings go at the TOP of the initial input, ahead of the task
+		// instructions, and delivery is recorded (strict) BEFORE the spawn so a
+		// crash between here and the worker's acknowledgement replays the same
+		// ruling id (at-least-once). Persist failure = no spawn this iteration.
+		rulingsInFlight = [];
+		if (undeliveredRulings.length > 0) {
+			const attemptId = `${executionId}#${totalIterations + 1}`;
+			let persisted = true;
+			for (const h of undeliveredRulings) {
+				try {
+					holdStore.update(markDeliveryInFlight(h, attemptId));
+				} catch (err) {
+					persisted = false;
+					logExecution(
+						statusPath,
+						"Hold persist failed",
+						`could not record delivery attempt for ${h.escalationId}: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+			}
+			if (!persisted) {
+				productiveIterations--;
+				await new Promise((r) =>
+					setTimeout(r, Math.max(50, config.holdPollIntervalMs ?? HOLD_POLL_INTERVAL_MS)),
+				);
+				continue;
+			}
+			rulingsInFlight = undeliveredRulings;
+			promptLines.unshift(...buildRulingPromptLines(undeliveredRulings));
+			logExecution(
+				statusPath,
+				"Ruling delivered",
+				`${undeliveredRulings.map((h) => `${h.ruling?.id} (${h.ruling?.actor.role})`).join(", ")} placed in the worker's initial input (attempt ${attemptId})`,
 			);
-		} else if (remediationGates.length === 0 && totalIterations > 1 && remainingSteps.length > 0) {
+		}
+
+		if (remediationGates.length === 0 && totalIterations > 1 && remainingSteps.length > 0) {
 			const remainingSet = new Set(remainingSteps.map((s) => s.number));
 			const completedSteps = parsed.steps.filter((s) => !remainingSet.has(s.number));
 			promptLines.push(
@@ -1462,6 +1980,11 @@ export async function executeTaskV2(
 				// explicitly clear them to prevent env inheritance leaking segment cues.
 				TASKPLANE_ACTIVE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : "",
 				TASKPLANE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : "",
+				// #627: the execution unit's REAL segment identity for mailbox scope
+				// stamping. The two vars above are prompt-visibility cues and are
+				// deliberately blank in FULL_TASK mode even for singleton units like
+				// "TP-1::default" (Sage review round 2, blocker A).
+				TASKPLANE_UNIT_SEGMENT_ID: segmentId ?? "",
 				TASKPLANE_SUPERVISOR_AUTONOMY: config.supervisorAutonomy || "autonomous",
 				ORCH_BATCH_ID: config.batchId,
 				...(config.reviewerModel ? { TASKPLANE_REVIEWER_MODEL: config.reviewerModel } : {}),
@@ -1477,6 +2000,19 @@ export async function executeTaskV2(
 			// exits without making visible progress (no checkboxes, no blocker logged).
 			onPrematureExit: config.onSupervisorAlert
 				? async (assistantMessage: string): Promise<string | null> => {
+						// #627: a worker exiting while the unit has an OPEN hold is handing
+						// over to the runner's hold loop — not exiting prematurely. Do not
+						// intercept, do not consume the inbox (the hold loop is the single
+						// consumer of hold-control mail), do not re-prompt.
+						drainAndSurfaceOutbox(); // record any escalation this turn produced first
+						if (unitHolds().some((h) => h.phase === "open")) {
+							logExecution(
+								statusPath,
+								"Exit intercept skipped",
+								"worker exited with an open hold — runner takes over (no relaunch until a ruling)",
+							);
+							return null;
+						}
 						// Check if the worker made visible progress during this turn:
 						// 1. Checkbox progress (more items checked)
 						// 2. Blocker logged (non-empty Blockers section)
@@ -1615,8 +2151,6 @@ export async function executeTaskV2(
 							Math.min(1800, Math.max(15, config.exitInterceptTimeoutSec ?? 60)) * 1000;
 						const POLL_INTERVAL_MS = 2_000;
 						const escalationTimestamp = Date.now();
-						let acceptedReplyTs = 0;
-						let acceptedReplyType = "";
 						const inboxDir = sessionInboxDir(config.stateRoot, config.batchId, workerAgentId);
 
 						const supervisorReply = await new Promise<string | null>((resolve) => {
@@ -1630,16 +2164,15 @@ export async function executeTaskV2(
 									const messages = readInbox(inboxDir, config.batchId);
 									// Only accept messages newer than escalation timestamp
 									for (const { filename, message } of messages) {
+										// #627: rulings are hold-control mail; never consumed by the intercept.
+										if (message.type === "ruling") continue;
 										if (message.timestamp >= escalationTimestamp && message.from === "supervisor") {
 											// Consume the message
-											const ackDir = join(dirname(inboxDir), "ack");
 											try {
 												ackMessage(inboxDir, filename);
 											} catch {
 												/* best effort */
 											}
-											acceptedReplyTs = message.timestamp;
-											acceptedReplyType = message.type;
 											resolve(message.content);
 											return;
 										}
@@ -1693,21 +2226,6 @@ export async function executeTaskV2(
 							"Exit intercept reprompt",
 							`Supervisor provided instructions (${supervisorReply.length} chars) — reprompting worker`,
 						);
-						// #630: a supervisor reply consumed HERE never reaches .steering-pending
-						// (it is returned as the next prompt). It is the ruling: release the hold.
-						if (acceptedReplyType === "info" && pendingEscalation) {
-							// Acknowledgement consumed by the intercept: engaged, still holding.
-							holdRelaunches = 0;
-							logExecution(
-								statusPath,
-								"Hold acknowledged",
-								`supervisor acknowledged escalation ${pendingEscalation.id} (via exit-intercept); still holding`,
-							);
-						} else {
-							lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, acceptedReplyTs || Date.now());
-							pendingEscalation = null;
-							holdRelaunches = 0;
-						}
 						return supervisorReply;
 					}
 				: undefined,
@@ -1849,30 +2367,8 @@ export async function executeTaskV2(
 						const sanitized = entry.content.replace(/\r?\n/g, " / ").replace(/\|/g, "\\|").slice(0, 200);
 						const ts = new Date(entry.ts).toISOString().slice(0, 16).replace("T", " ");
 						logExecution(statusPath, "⚠️ Steering", sanitized);
-						// #630: a steer delivered AFTER the escalation counts as the ruling
-						// (delivery, not content, is what we can observe here).
-						// #630 contract: an `info` message is an ACKNOWLEDGEMENT ("received,
-						// ruling pending") — the supervisor is engaged, so the relaunch counter
-						// resets, but the worker is still holding. Any other type (steer/query/
-						// abort) is the ruling/instruction and releases the hold. This is what
-						// lets an hours-long operator ruling neither burn the relaunch budget
-						// nor be mistaken for a ruling.
-						if (entry.type === "info") {
-							if (pendingEscalation && entry.ts >= pendingEscalation.ts) {
-								holdRelaunches = 0;
-								logExecution(
-									statusPath,
-									"Hold acknowledged",
-									`supervisor acknowledged escalation ${pendingEscalation.id}; still holding`,
-								);
-							}
-						} else {
-							lastSupervisorReplyTs = Math.max(lastSupervisorReplyTs, entry.ts);
-							if (pendingEscalation && entry.ts >= pendingEscalation.ts) {
-								pendingEscalation = null;
-								holdRelaunches = 0;
-							}
-						}
+						// #627: steer/info/query delivered mid-run are ordinary mail. They never
+						// release a hold — only a typed ruling consumed by the hold loop does.
 					} catch {
 						/* skip malformed */
 					}
@@ -1908,74 +2404,53 @@ export async function executeTaskV2(
 		}
 		const progressDelta = afterTotalChecked - prevTotalChecked;
 
-		if (progressDelta <= 0) {
-			// #630: a clean exit while HOLDING for a supervisor ruling is evaluated
-			// FIRST — before the cumulative soft-progress check, which would otherwise
-			// let pre-existing uncommitted work mask every hold exit as "progress" and
-			// defeat the bounded relaunch contract.
-			if (pendingEscalation && workerResult.exitCode === 0 && !workerResult.killed) {
-				// #630: the worker exited cleanly while HOLDING for a supervisor ruling
-				// (escalation surfaced, no steer delivered since). That is governance,
-				// not a stall: do not count it toward the no-progress limit. Bounded by
-				// MAX_HOLD_RELAUNCHES; each relaunch re-checks for the ruling.
-				holdRelaunches++;
+		// ── #627: hold exit ─────────────────────────────────────────────────────────────
+		// Any exit (clean, crash, kill) with an OPEN hold hands over to the hold loop
+		// at the next iteration top. Governance, not a stall: it consumes neither a
+		// productive iteration nor the no-progress budget, and whatever the worker
+		// did this turn is irrelevant to whether the unit may complete.
+		const unrecordedAfterExit = selectUnrecordedEscalations(
+			readOutbox(config.stateRoot, config.batchId, workerAgentId),
+			holdStore.list(),
+			escalationFilter,
+		);
+		if (unrecordedAfterExit.length > 0) {
+			// Persist failed in the drain: never count this exit, never kill; the
+			// top-of-loop guard retries the persist and blocks until it lands.
+			logExecution(
+				statusPath,
+				"Hold exit",
+				`Iteration ${totalIterations}: worker exited with ${unrecordedAfterExit.length} escalation(s) not yet persisted as holds — blocking until recorded`,
+			);
+			productiveIterations--;
+			continue;
+		}
+		if (unitHolds().some((h) => h.phase === "open")) {
+			logExecution(
+				statusPath,
+				"Hold exit",
+				`Iteration ${totalIterations}: worker exited with an open hold (${unitHolds()
+					.filter((h) => h.phase === "open")
+					.map((h) => h.escalationId)
+					.join(", ")}) — not counted toward stall or iteration budget`,
+			);
+			productiveIterations--;
+			continue;
+		}
+		if (rulingsInFlight.length > 0) {
+			const stillUnacked = unitHolds().filter(
+				(h) => h.phase === "released" && h.deliveryState !== "acknowledged",
+			);
+			if (stillUnacked.length > 0) {
 				logExecution(
 					statusPath,
-					"Hold exit",
-					`Iteration ${totalIterations}: worker exited while awaiting a ruling for escalation ${pendingEscalation.id} (relaunch ${holdRelaunches}/${MAX_HOLD_RELAUNCHES}) — not counted toward stall`,
+					"Ruling not acknowledged",
+					`worker exited without notify_supervisor(replyTo=<ruling id>) for ${stillUnacked.map((h) => h.ruling?.id).join(", ")} — the same ruling will be replayed in the next initial input`,
 				);
-				if (holdRelaunches > MAX_HOLD_RELAUNCHES) {
-					const reason = `Hold unresolved: escalation ${pendingEscalation.id} ("${pendingEscalation.preview.slice(0, 120)}") received no supervisor reply across ${MAX_HOLD_RELAUNCHES} relaunches`;
-					logExecution(statusPath, "Task blocked", reason);
-					updateStatusField(statusPath, "Status", "⏸️ Held — ruling outstanding");
-					if (config.onSupervisorAlert) {
-						try {
-							config.onSupervisorAlert({
-								category: "task-failure",
-								summary:
-									`⏸️ **Hold unresolved** — ${taskId} (lane ${config.laneNumber}) escalated for a ruling ` +
-									`(${pendingEscalation.id}: "${pendingEscalation.preview.slice(0, 160)}") and no reply reached it across ` +
-									`${MAX_HOLD_RELAUNCHES} relaunches. The lane is stopping with the work preserved in its worktree.\n` +
-									`Rule on the escalation, then orch_retry_task + orch_resume(force=true) to relaunch the worker ` +
-									`(it will receive your reply as a steer at start).`,
-								context: {
-									taskId,
-									laneId: `lane-${config.laneNumber}`,
-									laneNumber: config.laneNumber,
-									agentId: workerAgentId,
-									messageId: pendingEscalation.id,
-									exitReason: reason,
-								},
-							});
-						} catch {
-							/* best effort */
-						}
-					}
-					return makeResult(
-						taskId,
-						segmentId,
-						workerAgentId,
-						"failed",
-						startTime,
-						reason,
-						false,
-						totalIterations,
-						cumulativeCostUsd,
-						cumulativeTokens,
-						config,
-						statusPath,
-						reviewerStatePath,
-						lastTelemetry,
-						snapshotSegmentCtx,
-					);
-				}
-
-				// Not exhausted: this exit is accounted as a hold, not as progress or a stall,
-				// and it does not consume a productive iteration.
-				productiveIterations--;
-				continue;
 			}
+		}
 
+		if (progressDelta <= 0) {
 			// Check for soft progress: uncommitted changes in the worktree
 			// indicate the worker is actively editing code even if no checkbox
 			// was checked yet. This avoids false stall detection on complex
@@ -2096,7 +2571,16 @@ export async function executeTaskV2(
 				.map((g) => parseGateStepNumber(g.gate))
 				.filter((n): n is number => n !== null),
 		);
+		const holdBlock = completionAuthority();
 		const markComplete = (stepNum: number) => {
+			if (holdBlock.blocked) {
+				logExecution(
+					statusPath,
+					"Step completion withheld",
+					`Step ${stepNum}: checkboxes complete but ${holdBlock.reason} — not marking ✅ Complete`,
+				);
+				return;
+			}
 			if (reviewBlockedSteps.has(stepNum)) {
 				logExecution(
 					statusPath,
@@ -2147,11 +2631,58 @@ export async function executeTaskV2(
 			if (!isNonFinalSegment && findBlockingReviewGates(unit.packet.reviewsDir).length > 0) {
 				continue;
 			}
+			// #627: same deferral for an undelivered ruling — the top-of-loop check
+			// spawns a delivery iteration rather than letting finalize refuse.
+			if (completionAuthority().blocked) {
+				continue;
+			}
 			break;
 		}
 	}
 
 	// ── 3. Post-loop completion check ───────────────────────────────
+	// #627: completion authority is checked FIRST. The loop only reaches this
+	// point with an unresolved hold when the productive budget ran out; the hold
+	// still governs, so the unit is reported `held` (never failed/succeeded) and
+	// any `.DONE` the worker left behind is quarantined.
+	{
+		const authority = completionAuthority();
+		if (authority.blocked) {
+			quarantineUnauthorizedDone(authority.reason);
+			logExecution(statusPath, "Held — budget exhausted", authority.reason);
+			updateStatusField(statusPath, "Status", "⏸️ Held — ruling outstanding");
+			// A returned held controller with the batch still running would leave
+			// the wave monitor reporting `held` forever with nobody consuming mail
+			// (Sage review, blocker 2). Every `held` return parks the batch.
+			if (!pauseSignal.paused) {
+				pauseSignal.paused = true;
+				pauseSignal.cause = "hold-timeout";
+				holdAlert(
+					"task-failure",
+					`⏸️ **Held — iteration budget exhausted** — ${taskId} (lane ${config.laneNumber}) used its worker budget while ${authority.reason}. ` +
+						`The batch is parking (pause cause hold-timeout) with the hold preserved. Resolve the hold, then orch_resume(force=true).`,
+					{ exitReason: "held_budget_exhausted" },
+				);
+			}
+			return makeResult(
+				taskId,
+				segmentId,
+				workerAgentId,
+				"held",
+				startTime,
+				`Iteration budget exhausted while ${authority.reason}`,
+				false,
+				totalIterations,
+				cumulativeCostUsd,
+				cumulativeTokens,
+				config,
+				statusPath,
+				reviewerStatePath,
+				lastTelemetry,
+				snapshotSegmentCtx,
+			);
+		}
+	}
 	const finalStatusContent = readFileSync(statusPath, "utf-8");
 	const finalStatus = parseStatusMd(finalStatusContent);
 	const parsed = parsePromptMd(readFileSync(promptPath, "utf-8"), promptPath);
@@ -2424,20 +2955,23 @@ export function hasPendingExpansionRequestFiles(
 
 export function mapLaneTaskStatusToTerminalSnapshotStatus(
 	status: LaneTaskStatus,
-): "idle" | "complete" | "failed" {
+): "idle" | "complete" | "failed" | "held" {
 	if (status === "succeeded") return "complete";
 	if (status === "skipped") return "idle";
 	// A paused (pending) task is not a failure — the lane is idle awaiting resume.
 	if (status === "pending") return "idle";
+	// #627: held is non-terminal and not a failure; no worker exists.
+	if (status === "held") return "held";
 	return "failed";
 }
 
 export function mapLaneSnapshotStatusToWorkerStatus(
-	status: "running" | "idle" | "complete" | "failed",
+	status: "running" | "idle" | "complete" | "failed" | "held",
 ): RuntimeAgentStatus {
 	if (status === "running") return "running";
 	if (status === "complete") return "exited";
 	if (status === "idle") return "wrapping_up";
+	if (status === "held") return "exited";
 	return "crashed";
 }
 
@@ -2576,7 +3110,7 @@ function emitSnapshot(
 	config: LaneRunnerConfig,
 	taskId: string,
 	segmentId: string | null,
-	status: "running" | "idle" | "complete" | "failed",
+	status: "running" | "idle" | "complete" | "failed" | "held",
 	telemetry: Partial<AgentHostResult>,
 	statusPath: string,
 	reviewerStatePath: string,
@@ -2635,19 +3169,23 @@ function emitSnapshot(
 			taskId,
 			segmentId,
 			status,
-			worker: {
-				agentId: buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker"),
-				status: mapLaneSnapshotStatusToWorkerStatus(status),
-				elapsedMs: telemetry.durationMs ?? 0,
-				toolCalls: telemetry.toolCalls ?? 0,
-				contextPct: telemetry.contextUsage?.percent ?? 0,
-				costUsd: telemetry.costUsd ?? 0,
-				lastTool: telemetry.lastTool ?? "",
-				inputTokens: telemetry.inputTokens ?? 0,
-				outputTokens: telemetry.outputTokens ?? 0,
-				cacheReadTokens: telemetry.cacheReadTokens ?? 0,
-				cacheWriteTokens: telemetry.cacheWriteTokens ?? 0,
-			},
+			// #627: a held lane has no worker process; the snapshot says so explicitly.
+			worker:
+				status === "held"
+					? null
+					: {
+							agentId: buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker"),
+							status: mapLaneSnapshotStatusToWorkerStatus(status),
+							elapsedMs: telemetry.durationMs ?? 0,
+							toolCalls: telemetry.toolCalls ?? 0,
+							contextPct: telemetry.contextUsage?.percent ?? 0,
+							costUsd: telemetry.costUsd ?? 0,
+							lastTool: telemetry.lastTool ?? "",
+							inputTokens: telemetry.inputTokens ?? 0,
+							outputTokens: telemetry.outputTokens ?? 0,
+							cacheReadTokens: telemetry.cacheReadTokens ?? 0,
+							cacheWriteTokens: telemetry.cacheWriteTokens ?? 0,
+						},
 			reviewer: reviewerSnapshot,
 			progress,
 			updatedAt: Date.now(),

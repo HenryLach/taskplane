@@ -145,6 +145,7 @@ export function writeMailboxMessage(
 		content: opts.content,
 		expectsReply: opts.expectsReply ?? false,
 		replyTo: opts.replyTo ?? null,
+		...(opts.type === "ruling" && opts.actor ? { actor: { ...opts.actor } } : {}),
 	};
 
 	// Determine inbox directory
@@ -405,6 +406,9 @@ export function writeOutboxMessage(
 		content: opts.content,
 		expectsReply: opts.expectsReply ?? false,
 		replyTo: opts.replyTo ?? null,
+		...(opts.scope
+			? { scope: { taskId: opts.scope.taskId, segmentId: opts.scope.segmentId ?? null } }
+			: {}),
 	};
 
 	const finalFilename = `${id}.msg.json`;
@@ -439,6 +443,32 @@ export function writeOutboxMessage(
  *
  * @since TP-106
  */
+/**
+ * Strict variant of {@link readOutbox} for RECOVERY readers (#627): every
+ * *.msg.json in the outbox (pending only) must be readable and structurally
+ * valid, otherwise it THROWS. Hold authority must never be inferred from a
+ * silently-empty history.
+ */
+export function readOutboxStrict(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+): MailboxMessage[] {
+	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
+	if (!existsSync(outboxDir)) return [];
+	const entries = readdirSync(outboxDir).filter((f) => f.endsWith(".msg.json"));
+	const out: MailboxMessage[] = [];
+	for (const f of entries.sort()) {
+		const raw = readFileSync(join(outboxDir, f), "utf-8");
+		const parsed = JSON.parse(raw) as unknown;
+		if (!isValidMailboxMessage(parsed)) {
+			throw new Error(`malformed mailbox message ${join(outboxDir, f)}`);
+		}
+		out.push(parsed);
+	}
+	return out;
+}
+
 export function readOutbox(stateRoot: string, batchId: string, agentId: string): MailboxMessage[] {
 	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
 	if (!existsSync(outboxDir)) return [];
@@ -573,7 +603,21 @@ export function ackOutboxMessage(
  *
  * @since TP-187 (#538)
  */
-export function drainAgentOutbox(stateRoot: string, batchId: string, agentId: string): number {
+export function drainAgentOutbox(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+	opts: {
+		/**
+		 * #627: keep `escalate` messages in place. A pending escalation may be a
+		 * hold whose persist has not landed yet; draining it away would release
+		 * the hold silently. Default true — pass false only when the lane is
+		 * being torn down for good (abort).
+		 */
+		preserveEscalations?: boolean;
+	} = {},
+): number {
+	const preserveEscalations = opts.preserveEscalations ?? true;
 	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
 	if (!existsSync(outboxDir)) return 0;
 
@@ -598,6 +642,14 @@ export function drainAgentOutbox(stateRoot: string, batchId: string, agentId: st
 		const srcPath = join(outboxDir, entry);
 
 		if (entry.endsWith(".msg.json")) {
+			if (preserveEscalations) {
+				try {
+					const parsed = JSON.parse(readFileSync(srcPath, "utf-8")) as { type?: string };
+					if (parsed?.type === "escalate") continue;
+				} catch {
+					/* unreadable — treat as ordinary mail */
+				}
+			}
 			if (!processedDirEnsured) {
 				try {
 					mkdirSync(processedDir, { recursive: true });

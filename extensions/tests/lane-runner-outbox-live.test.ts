@@ -59,7 +59,8 @@ describe("mail-recognition — lane-runner live outbox surfacing", () => {
 
 	it("is re-entrancy guarded so a slow cycle can't overlap the next tick", () => {
 		const fnStart = laneRunnerSrc.indexOf("const drainAndSurfaceOutbox");
-		const body = laneRunnerSrc.slice(fnStart, fnStart + 3000);
+		// #627: window widened for the hold-open / delivery-ack blocks inside the drain.
+		const body = laneRunnerSrc.slice(fnStart, fnStart + 7000);
 		assert.match(body, /if\s*\(outboxDraining\)\s*return;/);
 		assert.match(body, /outboxDraining\s*=\s*true;/);
 		assert.match(body, /outboxDraining\s*=\s*false;/);

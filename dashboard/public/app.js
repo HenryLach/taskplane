@@ -376,7 +376,7 @@ function taskSegmentProgress(task, segmentStatusMap, forcedActiveSegmentId) {
     if (task.status === "pending" || task.status === "running") {
       currentSegmentId = segmentIds.find((id) => {
         const status = segmentStatusMap.get(id);
-        return !["succeeded", "failed", "stalled", "skipped"].includes(status);
+        return !["succeeded", "failed", "stalled", "skipped"].includes(status); // held is non-terminal
       }) || segmentIds[segmentIds.length - 1];
     } else {
       currentSegmentId = segmentIds[segmentIds.length - 1];
@@ -413,7 +413,7 @@ function taskSegmentPillRow(task, segmentStatusMap, activeSegmentId) {
   if (segmentIds.length <= 1) return "";
 
   // Status -> { icon, className } table. Keep emoji simple/monospace-friendly.
-  // ✅ succeeded, ⏳ running, ⬚ pending, ❌ failed, ⏸ stalled, ↷ skipped.
+  // ✅ succeeded, ⏳ running, ⬚ pending, ❌ failed, ⏸ stalled, ↷ skipped, ⚖ held (#627: awaiting a ruling).
   const styles = {
     succeeded: { icon: "\u2705", cls: "seg-succeeded" },
     running:   { icon: "\u23F3", cls: "seg-running" },
@@ -421,6 +421,7 @@ function taskSegmentPillRow(task, segmentStatusMap, activeSegmentId) {
     failed:    { icon: "\u274C", cls: "seg-failed" },
     stalled:   { icon: "\u23F8", cls: "seg-stalled" },
     skipped:   { icon: "\u21B7", cls: "seg-skipped" },
+    held:      { icon: "\u2696", cls: "seg-held" },
   };
 
   const pills = segmentIds.map((segId) => {
@@ -507,6 +508,7 @@ function renderSummary(batch) {
   const running   = tasks.filter(t => t.status === "running").length;
   const failed    = tasks.filter(t => t.status === "failed").length;
   const stalled   = tasks.filter(t => t.status === "stalled").length;
+  const held      = tasks.filter(t => t.status === "held").length; // #627
   const pending   = tasks.filter(t => t.status === "pending").length;
 
   // ── Checkbox-based progress by wave ──────────────────────────
@@ -604,6 +606,7 @@ function renderSummary(batch) {
   if (running > 0)   countsHtml += `<span class="count-chip count-running"><span class="count-num">${running}</span><span class="count-icon">▶</span></span>`;
   if (failed > 0)    countsHtml += `<span class="count-chip count-failed"><span class="count-num">${failed}</span><span class="count-icon">✗</span></span>`;
   if (stalled > 0)   countsHtml += `<span class="count-chip count-stalled"><span class="count-num">${stalled}</span><span class="count-icon">⏸</span></span>`;
+  if (held > 0)      countsHtml += `<span class="count-chip count-held" title="awaiting a supervisor/operator ruling"><span class="count-num">${held}</span><span class="count-icon">⚖</span></span>`;
   if (pending > 0)   countsHtml += `<span class="count-chip count-pending"><span class="count-num">${pending}</span><span class="count-icon">◌</span></span>`;
   countsHtml += `<span class="count-total">/ ${total}</span>`;
   $summaryCounts.innerHTML = countsHtml;
