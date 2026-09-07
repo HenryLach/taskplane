@@ -108,18 +108,30 @@ jobs:
         run: npm publish --provenance --access public
 
       - name: Verify npm publish landed
+        id: verify_npm
+        # v0.30.6: `npm publish` succeeded ("+ taskplane@0.30.6") but the registry's
+        # read replicas took ~5 minutes to serve it. The old 30s poll aborted the
+        # job and the GitHub-release step never ran, leaving a published npm
+        # version with no release. Now: poll ~6 minutes, and treat a timeout as a
+        # WARNING rather than a failure — the publish step above is the authority
+        # on whether publishing succeeded (it fails loudly on E403/EOTP/etc.); a
+        # slow replica must not block the release steps below.
+        continue-on-error: true
         run: |
-          # npm registry can lag a few seconds; poll for up to ~30s.
-          for i in 1 2 3 4 5 6; do
-            REGISTRY_VERSION=$(npm view taskplane version 2>/dev/null || echo "")
-            if [ "$REGISTRY_VERSION" = "${{ steps.version.outputs.tag_version }}" ]; then
-              echo "✅ npm registry shows version $REGISTRY_VERSION"
+          EXPECTED="${{ steps.version.outputs.tag_version }}"
+          for i in $(seq 1 24); do
+            # Query the registry document directly (bypasses npm's client cache).
+            REGISTRY_VERSION=$(curl -fsS https://registry.npmjs.org/taskplane 2>/dev/null \
+              | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{console.log(JSON.parse(d)["dist-tags"].latest)}catch{console.log("")}})' \
+              || echo "")
+            if [ "$REGISTRY_VERSION" = "$EXPECTED" ]; then
+              echo "✅ npm registry shows version $REGISTRY_VERSION (after $((i*15))s)"
               exit 0
             fi
-            echo "Registry shows '$REGISTRY_VERSION', expected '${{ steps.version.outputs.tag_version }}'. Retry $i/6 in 5s..."
-            sleep 5
+            echo "Registry shows '$REGISTRY_VERSION', expected '$EXPECTED'. Retry $i/24 in 15s..."
+            sleep 15
           done
-          echo "::error::npm registry did not propagate the new version within 30s. Check https://www.npmjs.com/package/taskplane manually."
+          echo "::warning::npm registry had not propagated $EXPECTED after ~6 minutes. The publish step succeeded; this is almost certainly replica lag. Verify manually: npm view taskplane version"
           exit 1
 
       - name: Extract changelog section for this version
@@ -168,3 +180,7 @@ jobs:
           echo "- **npm**: https://www.npmjs.com/package/taskplane/v/${{ steps.version.outputs.tag_version }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **GitHub**: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag_name }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Provenance**: attached (verifiable via \`npm audit signatures\`)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.verify_npm.outcome }}" != "success" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "> ⚠️ npm registry propagation was not confirmed within the poll window (the publish step itself succeeded). Verify: \`npm view taskplane version\`" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -279,8 +279,12 @@ consecutive releases).
      `gh run list --workflow=release.yml --limit 1`
 
 8. **Verify everything published correctly.**
-   - `npm view taskplane version` — should show the new version (allow ~10-15s
-     for npm registry propagation)
+   - `npm view taskplane version` — should show the new version. npm read
+     replicas have lagged **~5 minutes** (v0.30.6); the workflow polls ~6 min and
+     treats a timeout as a warning, so the GitHub release is still created. If
+     the registry still lags after that, wait — do NOT re-run the workflow
+     (`npm publish` over an existing version fails with E403) and do NOT publish
+     locally.
    - `gh release view v<version>` — should show the GitHub release with notes
    - Optional: `npm view taskplane versions --json | tail` to confirm the
      version is in the published list
