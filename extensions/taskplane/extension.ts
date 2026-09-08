@@ -13,7 +13,7 @@ import {
 	createWriteStream,
 	renameSync,
 } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, relative } from "path";
 import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "child_process";
 
@@ -111,6 +111,7 @@ import {
 	type RulingActor,
 	validateRuling,
 } from "./hold-state.ts";
+import { ratifyGate, type RatifyGateParams } from "./ratification-op.ts";
 import {
 	readRegistrySnapshot,
 	isProcessAlive as registryIsProcessAlive,
@@ -5871,6 +5872,100 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	// ── #627 Stage 2a: gate ratification ─────────────────────────
+	// Thin adapter over the extracted, testable operation (ratification-op.ts).
+	// The trusted issuing paths inject the environment coupling (batch-state load,
+	// lane repo resolution, git, audit); the record build/validate/write logic
+	// lives in `ratifyGate` so it can be exercised behaviourally in tests.
+	function doRatifyGate(params: RatifyGateParams, actor: RulingActor, stateRoot: string): string {
+		return ratifyGate(params, actor, stateRoot, {
+			loadBatchState,
+			resolveLaneRepoRoot: (lane, root) => resolveLaneRepoRootForTools(lane, root),
+			isWorkspaceMode: !!execCtx?.workspaceConfig,
+			runGit,
+			logAudit: (root, batchId, entry) => logRecoveryAction(root, batchId, entry),
+		});
+	}
+
+	pi.registerTool({
+		name: "ratify_gate",
+		label: "Ratify Review Gate",
+		description:
+			"Close a review gate that hit its revision cap by writing a validated ratification record and the " +
+			"APPROVE review file it authorizes. Use ONLY after ruling on the findings, verifying the worker's fold, " +
+			"and confirming the proof revision. The worker must never write the APPROVE file itself.",
+		promptSnippet:
+			"ratify_gate(taskId, gate, rulingId, summary, findings, proofRevision, artifactRefs?) — close a capped review gate with a trusted, validated ratification",
+		promptGuidelines: [
+			"SEQUENCING INVARIANT: ruling → worker fold → your verification → ratify_gate → (the APPROVE file it writes) → .DONE. The worker NEVER writes the APPROVE review file; ratify_gate is the only path that closes a capped gate.",
+			"Call ratify_gate only after send_agent_message(type='ruling') released the lane AND the worker acknowledged and applied the ruling AND you verified the fold against the findings.",
+			"gate is the review gate key `{type}-step{N}` (e.g. `code-step3`) — the same gate whose latest review is at REVISE/RETHINK at its cap.",
+			"rulingId is the ruling message id that released the lane (from the hold). The ratifier role is stamped by this tool as `supervisor` — it is never a parameter.",
+			"proofRevision is the commit that contains the fold; it MUST be the current worktree HEAD (an immutable sha) and the working tree must be clean of uncommitted source changes. Add artifactRefs for non-commit evidence.",
+			"findings must dispose of every review finding: disposition `fixed` (worker fixed it) or `ruled` (you ruled it out of authority), each with evidence.",
+			"On validation failure nothing is written and the reason is returned — fix the cited problem and retry. On success the finalize gate will accept the worker's .DONE.",
+		],
+		parameters: Type.Object({
+			taskId: Type.String({ description: "Task id whose gate is being ratified (e.g. TP-198)" }),
+			gate: Type.String({ description: "Review gate key `{type}-step{N}` (e.g. code-step3)" }),
+			rulingId: Type.String({
+				description: "The ruling message id that released the held lane",
+			}),
+			summary: Type.String({
+				description: "Human-readable summary of why the gate is closable",
+			}),
+			findings: Type.Array(
+				Type.Object({
+					ref: Type.String({ description: "Review finding reference (item number/label)" }),
+					disposition: Type.Union([Type.Literal("fixed"), Type.Literal("ruled")], {
+						description: "fixed by the worker, or ruled out of authority by you",
+					}),
+					evidence: Type.Optional(
+						Type.Array(Type.String(), { description: "Evidence refs (commits, artifacts, ruling ids)" }),
+					),
+				}),
+				{ description: "Disposition of every review finding" },
+			),
+			proofRevision: Type.String({
+				description:
+					"Commit containing the fold; must be the current worktree HEAD (immutable sha) with a clean working tree",
+			}),
+			artifactRefs: Type.Optional(
+				Type.Array(Type.String(), { description: "Additional non-commit proof references" }),
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				// RATIFY-SUPERVISOR-STAMP: the tool is only reachable from the supervisor session.
+				const actor: RulingActor = { role: "supervisor", id: "supervisor" };
+				const result = doRatifyGate(
+					{
+						taskId: params.taskId,
+						gate: params.gate,
+						rulingId: params.rulingId,
+						summary: params.summary,
+						findings: params.findings,
+						proofRevision: params.proofRevision,
+						artifactRefs: params.artifactRefs,
+					},
+					actor,
+					resolveToolStateRoot(ctx),
+				);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error ratifying gate: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
+					details: undefined,
+				};
+			}
+		},
+	});
+
 	// ── TP-106: read_agent_replies tool ───────────────────────
 
 	pi.registerTool({
@@ -6336,6 +6431,37 @@ export default function (pi: ExtensionAPI) {
 				actor: { role: "operator", id: operatorId },
 				stateRootOverride: stateRoot,
 			});
+			ctx.ui.notify(result, result.startsWith("✅") ? "info" : "warning");
+		},
+	});
+
+	pi.registerCommand("orch-ratify", {
+		description:
+			"Close a capped review gate as the OPERATOR (#627 Stage 2a): /orch-ratify <taskId> <gate> <rulingId> <proofRevision> -- <summary>",
+		handler: async (args, ctx) => {
+			const raw = (args ?? "").trim();
+			const sep = raw.indexOf("--");
+			const head = (sep >= 0 ? raw.slice(0, sep) : raw).trim();
+			const summary = sep >= 0 ? raw.slice(sep + 2).trim() : "";
+			const parts = head.split(/\s+/).filter(Boolean);
+			if (parts.length < 4 || !summary) {
+				ctx.ui.notify(
+					"Usage: /orch-ratify <taskId> <gate> <rulingId> <proofRevision> -- <summary>. The gate is `{type}-step{N}` (e.g. code-step3); rulingId is the ruling that released the lane.",
+					"warning",
+				);
+				return;
+			}
+			const [taskId, gate, rulingId, proofRevision] = parts;
+			const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+			const operatorId = execCtx?.orchestratorConfig
+				? resolveOperatorId(execCtx.orchestratorConfig)
+				: (process.env.USERNAME ?? process.env.USER ?? "operator");
+			// RATIFY-OPERATOR-STAMP: the only site that stamps role:"operator" for a ratification.
+			const result = doRatifyGate(
+				{ taskId, gate, rulingId, summary, findings: [], proofRevision },
+				{ role: "operator", id: operatorId },
+				stateRoot,
+			);
 			ctx.ui.notify(result, result.startsWith("✅") ? "info" : "warning");
 		},
 	});

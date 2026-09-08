@@ -222,7 +222,10 @@ describe("review-boundary — #624 tool-result extraction + verdict authority", 
 		expect(flat).toContain("latestReviewFilesPerGate(readdirSync(reviewsDir))");
 		expect(flat).toContain('verdict === "REVISE" || verdict === "RETHINK"');
 		expect(flat).toContain("blockingGates");
-		expect(flat).toContain('reviewInterventionKind: "unresolved-verdict"');
+		// #627 Stage 2a: the kind branches — a bad ratified APPROVE is
+		// "invalid-ratification", an outstanding non-APPROVE is "unresolved-verdict".
+		expect(flat).toContain('"unresolved-verdict"');
+		expect(flat).toContain('"invalid-ratification"');
 		// The refusal must precede .DONE creation.
 		const gateIdx = src.indexOf("#626 minimal finalize gate");
 		const doneIdx = src.indexOf("Create .DONE if not already present");

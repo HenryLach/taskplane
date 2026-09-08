@@ -222,10 +222,14 @@ describe("#627 — wiring: engine, resume, extension", () => {
 		expect(src.indexOf("#627: held-unit target")).toBeLessThan(src.indexOf("is DEAD: its process"));
 	});
 
-	it("extension: /orch-rule is the only operator stamp; retry refuses held; force-merge refuses waves with held units; takeover reports holds", () => {
+	it("extension: operator is stamped only by operator commands (/orch-rule, /orch-ratify); retry refuses held; force-merge refuses waves with held units; takeover reports holds", () => {
 		expect(ext).toContain('pi.registerCommand("orch-rule", {');
 		expect(ext).toContain('actor: { role: "operator", id: operatorId },');
-		expect((ext.match(/role: "operator"/g) ?? []).length).toBe(1);
+		// #627 Stage 2a: /orch-ratify is a SECOND legitimate operator stamp site
+		// (ratification). Both are operator COMMANDS — no model-reachable tool
+		// stamps operator. The count is therefore exactly 2.
+		expect(ext).toContain('pi.registerCommand("orch-ratify", {');
+		expect((ext.match(/role: "operator"/g) ?? []).length).toBe(2);
 		expect(ext).toContain('if (taskRecord.status === "held") {');
 		expect(ext).toContain("retry never releases a hold");
 		expect(ext).toContain("bound by an unresolved hold — force merge refused");
