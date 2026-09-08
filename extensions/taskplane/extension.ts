@@ -14,7 +14,7 @@ import {
 	createWriteStream,
 	renameSync,
 } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, relative } from "path";
 import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "child_process";
 
@@ -113,10 +113,12 @@ import {
 	validateRuling,
 } from "./hold-state.ts";
 import {
+	collectChangedPaths,
 	type GateRatification,
 	type RatificationFinding,
 	ratificationLinkLine,
 	sha256 as sha256Hex,
+	unratifiedWorkingTreePaths,
 	validateRatification,
 	writeRatification,
 } from "./ratification.ts";
@@ -6016,6 +6018,45 @@ export default function (pi: ExtensionAPI) {
 		}
 		const segmentId = rulingHold.segmentId ?? null;
 
+		// R004 issue 1: canonicalize the proof to an immutable commit oid and
+		// require it to BE the current worktree HEAD. A symbolic ref (e.g. `HEAD`
+		// or a branch) or an older SHA must never be stored verbatim — otherwise
+		// the finalize check re-resolves it against a moved tree and fails open,
+		// or issuance "succeeds" on a state finalize will immediately reject.
+		const headOidRes = runGit(["rev-parse", "--verify", "HEAD^{commit}"], laneRec.worktreePath);
+		if (!headOidRes.ok) {
+			return `❌ Ratification refused: worktree HEAD could not be resolved (${headOidRes.stderr}). Nothing was written.`;
+		}
+		const headOid = headOidRes.stdout.trim();
+		const proofOidRes = runGit(
+			["rev-parse", "--verify", `${params.proofRevision}^{commit}`],
+			laneRec.worktreePath,
+		);
+		if (!proofOidRes.ok) {
+			return `❌ Ratification refused: proofRevision "${params.proofRevision}" does not resolve to a commit (${proofOidRes.stderr}). Nothing was written.`;
+		}
+		const proofOid = proofOidRes.stdout.trim();
+		if (proofOid !== headOid) {
+			return (
+				`❌ Ratification refused: proofRevision ${proofOid.slice(0, 12)} is not the current worktree HEAD ` +
+				`${headOid.slice(0, 12)}. Ratify at the exact HEAD that contains the fold (re-verify the fold). Nothing was written.`
+			);
+		}
+		// R004 issue 2: the working tree must be clean of source changes — the
+		// proof commit must fully represent the ratified code. Runtime-owned
+		// artifacts (the task folder and `.pi/`) are allowed to be dirty.
+		const taskFolderRel = relative(laneRec.worktreePath, resolved.taskFolderResolved);
+		const dirty = unratifiedWorkingTreePaths(collectChangedPaths(laneRec.worktreePath, runGit), [
+			taskFolderRel,
+			".pi",
+		]);
+		if (dirty.length > 0) {
+			return (
+				`❌ Ratification refused: uncommitted source changes are not covered by the proof commit: ` +
+				`${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? " …" : ""}. Commit or revert them, then ratify. Nothing was written.`
+			);
+		}
+
 		const findings: RatificationFinding[] = (
 			params.findings.length > 0
 				? params.findings
@@ -6040,21 +6081,21 @@ export default function (pi: ExtensionAPI) {
 			supersededReview: { path: supersededName, sha256: sha256Hex(supersededContent) },
 			findings,
 			proofSet: [
-				{ kind: "revision", ref: params.proofRevision },
+				// Store the canonical oid, never the caller's (possibly symbolic) ref.
+				{ kind: "revision", ref: proofOid },
 				...(params.artifactRefs ?? []).map((ref) => ({ kind: "artifact" as const, ref })),
 			],
 			createdAt: Date.now(),
 		};
 
-		const headRes = runGit(["rev-parse", "HEAD"], laneRec.worktreePath);
-		const headRevision = headRes.ok ? headRes.stdout.trim() : null;
 		const validation = validateRatification(record, {
 			holds: state.holds ?? [],
 			reviewsDir,
 			taskId: params.taskId,
 			segmentId,
 			gate: params.gate,
-			headRevision,
+			headRevision: headOid,
+			requireProofHeadMatch: true,
 			readFile: (p: string) => readFileSync(p, "utf-8"),
 			isAncestor: (a: string, b: string) =>
 				runGit(["merge-base", "--is-ancestor", a, b], laneRec.worktreePath).ok,

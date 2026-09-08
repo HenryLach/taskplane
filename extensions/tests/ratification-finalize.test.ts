@@ -477,4 +477,20 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 		assert.equal(r.outcome.status, "succeeded");
 		assert.equal(existsSync(packet.donePath), true);
 	});
+
+	it("(j) R004-2 uncommitted source change after ratification → refused (working tree dirty), no .DONE", async () => {
+		writeFileSync(join(reviewsDir, "R002-code-step1.md"), approveReview(RATIF_ID));
+		writeRatification(reviewsDir, goodRecord(), 2); // proof == HEAD, tree clean at this point
+		// A source file changes but is NOT committed — HEAD still equals the proof,
+		// yet the post-task `git add -A` would sweep this unratified change in.
+		writeFileSync(join(worktreePath, "code.txt"), "tampered\n");
+
+		const { result, packet } = run(true);
+		const r = await result;
+		assert.equal(r.outcome.status, "failed");
+		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
+		assert.equal(existsSync(packet.donePath), false);
+		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
+		assert.ok(alert, "expected an invalid-ratification alert");
+	});
 });

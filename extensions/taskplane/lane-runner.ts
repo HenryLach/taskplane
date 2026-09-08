@@ -24,7 +24,7 @@ import {
 	readdirSync,
 	renameSync,
 } from "fs";
-import { join, dirname, basename } from "path";
+import { join, dirname, basename, relative } from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
@@ -101,10 +101,12 @@ import {
 	type ReviewStreakState,
 } from "./review-analysis.ts";
 import {
+	collectChangedPaths,
 	type GateRatification,
 	isRatificationStale,
 	parseRatificationLink,
 	readRatifications,
+	unratifiedWorkingTreePaths,
 	validateRatification,
 } from "./ratification.ts";
 import { runGit } from "./git.ts";
@@ -197,6 +199,12 @@ interface RatificationGateCtx {
 	segmentId: string | null;
 	headRevision: string | null;
 	isAncestor: (a: string, b: string) => boolean;
+	/**
+	 * Paths of uncommitted changes that are NOT runtime-owned artifacts (source
+	 * that the ratified proof commit does not represent). Non-empty ⇒ the working
+	 * tree drifted after ratification and finalize must refuse (R004 issue 2).
+	 */
+	dirtyNonArtifactPaths: () => string[];
 }
 
 /**
@@ -246,6 +254,13 @@ function evaluateRatificationBlock(
 		readReview: (f: string) => readFileSync(join(reviewsDir, f), "utf-8"),
 	});
 	if (stale) return `stale (${linkId} is no longer the latest APPROVE for ${gate})`;
+	// R004 issue 2: HEAD may equal the proof commit yet the working tree can carry
+	// uncommitted source changes that the post-task `git add -A` would sweep into
+	// the merge candidate. Bind authority to a clean (source) working tree.
+	const dirty = ctx.dirtyNonArtifactPaths();
+	if (dirty.length > 0) {
+		return `working tree changed after ratification: ${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? " …" : ""}`;
+	}
 	return null;
 }
 
@@ -2924,16 +2939,24 @@ export async function executeTaskV2(
 	// A missing / invalid / stale record blocks with a distinct
 	// `invalid-ratification` alert. An APPROVE with NO link keeps today's
 	// behaviour (not blocking — coverage gate is out of scope).
+	// Task-folder path relative to the worktree — its files (STATUS.md, .reviews,
+	// .DONE) are runtime-owned and allowed to be dirty; anything else is source.
+	const finalizeTaskFolderRel = relative(unit.worktreePath, dirname(unit.packet.reviewsDir));
 	const finalizeRatifyCtx: RatificationGateCtx = {
 		holds: holdStore.list(),
 		taskId,
 		segmentId,
 		headRevision: (() => {
-			const r = runGit(["rev-parse", "HEAD"], unit.worktreePath);
+			const r = runGit(["rev-parse", "--verify", "HEAD^{commit}"], unit.worktreePath);
 			return r.ok ? r.stdout.trim() : null;
 		})(),
 		isAncestor: (a: string, b: string) =>
 			runGit(["merge-base", "--is-ancestor", a, b], unit.worktreePath).ok,
+		dirtyNonArtifactPaths: () =>
+			unratifiedWorkingTreePaths(collectChangedPaths(unit.worktreePath, runGit), [
+				finalizeTaskFolderRel,
+				".pi",
+			]),
 	};
 	const blockingGates = findBlockingReviewGates(unit.packet.reviewsDir, finalizeRatifyCtx);
 

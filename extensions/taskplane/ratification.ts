@@ -415,6 +415,51 @@ export function isRatificationStale(
 	return gateFiles.some((f) => f.num > (approve as { num: number }).num);
 }
 
+// ── Working-tree binding ──────────────────────────────────────────────
+
+/**
+ * Given a list of changed working-tree paths (tracked changes vs HEAD plus
+ * untracked files — NOT porcelain status lines, to avoid the leading-space
+ * corruption that output-trimming introduces) and the set of runtime-owned
+ * path prefixes (the task folder, `.pi/`, …), return the paths that are NOT
+ * runtime artifacts — i.e. source changes that a ratification's proof commit
+ * does NOT represent (R004 issue 2). A non-empty result means the working tree
+ * drifted from the ratified code state and finalization/issuance must refuse.
+ */
+export function unratifiedWorkingTreePaths(
+	changedPaths: readonly string[],
+	allowedPrefixes: string[],
+): string[] {
+	const norm = (p: string) => p.replace(/\\/g, "/").replace(/^"|"$/g, "").replace(/\/+$/, "").trim();
+	const allowed = allowedPrefixes.map(norm).filter((p) => p.length > 0);
+	const out = new Set<string>();
+	for (const raw of changedPaths) {
+		const path = norm(raw);
+		if (!path) continue;
+		if (allowed.some((a) => path === a || path.startsWith(`${a}/`))) continue;
+		out.add(path);
+	}
+	return [...out];
+}
+
+/**
+ * Collect changed working-tree paths in a worktree: tracked changes vs HEAD
+ * (`git diff --name-only HEAD`) plus untracked-but-not-ignored files
+ * (`git ls-files --others --exclude-standard`). Both emit plain, forward-slash
+ * paths with no status columns, so trimming the command output is safe.
+ */
+export function collectChangedPaths(
+	worktree: string,
+	runGit: (args: string[], cwd: string) => { ok: boolean; stdout: string },
+): string[] {
+	const diff = runGit(["diff", "--name-only", "HEAD"], worktree);
+	const untracked = runGit(["ls-files", "--others", "--exclude-standard"], worktree);
+	return [
+		...(diff.ok ? diff.stdout.split("\n") : []),
+		...(untracked.ok ? untracked.stdout.split("\n") : []),
+	].filter((l) => l.trim().length > 0);
+}
+
 // ── Persistence ───────────────────────────────────────────────────────
 
 /**
