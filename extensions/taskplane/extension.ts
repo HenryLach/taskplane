@@ -61,6 +61,7 @@ import {
 	computeTransitiveDependents,
 	execLog,
 	resolveCanonicalTaskPaths,
+	selectPacketPaths,
 } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
@@ -5983,10 +5984,30 @@ export default function (pi: ExtensionAPI) {
 
 		const task = state.tasks.find((t) => t.taskId === params.taskId);
 		if (!task) return `❌ Task ${params.taskId} is not part of batch ${state.batchId}.`;
-		const laneRec = state.lanes.find((l) => l.laneNumber === task.laneNumber);
-		if (!laneRec || !task.taskFolder || !laneRec.worktreePath) {
-			return `❌ Cannot resolve the worktree/task folder for ${params.taskId} (lane ${task.laneNumber}).`;
+
+		// The hold that carries the cited ruling supplies lane + segment + escalation
+		// scope — bind to it (not merely task.laneNumber) so a segment's ratification
+		// lands on the lane/worktree that raised it (R005 issue 1).
+		const rulingHold = (state.holds ?? []).find((h) => h.ruling?.id === params.rulingId);
+		if (!rulingHold) {
+			return `❌ No hold carries ruling ${params.rulingId}. A ratification must cite the ruling that released the lane.`;
 		}
+		const segmentId = rulingHold.segmentId ?? null;
+
+		const laneRec =
+			state.lanes.find((l) => l.laneNumber === rulingHold.laneNumber) ??
+			state.lanes.find((l) => l.laneNumber === task.laneNumber);
+		if (!laneRec || !task.taskFolder || !laneRec.worktreePath) {
+			return `❌ Cannot resolve the worktree/task folder for ${params.taskId} (lane ${rulingHold.laneNumber}).`;
+		}
+
+		// Packet resolution MUST match the lane-runner's contract (buildExecutionUnit
+		// → selectPacketPaths): a cross-repo segment's packet lives at the absolute
+		// `packetTaskPath` in the packet-home repo, NOT under the execution worktree.
+		// Diverging would make ratify_gate write to a location finalize never scans
+		// (R005 issue 1). Use the SAME shared helper.
+		const executionRepoId = laneRec.repoId ?? "default";
+		const packetHomeRepoId = task.packetRepoId ?? executionRepoId;
 		const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
 		const resolved = resolveCanonicalTaskPaths(
 			task.taskFolder,
@@ -5994,7 +6015,14 @@ export default function (pi: ExtensionAPI) {
 			repoRootForLane,
 			!!execCtx?.workspaceConfig,
 		);
-		const reviewsDir = join(resolved.taskFolderResolved, ".reviews");
+		const packet = selectPacketPaths(
+			task.packetTaskPath,
+			packetHomeRepoId,
+			executionRepoId,
+			resolved,
+		);
+		const reviewsDir = packet.reviewsDir;
+		const statusPathForCounter = packet.statusPath;
 		if (!existsSync(reviewsDir)) {
 			return `❌ No reviews directory for ${params.taskId} at ${reviewsDir}.`;
 		}
@@ -6010,13 +6038,6 @@ export default function (pi: ExtensionAPI) {
 		} catch (err) {
 			return `❌ Cannot read superseded review ${supersededName}: ${err instanceof Error ? err.message : String(err)}`;
 		}
-
-		// The hold that carries the cited ruling supplies segment + escalation scope.
-		const rulingHold = (state.holds ?? []).find((h) => h.ruling?.id === params.rulingId);
-		if (!rulingHold) {
-			return `❌ No hold carries ruling ${params.rulingId}. A ratification must cite the ruling that released the lane.`;
-		}
-		const segmentId = rulingHold.segmentId ?? null;
 
 		// R004 issue 1: canonicalize the proof to an immutable commit oid and
 		// require it to BE the current worktree HEAD. A symbolic ref (e.g. `HEAD`
@@ -6046,10 +6067,12 @@ export default function (pi: ExtensionAPI) {
 		// proof commit must fully represent the ratified code. Runtime-owned
 		// artifacts (the task folder and `.pi/`) are allowed to be dirty.
 		const taskFolderRel = relative(laneRec.worktreePath, resolved.taskFolderResolved);
-		const dirty = unratifiedWorkingTreePaths(collectChangedPaths(laneRec.worktreePath, runGit), [
-			taskFolderRel,
-			".pi",
-		]);
+		const probe = collectChangedPaths(laneRec.worktreePath, runGit);
+		if (probe.failedProbe) {
+			// R005 issue 2: a git read error is fail-closed, never "clean".
+			return `❌ Ratification refused: working-tree probe failed (${probe.failedProbe}: ${probe.detail || "no detail"}). Nothing was written.`;
+		}
+		const dirty = unratifiedWorkingTreePaths(probe.paths, [taskFolderRel, ".pi"]);
 		if (dirty.length > 0) {
 			return (
 				`❌ Ratification refused: uncommitted source changes are not covered by the proof commit: ` +
@@ -6167,7 +6190,7 @@ export default function (pi: ExtensionAPI) {
 			"Call ratify_gate only after send_agent_message(type='ruling') released the lane AND the worker acknowledged and applied the ruling AND you verified the fold against the findings.",
 			"gate is the review gate key `{type}-step{N}` (e.g. `code-step3`) — the same gate whose latest review is at REVISE/RETHINK at its cap.",
 			"rulingId is the ruling message id that released the lane (from the hold). The ratifier role is stamped by this tool as `supervisor` — it is never a parameter.",
-			"proofRevision is the commit that contains the fold; it MUST be an ancestor of the worktree HEAD. Add artifactRefs for non-commit evidence.",
+			"proofRevision is the commit that contains the fold; it MUST be the current worktree HEAD (an immutable sha) and the working tree must be clean of uncommitted source changes. Add artifactRefs for non-commit evidence.",
 			"findings must dispose of every review finding: disposition `fixed` (worker fixed it) or `ruled` (you ruled it out of authority), each with evidence.",
 			"On validation failure nothing is written and the reason is returned — fix the cited problem and retry. On success the finalize gate will accept the worker's .DONE.",
 		],
@@ -6193,7 +6216,7 @@ export default function (pi: ExtensionAPI) {
 				{ description: "Disposition of every review finding" },
 			),
 			proofRevision: Type.String({
-				description: "Commit containing the fold; must be an ancestor of worktree HEAD",
+				description: "Commit containing the fold; must be the current worktree HEAD (immutable sha) with a clean working tree",
 			}),
 			artifactRefs: Type.Optional(
 				Type.Array(Type.String(), { description: "Additional non-commit proof references" }),

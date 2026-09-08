@@ -200,11 +200,12 @@ interface RatificationGateCtx {
 	headRevision: string | null;
 	isAncestor: (a: string, b: string) => boolean;
 	/**
-	 * Paths of uncommitted changes that are NOT runtime-owned artifacts (source
-	 * that the ratified proof commit does not represent). Non-empty ⇒ the working
-	 * tree drifted after ratification and finalize must refuse (R004 issue 2).
+	 * Working-tree drift probe. `{ ok:false }` when a git probe failed (fail-closed
+	 * — refuse); otherwise `dirty` lists uncommitted changes that are NOT
+	 * runtime-owned artifacts (source the ratified proof commit does not
+	 * represent). Non-empty `dirty` ⇒ drift after ratification, refuse (R004/R005).
 	 */
-	dirtyNonArtifactPaths: () => string[];
+	workingTreeDrift: () => { dirty: string[]; failedProbe: string | null };
 }
 
 /**
@@ -257,9 +258,11 @@ function evaluateRatificationBlock(
 	// R004 issue 2: HEAD may equal the proof commit yet the working tree can carry
 	// uncommitted source changes that the post-task `git add -A` would sweep into
 	// the merge candidate. Bind authority to a clean (source) working tree.
-	const dirty = ctx.dirtyNonArtifactPaths();
-	if (dirty.length > 0) {
-		return `working tree changed after ratification: ${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? " …" : ""}`;
+	// R005 issue 2: a failed git probe is fail-closed, never "clean".
+	const drift = ctx.workingTreeDrift();
+	if (drift.failedProbe) return `working-tree probe failed (${drift.failedProbe})`;
+	if (drift.dirty.length > 0) {
+		return `working tree changed after ratification: ${drift.dirty.slice(0, 5).join(", ")}${drift.dirty.length > 5 ? " …" : ""}`;
 	}
 	return null;
 }
@@ -2952,11 +2955,14 @@ export async function executeTaskV2(
 		})(),
 		isAncestor: (a: string, b: string) =>
 			runGit(["merge-base", "--is-ancestor", a, b], unit.worktreePath).ok,
-		dirtyNonArtifactPaths: () =>
-			unratifiedWorkingTreePaths(collectChangedPaths(unit.worktreePath, runGit), [
-				finalizeTaskFolderRel,
-				".pi",
-			]),
+		workingTreeDrift: () => {
+			const probe = collectChangedPaths(unit.worktreePath, runGit);
+			if (probe.failedProbe) return { dirty: [], failedProbe: probe.failedProbe };
+			return {
+				dirty: unratifiedWorkingTreePaths(probe.paths, [finalizeTaskFolderRel, ".pi"]),
+				failedProbe: null,
+			};
+		},
 	};
 	const blockingGates = findBlockingReviewGates(unit.packet.reviewsDir, finalizeRatifyCtx);
 

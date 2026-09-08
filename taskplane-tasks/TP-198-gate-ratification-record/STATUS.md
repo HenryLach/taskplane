@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** L
 
@@ -68,6 +68,10 @@
 - [x] R003-4 `npm run format` → format:check clean
 - [x] R003-5 remove unused `readFileSync` import in ratification.test.ts (lint back to baseline); use `node:` import protocol
 
+**R005 code-review REVISE items (supervisor-adjudicated as legitimate new classes, not circling):**
+- [x] R005-1 packet routing: shared `selectPacketPaths` helper (execution.ts) used by BOTH `buildExecutionUnit` and `doRatifyGate`; bind lane/worktree to the cited hold's `laneNumber`/segment, not `task.laneNumber`. Regression: `selectPacketPaths` cross-repo/same-repo/no-path unit tests + source wiring assertions
+- [x] R005-2 `collectChangedPaths` fail-closed: returns `{paths, failedProbe, detail}`; both issuance and finalize refuse with a probe-named diagnostic. Injected probe-failure unit tests (diff fail / ls-files fail / success)
+
 ---
 
 ### Step 4: Testing & Verification
@@ -113,6 +117,7 @@
 | 2026-09-08 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-09-07 23:47 | Task started | Runtime V2 lane-runner execution |
 | 2026-09-07 23:47 | Step 0 started | Preflight |
+| 2026-09-08 00:35 | Agent reply | Ack R005 adjudication. Implementing both: (1) extracting a shared packet-path helper (selectPacketPaths) used by buildExecutionUnit AND doRatifyGate, binding the worktree to the cited hold's laneNumbe |
 
 ---
 
@@ -139,3 +144,4 @@
 | 2026-09-07 23:56 | Review R002 | plan Step 1: APPROVE |
 | 2026-09-08 00:16 | Review R003 | code Step 3: REVISE |
 | 2026-09-08 00:22 | Review R004 | code Step 3: REVISE |
+| 2026-09-08 00:33 | Review R005 | code Step 3: REVISE |

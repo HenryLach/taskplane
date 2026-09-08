@@ -64,6 +64,16 @@ describe("ratify_gate / orch-ratify wiring", () => {
 		assert.match(EXTENSION_SRC, /## Verdict: APPROVE/);
 		assert.match(EXTENSION_SRC, /ratificationLinkLine\(record\.id\)/);
 	});
+
+	it("R005-1: resolves the packet with the shared selectPacketPaths (cross-repo safe) and binds to the ruling's lane", () => {
+		assert.match(EXTENSION_SRC, /selectPacketPaths\(/);
+		assert.match(EXTENSION_SRC, /l\.laneNumber === rulingHold\.laneNumber/);
+	});
+
+	it("R005-2: the trusted operation refuses fail-closed when a working-tree probe fails", () => {
+		assert.match(EXTENSION_SRC, /probe\.failedProbe/);
+		assert.match(EXTENSION_SRC, /working-tree probe failed/);
+	});
 });
 
 // ── Step 3: finalize-gate binding (behavioural) ───────────────────────

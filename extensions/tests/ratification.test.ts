@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+	collectChangedPaths,
 	type GateRatification,
 	type RatificationValidationCtx,
 	isRatificationStale,
@@ -23,10 +24,12 @@ import {
 	ratificationLinkLine,
 	readRatifications,
 	sha256,
+	unratifiedWorkingTreePaths,
 	validateRatification,
 	writeRatification,
 } from "../taskplane/ratification.ts";
 import { applyRuling, createHoldRecord, type HoldRecord } from "../taskplane/hold-state.ts";
+import { selectPacketPaths } from "../taskplane/execution.ts";
 
 // ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -399,5 +402,83 @@ describe("writeRatification / readRatifications", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+// ── working-tree drift binding (R004/R005) ────────────────────────────
+
+describe("unratifiedWorkingTreePaths", () => {
+	it("allows runtime-owned prefixes and flags everything else", () => {
+		const changed = [
+			"taskplane-tasks/TP-R/STATUS.md",
+			"taskplane-tasks/TP-R/.reviews/R002-code-step1.md",
+			".pi/lane-state.json",
+			"src/index.ts",
+			"README.md",
+		];
+		assert.deepEqual(unratifiedWorkingTreePaths(changed, ["taskplane-tasks/TP-R", ".pi"]), [
+			"src/index.ts",
+			"README.md",
+		]);
+	});
+
+	it("normalizes backslashes and dedupes", () => {
+		assert.deepEqual(
+			unratifiedWorkingTreePaths(["src\\a.ts", "src/a.ts"], ["taskplane-tasks/TP-R"]),
+			["src/a.ts"],
+		);
+	});
+});
+
+describe("selectPacketPaths (shared with buildExecutionUnit — R005 issue 1)", () => {
+	const resolved = {
+		taskFolderResolved: "/wt/taskplane-tasks/TP-R",
+		statusPath: "/wt/taskplane-tasks/TP-R/STATUS.md",
+		donePath: "/wt/taskplane-tasks/TP-R/.DONE",
+	};
+
+	it("cross-repo segment (packet home != execution repo) uses the absolute packetTaskPath", () => {
+		const packet = selectPacketPaths("/home-repo/tasks/TP-R", "home", "exec", resolved);
+		assert.equal(packet.reviewsDir, "/home-repo/tasks/TP-R/.reviews");
+		assert.equal(packet.statusPath, "/home-repo/tasks/TP-R/STATUS.md");
+		assert.equal(packet.taskFolder, "/home-repo/tasks/TP-R");
+	});
+
+	it("same-repo resolves inside the worktree", () => {
+		const packet = selectPacketPaths("/home-repo/tasks/TP-R", "same", "same", resolved);
+		assert.equal(packet.reviewsDir, "/wt/taskplane-tasks/TP-R/.reviews");
+		assert.equal(packet.statusPath, "/wt/taskplane-tasks/TP-R/STATUS.md");
+	});
+
+	it("no packetTaskPath falls back to the worktree even across repos", () => {
+		const packet = selectPacketPaths(null, "home", "exec", resolved);
+		assert.equal(packet.reviewsDir, "/wt/taskplane-tasks/TP-R/.reviews");
+	});
+});
+
+describe("collectChangedPaths (fail-closed)", () => {
+	const ok = (stdout: string) => ({ ok: true, stdout, stderr: "" });
+	const fail = (stderr: string) => ({ ok: false, stdout: "", stderr });
+
+	it("returns tracked + untracked paths when both probes succeed", () => {
+		const runGit = (args: string[]) => (args[0] === "diff" ? ok("src/a.ts\n") : ok("src/new.ts\n"));
+		const probe = collectChangedPaths("/wt", runGit);
+		assert.equal(probe.failedProbe, null);
+		assert.deepEqual(probe.paths, ["src/a.ts", "src/new.ts"]);
+	});
+
+	it("fails closed (names the probe) when git diff fails", () => {
+		const runGit = (args: string[]) => (args[0] === "diff" ? fail("boom") : ok(""));
+		const probe = collectChangedPaths("/wt", runGit);
+		assert.equal(probe.failedProbe, "git diff --name-only HEAD");
+		assert.match(probe.detail, /boom/);
+		assert.deepEqual(probe.paths, []);
+	});
+
+	it("fails closed (names the probe) when git ls-files fails", () => {
+		const runGit = (args: string[]) => (args[0] === "diff" ? ok("") : fail("nope"));
+		const probe = collectChangedPaths("/wt", runGit);
+		assert.equal(probe.failedProbe, "git ls-files --others --exclude-standard");
+		assert.deepEqual(probe.paths, []);
 	});
 });

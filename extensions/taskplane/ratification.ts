@@ -443,21 +443,50 @@ export function unratifiedWorkingTreePaths(
 }
 
 /**
+ * Result of a working-tree probe. `failedProbe` is non-null when a git read
+ * failed (fail-closed — callers refuse); otherwise `paths` lists the changed
+ * paths. Non-discriminated on purpose so callers use a simple null check.
+ */
+export interface WorkingTreeProbe {
+	paths: string[];
+	/** The git command that failed, or null when both probes succeeded. */
+	failedProbe: string | null;
+	detail: string;
+}
+
+/**
  * Collect changed working-tree paths in a worktree: tracked changes vs HEAD
  * (`git diff --name-only HEAD`) plus untracked-but-not-ignored files
  * (`git ls-files --others --exclude-standard`). Both emit plain, forward-slash
  * paths with no status columns, so trimming the command output is safe.
+ *
+ * FAIL-CLOSED (R005 issue 2): if EITHER probe fails, this returns `ok:false`
+ * naming the failed probe — an authority-critical git read error must never be
+ * silently treated as "clean". Callers refuse ratification/finalization.
  */
 export function collectChangedPaths(
 	worktree: string,
-	runGit: (args: string[], cwd: string) => { ok: boolean; stdout: string },
-): string[] {
+	runGit: (args: string[], cwd: string) => { ok: boolean; stdout: string; stderr?: string },
+): WorkingTreeProbe {
 	const diff = runGit(["diff", "--name-only", "HEAD"], worktree);
+	if (!diff.ok) {
+		return { paths: [], failedProbe: "git diff --name-only HEAD", detail: diff.stderr ?? "" };
+	}
 	const untracked = runGit(["ls-files", "--others", "--exclude-standard"], worktree);
-	return [
-		...(diff.ok ? diff.stdout.split("\n") : []),
-		...(untracked.ok ? untracked.stdout.split("\n") : []),
-	].filter((l) => l.trim().length > 0);
+	if (!untracked.ok) {
+		return {
+			paths: [],
+			failedProbe: "git ls-files --others --exclude-standard",
+			detail: untracked.stderr ?? "",
+		};
+	}
+	return {
+		paths: [...diff.stdout.split("\n"), ...untracked.stdout.split("\n")].filter(
+			(l) => l.trim().length > 0,
+		),
+		failedProbe: null,
+		detail: "",
+	};
 }
 
 // ── Persistence ───────────────────────────────────────────────────────
