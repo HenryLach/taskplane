@@ -1,6 +1,6 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Step 2: Trusted ratify operation
+**Current Step:** Step 3: Finalize gate binding
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
@@ -38,16 +38,16 @@
 ---
 
 ### Step 2: Trusted ratify operation — supervisor tool and operator command
-**Status:** 🟨 In Progress
+**Status:** ✅ Implemented (code review batched into Step 3 checkpoint)
 
 **Design:** shared `doRatifyGate(params, actor, stateRoot)` helper in extension.ts (mirrors `doSendAgentMessage`). Loads batch state, finds task+lane, resolves reviewsDir via `resolveCanonicalTaskPaths`, picks the gate's latest review file as `supersededReview` (path relative to reviewsDir + sha256), derives `segmentId`/`closedEscalationIds` from the hold carrying `rulingId`, builds the record, validates with real git (`runGit rev-parse HEAD`, `merge-base --is-ancestor`), and ONLY on success allocates the next R number from STATUS.md `**Review Counter:**` (persisted back), writes `R{N}-{gate}.md` (APPROVE + summary + findings table + `Ratification: <id>`) AND `writeRatification(...,N)`, then audits via `logRecoveryAction` (`gate_ratified`, destructive). On validation failure: writes nothing, returns the code+reason. Tool stamps `{role:"supervisor"}` (marker `RATIFY-SUPERVISOR-STAMP`); `/orch-ratify` stamps `{role:"operator"}` (marker `RATIFY-OPERATOR-STAMP`, the only operator ratifier site). Empty findings → synthesized single `ruled` finding citing the ruling (operator command path).
 
-- [ ] `ratify_gate` tool: builds + validates record, writes record and linked APPROVE review, stamps `supervisor`
-- [ ] Audit entry via `appendAuditEntry` (`gate_ratified`)
-- [ ] `/orch-ratify` command stamps `operator` (only site)
-- [ ] Tool guidelines state the sequencing invariant
-- [ ] Wiring assertions in `tests/ratification-finalize.test.ts`
-- [ ] Targeted tests pass
+- [x] `ratify_gate` tool: builds + validates record, writes record and linked APPROVE review, stamps `supervisor`
+- [x] Audit entry via `logRecoveryAction` (`gate_ratified`, destructive) — `appendAuditEntry` is the low-level writer; `logRecoveryAction` is the code-stamped wrapper used everywhere
+- [x] `/orch-ratify` command stamps `operator` (only site)
+- [x] Tool guidelines state the sequencing invariant
+- [x] Wiring assertions in `tests/ratification-finalize.test.ts`
+- [x] Targeted tests pass (8/8)
 
 ---
 
