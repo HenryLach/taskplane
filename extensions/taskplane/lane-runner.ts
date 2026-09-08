@@ -224,7 +224,13 @@ function evaluateRatificationBlock(
 		reviewsDir,
 		taskId: ctx.taskId,
 		segmentId: ctx.segmentId,
+		// R003 issue 1: the record must be for THIS gate, not merely a valid record
+		// for some other gate that reuses its id.
+		gate,
 		headRevision: ctx.headRevision,
+		// R003 issue 2: at finalize the ratified proof must still BE the current
+		// HEAD — code that changed after ratification is not covered by it.
+		requireProofHeadMatch: true,
 		readFile: (p: string) => readFileSync(p, "utf-8"),
 		isAncestor: ctx.isAncestor,
 	});
@@ -2975,9 +2981,7 @@ export async function executeTaskV2(
 						laneId: `lane-${config.laneNumber}`,
 						laneNumber: config.laneNumber,
 						agentId: workerAgentId,
-						reviewInterventionKind: isInvalidRatification
-							? "invalid-ratification"
-							: "unresolved-verdict",
+						reviewInterventionKind: isInvalidRatification ? "invalid-ratification" : "unresolved-verdict",
 						exitReason: `finalize refused: ${gateList}`,
 					},
 				});

@@ -10,9 +10,9 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
 	type GateRatification,
 	type RatificationValidationCtx,
@@ -26,11 +26,7 @@ import {
 	validateRatification,
 	writeRatification,
 } from "../taskplane/ratification.ts";
-import {
-	applyRuling,
-	createHoldRecord,
-	type HoldRecord,
-} from "../taskplane/hold-state.ts";
+import { applyRuling, createHoldRecord, type HoldRecord } from "../taskplane/hold-state.ts";
 
 // ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -236,7 +232,44 @@ describe("validateRatification", () => {
 	});
 
 	it("ancestor check skipped when headRevision is null", () => {
-		const r = validateRatification(goodRecord(), ctx({ headRevision: null, isAncestor: () => false }));
+		const r = validateRatification(
+			goodRecord(),
+			ctx({ headRevision: null, isAncestor: () => false }),
+		);
+		assert.deepEqual(r, { ok: true });
+	});
+
+	it("wrong-gate: the record is for a different gate than the one being authorized", () => {
+		const r = validateRatification(goodRecord(), ctx({ gate: "plan-step1" }));
+		assert.equal(r.ok === false && r.code, "wrong-gate");
+	});
+
+	it("accepts when ctx.gate matches record.gate", () => {
+		assert.deepEqual(validateRatification(goodRecord(), ctx({ gate: GATE })), { ok: true });
+	});
+
+	it("requireProofHeadMatch: head-unresolved when HEAD is null", () => {
+		const r = validateRatification(
+			goodRecord(),
+			ctx({ requireProofHeadMatch: true, headRevision: null }),
+		);
+		assert.equal(r.ok === false && r.code, "head-unresolved");
+	});
+
+	it("requireProofHeadMatch: proof-not-head when no revision proof equals HEAD", () => {
+		// isAncestor(proof, head) true but isAncestor(head, proof) false → not equal.
+		const r = validateRatification(
+			goodRecord(),
+			ctx({ requireProofHeadMatch: true, isAncestor: (a, _b) => a === "deadbeef" }),
+		);
+		assert.equal(r.ok === false && r.code, "proof-not-head");
+	});
+
+	it("requireProofHeadMatch: ok when a revision proof is exactly HEAD", () => {
+		const r = validateRatification(
+			goodRecord({ proofSet: [{ kind: "revision", ref: "HEADSHA" }] }),
+			ctx({ requireProofHeadMatch: true, headRevision: "HEADSHA", isAncestor: () => true }),
+		);
 		assert.deepEqual(r, { ok: true });
 	});
 });
@@ -259,8 +292,7 @@ describe("isRatificationStale", () => {
 		const laterRevise = "R009-code-step3.md";
 		const stale = isRatificationStale(goodRecord(), {
 			reviewFilenames: [approveName, laterRevise],
-			readReview: (f) =>
-				f === approveName ? approveContent : "## Verdict: REVISE\nregression\n",
+			readReview: (f) => (f === approveName ? approveContent : "## Verdict: REVISE\nregression\n"),
 		});
 		assert.equal(stale, true);
 	});
@@ -290,7 +322,10 @@ describe("isValidGateRatification", () => {
 		assert.equal(isValidGateRatification({}), false);
 		assert.equal(isValidGateRatification(null), false);
 		assert.equal(isValidGateRatification(goodRecord({ findings: "nope" as never })), false);
-		assert.equal(isValidGateRatification(goodRecord({ proofSet: [{ kind: "bad" as never, ref: "x" }] })), false);
+		assert.equal(
+			isValidGateRatification(goodRecord({ proofSet: [{ kind: "bad" as never, ref: "x" }] })),
+			false,
+		);
 		assert.equal(
 			isValidGateRatification({ ...goodRecord(), closedEscalationIds: [1, 2] as never }),
 			false,
@@ -334,6 +369,20 @@ describe("writeRatification / readRatifications", () => {
 				"utf-8",
 			);
 			assert.throws(() => readRatifications(dir), /structurally invalid ratification file/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("throws on duplicate ratification ids across records (fail-closed)", () => {
+		const dir = mkdtempSync(join(tmpdir(), "tp-198-ratif-"));
+		try {
+			writeRatification(dir, goodRecord({ id: "dup" }), 8);
+			writeFileSync(
+				join(dir, "R009-code-step3.ratification.json"),
+				JSON.stringify(goodRecord({ id: "dup" }), null, 2),
+			);
+			assert.throws(() => readRatifications(dir), /duplicate ratification id dup/);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

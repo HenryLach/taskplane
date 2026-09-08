@@ -16,17 +16,11 @@
 
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const EXTENSION_SRC = readFileSync(join(HERE, "..", "taskplane", "extension.ts"), "utf-8");
@@ -115,8 +109,13 @@ mock.module("../taskplane/agent-host.ts", {
 
 const { executeTaskV2 } = await import("../taskplane/lane-runner.ts");
 const { resolvePacketPaths } = await import("../taskplane/types.ts");
-const { createInMemoryHoldStore, createHoldRecord, applyRuling, markDeliveryInFlight, markDeliveryAcknowledged } =
-	await import("../taskplane/hold-state.ts");
+const {
+	createInMemoryHoldStore,
+	createHoldRecord,
+	applyRuling,
+	markDeliveryInFlight,
+	markDeliveryAcknowledged,
+} = await import("../taskplane/hold-state.ts");
 const { sha256, writeRatification } = await import("../taskplane/ratification.ts");
 type GateRatification = import("../taskplane/ratification.ts").GateRatification;
 
@@ -210,6 +209,9 @@ function releasedHold() {
 	return markDeliveryAcknowledged(markDeliveryInFlight(released, "delivered"));
 }
 
+/** Set per-test to the worktree's real HEAD sha (the ratified proof revision). */
+let headSha = "c0ffee";
+
 function goodRecord(overrides: Partial<GateRatification> = {}): GateRatification {
 	return {
 		id: RATIF_ID,
@@ -220,8 +222,10 @@ function goodRecord(overrides: Partial<GateRatification> = {}): GateRatification
 		ratifier: { role: "supervisor", id: "supervisor" },
 		closedEscalationIds: [ESC_ID],
 		supersededReview: { path: SUPERSEDED_NAME, sha256: sha256(SUPERSEDED_CONTENT) },
-		findings: [{ ref: "P1", disposition: "fixed", evidenceRefs: ["c0ffee"] }],
-		proofSet: [{ kind: "revision", ref: "c0ffee" }],
+		findings: [{ ref: "P1", disposition: "fixed", evidenceRefs: [headSha] }],
+		// The proof revision is the real worktree HEAD so the finalize gate's exact
+		// proof==HEAD check (R003 issue 2) is satisfied for the happy path.
+		proofSet: [{ kind: "revision", ref: headSha }],
 		createdAt: 3_000,
 		...overrides,
 	};
@@ -316,7 +320,25 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 		reviewsDir = resolvePacketPaths(taskFolder).reviewsDir;
 		mkdirSync(reviewsDir, { recursive: true });
 		writeFileSync(join(reviewsDir, SUPERSEDED_NAME), SUPERSEDED_CONTENT);
+		// A real git repo so the finalize gate can resolve HEAD and the exact
+		// proof==HEAD binding (R003 issue 2) holds for the happy path.
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: worktreePath, stdio: "pipe" });
+		git("init", "-q");
+		git("config", "user.email", "t@t.t");
+		git("config", "user.name", "t");
+		git("config", "commit.gpgsign", "false");
+		writeFileSync(join(worktreePath, "code.txt"), "folded\n");
+		git("add", "-A");
+		git("commit", "-q", "-m", "fold");
+		headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: worktreePath }).toString().trim();
 	});
+
+	function gitCommitMore() {
+		writeFileSync(join(worktreePath, "more.txt"), "extra\n");
+		execFileSync("git", ["add", "-A"], { cwd: worktreePath, stdio: "pipe" });
+		execFileSync("git", ["commit", "-q", "-m", "more"], { cwd: worktreePath, stdio: "pipe" });
+	}
 
 	afterEach(() => {
 		try {
@@ -346,9 +368,7 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 		assert.equal(r.outcome.status, "failed");
 		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
 		assert.equal(existsSync(packet.donePath), false);
-		const alert = alerts.find(
-			(a) => a.context?.reviewInterventionKind === "invalid-ratification",
-		);
+		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
 		assert.ok(alert, "expected an invalid-ratification alert");
 		assert.match(alert!.summary, /ratif-missing|missing/);
 	});
@@ -382,9 +402,7 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 		assert.equal(r.outcome.status, "failed");
 		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
 		assert.equal(existsSync(packet.donePath), false);
-		const alert = alerts.find(
-			(a) => a.context?.reviewInterventionKind === "invalid-ratification",
-		);
+		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
 		assert.ok(alert, "expected an invalid-ratification alert");
 		assert.match(alert!.summary, /superseded-review-mismatch|missing, invalid, or\s+stale/s);
 	});
@@ -395,6 +413,66 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 			"# Re-review\n\n## Verdict: APPROVE\n\nclean\n",
 		);
 		const { result, packet } = run(false);
+		const r = await result;
+		assert.equal(r.outcome.status, "succeeded");
+		assert.equal(existsSync(packet.donePath), true);
+	});
+
+	it("(f) R003-1 wrong-gate: an APPROVE for another gate cannot reuse this record → refused, invalid-ratification", async () => {
+		// The ONLY gate scanned is code-step9, whose APPROVE links a record whose
+		// gate is code-step1. The record itself is otherwise valid.
+		writeFileSync(join(reviewsDir, "R002-code-step9.md"), approveReview(RATIF_ID));
+		writeRatification(reviewsDir, goodRecord(), 2); // record.gate === "code-step1"
+
+		const { result, packet } = run(true);
+		const r = await result;
+		assert.equal(r.outcome.status, "failed");
+		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
+		assert.equal(existsSync(packet.donePath), false);
+		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
+		assert.ok(alert, "expected an invalid-ratification alert");
+		assert.match(alert!.summary, /wrong-gate|missing, invalid, or\s+stale/s);
+	});
+
+	it("(g) R003-2 descendant commit: code changed after ratification → refused (proof != HEAD)", async () => {
+		writeFileSync(join(reviewsDir, "R002-code-step1.md"), approveReview(RATIF_ID));
+		writeRatification(reviewsDir, goodRecord(), 2); // proof pins the pre-commit HEAD
+		gitCommitMore(); // HEAD moves past the ratified proof revision
+
+		const { result, packet } = run(true);
+		const r = await result;
+		assert.equal(r.outcome.status, "failed");
+		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
+		assert.equal(existsSync(packet.donePath), false);
+	});
+
+	it("(h) R003-2 unresolvable HEAD: no git repo → refused (head-unresolved), no .DONE", async () => {
+		// Remove the git repo so `git rev-parse HEAD` fails at finalize.
+		rmSync(join(worktreePath, ".git"), { recursive: true, force: true });
+		writeFileSync(join(reviewsDir, "R002-code-step1.md"), approveReview(RATIF_ID));
+		writeRatification(reviewsDir, goodRecord({ proofSet: [{ kind: "revision", ref: "c0ffee" }] }), 2);
+
+		const { result, packet } = run(true);
+		const r = await result;
+		assert.equal(r.outcome.status, "failed");
+		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
+		assert.equal(existsSync(packet.donePath), false);
+	});
+
+	it("(i) R003-3 stale-then-reratify recovery: a fresh record with a new id restores completion authority", async () => {
+		// First ratification becomes stale (a later REVISE), then a NEW ratification
+		// (new id, higher R APPROVE) is issued → the gate closes.
+		writeFileSync(join(reviewsDir, "R002-code-step1.md"), approveReview("ratif-old"));
+		writeRatification(reviewsDir, goodRecord({ id: "ratif-old" }), 2);
+		writeFileSync(
+			join(reviewsDir, "R003-code-step1.md"),
+			"# Re-review\n\n## Verdict: REVISE\n\nregression\n",
+		);
+		// Re-ratify: new id, new APPROVE at R004 (now the latest).
+		writeFileSync(join(reviewsDir, "R004-code-step1.md"), approveReview("ratif-new"));
+		writeRatification(reviewsDir, goodRecord({ id: "ratif-new" }), 4);
+
+		const { result, packet } = run(true);
 		const r = await result;
 		assert.equal(r.outcome.status, "succeeded");
 		assert.equal(existsSync(packet.donePath), true);

@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
+import { randomUUID } from "node:crypto";
 import {
 	writeFileSync,
 	unlinkSync,
@@ -6026,7 +6027,10 @@ export default function (pi: ExtensionAPI) {
 		}));
 
 		const record: GateRatification = {
-			id: `ratif-${params.taskId}-${params.gate}-${params.rulingId}`,
+			// R003 issue 3: a UNIQUE id per issuance. A deterministic id made a
+			// stale-then-reratify recovery impossible (both APPROVE files linked the
+			// same id → permanently ambiguous/stale).
+			id: `ratif-${params.taskId}-${params.gate}-${randomUUID()}`,
 			taskId: params.taskId,
 			segmentId,
 			gate: params.gate,
@@ -6049,6 +6053,7 @@ export default function (pi: ExtensionAPI) {
 			reviewsDir,
 			taskId: params.taskId,
 			segmentId,
+			gate: params.gate,
 			headRevision,
 			readFile: (p: string) => readFileSync(p, "utf-8"),
 			isAncestor: (a: string, b: string) =>
@@ -6061,6 +6066,14 @@ export default function (pi: ExtensionAPI) {
 		// Only after validation passes do we consume a review number and write.
 		const num = allocateRatificationReviewNumber(resolved.statusPath);
 		const approveName = `R${String(num).padStart(3, "0")}-${params.gate}.md`;
+		// R003 suggestion: fail closed on a filename collision rather than overwrite
+		// an existing review/record pair.
+		if (
+			existsSync(join(reviewsDir, approveName)) ||
+			existsSync(join(reviewsDir, `R${String(num).padStart(3, "0")}-${params.gate}.ratification.json`))
+		) {
+			return `❌ Ratification refused: review number R${String(num).padStart(3, "0")} for ${params.gate} already exists — resolve the review-counter drift before ratifying.`;
+		}
 		try {
 			writeFileSync(
 				join(reviewsDir, approveName),

@@ -21,9 +21,9 @@
  * Design: docs/specifications/taskplane/held-state-spec.md §"Finalize".
  */
 
-import { createHash } from "crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { basename, isAbsolute, join } from "path";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basename, isAbsolute, join } from "node:path";
 import { holdsForTask, holdsForUnit, type HoldRecord, type RulingActor } from "./hold-state.ts";
 import { parseReviewVerdict } from "./review-analysis.ts";
 
@@ -171,8 +171,20 @@ export interface RatificationValidationCtx {
 	reviewsDir: string;
 	taskId: string;
 	segmentId: string | null;
+	/**
+	 * Expected gate. When given, `record.gate` MUST equal it — so a ratification
+	 * for one gate can never authorize the APPROVE of another (R003 issue 1).
+	 */
+	gate?: string;
 	/** Worktree HEAD; when given, every revision proof must be ancestor-or-equal. */
 	headRevision: string | null;
+	/**
+	 * Finalize binding (R003 issue 2): when true, a revision proof must be EXACTLY
+	 * the current HEAD (not merely an ancestor), and an unresolvable HEAD rejects.
+	 * This closes the fail-open path where code changes after ratification yet
+	 * `.DONE` is still accepted. Issuance leaves it false (ancestor-or-equal).
+	 */
+	requireProofHeadMatch?: boolean;
 	/** Reads a file's content (absolute path). Injected so tests need no fs. */
 	readFile: (absPath: string) => string;
 	/** `git merge-base --is-ancestor a b` semantics. Injected so tests need no git. */
@@ -183,6 +195,7 @@ export type RatificationValidationCode =
 	| "malformed-record"
 	| "wrong-task"
 	| "wrong-segment"
+	| "wrong-gate"
 	| "unknown-ruling"
 	| "ruling-not-released"
 	| "unknown-escalation"
@@ -191,7 +204,9 @@ export type RatificationValidationCode =
 	| "superseded-review-mismatch"
 	| "empty-findings"
 	| "no-revision-proof"
-	| "revision-not-ancestor";
+	| "revision-not-ancestor"
+	| "proof-not-head"
+	| "head-unresolved";
 
 export type RatificationValidation =
 	| { ok: true }
@@ -207,19 +222,34 @@ export function validateRatification(
 	ctx: RatificationValidationCtx,
 ): RatificationValidation {
 	if (!isValidGateRatification(record)) {
-		return { ok: false, code: "malformed-record", reason: "ratification record is structurally invalid" };
+		return {
+			ok: false,
+			code: "malformed-record",
+			reason: "ratification record is structurally invalid",
+		};
 	}
 	const rec = record;
 
 	// ── Scope binding ──
 	if (rec.taskId !== ctx.taskId) {
-		return { ok: false, code: "wrong-task", reason: `ratification is for task ${rec.taskId}, not ${ctx.taskId}` };
+		return {
+			ok: false,
+			code: "wrong-task",
+			reason: `ratification is for task ${rec.taskId}, not ${ctx.taskId}`,
+		};
 	}
 	if ((rec.segmentId ?? null) !== (ctx.segmentId ?? null)) {
 		return {
 			ok: false,
 			code: "wrong-segment",
 			reason: `ratification segment ${rec.segmentId ?? "<none>"} does not match unit segment ${ctx.segmentId ?? "<none>"}`,
+		};
+	}
+	if (ctx.gate !== undefined && rec.gate !== ctx.gate) {
+		return {
+			ok: false,
+			code: "wrong-gate",
+			reason: `ratification is for gate ${rec.gate}, but it is being used to authorize gate ${ctx.gate}`,
 		};
 	}
 
@@ -236,7 +266,11 @@ export function validateRatification(
 	const unitHolds = holdsForUnit(ctx.holds, ctx.taskId, ctx.segmentId);
 	const rulingHold = unitHolds.find((h) => h.ruling?.id === rec.rulingId);
 	if (!rulingHold) {
-		return { ok: false, code: "unknown-ruling", reason: `no hold of this unit carries ruling ${rec.rulingId}` };
+		return {
+			ok: false,
+			code: "unknown-ruling",
+			reason: `no hold of this unit carries ruling ${rec.rulingId}`,
+		};
 	}
 	if (rulingHold.phase !== "released") {
 		return {
@@ -250,7 +284,11 @@ export function validateRatification(
 	const taskEscalationIds = new Set(holdsForTask(ctx.holds, ctx.taskId).map((h) => h.escalationId));
 	for (const eid of rec.closedEscalationIds) {
 		if (!taskEscalationIds.has(eid)) {
-			return { ok: false, code: "unknown-escalation", reason: `closed escalation ${eid} has no hold for task ${ctx.taskId}` };
+			return {
+				ok: false,
+				code: "unknown-escalation",
+				reason: `closed escalation ${eid} has no hold for task ${ctx.taskId}`,
+			};
 		}
 	}
 
@@ -297,7 +335,29 @@ export function validateRatification(
 	if (revisionProofs.length === 0) {
 		return { ok: false, code: "no-revision-proof", reason: "proofSet has no revision proof" };
 	}
-	if (ctx.headRevision) {
+	if (ctx.requireProofHeadMatch) {
+		// R003 issue 2: the ratified code state must still BE the current HEAD, or
+		// the code changed after the supervisor verified/ratified it. An
+		// unresolvable HEAD is fail-closed, never skipped.
+		if (!ctx.headRevision) {
+			return {
+				ok: false,
+				code: "head-unresolved",
+				reason: "worktree HEAD could not be resolved; a ratification cannot be trusted without it",
+			};
+		}
+		const head = ctx.headRevision;
+		const matchesHead = revisionProofs.some(
+			(p) => ctx.isAncestor(p.ref, head) && ctx.isAncestor(head, p.ref),
+		);
+		if (!matchesHead) {
+			return {
+				ok: false,
+				code: "proof-not-head",
+				reason: `code changed since ratification: no revision proof equals HEAD ${head}`,
+			};
+		}
+	} else if (ctx.headRevision) {
 		for (const p of revisionProofs) {
 			if (!ctx.isAncestor(p.ref, ctx.headRevision)) {
 				return {
@@ -327,7 +387,10 @@ export interface RatificationStalenessCtx {
  * review) means the code moved after the closure. Fail-closed: a missing,
  * ambiguous, wrong-gate or non-APPROVE link is treated as stale.
  */
-export function isRatificationStale(record: GateRatification, ctx: RatificationStalenessCtx): boolean {
+export function isRatificationStale(
+	record: GateRatification,
+	ctx: RatificationStalenessCtx,
+): boolean {
 	const gateRe = new RegExp(`^R(\\d+)-${escapeRegExp(record.gate)}\\.md$`, "i");
 	const gateFiles: Array<{ num: number; name: string }> = [];
 	for (const name of ctx.reviewFilenames) {
@@ -380,6 +443,7 @@ export function writeRatification(
 export function readRatifications(reviewsDir: string): GateRatification[] {
 	if (!existsSync(reviewsDir)) return [];
 	const out: GateRatification[] = [];
+	const seen = new Set<string>();
 	for (const name of readdirSync(reviewsDir).sort()) {
 		if (!name.endsWith(".ratification.json")) continue;
 		const full = join(reviewsDir, name);
@@ -394,6 +458,12 @@ export function readRatifications(reviewsDir: string): GateRatification[] {
 		if (!isValidGateRatification(parsed)) {
 			throw new Error(`structurally invalid ratification file ${name}`);
 		}
+		// R003 issue 3: duplicate ids are fail-closed — a forged/duplicated record
+		// must never let the runtime silently pick one and accept it.
+		if (seen.has(parsed.id)) {
+			throw new Error(`duplicate ratification id ${parsed.id} across records`);
+		}
+		seen.add(parsed.id);
 		out.push(parsed);
 	}
 	return out;
