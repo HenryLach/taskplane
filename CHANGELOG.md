@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New
 
+- **Unified `.DONE` completion authority + ruling commit-trailer validation
+  (#627, Stage 2b).** Closes the two remaining gaps in the held-state completion
+  model. (1) A single predicate, `authorizeCompletion()`
+  (`completion-authority.ts`), now decides completion for BOTH the lane-runner's
+  live finalize gate AND resume's `.DONE` acceptance
+  (`collectDoneTaskIdsForResume`): it composes hold authority, blocking review
+  gates (latest REVISE/RETHINK) and linked-APPROVE ratification validity,
+  reporting all blockers. A worker-written `.DONE` left over a blocking gate — or
+  a valid ratification whose worktree carries uncommitted **source** drift — is
+  now refused on resume exactly as it is live (runtime-owned task artifacts
+  remain exempt). (2) Workers may cite a ruling that released a hold ONLY through
+  the structured commit trailer `Taskplane-Ruling: <id>`. After each iteration
+  the runtime enumerates the commits the worker created and validates every
+  citation against the durable hold table: an unknown id, an id whose hold binds
+  another unit, or a prose claim of a ruling with no trailer is **flagged** —
+  logged to STATUS.md (`Ruling citation flagged`), written to the supervisor
+  audit trail (`ruling_citation_flagged`, classification `diagnostic`) and
+  surfaced as one supervisor alert per iteration. A citation flag is a diagnostic
+  only: it never changes task status, releases a hold, counts toward
+  progress/stall, or serves as approval.
 - **Gate ratification record + finalize binding (#627, Stage 2a).** Gives the
   "delegated closure" pattern a first-class, verifiable artifact. When a review
   gate hits its revision cap, the supervisor closes it with the new trusted
