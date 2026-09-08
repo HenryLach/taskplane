@@ -78,6 +78,9 @@
 - [x] R006-3 `npm run format` (format:check clean)
 - [x] Extracted `ratifyGate` (ratification-op.ts) with injected deps; extension.ts is now a thin adapter. Behavioural tests: same-repo happy path, cross-repo counter/artifacts, missing-lane fail-closed, probe-failure fail-closed, proof!=HEAD reject (5/5)
 
+**R007 code-review REVISE item (supervisor-ruled: same R004 proof-binding class, in scope):**
+- [x] R007 immutable-oid proof binding: finalize `requireProofHeadMatch` now string-equals a canonical 40-hex proof to `ctx.headRevision` (no merge-base re-resolution of persisted refs); `isValidGateRatification` rejects a `revision` proof whose ref is not a canonical 40-hex oid (symbolic `HEAD` refused at `readRatifications`). Behavioural regression (k): record with `ref:"HEAD"` + later clean commit → finalize refused. Unit tests updated to canonical oids + symbolic-ref rejection
+
 ---
 
 ### Step 4: Testing & Verification
