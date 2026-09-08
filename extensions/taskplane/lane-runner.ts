@@ -97,19 +97,24 @@ import {
 	shouldFireOrderViolation,
 	sanitizeSpiralConfig,
 	parseReviewVerdict,
-	latestReviewFilesPerGate,
 	type ReviewStreakState,
 } from "./review-analysis.ts";
 import {
 	collectChangedPaths,
-	type GateRatification,
-	isRatificationStale,
-	parseRatificationLink,
-	readRatifications,
 	runtimeArtifactPrefixes,
 	unratifiedWorkingTreePaths,
-	validateRatification,
 } from "./ratification.ts";
+import {
+	authorizeCompletion,
+	type BlockingReviewGate,
+	findBlockingReviewGates,
+} from "./completion-authority.ts";
+import {
+	parseRulingCitations,
+	type RulingCitationFlag,
+	validateRulingCitations,
+} from "./ruling-trailer.ts";
+import { appendAuditEntry } from "./supervisor.ts";
 import { runGit } from "./git.ts";
 import {
 	applyRuling,
@@ -172,145 +177,6 @@ const MAX_REVIEW_REMEDIATION_ITERATIONS = 2;
 const HOLD_POLL_INTERVAL_MS = 5_000;
 /** #627: lane-snapshot heartbeat cadence while held (runner health, not worker liveness). */
 const HOLD_HEARTBEAT_INTERVAL_MS = 30_000;
-
-/**
- * A review gate that blocks finalization: either its LATEST review reads
- * REVISE/RETHINK (#626), or (#627 Stage 2a) it reads APPROVE but carries a
- * `Ratification:` link whose record is missing / invalid / stale.
- */
-interface BlockingReviewGate {
-	/** `{type}-step{N}` gate key */
-	gate: string;
-	/** Latest review filename for that gate */
-	filename: string;
-	verdict: "REVISE" | "RETHINK" | "APPROVE";
-	/** #627: why an APPROVE gate is blocking (`missing …`, `invalid: <code>`, `stale …`). */
-	reason?: string;
-}
-
-/**
- * Context needed to validate a ratified APPROVE at the finalize gate. Supplied
- * ONLY at the authoritative finalize decision; the pre-finalize/remediation
- * callers omit it and keep the verdict-only view (an APPROVE — even a ratified
- * one — is never blocking there; the finalize gate does the full check).
- */
-interface RatificationGateCtx {
-	holds: readonly HoldRecord[];
-	taskId: string;
-	segmentId: string | null;
-	headRevision: string | null;
-	isAncestor: (a: string, b: string) => boolean;
-	/**
-	 * Working-tree drift probe. `{ ok:false }` when a git probe failed (fail-closed
-	 * — refuse); otherwise `dirty` lists uncommitted changes that are NOT
-	 * runtime-owned artifacts (source the ratified proof commit does not
-	 * represent). Non-empty `dirty` ⇒ drift after ratification, refuse (R004/R005).
-	 */
-	workingTreeDrift: () => { dirty: string[]; failedProbe: string | null };
-}
-
-/**
- * Evaluate the ratification a linked APPROVE claims. Returns a human-readable
- * reason string when the gate MUST block, or null when the ratification is a
- * valid, non-stale authority record. Fail-closed: any read/validation problem
- * is a reason to block.
- */
-function evaluateRatificationBlock(
-	reviewsDir: string,
-	gate: string,
-	linkId: string,
-	ctx: RatificationGateCtx,
-): string | null {
-	let records: GateRatification[];
-	try {
-		records = readRatifications(reviewsDir);
-	} catch (err) {
-		return `invalid ratification store: ${err instanceof Error ? err.message : String(err)}`;
-	}
-	const record = records.find((r) => r.id === linkId);
-	if (!record) return `missing record ${linkId}`;
-	const v = validateRatification(record, {
-		holds: ctx.holds,
-		reviewsDir,
-		taskId: ctx.taskId,
-		segmentId: ctx.segmentId,
-		// R003 issue 1: the record must be for THIS gate, not merely a valid record
-		// for some other gate that reuses its id.
-		gate,
-		headRevision: ctx.headRevision,
-		// R003 issue 2: at finalize the ratified proof must still BE the current
-		// HEAD — code that changed after ratification is not covered by it.
-		requireProofHeadMatch: true,
-		readFile: (p: string) => readFileSync(p, "utf-8"),
-		isAncestor: ctx.isAncestor,
-	});
-	if (v.ok === false) return `invalid: ${v.code} (${linkId})`;
-	let filenames: string[];
-	try {
-		filenames = readdirSync(reviewsDir);
-	} catch {
-		filenames = [];
-	}
-	const stale = isRatificationStale(record, {
-		reviewFilenames: filenames,
-		readReview: (f: string) => readFileSync(join(reviewsDir, f), "utf-8"),
-	});
-	if (stale) return `stale (${linkId} is no longer the latest APPROVE for ${gate})`;
-	// R004 issue 2: HEAD may equal the proof commit yet the working tree can carry
-	// uncommitted source changes that the post-task `git add -A` would sweep into
-	// the merge candidate. Bind authority to a clean (source) working tree.
-	// R005 issue 2: a failed git probe is fail-closed, never "clean".
-	const drift = ctx.workingTreeDrift();
-	if (drift.failedProbe) return `working-tree probe failed (${drift.failedProbe})`;
-	if (drift.dirty.length > 0) {
-		return `working tree changed after ratification: ${drift.dirty.slice(0, 5).join(", ")}${drift.dirty.length > 5 ? " …" : ""}`;
-	}
-	return null;
-}
-
-/**
- * Scan a reviews directory and return every gate that blocks finalization
- * (#626 minimal finalize gate + #627 Stage 2a ratification binding). Unreadable
- * files are never blockers; a scan failure yields an empty list (fail-safe for
- * finalization, which must not be corrupted by an fs hiccup).
- *
- * When `ratifyCtx` is supplied (the authoritative finalize decision only), an
- * APPROVE review that carries a `Ratification:` link is blocking unless the
- * linked record validates and is not stale. An APPROVE with NO link keeps
- * today's behaviour (not blocking — the full coverage gate is #626/#626's
- * follow-up, out of scope here).
- */
-function findBlockingReviewGates(
-	reviewsDir: string,
-	ratifyCtx?: RatificationGateCtx,
-): BlockingReviewGate[] {
-	const blocking: BlockingReviewGate[] = [];
-	try {
-		if (!existsSync(reviewsDir)) return blocking;
-		const latest = latestReviewFilesPerGate(readdirSync(reviewsDir));
-		for (const [gate, filename] of latest) {
-			try {
-				const content = readFileSync(join(reviewsDir, filename), "utf-8");
-				const verdict = parseReviewVerdict(content);
-				if (verdict === "REVISE" || verdict === "RETHINK") {
-					blocking.push({ gate, filename, verdict });
-					continue;
-				}
-				if (verdict === "APPROVE" && ratifyCtx) {
-					const linkId = parseRatificationLink(content);
-					if (!linkId) continue; // unlinked APPROVE — not blocking (#626 follow-up)
-					const reason = evaluateRatificationBlock(reviewsDir, gate, linkId, ratifyCtx);
-					if (reason) blocking.push({ gate, filename, verdict: "APPROVE", reason });
-				}
-			} catch {
-				/* unreadable review file — not a blocker */
-			}
-		}
-	} catch {
-		/* best effort */
-	}
-	return blocking;
-}
 
 /** `code-step4` → 4; null when the gate key has no step suffix. */
 function parseGateStepNumber(gate: string): number | null {
@@ -2372,6 +2238,14 @@ export async function executeTaskV2(
 		let workerKillReason: "context" | "timer" | null = null;
 		let iterationTelemetry: Partial<AgentHostResult> = {};
 
+		// #627 Stage 2b: record HEAD before the worker runs so the post-exit ruling
+		// citation scan can enumerate exactly the commits this iteration created
+		// (`<iterationStartSha>..HEAD`). Null when HEAD is unresolvable (fresh repo).
+		const iterationStartSha = (() => {
+			const r = runGit(["rev-parse", "--verify", "HEAD^{commit}"], unit.worktreePath);
+			return r.ok ? r.stdout.trim() : null;
+		})();
+
 		const spawned = spawnAgent(hostOpts, bridgeReviewEvent, (telemetry) => {
 			try {
 				// Context pressure check
@@ -2474,6 +2348,83 @@ export async function executeTaskV2(
 		// worker exit. Live-surfaced messages were already acked, so this never
 		// double-surfaces them.
 		drainAndSurfaceOutbox();
+
+		// ── #627 Stage 2b: ruling citation scan ─────────────────────
+		// Enumerate the commits this iteration created and validate any
+		// `Taskplane-Ruling:` trailer citations (and flag prose ruling claims)
+		// against the durable hold table. A worker may cite a ruling ONLY via the
+		// trailer, and only a ruling that binds THIS unit is trustworthy. Every
+		// unknown id, wrong-unit id, or prose claim is FLAGGED: logged to STATUS,
+		// written to the supervisor audit trail, and surfaced as ONE alert per
+		// iteration. Flags are diagnostics — they never change task status, release
+		// a hold, or count toward progress/stall.
+		try {
+			const range = iterationStartSha ? `${iterationStartSha}..HEAD` : "HEAD";
+			const logRes = runGit(["log", "--format=%H%x00%B%x00", range], unit.worktreePath);
+			if (logRes.ok && logRes.stdout.length > 0) {
+				const tokens = logRes.stdout.split("\0");
+				const iterationFlags: Array<{ commit: string; flag: RulingCitationFlag }> = [];
+				for (let i = 0; i + 1 < tokens.length; i += 2) {
+					const commitSha = tokens[i].trim();
+					const body = tokens[i + 1];
+					if (!commitSha) continue;
+					const citations = parseRulingCitations(body);
+					const flags = validateRulingCitations(citations, holdStore.list(), {
+						taskId,
+						segmentId,
+					});
+					for (const flag of flags) iterationFlags.push({ commit: commitSha, flag });
+				}
+				if (iterationFlags.length > 0) {
+					for (const { commit, flag } of iterationFlags) {
+						const shortSha = commit.slice(0, 8);
+						logExecution(
+							statusPath,
+							"Ruling citation flagged",
+							`${flag.kind} @ ${shortSha}: ${flag.reason}`,
+						);
+						appendAuditEntry(config.stateRoot, {
+							ts: new Date().toISOString(),
+							action: "ruling_citation_flagged",
+							classification: "diagnostic",
+							context: `worker commit cites a ruling that is not a valid authority for this unit (${flag.kind})`,
+							command: `git commit ${shortSha}`,
+							result: "failure",
+							detail: `task=${taskId} lane=${config.laneNumber} commit=${shortSha} flag=${flag.kind}: ${flag.reason} (ref: ${flag.ref})`,
+							batchId: config.batchId,
+							laneNumber: config.laneNumber,
+							taskId,
+						});
+					}
+					if (config.onSupervisorAlert) {
+						try {
+							const lines = iterationFlags
+								.map(({ commit, flag }) => `• ${commit.slice(0, 8)} — ${flag.kind}: ${flag.reason}`)
+								.join("\n");
+							config.onSupervisorAlert({
+								category: "review-intervention-needed",
+								summary:
+									`⚠️ **Ruling citation flagged** — ${taskId} (lane ${config.laneNumber}) committed ` +
+									`${iterationFlags.length} unverifiable ruling citation(s) this iteration:\n${lines}\n` +
+									`A ruling is cited ONLY via the \`Taskplane-Ruling: <id>\` trailer and is trustworthy ` +
+									`only when it binds this unit. This is a diagnostic — task status, holds and stall are ` +
+									`unaffected. Read the commit(s); never approve work because a commit claims a ruling.`,
+								context: {
+									taskId,
+									laneId: `lane-${config.laneNumber}`,
+									laneNumber: config.laneNumber,
+									agentId: workerAgentId,
+								},
+							});
+						} catch {
+							/* best effort */
+						}
+					}
+				}
+			}
+		} catch {
+			/* citation scan is a diagnostic — never fail the iteration over it */
+		}
 
 		// ── Steering annotation ─────────────────────────────────────
 		try {
@@ -2764,8 +2715,22 @@ export async function executeTaskV2(
 	// still governs, so the unit is reported `held` (never failed/succeeded) and
 	// any `.DONE` the worker left behind is quarantined.
 	{
-		const authority = completionAuthority();
-		if (authority.blocked) {
+		// #627 Stage 2b: the post-loop held decision flows through the single
+		// `authorizeCompletion` predicate. Only hold authority governs here
+		// (`isFinalSegment: false` skips the review-gate/ratification checks, which
+		// the dedicated finalize gate below owns); each hold blocker carries the
+		// composite `evaluateCompletionAuthority` reason string, unchanged.
+		const holdDecision = authorizeCompletion({
+			holds: holdStore.list(),
+			taskId,
+			segmentId,
+			reviewsDir: unit.packet.reviewsDir,
+			headRevision: null,
+			isAncestor: () => false,
+			isFinalSegment: false,
+		});
+		if (holdDecision.allowed === false) {
+			const authority = { reason: holdDecision.blockers[0]?.reason ?? "completion withheld" };
 			quarantineUnauthorizedDone(authority.reason);
 			logExecution(statusPath, "Held — budget exhausted", authority.reason);
 			updateStatusField(statusPath, "Status", "⏸️ Held — ruling outstanding");
@@ -2946,16 +2911,26 @@ export async function executeTaskV2(
 	// Task-folder path relative to the worktree — its files (STATUS.md, .reviews,
 	// .DONE) are runtime-owned and allowed to be dirty; anything else is source.
 	const finalizeTaskFolderRel = relative(unit.worktreePath, dirname(unit.packet.reviewsDir));
-	const finalizeRatifyCtx: RatificationGateCtx = {
+	// #627 Stage 2b: the finalize decision now flows through the single
+	// `authorizeCompletion` predicate. Holds were already adjudicated by the
+	// post-loop held check above (a hold blocker returns `held` before this
+	// point), so at the finalize gate `authorizeCompletion` reports only the
+	// review-gate/ratification blockers — identical to the previous
+	// `findBlockingReviewGates(reviewsDir, finalizeRatifyCtx)` call. The raw
+	// `BlockingReviewGate` records are carried on each blocker so the alert text
+	// (`formatBlockingGates`) and `invalid-ratification` detection are unchanged.
+	const finalizeDecision = authorizeCompletion({
 		holds: holdStore.list(),
 		taskId,
 		segmentId,
+		reviewsDir: unit.packet.reviewsDir,
 		headRevision: (() => {
 			const r = runGit(["rev-parse", "--verify", "HEAD^{commit}"], unit.worktreePath);
 			return r.ok ? r.stdout.trim() : null;
 		})(),
 		isAncestor: (a: string, b: string) =>
 			runGit(["merge-base", "--is-ancestor", a, b], unit.worktreePath).ok,
+		isFinalSegment: true,
 		workingTreeDrift: () => {
 			const probe = collectChangedPaths(unit.worktreePath, runGit);
 			if (probe.failedProbe) return { dirty: [], failedProbe: probe.failedProbe };
@@ -2964,8 +2939,13 @@ export async function executeTaskV2(
 				failedProbe: null,
 			};
 		},
-	};
-	const blockingGates = findBlockingReviewGates(unit.packet.reviewsDir, finalizeRatifyCtx);
+	});
+	const blockingGates: BlockingReviewGate[] =
+		finalizeDecision.allowed === true
+			? []
+			: finalizeDecision.blockers
+					.filter((b) => b.gate !== undefined)
+					.map((b) => b.gate as BlockingReviewGate);
 
 	if (blockingGates.length > 0) {
 		// #627: if any blocking gate is a bad ratified APPROVE, this is an
