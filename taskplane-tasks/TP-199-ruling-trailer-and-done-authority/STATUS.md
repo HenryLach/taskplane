@@ -1,10 +1,10 @@
 # TP-199: Ruling commit trailer validation and unified `.DONE` authority (#627 Stage 2b) — Status
 
-**Current Step:** Step 1: `completion-authority.ts`
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-08
 **Review Level:** 3
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -25,7 +25,7 @@
 ---
 
 ### Step 1: `completion-authority.ts` — one predicate
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 **Design (plan):**
 - New module `completion-authority.ts`. To make the consolidation a literal
@@ -61,7 +61,7 @@
 ---
 
 ### Step 2: Resume `.DONE` acceptance uses the same predicate
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] `collectDoneTaskIdsForResume` refuses `.DONE` when `authorizeCompletion` is not allowed (logged; reconciled as if absent) — reviewsDir resolved like donePath, headRevision/isAncestor from final-segment worktree when present, isFinalSegment true (frontier complete), holds from persistedState.holds
 - [x] Behavioural tests: REVISE → not collected; unlinked APPROVE → collected; linked APPROVE w/o record → not collected — in completion-authority.test.ts
@@ -70,7 +70,7 @@
 ---
 
 ### Step 3: `Taskplane-Ruling:` trailer validation
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 **Module name:** `extensions/taskplane/ruling-trailer.ts` (separate module for clarity).
 
@@ -143,3 +143,4 @@
 | 2026-09-08 01:24 | Review R001 | plan Step 1: APPROVE |
 | 2026-09-08 01:42 | Review R002 | code Step 3: REVISE |
 | 2026-09-08 01:45 | Review R003 | code Step 3: REVISE |
+| 2026-09-08 01:51 | Review R004 | code Step 3: APPROVE |
