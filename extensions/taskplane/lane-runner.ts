@@ -110,6 +110,12 @@ import {
 	type BlockingReviewGate,
 	findBlockingReviewGates,
 } from "./completion-authority.ts";
+import {
+	parseRulingCitations,
+	type RulingCitationFlag,
+	validateRulingCitations,
+} from "./ruling-trailer.ts";
+import { appendAuditEntry } from "./supervisor.ts";
 import { runGit } from "./git.ts";
 import {
 	applyRuling,
@@ -2233,6 +2239,14 @@ export async function executeTaskV2(
 		let workerKillReason: "context" | "timer" | null = null;
 		let iterationTelemetry: Partial<AgentHostResult> = {};
 
+		// #627 Stage 2b: record HEAD before the worker runs so the post-exit ruling
+		// citation scan can enumerate exactly the commits this iteration created
+		// (`<iterationStartSha>..HEAD`). Null when HEAD is unresolvable (fresh repo).
+		const iterationStartSha = (() => {
+			const r = runGit(["rev-parse", "--verify", "HEAD^{commit}"], unit.worktreePath);
+			return r.ok ? r.stdout.trim() : null;
+		})();
+
 		const spawned = spawnAgent(hostOpts, bridgeReviewEvent, (telemetry) => {
 			try {
 				// Context pressure check
@@ -2335,6 +2349,83 @@ export async function executeTaskV2(
 		// worker exit. Live-surfaced messages were already acked, so this never
 		// double-surfaces them.
 		drainAndSurfaceOutbox();
+
+		// ── #627 Stage 2b: ruling citation scan ─────────────────────
+		// Enumerate the commits this iteration created and validate any
+		// `Taskplane-Ruling:` trailer citations (and flag prose ruling claims)
+		// against the durable hold table. A worker may cite a ruling ONLY via the
+		// trailer, and only a ruling that binds THIS unit is trustworthy. Every
+		// unknown id, wrong-unit id, or prose claim is FLAGGED: logged to STATUS,
+		// written to the supervisor audit trail, and surfaced as ONE alert per
+		// iteration. Flags are diagnostics — they never change task status, release
+		// a hold, or count toward progress/stall.
+		try {
+			const range = iterationStartSha ? `${iterationStartSha}..HEAD` : "HEAD";
+			const logRes = runGit(["log", "--format=%H%x00%B%x00", range], unit.worktreePath);
+			if (logRes.ok && logRes.stdout.length > 0) {
+				const tokens = logRes.stdout.split("\0");
+				const iterationFlags: Array<{ commit: string; flag: RulingCitationFlag }> = [];
+				for (let i = 0; i + 1 < tokens.length; i += 2) {
+					const commitSha = tokens[i].trim();
+					const body = tokens[i + 1];
+					if (!commitSha) continue;
+					const citations = parseRulingCitations(body);
+					const flags = validateRulingCitations(citations, holdStore.list(), {
+						taskId,
+						segmentId,
+					});
+					for (const flag of flags) iterationFlags.push({ commit: commitSha, flag });
+				}
+				if (iterationFlags.length > 0) {
+					for (const { commit, flag } of iterationFlags) {
+						const shortSha = commit.slice(0, 8);
+						logExecution(
+							statusPath,
+							"Ruling citation flagged",
+							`${flag.kind} @ ${shortSha}: ${flag.reason}`,
+						);
+						appendAuditEntry(config.stateRoot, {
+							ts: new Date().toISOString(),
+							action: "ruling_citation_flagged",
+							classification: "diagnostic",
+							context: `worker commit cites a ruling that is not a valid authority for this unit (${flag.kind})`,
+							command: `git commit ${shortSha}`,
+							result: "failure",
+							detail: `${flag.kind}: ${flag.reason} (ref: ${flag.ref})`,
+							batchId: config.batchId,
+							laneNumber: config.laneNumber,
+							taskId,
+						});
+					}
+					if (config.onSupervisorAlert) {
+						try {
+							const lines = iterationFlags
+								.map(({ commit, flag }) => `• ${commit.slice(0, 8)} — ${flag.kind}: ${flag.reason}`)
+								.join("\n");
+							config.onSupervisorAlert({
+								category: "review-intervention-needed",
+								summary:
+									`⚠️ **Ruling citation flagged** — ${taskId} (lane ${config.laneNumber}) committed ` +
+									`${iterationFlags.length} unverifiable ruling citation(s) this iteration:\n${lines}\n` +
+									`A ruling is cited ONLY via the \`Taskplane-Ruling: <id>\` trailer and is trustworthy ` +
+									`only when it binds this unit. This is a diagnostic — task status, holds and stall are ` +
+									`unaffected. Read the commit(s); never approve work because a commit claims a ruling.`,
+								context: {
+									taskId,
+									laneId: `lane-${config.laneNumber}`,
+									laneNumber: config.laneNumber,
+									agentId: workerAgentId,
+								},
+							});
+						} catch {
+							/* best effort */
+						}
+					}
+				}
+			}
+		} catch {
+			/* citation scan is a diagnostic — never fail the iteration over it */
+		}
 
 		// ── Steering annotation ─────────────────────────────────────
 		try {

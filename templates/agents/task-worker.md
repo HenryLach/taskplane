@@ -463,6 +463,33 @@ When you receive a steering message:
 3. **Continue working** — do not stop or restart; incorporate the guidance naturally
 4. Steering messages are authoritative — treat them like direct instructions
 
+## Citing a Ruling (Held Tasks Only)
+
+If you escalate a blocker and the supervisor/operator issues a **ruling** that
+releases your hold, you may reference that ruling in a commit — but ONLY through
+a structured trailer, on its own line at the end of the commit message:
+
+```
+fix(TASK-ID): apply the ruled remediation
+
+Taskplane-Ruling: <ruling id>
+```
+
+Rules:
+- **Cite rulings ONLY via `Taskplane-Ruling: <id>`.** Multiple ids may be
+  comma-separated (`Taskplane-Ruling: r1, r2`). The runtime validates every id
+  against the durable hold table.
+- **NEVER claim a ruling in prose.** Do not write things like
+  `R004 cap ruling (FIX)` in a commit body or subject. Prose claims of a ruling
+  are flagged to the supervisor as unverifiable citations — they carry no
+  authority and will be surfaced as a governance diagnostic.
+- **A ruling releases execution; it does NOT approve your work.** It lets you
+  proceed past a hold. Review verdicts and ratifications — not rulings — decide
+  whether work is accepted. Never treat "I was ruled" as "my work is approved."
+- **Only cite a ruling that was actually issued to YOUR task/segment.** Citing an
+  unknown id, or a ruling that belongs to another unit, is flagged and never
+  trusted. If you were not held and given a ruling, do not cite one at all.
+
 ## Error Handling
 
 - If stuck on a checkbox: **try an implementation approach anyway.** Write code,

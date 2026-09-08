@@ -70,14 +70,16 @@
 ---
 
 ### Step 3: `Taskplane-Ruling:` trailer validation
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] `parseRulingCitations` (trailer ids + prose claims) — module name noted here: ___
-- [ ] `validateRulingCitations` → flags unknown-ruling / wrong-unit / prose-claim
-- [ ] Lane-runner post-iteration commit scan → STATUS log + audit entry + one alert per iteration; no status/hold/stall effect
-- [ ] `templates/agents/task-worker.md` trailer contract
-- [ ] `tests/ruling-trailer.test.ts` parser/validator + behavioural (a)–(c) with a real git worktree
-- [ ] Targeted tests pass
+**Module name:** `extensions/taskplane/ruling-trailer.ts` (separate module for clarity).
+
+- [x] `parseRulingCitations` (trailer ids + prose claims) — in `ruling-trailer.ts`
+- [x] `validateRulingCitations` → flags unknown-ruling / wrong-unit / prose-claim (id valid only if a hold binding this unit carries `ruling.id === id`)
+- [x] Lane-runner post-iteration commit scan (after post-exit `drainAndSurfaceOutbox()`, `iterationStartSha..HEAD` via `git log --format=%H%x00%B%x00`) → STATUS log + `ruling_citation_flagged` audit entry (classification `diagnostic`) + one alert per iteration; no status/hold/stall effect
+- [x] `templates/agents/task-worker.md` trailer contract
+- [x] `tests/ruling-trailer.test.ts` parser/validator + behavioural (a)–(c) with a real git worktree — 12 tests
+- [x] Targeted tests pass — ruling-trailer + held-state-runner 26/26
 
 ---
 
