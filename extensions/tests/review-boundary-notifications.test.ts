@@ -216,11 +216,16 @@ describe("review-boundary — #624 tool-result extraction + verdict authority", 
 	it("#626 minimal: lane-runner refuses .DONE over an outstanding REVISE/RETHINK", () => {
 		const src = readSrc("lane-runner.ts");
 		const flat = src.replace(/\s+/g, " ");
-		// The finalize gate scans the LATEST review per gate and blocks on
-		// REVISE/RETHINK, deleting any worker-written .DONE and failing the task
-		// instead of letting the wave merge unreviewed work (TP-2037/TP-2039).
-		expect(flat).toContain("latestReviewFilesPerGate(readdirSync(reviewsDir))");
-		expect(flat).toContain('verdict === "REVISE" || verdict === "RETHINK"');
+		// TP-199 (#627 Stage 2b) consolidation: the LATEST-review-per-gate scan and
+		// the REVISE/RETHINK block now live in the shared completion-authority.ts
+		// scanner. The finalize gate reaches it through `authorizeCompletion`.
+		const authority = readSrc("completion-authority.ts").replace(/\s+/g, " ");
+		expect(authority).toContain("latestReviewFilesPerGate(readdirSync(reviewsDir))");
+		expect(authority).toContain('verdict === "REVISE" || verdict === "RETHINK"');
+		// The lane-runner finalize gate still deletes any worker-written .DONE and
+		// fails the task instead of merging unreviewed work (TP-2037/TP-2039),
+		// driven by the shared predicate's blockers.
+		expect(flat).toContain("authorizeCompletion({");
 		expect(flat).toContain("blockingGates");
 		// #627 Stage 2a: the kind branches — a bad ratified APPROVE is
 		// "invalid-ratification", an outstanding non-APPROVE is "unresolved-verdict".

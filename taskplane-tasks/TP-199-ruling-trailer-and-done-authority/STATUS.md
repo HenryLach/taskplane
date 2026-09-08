@@ -87,13 +87,13 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing (vs Step 0 baseline)
-- [ ] typecheck 0 errors
-- [ ] lint at or below baseline
-- [ ] format:check clean
-- [ ] CLI help + doctor exit 0
+- [x] FULL test suite passing (vs Step 0 baseline) — 4117 tests, 4115 pass, 1 fail. The single failure (`project-config-loader.test.ts` → `6.3: repo mode — pointer is not consulted`) is the PRE-EXISTING baseline failure (present at Step 0, unrelated to TP-199, confirmed failing in isolation on this file). Net-new tests: +25 (completion-authority 10, ruling-trailer 12, resume-completion-drift 3). Two source-drift tests updated to the consolidated shape (issue-629 "share one scanner", review-boundary "#626 minimal").
+- [x] typecheck 0 errors
+- [x] lint at or below baseline — 283 warnings (== baseline)
+- [x] format:check clean
+- [x] CLI help + doctor — `help` exits 0. `doctor` exits 1 ONLY because this dev worktree has no `.pi/` project scaffolding (missing `taskplane-config.json` + `.pi/agents/*`); environmental, not a code regression (identical on baseline). All package/tooling checks in doctor pass.
 
 ---
 
