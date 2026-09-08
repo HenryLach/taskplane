@@ -37,6 +37,9 @@ const GATE = "code-step3";
 const SUPERSEDED_NAME = "R007-code-step3.md";
 const SUPERSEDED_CONTENT = "## Verdict: REVISE\n\nfix things\n";
 const SUPERSEDED_SHA = sha256(SUPERSEDED_CONTENT);
+/** Canonical 40-hex object ids (revision proofs must be immutable oids). */
+const PROOF_OID = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+const HEAD_OID = "0123456789abcdef0123456789abcdef01234567";
 
 /** A released hold whose ruling id is `ruling-1`, escalation `esc-1`. */
 function releasedHold(overrides: Partial<HoldRecord> = {}): HoldRecord {
@@ -75,7 +78,7 @@ function goodRecord(overrides: Partial<GateRatification> = {}): GateRatification
 		closedEscalationIds: ["esc-1"],
 		supersededReview: { path: SUPERSEDED_NAME, sha256: SUPERSEDED_SHA },
 		findings: [{ ref: "1", disposition: "fixed", evidenceRefs: ["abc123"] }],
-		proofSet: [{ kind: "revision", ref: "deadbeef" }],
+		proofSet: [{ kind: "revision", ref: PROOF_OID }],
 		createdAt: 3_000,
 		...overrides,
 	};
@@ -229,7 +232,7 @@ describe("validateRatification", () => {
 		assert.equal(r.ok === false && r.code, "no-revision-proof");
 	});
 
-	it("revision-not-ancestor: revision proof is not an ancestor of HEAD", () => {
+	it("revision-not-ancestor: revision proof is not an ancestor of HEAD (issuance/ancestor mode)", () => {
 		const r = validateRatification(goodRecord(), ctx({ isAncestor: () => false }));
 		assert.equal(r.ok === false && r.code, "revision-not-ancestor");
 	});
@@ -259,19 +262,28 @@ describe("validateRatification", () => {
 		assert.equal(r.ok === false && r.code, "head-unresolved");
 	});
 
-	it("requireProofHeadMatch: proof-not-head when no revision proof equals HEAD", () => {
-		// isAncestor(proof, head) true but isAncestor(head, proof) false → not equal.
+	it("requireProofHeadMatch: proof-not-head when the (canonical) proof != HEAD", () => {
 		const r = validateRatification(
-			goodRecord(),
-			ctx({ requireProofHeadMatch: true, isAncestor: (a, _b) => a === "deadbeef" }),
+			goodRecord({ proofSet: [{ kind: "revision", ref: PROOF_OID }] }),
+			ctx({ requireProofHeadMatch: true, headRevision: HEAD_OID }),
 		);
 		assert.equal(r.ok === false && r.code, "proof-not-head");
 	});
 
-	it("requireProofHeadMatch: ok when a revision proof is exactly HEAD", () => {
+	it("malformed-record: a non-canonical (symbolic) revision ref is refused before any HEAD check (R007)", () => {
+		// A symbolic ref must NOT be re-resolved to match a moved HEAD; it is
+		// structurally invalid and rejected up front.
 		const r = validateRatification(
-			goodRecord({ proofSet: [{ kind: "revision", ref: "HEADSHA" }] }),
-			ctx({ requireProofHeadMatch: true, headRevision: "HEADSHA", isAncestor: () => true }),
+			goodRecord({ proofSet: [{ kind: "revision", ref: "HEAD" }] }),
+			ctx({ requireProofHeadMatch: true, headRevision: HEAD_OID, isAncestor: () => true }),
+		);
+		assert.equal(r.ok === false && r.code, "malformed-record");
+	});
+
+	it("requireProofHeadMatch: ok when a canonical revision proof exactly equals HEAD", () => {
+		const r = validateRatification(
+			goodRecord({ proofSet: [{ kind: "revision", ref: HEAD_OID }] }),
+			ctx({ requireProofHeadMatch: true, headRevision: HEAD_OID }),
 		);
 		assert.deepEqual(r, { ok: true });
 	});
@@ -332,6 +344,28 @@ describe("isValidGateRatification", () => {
 		assert.equal(
 			isValidGateRatification({ ...goodRecord(), closedEscalationIds: [1, 2] as never }),
 			false,
+		);
+		// R007: a revision proof must be a canonical 40-hex oid; a symbolic/abbrev
+		// ref is structurally invalid so it is refused at read.
+		assert.equal(
+			isValidGateRatification(goodRecord({ proofSet: [{ kind: "revision", ref: "HEAD" }] })),
+			false,
+		);
+		assert.equal(
+			isValidGateRatification(goodRecord({ proofSet: [{ kind: "revision", ref: "deadbeef" }] })),
+			false,
+		);
+		// artifact refs remain free-form.
+		assert.equal(
+			isValidGateRatification(
+				goodRecord({
+					proofSet: [
+						{ kind: "revision", ref: PROOF_OID },
+						{ kind: "artifact", ref: "logs/run.txt" },
+					],
+				}),
+			),
+			true,
 		);
 	});
 });

@@ -514,4 +514,21 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
 		assert.ok(alert, "expected an invalid-ratification alert");
 	});
+
+	it("(k) R007 symbolic proof ref: a record whose revision proof is `HEAD` is refused even after a clean commit", async () => {
+		writeFileSync(join(reviewsDir, "R002-code-step1.md"), approveReview(RATIF_ID));
+		// A hand-edited/forged record pins a SYMBOLIC ref, not an immutable oid.
+		writeRatification(reviewsDir, goodRecord({ proofSet: [{ kind: "revision", ref: "HEAD" }] }), 2);
+		// A later clean commit moves HEAD; a re-resolved symbolic ref would still
+		// "equal" HEAD. The record must be refused (rejected at read as non-canonical).
+		gitCommitMore();
+
+		const { result, packet } = run(true);
+		const r = await result;
+		assert.equal(r.outcome.status, "failed");
+		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
+		assert.equal(existsSync(packet.donePath), false);
+		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
+		assert.ok(alert, "expected an invalid-ratification alert");
+	});
 });

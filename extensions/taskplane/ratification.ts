@@ -154,6 +154,10 @@ export function isValidGateRatification(obj: unknown): obj is GateRatification {
 		const pp = p as Record<string, unknown>;
 		if (pp.kind !== "revision" && pp.kind !== "artifact") return false;
 		if (typeof pp.ref !== "string" || !pp.ref) return false;
+		// R007: a `revision` proof MUST be an immutable 40-hex object id. A symbolic
+		// ref (e.g. `HEAD`) hand-edited into a record would track a moved HEAD; it
+		// is refused at read so it can never reach the finalize validator.
+		if (pp.kind === "revision" && !/^[0-9a-f]{40}$/i.test(pp.ref)) return false;
 		if (pp.sha256 !== undefined && typeof pp.sha256 !== "string") return false;
 	}
 	if (typeof r.createdAt !== "number") return false;
@@ -336,8 +340,8 @@ export function validateRatification(
 		return { ok: false, code: "no-revision-proof", reason: "proofSet has no revision proof" };
 	}
 	if (ctx.requireProofHeadMatch) {
-		// R003 issue 2: the ratified code state must still BE the current HEAD, or
-		// the code changed after the supervisor verified/ratified it. An
+		// R003/R004/R007 issue: the ratified code state must still BE the current
+		// HEAD, or the code changed after the supervisor verified/ratified it. An
 		// unresolvable HEAD is fail-closed, never skipped.
 		if (!ctx.headRevision) {
 			return {
@@ -347,14 +351,18 @@ export function validateRatification(
 			};
 		}
 		const head = ctx.headRevision;
-		const matchesHead = revisionProofs.some(
-			(p) => ctx.isAncestor(p.ref, head) && ctx.isAncestor(head, p.ref),
-		);
+		// R007: compare the persisted proof to the already-canonical HEAD by exact
+		// object-id equality — do NOT re-resolve the ref through git. A symbolic ref
+		// (e.g. `HEAD`) or an abbreviated/branch ref stored in the record would
+		// otherwise track a MOVED HEAD (both ancestor probes succeed) and authorize
+		// changed code. The proof must itself be an immutable 40-hex object id.
+		const CANONICAL_OID = /^[0-9a-f]{40}$/i;
+		const matchesHead = revisionProofs.some((p) => CANONICAL_OID.test(p.ref) && p.ref === head);
 		if (!matchesHead) {
 			return {
 				ok: false,
 				code: "proof-not-head",
-				reason: `code changed since ratification: no revision proof equals HEAD ${head}`,
+				reason: `code changed since ratification (or proof is not an immutable object id): no revision proof equals HEAD ${head}`,
 			};
 		}
 	} else if (ctx.headRevision) {
