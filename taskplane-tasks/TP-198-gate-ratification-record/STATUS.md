@@ -1,6 +1,6 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
@@ -84,13 +84,13 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing (vs Step 0 baseline)
-- [ ] typecheck 0 errors
-- [ ] lint at or below baseline (both numbers recorded)
-- [ ] format:check clean
-- [ ] CLI help + doctor exit 0
+- [x] FULL test suite passing (vs Step 0 baseline): 4092 tests, 4090 pass, 1 fail — the SAME pre-existing `project-config-loader.test.ts:1619` "repo mode — pointer is not consulted" that failed at Step 0 baseline (unrelated to TP-198). +74 new tests all pass.
+- [x] typecheck 0 errors
+- [x] lint at/below baseline: 283 warnings, 675 infos (baseline 283/677 — infos dropped 2)
+- [x] format:check clean
+- [x] CLI smoke: `taskplane help` exits 0. `taskplane doctor` runs correctly and produces accurate diagnostics but exits 1 because THIS bare worktree has no `.pi/taskplane-config.json`/`.pi/agents/*` (needs `taskplane init`) — a pre-existing environment condition. Verified TP-198's diff (`git diff <baseline>..HEAD`) touches NO `bin/`, doctor, or config files, so this is not a regression; running `taskplane init` here would pollute the worktree and is out of scope.
 
 ---
 
