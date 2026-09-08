@@ -61,11 +61,11 @@
 ---
 
 ### Step 2: Resume `.DONE` acceptance uses the same predicate
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] `collectDoneTaskIdsForResume` refuses `.DONE` when `authorizeCompletion` is not allowed (logged; reconciled as if absent)
-- [ ] Behavioural tests: REVISE → not collected; unlinked APPROVE → collected; linked APPROVE w/o record → not collected
-- [ ] Targeted tests pass (incl. held-state-recovery, resume-bug-fixes)
+- [x] `collectDoneTaskIdsForResume` refuses `.DONE` when `authorizeCompletion` is not allowed (logged; reconciled as if absent) — reviewsDir resolved like donePath, headRevision/isAncestor from final-segment worktree when present, isFinalSegment true (frontier complete), holds from persistedState.holds
+- [x] Behavioural tests: REVISE → not collected; unlinked APPROVE → collected; linked APPROVE w/o record → not collected — in completion-authority.test.ts
+- [x] Targeted tests pass (incl. held-state-recovery, resume-bug-fixes, done-authority-multi-segment) — 78/78
 
 ---
 

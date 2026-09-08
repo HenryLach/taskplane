@@ -21,8 +21,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const { authorizeCompletion } = await import("../taskplane/completion-authority.ts");
+const { collectDoneTaskIdsForResume } = await import("../taskplane/resume.ts");
 const { createHoldRecord } = await import("../taskplane/hold-state.ts");
 type HoldRecord = import("../taskplane/hold-state.ts").HoldRecord;
+type PersistedBatchState = import("../taskplane/types.ts").PersistedBatchState;
 
 const TASK_ID = "TP-CA";
 const GATE = "code-step1";
@@ -177,6 +179,106 @@ describe("authorizeCompletion — the single completion predicate", () => {
 			}
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// ── Step 2: resume `.DONE` acceptance uses the same predicate ──────────
+
+describe("collectDoneTaskIdsForResume — completion authority on resume", () => {
+	let warnings: string[];
+	let originalWarn: typeof console.warn;
+
+	function hush() {
+		warnings = [];
+		originalWarn = console.warn;
+		console.warn = (msg: unknown) => {
+			warnings.push(typeof msg === "string" ? msg : String(msg));
+		};
+	}
+	function restore() {
+		console.warn = originalWarn;
+	}
+
+	/** A single-segment (legacy) state whose `.DONE` lives in `taskFolder`. */
+	function makeState(taskId: string, taskFolder: string): PersistedBatchState {
+		return {
+			batchId: "tp199-resume",
+			phase: "executing",
+			lanes: [],
+			tasks: [
+				{
+					taskId,
+					taskFolder,
+					areaName: "test",
+					promptPath: join(taskFolder, "PROMPT.md"),
+					status: "pending",
+					attempts: 0,
+				} as unknown as PersistedBatchState["tasks"][number],
+			],
+			waves: [],
+			segments: [],
+		} as unknown as PersistedBatchState;
+	}
+
+	/** Create a task folder with a `.DONE` and a `.reviews` dir. */
+	function seedTaskFolder(root: string, taskId: string): { folder: string; reviews: string } {
+		const folder = join(root, taskId);
+		const reviews = join(folder, ".reviews");
+		mkdirSync(reviews, { recursive: true });
+		writeFileSync(join(folder, ".DONE"), "Completed\n");
+		return { folder, reviews };
+	}
+
+	it(".DONE + latest review REVISE → NOT collected (refused by completion authority)", () => {
+		const root = tmp();
+		hush();
+		try {
+			const { folder, reviews } = seedTaskFolder(root, "TP-RA");
+			writeReview(reviews, `R001-${GATE}.md`, "REVISE");
+			const result = collectDoneTaskIdsForResume(makeState("TP-RA", folder), root);
+			assert.equal(result.has("TP-RA"), false);
+			assert.ok(
+				warnings.some((w) => w.includes("TP-RA") && w.includes("refused by completion authority")),
+				"expected a completion-authority refusal warning",
+			);
+		} finally {
+			restore();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it(".DONE + APPROVE (unlinked) → collected", () => {
+		const root = tmp();
+		hush();
+		try {
+			const { folder, reviews } = seedTaskFolder(root, "TP-RB");
+			writeReview(reviews, `R001-${GATE}.md`, "APPROVE");
+			const result = collectDoneTaskIdsForResume(makeState("TP-RB", folder), root);
+			assert.equal(result.has("TP-RB"), true);
+		} finally {
+			restore();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it(".DONE + linked APPROVE with a missing ratification record → NOT collected", () => {
+		const root = tmp();
+		hush();
+		try {
+			const { folder, reviews } = seedTaskFolder(root, "TP-RC");
+			writeReview(reviews, `R002-${GATE}.md`, "APPROVE", "\nRatification: ratif-nope\n");
+			const result = collectDoneTaskIdsForResume(makeState("TP-RC", folder), root);
+			assert.equal(result.has("TP-RC"), false);
+			assert.ok(
+				warnings.some(
+					(w) => w.includes("TP-RC") && w.includes("ratification") && w.includes("ratif-nope"),
+				),
+				"expected a ratification refusal warning",
+			);
+		} finally {
+			restore();
+			rmSync(root, { recursive: true, force: true });
 		}
 	});
 });
