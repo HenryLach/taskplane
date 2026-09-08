@@ -1,6 +1,6 @@
 # Held state and typed rulings — design spec (#627, companion to #626/#628/#630/#631)
 
-Status: **Stage 1 implemented** on `feat/held-state` (design Sage-reviewed 2026-09-07). Stages 2–4 below.
+Status: **Stage 1 implemented**; **Stage 2a (ratification record + finalize binding) implemented** (#627, TP-198); **Stage 2b (`authorizeCompletion()` unification + `Taskplane-Ruling:` trailer validation) implemented** (#627, TP-199). Design Sage-reviewed 2026-09-07. Stages 3–4 below.
 
 ## Problem
 
@@ -117,12 +117,39 @@ interface GateRatification {
 
 A trusted operation validates and persists the record, then writes the next R-numbered APPROVE file
 referencing it; the finalize gate validates reference, scope, authority and proof binding. Later
-blocking reviews or relevant code changes invalidate a stale ratification. One centralized
-`authorizeCompletion()` is called from: pre-spawn completion shortcuts, step-status heuristic, segment
-success and final `.DONE`, monitor and resume completion recognition, merge/recovery eligibility. An
-unauthorized worker-written `.DONE` is quarantined; failure to remove it never makes it authoritative.
-Commits reference rulings via a structured trailer `Taskplane-Ruling: <id>`; unknown/wrong-scope ids
-are logged via `logRecoveryAction()` and are never evidence of approval.
+blocking reviews or relevant code changes invalidate a stale ratification.
+
+**Stage 2a implemented (TP-198).** The record is written to
+`R{NNN}-{gate}.ratification.json` (same `{NNN}` as the APPROVE markdown it
+authorizes, allocated from the global `**Review Counter:**`), and the authorizing
+APPROVE review file carries the exact link line `Ratification: <id>`. The trusted
+operation is the `ratify_gate` supervisor tool (stamps role `supervisor`) and the
+`/orch-ratify` operator command (stamps role `operator`); it canonicalizes the
+proof to an immutable object id equal to the current worktree HEAD, requires a
+clean (source) working tree, and audits `gate_ratified`. The finalize gate
+(`findBlockingReviewGates` in `lane-runner.ts`) treats a linked APPROVE as
+blocking unless the record validates (via `validateRatification`) and is not
+`isRatificationStale`, emitting `review_gate_refusal` with
+`reviewInterventionKind: "invalid-ratification"`. An APPROVE with NO
+`Ratification:` link keeps today's behaviour (not blocking — the full coverage
+gate is #626).
+
+**Stage 2b implemented (TP-199).** `authorizeCompletion()` (`completion-authority.ts`)
+is now the single completion predicate: it composes hold authority
+(`evaluateCompletionAuthority`) → blocking review gates (latest REVISE/RETHINK) →
+linked-APPROVE ratification validity, reporting ALL blockers. The lane-runner's
+finalize path and resume's `.DONE` acceptance (`collectDoneTaskIdsForResume`)
+both call it, so a worker-written `.DONE` over a blocking gate is refused on
+resume exactly as it is live (including the clean-source-tree drift binding when
+the lane worktree exists). An unauthorized worker-written `.DONE` is quarantined;
+failure to remove it never makes it authoritative. Commits reference rulings via
+a structured trailer `Taskplane-Ruling: <id>` (`ruling-trailer.ts`); after each
+iteration the runtime validates every citation against the durable hold table and
+FLAGS unknown ids, wrong-unit ids, and prose ruling claims — logged to STATUS,
+written to the audit trail (`ruling_citation_flagged`, classification
+`diagnostic`) and surfaced to the supervisor as one alert per iteration. A flag
+never changes task status, releases a hold, or counts toward progress/stall, and
+is never evidence of approval.
 
 ## Staging
 
@@ -132,8 +159,15 @@ are logged via `logRecoveryAction()` and are never evidence of approval.
   replacing `pendingEscalation`/`MAX_HOLD_RELAUNCHES`, execution/engine (persistence callback, held
   monitoring, wave accounting, `hold-timeout` pause), resume hold-first + lane-parallel restart,
   extension/supervisor/merge/cleanup/worktree safeguards, dashboard `held`, primer/docs.
-- **Stage 2 — ratification** (#627 remainder, feeds #626): `GateRatification`, trusted ratify
-  operation, finalize-gate binding, `authorizeCompletion()` unification, commit trailer validation.
+- **Stage 2 — ratification** (#627 remainder, feeds #626):
+  - **Stage 2a (DONE, TP-198):** `GateRatification` record + validation + staleness (`ratification.ts`),
+    trusted ratify operation (`ratifyGate` in `ratification-op.ts`; `ratify_gate` tool + `/orch-ratify`
+    command), finalize-gate binding (`invalid-ratification` refusal), record filename
+    `R{NNN}-{gate}.ratification.json` + `Ratification: <id>` link line.
+  - **Stage 2b (DONE, TP-199):** `authorizeCompletion()` unification (`completion-authority.ts`)
+    across the live finalize gate and resume `.DONE` acceptance, commit trailer
+    (`Taskplane-Ruling: <id>`) parsing + validation (`ruling-trailer.ts`) with per-iteration
+    citation flagging (`ruling_citation_flagged` audit + supervisor alert; diagnostic-only).
 - **Stage 3 — #631 lease/generation** (fencing for split-brain; prerequisite for trusting single-writer).
 - **Stage 4 — #628 takeover state machine**, **#626 full coverage gate**.
 

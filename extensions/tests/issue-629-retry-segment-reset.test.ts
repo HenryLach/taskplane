@@ -689,8 +689,21 @@ describe("#629 — review-gate remediation spawn (the retry+resume remedy must b
 	});
 
 	it("the finalize gate and the pre-spawn check share one scanner (no drift)", () => {
-		const src = readSrc("lane-runner.ts");
-		const occurrences = src.split("findBlockingReviewGates(").length - 1;
-		expect(occurrences).toBe(5); // definition + finalize + pre-spawn + post-iteration re-check + step-completion gate
+		// TP-199 (#627 Stage 2b) consolidation: the review-gate scanner
+		// `findBlockingReviewGates` now has a SINGLE definition in
+		// completion-authority.ts. The finalize gate reaches it through the
+		// unified `authorizeCompletion` predicate; the pre-spawn / post-iteration /
+		// step-completion checks call `findBlockingReviewGates` directly. There is
+		// no second copy in lane-runner (no drift).
+		const runner = readSrc("lane-runner.ts");
+		const authority = readSrc("completion-authority.ts");
+		// Exactly one definition, and it lives in completion-authority.ts.
+		expect(authority).toContain("export function findBlockingReviewGates(");
+		expect(runner).not.toContain("function findBlockingReviewGates(");
+		// The finalize decision goes through the single predicate.
+		expect(runner.replace(/\s+/g, " ")).toContain("authorizeCompletion({");
+		// The verdict-only callers still share the same scanner (three call sites).
+		const callSites = runner.split("findBlockingReviewGates(unit.packet.reviewsDir)").length - 1;
+		expect(callSites).toBe(3); // pre-spawn + post-iteration re-check + step-completion gate
 	});
 });

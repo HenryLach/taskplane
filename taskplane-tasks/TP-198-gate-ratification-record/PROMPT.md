@@ -176,3 +176,7 @@ for this task MUST include the task ID for traceability:
      ### Amendment N — YYYY-MM-DD HH:MM
      **Issue:** [what was wrong]
      **Resolution:** [what was changed] -->
+
+### Amendment 1 — 2026-09-08
+**Issue:** PROMPT specifies `writeRatification(reviewsDir, record)`. Plan review R001-plan-step1 (issue 2) required the ratification JSON's R-number to come from the single global `**Review Counter:**` allocation (shared with the linked APPROVE markdown), NOT derived from `supersededReview+1`, to avoid a later ordinary `review_step` reusing/overwriting the filename.
+**Resolution:** `writeRatification(reviewsDir, record, reviewNumber)` takes the allocated review number explicitly. Step 2's `ratify_gate` / `/orch-ratify` computes N once from the persisted counter and passes the same N to both the APPROVE markdown filename and `writeRatification`. Approved via re-review of Step 1 plan.

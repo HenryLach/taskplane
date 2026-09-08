@@ -2509,6 +2509,35 @@ export async function executeWithStopAll(
  *
  * @since TP-102
  */
+/**
+ * Select the authoritative packet paths for a unit. A cross-repo segment's
+ * packet lives at the absolute `packetTaskPath` in its packet-home repo; when
+ * the packet home and execution repos are the same, packets resolve inside the
+ * worktree so `.DONE`/STATUS.md/`.reviews` are read/written there.
+ *
+ * Extracted so every caller that must agree with the lane-runner's packet
+ * contract (e.g. the `ratify_gate` trusted operation) uses ONE decision rather
+ * than re-deriving it — a divergence would make one side write/scan a location
+ * the other never sees (#627 Stage 2a / R005).
+ */
+export function selectPacketPaths(
+	packetTaskPath: string | null | undefined,
+	packetHomeRepoId: string,
+	executionRepoId: string,
+	resolved: ResolvedTaskPaths,
+): PacketPaths {
+	const useAbsolutePacketPath = !!packetTaskPath && packetHomeRepoId !== executionRepoId;
+	return useAbsolutePacketPath
+		? resolvePacketPaths(packetTaskPath as string)
+		: {
+				promptPath: `${resolved.taskFolderResolved}/PROMPT.md`,
+				statusPath: resolved.statusPath,
+				donePath: resolved.donePath,
+				reviewsDir: `${resolved.taskFolderResolved}/.reviews`,
+				taskFolder: resolved.taskFolderResolved,
+			};
+}
+
 export function buildExecutionUnit(
 	lane: AllocatedLane,
 	task: AllocatedTask,
@@ -2549,17 +2578,12 @@ export function buildExecutionUnit(
 	// the execution repo (cross-repo segment). When they're the same repo,
 	// resolve packet paths inside the worktree so .DONE, STATUS.md etc. are
 	// written to the worktree (not the original repo outside the worktree).
-	const useAbsolutePacketPath = task.task.packetTaskPath && packetHomeRepoId !== executionRepoId;
-
-	const packet = useAbsolutePacketPath
-		? resolvePacketPaths(task.task.packetTaskPath!)
-		: {
-				promptPath: resolved.taskFolderResolved + "/PROMPT.md",
-				statusPath: resolved.statusPath,
-				donePath: resolved.donePath,
-				reviewsDir: resolved.taskFolderResolved + "/.reviews",
-				taskFolder: resolved.taskFolderResolved,
-			};
+	const packet = selectPacketPaths(
+		task.task.packetTaskPath,
+		packetHomeRepoId,
+		executionRepoId,
+		resolved,
+	);
 
 	return {
 		id,
