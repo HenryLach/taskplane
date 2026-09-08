@@ -2,7 +2,6 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
-import { randomUUID } from "node:crypto";
 import {
 	writeFileSync,
 	unlinkSync,
@@ -61,7 +60,6 @@ import {
 	computeTransitiveDependents,
 	execLog,
 	resolveCanonicalTaskPaths,
-	selectPacketPaths,
 } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
@@ -113,17 +111,7 @@ import {
 	type RulingActor,
 	validateRuling,
 } from "./hold-state.ts";
-import {
-	collectChangedPaths,
-	type GateRatification,
-	type RatificationFinding,
-	ratificationLinkLine,
-	sha256 as sha256Hex,
-	unratifiedWorkingTreePaths,
-	validateRatification,
-	writeRatification,
-} from "./ratification.ts";
-import { latestReviewFilesPerGate } from "./review-analysis.ts";
+import { ratifyGate, type RatifyGateParams } from "./ratification-op.ts";
 import {
 	readRegistrySnapshot,
 	isProcessAlive as registryIsProcessAlive,
@@ -5885,295 +5873,18 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// ── #627 Stage 2a: gate ratification ─────────────────────────
-	// The trusted operation that closes a review gate that hit its revision cap.
-	// A ruling releases the held lane; a RATIFICATION is what makes the APPROVE
-	// that follows trustworthy. This helper builds the structured record, VALIDATES
-	// it against the durable holds + reviews dir (with real git), and only on
-	// success writes BOTH the ratification JSON and the R-numbered APPROVE review
-	// file it authorizes. The worker never writes that APPROVE file itself.
-
-	interface RatifyGateFindingInput {
-		ref: string;
-		disposition: "fixed" | "ruled";
-		evidence?: string[];
-	}
-
-	/** Read `**Review Counter:**` from STATUS.md, increment, persist, return the new number. */
-	function allocateRatificationReviewNumber(statusPath: string): number {
-		let counter = 0;
-		let content = "";
-		try {
-			content = readFileSync(statusPath, "utf-8");
-			const m = content.match(/\*\*Review Counter:\*\*\s*(\d+)/);
-			if (m) counter = Number.parseInt(m[1], 10);
-		} catch {
-			/* no STATUS.md — start from 0 */
-		}
-		const next = counter + 1;
-		try {
-			if (content && /\*\*Review Counter:\*\*\s*\d+/.test(content)) {
-				const updated = content.replace(/\*\*Review Counter:\*\*\s*\d+/, `**Review Counter:** ${next}`);
-				writeFileSync(statusPath, updated, "utf-8");
-			}
-		} catch {
-			/* best effort — the number is still allocated for the filenames */
-		}
-		return next;
-	}
-
-	function buildRatificationApproveMarkdown(
-		record: GateRatification,
-		summary: string,
-		reviewNumber: number,
-	): string {
-		const lines: string[] = [];
-		lines.push(`# Ratified closure: ${record.gate} (R${String(reviewNumber).padStart(3, "0")})`);
-		lines.push("");
-		lines.push("## Verdict: APPROVE");
-		lines.push("");
-		lines.push(
-			`This gate was closed by a **${record.ratifier.role}** ratification after its review reached ` +
-				`the revision cap. Authorized by ruling \`${record.rulingId}\`; supersedes ` +
-				`\`${record.supersededReview.path}\`.`,
-		);
-		lines.push("");
-		lines.push("### Summary");
-		lines.push("");
-		lines.push(summary.trim() || "(no summary supplied)");
-		lines.push("");
-		lines.push("### Findings");
-		lines.push("");
-		lines.push("| Ref | Disposition | Evidence |");
-		lines.push("| --- | --- | --- |");
-		for (const f of record.findings) {
-			lines.push(`| ${f.ref} | ${f.disposition} | ${f.evidenceRefs.join(", ") || "—"} |`);
-		}
-		lines.push("");
-		// The finalize gate requires this exact link line on a ratified APPROVE.
-		lines.push(ratificationLinkLine(record.id));
-		lines.push("");
-		return lines.join("\n");
-	}
-
-	/**
-	 * Build, validate and (on success) persist a gate ratification. Shared by the
-	 * `ratify_gate` supervisor tool and the `/orch-ratify` operator command. The
-	 * `actor` is stamped by the CALLER (never a parameter): the tool stamps
-	 * `supervisor`, the command stamps `operator`.
-	 */
-	function doRatifyGate(
-		params: {
-			taskId: string;
-			gate: string;
-			rulingId: string;
-			summary: string;
-			findings: RatifyGateFindingInput[];
-			proofRevision: string;
-			artifactRefs?: string[];
-		},
-		actor: RulingActor,
-		stateRoot: string,
-	): string {
-		let state: PersistedBatchState | null = null;
-		try {
-			state = loadBatchState(stateRoot);
-		} catch (err) {
-			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
-		}
-		if (!state) return "❌ No batch state found. There is no active or recent batch.";
-
-		const task = state.tasks.find((t) => t.taskId === params.taskId);
-		if (!task) return `❌ Task ${params.taskId} is not part of batch ${state.batchId}.`;
-
-		// The hold that carries the cited ruling supplies lane + segment + escalation
-		// scope — bind to it (not merely task.laneNumber) so a segment's ratification
-		// lands on the lane/worktree that raised it (R005 issue 1).
-		const rulingHold = (state.holds ?? []).find((h) => h.ruling?.id === params.rulingId);
-		if (!rulingHold) {
-			return `❌ No hold carries ruling ${params.rulingId}. A ratification must cite the ruling that released the lane.`;
-		}
-		const segmentId = rulingHold.segmentId ?? null;
-
-		const laneRec =
-			state.lanes.find((l) => l.laneNumber === rulingHold.laneNumber) ??
-			state.lanes.find((l) => l.laneNumber === task.laneNumber);
-		if (!laneRec || !task.taskFolder || !laneRec.worktreePath) {
-			return `❌ Cannot resolve the worktree/task folder for ${params.taskId} (lane ${rulingHold.laneNumber}).`;
-		}
-
-		// Packet resolution MUST match the lane-runner's contract (buildExecutionUnit
-		// → selectPacketPaths): a cross-repo segment's packet lives at the absolute
-		// `packetTaskPath` in the packet-home repo, NOT under the execution worktree.
-		// Diverging would make ratify_gate write to a location finalize never scans
-		// (R005 issue 1). Use the SAME shared helper.
-		const executionRepoId = laneRec.repoId ?? "default";
-		const packetHomeRepoId = task.packetRepoId ?? executionRepoId;
-		const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
-		const resolved = resolveCanonicalTaskPaths(
-			task.taskFolder,
-			laneRec.worktreePath,
-			repoRootForLane,
-			!!execCtx?.workspaceConfig,
-		);
-		const packet = selectPacketPaths(
-			task.packetTaskPath,
-			packetHomeRepoId,
-			executionRepoId,
-			resolved,
-		);
-		const reviewsDir = packet.reviewsDir;
-		const statusPathForCounter = packet.statusPath;
-		if (!existsSync(reviewsDir)) {
-			return `❌ No reviews directory for ${params.taskId} at ${reviewsDir}.`;
-		}
-
-		// Superseded review = the current latest review file for this gate.
-		const supersededName = latestReviewFilesPerGate(readdirSync(reviewsDir)).get(params.gate);
-		if (!supersededName) {
-			return `❌ No review file for gate ${params.gate} to supersede — ratify_gate closes a gate that already has a review at its revision cap.`;
-		}
-		let supersededContent: string;
-		try {
-			supersededContent = readFileSync(join(reviewsDir, supersededName), "utf-8");
-		} catch (err) {
-			return `❌ Cannot read superseded review ${supersededName}: ${err instanceof Error ? err.message : String(err)}`;
-		}
-
-		// R004 issue 1: canonicalize the proof to an immutable commit oid and
-		// require it to BE the current worktree HEAD. A symbolic ref (e.g. `HEAD`
-		// or a branch) or an older SHA must never be stored verbatim — otherwise
-		// the finalize check re-resolves it against a moved tree and fails open,
-		// or issuance "succeeds" on a state finalize will immediately reject.
-		const headOidRes = runGit(["rev-parse", "--verify", "HEAD^{commit}"], laneRec.worktreePath);
-		if (!headOidRes.ok) {
-			return `❌ Ratification refused: worktree HEAD could not be resolved (${headOidRes.stderr}). Nothing was written.`;
-		}
-		const headOid = headOidRes.stdout.trim();
-		const proofOidRes = runGit(
-			["rev-parse", "--verify", `${params.proofRevision}^{commit}`],
-			laneRec.worktreePath,
-		);
-		if (!proofOidRes.ok) {
-			return `❌ Ratification refused: proofRevision "${params.proofRevision}" does not resolve to a commit (${proofOidRes.stderr}). Nothing was written.`;
-		}
-		const proofOid = proofOidRes.stdout.trim();
-		if (proofOid !== headOid) {
-			return (
-				`❌ Ratification refused: proofRevision ${proofOid.slice(0, 12)} is not the current worktree HEAD ` +
-				`${headOid.slice(0, 12)}. Ratify at the exact HEAD that contains the fold (re-verify the fold). Nothing was written.`
-			);
-		}
-		// R004 issue 2: the working tree must be clean of source changes — the
-		// proof commit must fully represent the ratified code. Runtime-owned
-		// artifacts (the task folder and `.pi/`) are allowed to be dirty.
-		const taskFolderRel = relative(laneRec.worktreePath, resolved.taskFolderResolved);
-		const probe = collectChangedPaths(laneRec.worktreePath, runGit);
-		if (probe.failedProbe) {
-			// R005 issue 2: a git read error is fail-closed, never "clean".
-			return `❌ Ratification refused: working-tree probe failed (${probe.failedProbe}: ${probe.detail || "no detail"}). Nothing was written.`;
-		}
-		const dirty = unratifiedWorkingTreePaths(probe.paths, [taskFolderRel, ".pi"]);
-		if (dirty.length > 0) {
-			return (
-				`❌ Ratification refused: uncommitted source changes are not covered by the proof commit: ` +
-				`${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? " …" : ""}. Commit or revert them, then ratify. Nothing was written.`
-			);
-		}
-
-		const findings: RatificationFinding[] = (
-			params.findings.length > 0
-				? params.findings
-				: [{ ref: "ratified", disposition: "ruled" as const, evidence: [params.rulingId] }]
-		).map((f) => ({
-			ref: f.ref,
-			disposition: f.disposition,
-			evidenceRefs: f.evidence ?? [],
-		}));
-
-		const record: GateRatification = {
-			// R003 issue 3: a UNIQUE id per issuance. A deterministic id made a
-			// stale-then-reratify recovery impossible (both APPROVE files linked the
-			// same id → permanently ambiguous/stale).
-			id: `ratif-${params.taskId}-${params.gate}-${randomUUID()}`,
-			taskId: params.taskId,
-			segmentId,
-			gate: params.gate,
-			rulingId: params.rulingId,
-			ratifier: actor,
-			closedEscalationIds: [rulingHold.escalationId],
-			supersededReview: { path: supersededName, sha256: sha256Hex(supersededContent) },
-			findings,
-			proofSet: [
-				// Store the canonical oid, never the caller's (possibly symbolic) ref.
-				{ kind: "revision", ref: proofOid },
-				...(params.artifactRefs ?? []).map((ref) => ({ kind: "artifact" as const, ref })),
-			],
-			createdAt: Date.now(),
-		};
-
-		const validation = validateRatification(record, {
-			holds: state.holds ?? [],
-			reviewsDir,
-			taskId: params.taskId,
-			segmentId,
-			gate: params.gate,
-			headRevision: headOid,
-			requireProofHeadMatch: true,
-			readFile: (p: string) => readFileSync(p, "utf-8"),
-			isAncestor: (a: string, b: string) =>
-				runGit(["merge-base", "--is-ancestor", a, b], laneRec.worktreePath).ok,
+	// Thin adapter over the extracted, testable operation (ratification-op.ts).
+	// The trusted issuing paths inject the environment coupling (batch-state load,
+	// lane repo resolution, git, audit); the record build/validate/write logic
+	// lives in `ratifyGate` so it can be exercised behaviourally in tests.
+	function doRatifyGate(params: RatifyGateParams, actor: RulingActor, stateRoot: string): string {
+		return ratifyGate(params, actor, stateRoot, {
+			loadBatchState,
+			resolveLaneRepoRoot: (lane, root) => resolveLaneRepoRootForTools(lane, root),
+			isWorkspaceMode: !!execCtx?.workspaceConfig,
+			runGit,
+			logAudit: (root, batchId, entry) => logRecoveryAction(root, batchId, entry),
 		});
-		if (validation.ok === false) {
-			return `❌ Ratification refused (${validation.code}): ${validation.reason}. Nothing was written.`;
-		}
-
-		// Only after validation passes do we consume a review number and write.
-		const num = allocateRatificationReviewNumber(resolved.statusPath);
-		const approveName = `R${String(num).padStart(3, "0")}-${params.gate}.md`;
-		// R003 suggestion: fail closed on a filename collision rather than overwrite
-		// an existing review/record pair.
-		if (
-			existsSync(join(reviewsDir, approveName)) ||
-			existsSync(join(reviewsDir, `R${String(num).padStart(3, "0")}-${params.gate}.ratification.json`))
-		) {
-			return `❌ Ratification refused: review number R${String(num).padStart(3, "0")} for ${params.gate} already exists — resolve the review-counter drift before ratifying.`;
-		}
-		try {
-			writeFileSync(
-				join(reviewsDir, approveName),
-				buildRatificationApproveMarkdown(record, params.summary, num),
-				"utf-8",
-			);
-		} catch (err) {
-			return `❌ Ratification validated but the APPROVE review could not be written: ${err instanceof Error ? err.message : String(err)}`;
-		}
-		let jsonPath: string;
-		try {
-			jsonPath = writeRatification(reviewsDir, record, num);
-		} catch (err) {
-			return `❌ Ratification APPROVE written but the record could not be persisted: ${err instanceof Error ? err.message : String(err)}`;
-		}
-
-		logRecoveryAction(stateRoot, state.batchId, {
-			action: "gate_ratified",
-			classification: "destructive",
-			context: `ratify ${params.gate} for ${params.taskId} on ruling ${params.rulingId} (${actor.role})`,
-			command: `ratify_gate ${params.taskId} ${params.gate} ${params.rulingId}`,
-			result: "success",
-			detail: `ratification ${record.id}; APPROVE ${approveName}; ruling ${params.rulingId}; superseded ${supersededName}`,
-			taskId: params.taskId,
-			laneNumber: task.laneNumber,
-		});
-
-		return (
-			`✅ Ratified **${params.gate}** for ${params.taskId} (${actor.role})\n` +
-			`- **Ratification:** ${record.id}\n` +
-			`- **Ruling:** ${params.rulingId}\n` +
-			`- **APPROVE review:** ${approveName}\n` +
-			`- **Record:** ${jsonPath}\n` +
-			`- **Supersedes:** ${supersededName}\n` +
-			`The finalize gate will now accept the worker's \`.DONE\` for this gate. The worker must NOT write the APPROVE file itself.`
-		);
 	}
 
 	pi.registerTool({
@@ -6216,7 +5927,8 @@ export default function (pi: ExtensionAPI) {
 				{ description: "Disposition of every review finding" },
 			),
 			proofRevision: Type.String({
-				description: "Commit containing the fold; must be the current worktree HEAD (immutable sha) with a clean working tree",
+				description:
+					"Commit containing the fold; must be the current worktree HEAD (immutable sha) with a clean working tree",
 			}),
 			artifactRefs: Type.Optional(
 				Type.Array(Type.String(), { description: "Additional non-commit proof references" }),

@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
@@ -72,6 +72,12 @@
 - [x] R005-1 packet routing: shared `selectPacketPaths` helper (execution.ts) used by BOTH `buildExecutionUnit` and `doRatifyGate`; bind lane/worktree to the cited hold's `laneNumber`/segment, not `task.laneNumber`. Regression: `selectPacketPaths` cross-repo/same-repo/no-path unit tests + source wiring assertions
 - [x] R005-2 `collectChangedPaths` fail-closed: returns `{paths, failedProbe, detail}`; both issuance and finalize refuse with a probe-named diagnostic. Injected probe-failure unit tests (diff fail / ls-files fail / success)
 
+**R006 code-review REVISE items (supervisor-ruled: incomplete fixes of R005 #1/#2 + format, in scope):**
+- [x] R006-1 counter path: allocate R number from `statusPathForCounter` (packet-home STATUS), not the worktree copy. Extracted the operation into testable `ratification-op.ts`; behavioural cross-repo test asserts packet-home STATUS counter + APPROVE + JSON update together (and the worktree decoy STATUS is untouched)
+- [x] R006-2 lane binding: fail closed when `rulingHold.laneNumber` has no lane record (removed `?? task.laneNumber` fallback); audit stamped with `rulingHold.laneNumber`. Negative regression proves missing cited-hold lane cannot fall back
+- [x] R006-3 `npm run format` (format:check clean)
+- [x] Extracted `ratifyGate` (ratification-op.ts) with injected deps; extension.ts is now a thin adapter. Behavioural tests: same-repo happy path, cross-repo counter/artifacts, missing-lane fail-closed, probe-failure fail-closed, proof!=HEAD reject (5/5)
+
 ---
 
 ### Step 4: Testing & Verification
@@ -118,6 +124,7 @@
 | 2026-09-07 23:47 | Task started | Runtime V2 lane-runner execution |
 | 2026-09-07 23:47 | Step 0 started | Preflight |
 | 2026-09-08 00:35 | Agent reply | Ack R005 adjudication. Implementing both: (1) extracting a shared packet-path helper (selectPacketPaths) used by buildExecutionUnit AND doRatifyGate, binding the worktree to the cited hold's laneNumbe |
+| 2026-09-08 00:46 | Agent reply | Ack R006 ruling (in-scope incomplete fixes of R005 #1/#2 + format). Already extracted the operation into a new testable `ratification-op.ts` with both bugs fixed: counter now allocated from `statusPat |
 
 ---
 
@@ -145,3 +152,4 @@
 | 2026-09-08 00:16 | Review R003 | code Step 3: REVISE |
 | 2026-09-08 00:22 | Review R004 | code Step 3: REVISE |
 | 2026-09-08 00:33 | Review R005 | code Step 3: REVISE |
+| 2026-09-08 00:43 | Review R006 | code Step 3: REVISE |

@@ -24,6 +24,8 @@ import { execFileSync } from "node:child_process";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const EXTENSION_SRC = readFileSync(join(HERE, "..", "taskplane", "extension.ts"), "utf-8");
+// The record build/validate/write logic lives in the extracted, testable op module.
+const OP_SRC = readFileSync(join(HERE, "..", "taskplane", "ratification-op.ts"), "utf-8");
 
 // ── Step 2: trusted ratify operation wiring (source-based) ────────────
 
@@ -48,6 +50,7 @@ describe("ratify_gate / orch-ratify wiring", () => {
 
 	it("never reads the ratifier role from a tool/command parameter", () => {
 		assert.doesNotMatch(EXTENSION_SRC, /ratifier:\s*params\./);
+		assert.doesNotMatch(OP_SRC, /ratifier:\s*params\./);
 	});
 
 	it("states the ruling → fold → verification → ratify_gate → APPROVE → .DONE sequencing invariant", () => {
@@ -55,24 +58,32 @@ describe("ratify_gate / orch-ratify wiring", () => {
 		assert.match(EXTENSION_SRC, /ratify_gate.*→.*\.DONE/s);
 	});
 
-	it("audits the ratification via logRecoveryAction with a gate_ratified action", () => {
-		assert.match(EXTENSION_SRC, /action:\s*"gate_ratified"/);
-		assert.match(EXTENSION_SRC, /classification:\s*"destructive"/);
+	it("audits the ratification via logAudit with a gate_ratified action (destructive)", () => {
+		assert.match(OP_SRC, /action:\s*"gate_ratified"/);
+		assert.match(OP_SRC, /classification:\s*"destructive"/);
+		// The adapter wires logAudit to the code-stamped logRecoveryAction.
+		assert.match(EXTENSION_SRC, /logAudit:.*logRecoveryAction/s);
 	});
 
 	it("writes the APPROVE review with an explicit APPROVE verdict and the ratification link", () => {
-		assert.match(EXTENSION_SRC, /## Verdict: APPROVE/);
-		assert.match(EXTENSION_SRC, /ratificationLinkLine\(record\.id\)/);
+		assert.match(OP_SRC, /## Verdict: APPROVE/);
+		assert.match(OP_SRC, /ratificationLinkLine\(record\.id\)/);
 	});
 
 	it("R005-1: resolves the packet with the shared selectPacketPaths (cross-repo safe) and binds to the ruling's lane", () => {
-		assert.match(EXTENSION_SRC, /selectPacketPaths\(/);
-		assert.match(EXTENSION_SRC, /l\.laneNumber === rulingHold\.laneNumber/);
+		assert.match(OP_SRC, /selectPacketPaths\(/);
+		assert.match(OP_SRC, /l\.laneNumber === rulingHold\.laneNumber/);
+		// R006-2: fail closed, no fallback to task.laneNumber.
+		assert.doesNotMatch(OP_SRC, /laneNumber === rulingHold\.laneNumber\s*\)\s*\?\?/);
+	});
+
+	it("R006-1: allocates the review counter from the packet-home STATUS, not the worktree copy", () => {
+		assert.match(OP_SRC, /allocateRatificationReviewNumber\(statusPathForCounter\)/);
 	});
 
 	it("R005-2: the trusted operation refuses fail-closed when a working-tree probe fails", () => {
-		assert.match(EXTENSION_SRC, /probe\.failedProbe/);
-		assert.match(EXTENSION_SRC, /working-tree probe failed/);
+		assert.match(OP_SRC, /probe\.failedProbe/);
+		assert.match(OP_SRC, /working-tree probe failed/);
 	});
 });
 
