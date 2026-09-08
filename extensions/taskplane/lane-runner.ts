@@ -101,6 +101,14 @@ import {
 	type ReviewStreakState,
 } from "./review-analysis.ts";
 import {
+	type GateRatification,
+	isRatificationStale,
+	parseRatificationLink,
+	readRatifications,
+	validateRatification,
+} from "./ratification.ts";
+import { runGit } from "./git.ts";
+import {
 	applyRuling,
 	buildHoldStatusSummary,
 	buildRulingPromptLines,
@@ -162,30 +170,113 @@ const HOLD_POLL_INTERVAL_MS = 5_000;
 /** #627: lane-snapshot heartbeat cadence while held (runner health, not worker liveness). */
 const HOLD_HEARTBEAT_INTERVAL_MS = 30_000;
 
-/** A review gate whose LATEST review file carries a non-APPROVE verdict. */
+/**
+ * A review gate that blocks finalization: either its LATEST review reads
+ * REVISE/RETHINK (#626), or (#627 Stage 2a) it reads APPROVE but carries a
+ * `Ratification:` link whose record is missing / invalid / stale.
+ */
 interface BlockingReviewGate {
 	/** `{type}-step{N}` gate key */
 	gate: string;
 	/** Latest review filename for that gate */
 	filename: string;
-	verdict: "REVISE" | "RETHINK";
+	verdict: "REVISE" | "RETHINK" | "APPROVE";
+	/** #627: why an APPROVE gate is blocking (`missing …`, `invalid: <code>`, `stale …`). */
+	reason?: string;
 }
 
 /**
- * Scan a reviews directory and return every gate whose latest review file
- * reads REVISE/RETHINK (#626 minimal finalize gate). Unreadable files are
- * never blockers; a scan failure yields an empty list (fail-safe for
- * finalization, which must not be corrupted by an fs hiccup).
+ * Context needed to validate a ratified APPROVE at the finalize gate. Supplied
+ * ONLY at the authoritative finalize decision; the pre-finalize/remediation
+ * callers omit it and keep the verdict-only view (an APPROVE — even a ratified
+ * one — is never blocking there; the finalize gate does the full check).
  */
-function findBlockingReviewGates(reviewsDir: string): BlockingReviewGate[] {
+interface RatificationGateCtx {
+	holds: readonly HoldRecord[];
+	taskId: string;
+	segmentId: string | null;
+	headRevision: string | null;
+	isAncestor: (a: string, b: string) => boolean;
+}
+
+/**
+ * Evaluate the ratification a linked APPROVE claims. Returns a human-readable
+ * reason string when the gate MUST block, or null when the ratification is a
+ * valid, non-stale authority record. Fail-closed: any read/validation problem
+ * is a reason to block.
+ */
+function evaluateRatificationBlock(
+	reviewsDir: string,
+	gate: string,
+	linkId: string,
+	ctx: RatificationGateCtx,
+): string | null {
+	let records: GateRatification[];
+	try {
+		records = readRatifications(reviewsDir);
+	} catch (err) {
+		return `invalid ratification store: ${err instanceof Error ? err.message : String(err)}`;
+	}
+	const record = records.find((r) => r.id === linkId);
+	if (!record) return `missing record ${linkId}`;
+	const v = validateRatification(record, {
+		holds: ctx.holds,
+		reviewsDir,
+		taskId: ctx.taskId,
+		segmentId: ctx.segmentId,
+		headRevision: ctx.headRevision,
+		readFile: (p: string) => readFileSync(p, "utf-8"),
+		isAncestor: ctx.isAncestor,
+	});
+	if (v.ok === false) return `invalid: ${v.code} (${linkId})`;
+	let filenames: string[];
+	try {
+		filenames = readdirSync(reviewsDir);
+	} catch {
+		filenames = [];
+	}
+	const stale = isRatificationStale(record, {
+		reviewFilenames: filenames,
+		readReview: (f: string) => readFileSync(join(reviewsDir, f), "utf-8"),
+	});
+	if (stale) return `stale (${linkId} is no longer the latest APPROVE for ${gate})`;
+	return null;
+}
+
+/**
+ * Scan a reviews directory and return every gate that blocks finalization
+ * (#626 minimal finalize gate + #627 Stage 2a ratification binding). Unreadable
+ * files are never blockers; a scan failure yields an empty list (fail-safe for
+ * finalization, which must not be corrupted by an fs hiccup).
+ *
+ * When `ratifyCtx` is supplied (the authoritative finalize decision only), an
+ * APPROVE review that carries a `Ratification:` link is blocking unless the
+ * linked record validates and is not stale. An APPROVE with NO link keeps
+ * today's behaviour (not blocking — the full coverage gate is #626/#626's
+ * follow-up, out of scope here).
+ */
+function findBlockingReviewGates(
+	reviewsDir: string,
+	ratifyCtx?: RatificationGateCtx,
+): BlockingReviewGate[] {
 	const blocking: BlockingReviewGate[] = [];
 	try {
 		if (!existsSync(reviewsDir)) return blocking;
 		const latest = latestReviewFilesPerGate(readdirSync(reviewsDir));
 		for (const [gate, filename] of latest) {
 			try {
-				const verdict = parseReviewVerdict(readFileSync(join(reviewsDir, filename), "utf-8"));
-				if (verdict === "REVISE" || verdict === "RETHINK") blocking.push({ gate, filename, verdict });
+				const content = readFileSync(join(reviewsDir, filename), "utf-8");
+				const verdict = parseReviewVerdict(content);
+				if (verdict === "REVISE" || verdict === "RETHINK") {
+					blocking.push({ gate, filename, verdict });
+					continue;
+				}
+				if (verdict === "APPROVE" && ratifyCtx) {
+					const linkId = parseRatificationLink(content);
+					if (!linkId) continue; // unlinked APPROVE — not blocking (#626 follow-up)
+					const reason = evaluateRatificationBlock(reviewsDir, gate, linkId, ratifyCtx);
+					if (reason) blocking.push({ gate, filename, verdict: "APPROVE", reason });
+				}
 			} catch {
 				/* unreadable review file — not a blocker */
 			}
@@ -203,7 +294,9 @@ function parseGateStepNumber(gate: string): number | null {
 }
 
 function formatBlockingGates(gates: BlockingReviewGate[]): string {
-	return gates.map((g) => `${g.gate} (${g.filename}: ${g.verdict})`).join("; ");
+	return gates
+		.map((g) => `${g.gate} (${g.filename}: ${g.verdict}${g.reason ? ` — ${g.reason}` : ""})`)
+		.join("; ");
 }
 
 /** Default severity vocabulary when the reviewer config doesn't override it. */
@@ -2817,13 +2910,32 @@ export async function executeTaskV2(
 	// REVISE cap and wrote .DONE (TP-2037), and this very checkbox heuristic
 	// wrote .DONE for a correctly-holding worker (TP-2039). The gate: for each
 	// review gate ({type}-step{N}), the LATEST review file's verdict must not be
-	// REVISE/RETHINK. A re-review (higher R number) with APPROVE — or an
-	// operator ratification recorded as the next R-numbered review file — clears
-	// it. Steps with no reviews at all are not blocked here (full coverage gate
-	// is #626's designed follow-up).
-	const blockingGates = findBlockingReviewGates(unit.packet.reviewsDir);
+	// REVISE/RETHINK. A re-review (higher R number) with APPROVE clears it.
+	//
+	// #627 Stage 2a: an APPROVE that carries a `Ratification:` link is trusted
+	// ONLY when the linked GateRatification record validates against the durable
+	// holds + reviews dir (real worktree HEAD / ancestor check) and is not stale.
+	// A missing / invalid / stale record blocks with a distinct
+	// `invalid-ratification` alert. An APPROVE with NO link keeps today's
+	// behaviour (not blocking — coverage gate is out of scope).
+	const finalizeRatifyCtx: RatificationGateCtx = {
+		holds: holdStore.list(),
+		taskId,
+		segmentId,
+		headRevision: (() => {
+			const r = runGit(["rev-parse", "HEAD"], unit.worktreePath);
+			return r.ok ? r.stdout.trim() : null;
+		})(),
+		isAncestor: (a: string, b: string) =>
+			runGit(["merge-base", "--is-ancestor", a, b], unit.worktreePath).ok,
+	};
+	const blockingGates = findBlockingReviewGates(unit.packet.reviewsDir, finalizeRatifyCtx);
 
 	if (blockingGates.length > 0) {
+		// #627: if any blocking gate is a bad ratified APPROVE, this is an
+		// authority problem (not a worker-fixable REVISE) — surface it distinctly.
+		const ratificationGates = blockingGates.filter((g) => g.verdict === "APPROVE");
+		const isInvalidRatification = ratificationGates.length > 0;
 		// Remove any worker-written .DONE (precedent: premature-.DONE removal in
 		// the non-final-segment path above).
 		if (existsSync(donePath)) {
@@ -2837,25 +2949,35 @@ export async function executeTaskV2(
 		logExecution(
 			statusPath,
 			"Finalize refused",
-			`Review gate: latest verdict is not APPROVE — ${gateList}`,
+			isInvalidRatification
+				? `Review gate: ratified APPROVE is not trustworthy — ${gateList}`
+				: `Review gate: latest verdict is not APPROVE — ${gateList}`,
 		);
 		if (config.onSupervisorAlert) {
 			try {
-				config.onSupervisorAlert({
-					category: "review-intervention-needed",
-					summary:
-						`⛔ **Finalize refused** — ${taskId} (lane ${config.laneNumber}) attempted to ` +
+				const summary = isInvalidRatification
+					? `⛔ **Finalize refused** — ${taskId} (lane ${config.laneNumber}) attempted to ` +
+						`complete over a ratified APPROVE whose ratification record is missing, invalid, or ` +
+						`stale: ${gateList}.\n` +
+						`A ratification is the only way an APPROVE that hit its revision cap is trusted; this ` +
+						`one does not validate. Re-run the trusted operation (\`ratify_gate\` / \`/orch-ratify\`) ` +
+						`after fixing the cited reason — the worker must never write the APPROVE file itself.`
+					: `⛔ **Finalize refused** — ${taskId} (lane ${config.laneNumber}) attempted to ` +
 						`complete with an outstanding non-APPROVE review: ${gateList}.\n` +
 						`The task is marked failed instead of finalizing over the unresolved verdict. ` +
 						`Adjudicate: have the worker address the findings and re-run review_step ` +
-						`(orch_retry_task + orch_resume), or record an operator ratification as the ` +
-						`next R-numbered review file with an explicit APPROVE verdict.`,
+						`(orch_retry_task + orch_resume), or close a capped gate with \`ratify_gate\` / \`/orch-ratify\`.`;
+				config.onSupervisorAlert({
+					category: "review-intervention-needed",
+					summary,
 					context: {
 						taskId,
 						laneId: `lane-${config.laneNumber}`,
 						laneNumber: config.laneNumber,
 						agentId: workerAgentId,
-						reviewInterventionKind: "unresolved-verdict",
+						reviewInterventionKind: isInvalidRatification
+							? "invalid-ratification"
+							: "unresolved-verdict",
 						exitReason: `finalize refused: ${gateList}`,
 					},
 				});

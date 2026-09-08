@@ -2255,7 +2255,11 @@ export type ReviewInterventionKind =
 	| "order-violation"
 	// #626 minimal cut: a task attempted to finalize (.DONE) while a step's
 	// LATEST review verdict is still REVISE/RETHINK — finalization was refused.
-	| "unresolved-verdict";
+	| "unresolved-verdict"
+	// #627 Stage 2a: a task attempted to finalize with an APPROVE review that
+	// carries a `Ratification:` link, but the linked ratification record is
+	// missing, fails validation, or is stale — finalization was refused.
+	| "invalid-ratification";
 
 /**
  * Structured context payload for supervisor alerts.

@@ -1,6 +1,6 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Step 3: Finalize gate binding
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
@@ -52,14 +52,14 @@
 ---
 
 ### Step 3: Finalize gate binding in the lane-runner
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] `ReviewInterventionKind` gains `"invalid-ratification"`
-- [ ] `findBlockingReviewGates` treats a linked APPROVE without a valid, non-stale record as blocking (reason carried)
-- [ ] Refusal path emits `review_gate_refusal` + `invalid-ratification` alert naming id and reason
-- [ ] Unlinked APPROVE unchanged (not blocking)
-- [ ] Behavioural tests (a)–(d) with real `executeTaskV2` + mocked `spawnAgent`
-- [ ] Targeted tests pass
+- [x] `ReviewInterventionKind` gains `"invalid-ratification"`
+- [x] `findBlockingReviewGates` treats a linked APPROVE without a valid, non-stale record as blocking (reason carried) — optional `RatificationGateCtx` passed only at the authoritative finalize site; `evaluateRatificationBlock` fail-closed helper
+- [x] Refusal path emits `review_gate_refusal` + `invalid-ratification` alert naming id and reason (branches on APPROVE-verdict blocking gate)
+- [x] Unlinked APPROVE unchanged (not blocking) — `parseRatificationLink` null → continue
+- [x] Behavioural tests (a)–(d) with real `executeTaskV2` + mocked `spawnAgent` (plus (e) unlinked-APPROVE control)
+- [x] Targeted tests pass (ratification 29/29, ratification-finalize 13/13, typecheck clean)
 
 ---
 
