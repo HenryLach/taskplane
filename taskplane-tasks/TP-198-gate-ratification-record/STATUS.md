@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** L
 
@@ -134,7 +134,45 @@
 
 ## Blockers
 
-*None*
+*None (R008 ruled in-scope and fixed — see R008 item under Step 3).*
+
+<!-- Resolved: R008 scope ruling requested (2026-09-08)
+
+### R008 code review — scope ruling requested (2026-09-08)
+
+R008 returned REVISE with ONE finding. Per the standing scope guard ("if R008
+raises a finding, log a blocker + escalate; the supervisor said R007 was the
+last item"), I am escalating rather than starting an 8th implementation round.
+
+**Finding (R008 issue 1, `important`):** The working-tree drift allowlist passes
+`".pi"` as an unrestricted allowed prefix in BOTH finalize
+(`lane-runner.ts` finalize ctx) and issuance (`ratification-op.ts` clean-tree
+check). But `.pi/` is NOT wholly runtime-owned — the settings spec treats
+`.pi/taskplane-config.json`, `.pi/taskplane.json`, and `.pi/agents/*.md` as
+committed shared project files. So a tracked `.pi/` config/agent change (before
+or after ratification) is exempted, HEAD stays == the proof, the helper reports
+no drift, and `commitTaskArtifacts` (`git add -A`) sweeps the unratified change
+into the merge candidate. Reviewer asks: remove the blanket `.pi` exemption
+(allow only the task folder), add issuance- and finalize-level regressions using
+a tracked `.pi/taskplane-config.json` change.
+
+**My assessment:** this is a continuation of the R004/R005 working-tree-binding
+class (an over-broad allowlist I introduced when adding the clean-tree check),
+not a genuinely new authority class. The finding is valid and the fix is
+small + clearly correct: drop `".pi"` from the two `unratifiedWorkingTreePaths`
+call sites (leaving only the task-folder prefix; legitimately-ignored runtime
+sidecars never appear in `git diff --name-only HEAD` / `ls-files --others
+--exclude-standard` anyway), plus two regression tests. Requesting a ruling on
+whether to implement now (R009) or defer.
+-->
+
+**R008 resolution (supervisor ruled in-scope, R004 dirty-tree class):** removed
+the blanket `".pi"` exemption from BOTH finalize (`lane-runner.ts`) and issuance
+(`ratification-op.ts`) allow-lists. New shared `runtimeArtifactPrefixes(taskFolderRel)`
+allows ONLY the task packet's `STATUS.md`, `.DONE`, and `.reviews/` — tracked
+shared config (`.pi/taskplane-config.json`, `.pi/agents/*.md`) and `PROMPT.md`
+are now flagged as drift. Regressions: finalize test (l) + issuance test, both
+using a tracked `.pi/taskplane-config.json` edit; helper unit tests updated.
 
 ---
 
@@ -158,3 +196,4 @@
 | 2026-09-08 00:33 | Review R005 | code Step 3: REVISE |
 | 2026-09-08 00:43 | Review R006 | code Step 3: REVISE |
 | 2026-09-08 00:53 | Review R007 | code Step 3: REVISE |
+| 2026-09-08 01:00 | Review R008 | code Step 3: REVISE |

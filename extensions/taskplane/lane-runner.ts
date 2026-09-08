@@ -106,6 +106,7 @@ import {
 	isRatificationStale,
 	parseRatificationLink,
 	readRatifications,
+	runtimeArtifactPrefixes,
 	unratifiedWorkingTreePaths,
 	validateRatification,
 } from "./ratification.ts";
@@ -2959,7 +2960,7 @@ export async function executeTaskV2(
 			const probe = collectChangedPaths(unit.worktreePath, runGit);
 			if (probe.failedProbe) return { dirty: [], failedProbe: probe.failedProbe };
 			return {
-				dirty: unratifiedWorkingTreePaths(probe.paths, [finalizeTaskFolderRel, ".pi"]),
+				dirty: unratifiedWorkingTreePaths(probe.paths, runtimeArtifactPrefixes(finalizeTaskFolderRel)),
 				failedProbe: null,
 			};
 		},

@@ -434,6 +434,22 @@ export function isRatificationStale(
  * does NOT represent (R004 issue 2). A non-empty result means the working tree
  * drifted from the ratified code state and finalization/issuance must refuse.
  */
+/**
+ * The ONLY working-tree paths a ratification's proof commit is allowed to not
+ * cover: the task packet's runtime-written artifacts — `STATUS.md`, `.DONE`,
+ * and the `.reviews/` directory (which holds the APPROVE + ratification JSON
+ * the operation itself writes). Everything else in the lane worktree — source,
+ * AND tracked shared config under `.pi/` (`taskplane-config.json`,
+ * `agents/*.md`, …), which is source-controlled per the settings spec — must be
+ * represented by the proof commit (R008). The task folder is NOT exempted
+ * wholesale: `PROMPT.md` (the immutable task definition) is deliberately not
+ * listed, so a mid-run edit to it is still flagged.
+ */
+export function runtimeArtifactPrefixes(taskFolderRel: string): string[] {
+	const base = taskFolderRel.replace(/\\/g, "/").replace(/\/+$/, "");
+	return [`${base}/STATUS.md`, `${base}/.DONE`, `${base}/.reviews`];
+}
+
 export function unratifiedWorkingTreePaths(
 	changedPaths: readonly string[],
 	allowedPrefixes: string[],

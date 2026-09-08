@@ -350,6 +350,10 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 		git("config", "user.name", "t");
 		git("config", "commit.gpgsign", "false");
 		writeFileSync(join(worktreePath, "code.txt"), "folded\n");
+		// A TRACKED shared config file under .pi/ (source-controlled per the
+		// settings spec) — committed clean, so it is part of the proof commit.
+		mkdirSync(join(worktreePath, ".pi"), { recursive: true });
+		writeFileSync(join(worktreePath, ".pi", "taskplane-config.json"), '{\n  "taskRunner": {}\n}\n');
 		git("add", "-A");
 		git("commit", "-q", "-m", "fold");
 		headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: worktreePath }).toString().trim();
@@ -530,5 +534,28 @@ describe("#627 Stage 2a — finalize-gate ratification binding (behavioural)", (
 		assert.equal(existsSync(packet.donePath), false);
 		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
 		assert.ok(alert, "expected an invalid-ratification alert");
+	});
+
+	it("(l) R008 tracked .pi config drift: an uncommitted change to .pi/taskplane-config.json after ratification → refused", async () => {
+		writeFileSync(join(reviewsDir, "R002-code-step1.md"), approveReview(RATIF_ID));
+		writeRatification(reviewsDir, goodRecord(), 2); // proof == HEAD, tree clean
+		// HEAD is unchanged (proof still valid) but a TRACKED shared config file
+		// changes — it must NOT be exempted (it would be swept in by `git add -A`).
+		writeFileSync(
+			join(worktreePath, ".pi", "taskplane-config.json"),
+			'{\n  "taskRunner": { "x": 1 }\n}\n',
+		);
+
+		const { result, packet } = run(true);
+		const r = await result;
+		assert.equal(r.outcome.status, "failed");
+		assert.equal(r.outcome.exitDiagnostic?.classification, "review_gate_refusal");
+		assert.equal(existsSync(packet.donePath), false);
+		const alert = alerts.find((a) => a.context?.reviewInterventionKind === "invalid-ratification");
+		assert.ok(alert, "expected an invalid-ratification alert");
+		assert.match(
+			alert!.summary,
+			/working tree changed|\.pi\/taskplane-config\.json|missing, invalid, or\s+stale/s,
+		);
 	});
 });

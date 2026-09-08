@@ -24,6 +24,7 @@ import {
 	type GateRatification,
 	type RatificationFinding,
 	ratificationLinkLine,
+	runtimeArtifactPrefixes,
 	sha256,
 	unratifiedWorkingTreePaths,
 	validateRatification,
@@ -237,7 +238,7 @@ export function ratifyGate(
 	if (probe.failedProbe) {
 		return `❌ Ratification refused: working-tree probe failed (${probe.failedProbe}: ${probe.detail || "no detail"}). Nothing was written.`;
 	}
-	const dirty = unratifiedWorkingTreePaths(probe.paths, [taskFolderRel, ".pi"]);
+	const dirty = unratifiedWorkingTreePaths(probe.paths, runtimeArtifactPrefixes(taskFolderRel));
 	if (dirty.length > 0) {
 		return (
 			`❌ Ratification refused: uncommitted source changes are not covered by the proof commit: ` +

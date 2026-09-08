@@ -24,6 +24,7 @@ import {
 	ratificationLinkLine,
 	readRatifications,
 	sha256,
+	runtimeArtifactPrefixes,
 	unratifiedWorkingTreePaths,
 	validateRatification,
 	writeRatification,
@@ -442,17 +443,32 @@ describe("writeRatification / readRatifications", () => {
 // ── working-tree drift binding (R004/R005) ────────────────────────────
 
 describe("unratifiedWorkingTreePaths", () => {
-	it("allows runtime-owned prefixes and flags everything else", () => {
+	it("allows only the task packet's runtime artifacts; flags source AND tracked .pi config (R008)", () => {
 		const changed = [
 			"taskplane-tasks/TP-R/STATUS.md",
+			"taskplane-tasks/TP-R/.DONE",
 			"taskplane-tasks/TP-R/.reviews/R002-code-step1.md",
-			".pi/lane-state.json",
+			"taskplane-tasks/TP-R/PROMPT.md", // NOT runtime-owned → flagged
+			".pi/taskplane-config.json", // tracked shared config → flagged (R008)
+			".pi/agents/worker.md", // tracked agent override → flagged
 			"src/index.ts",
-			"README.md",
 		];
-		assert.deepEqual(unratifiedWorkingTreePaths(changed, ["taskplane-tasks/TP-R", ".pi"]), [
-			"src/index.ts",
-			"README.md",
+		assert.deepEqual(
+			unratifiedWorkingTreePaths(changed, runtimeArtifactPrefixes("taskplane-tasks/TP-R")),
+			[
+				"taskplane-tasks/TP-R/PROMPT.md",
+				".pi/taskplane-config.json",
+				".pi/agents/worker.md",
+				"src/index.ts",
+			],
+		);
+	});
+
+	it("runtimeArtifactPrefixes lists exactly STATUS.md, .DONE and .reviews", () => {
+		assert.deepEqual(runtimeArtifactPrefixes("taskplane-tasks\\TP-R"), [
+			"taskplane-tasks/TP-R/STATUS.md",
+			"taskplane-tasks/TP-R/.DONE",
+			"taskplane-tasks/TP-R/.reviews",
 		]);
 	});
 

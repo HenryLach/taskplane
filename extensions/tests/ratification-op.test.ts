@@ -36,6 +36,10 @@ function initRepo(dir: string): string {
 	git(dir, "config", "user.name", "t");
 	git(dir, "config", "commit.gpgsign", "false");
 	writeFileSync(join(dir, "code.txt"), "folded\n");
+	// A TRACKED shared config file under .pi/ (source-controlled per the settings
+	// spec) — committed clean so it is part of the proof commit.
+	mkdirSync(join(dir, ".pi"), { recursive: true });
+	writeFileSync(join(dir, ".pi", "taskplane-config.json"), '{\n  "taskRunner": {}\n}\n');
 	git(dir, "add", "-A");
 	git(dir, "commit", "-q", "-m", "fold");
 	return git(dir, "rev-parse", "HEAD");
@@ -231,6 +235,31 @@ describe("ratifyGate (behavioural, injected deps)", () => {
 			deps(state, { runGit: flakyGit }),
 		);
 		assert.match(res, /working-tree probe failed \(git diff/);
+		assert.equal(audit.length, 0);
+	});
+
+	it("fails closed on an uncommitted TRACKED .pi config change at issuance (R008)", () => {
+		const worktree = join(tmpRoot, "wt");
+		initRepo(worktree);
+		const taskFolder = join(worktree, "taskplane-tasks", "TP-R");
+		mkdirSync(join(taskFolder, ".reviews"), { recursive: true });
+		writeFileSync(join(taskFolder, ".reviews", "R001-code-step1.md"), REVISE);
+		writeFileSync(join(taskFolder, "STATUS.md"), "# S\n\n**Review Counter:** 1\n");
+		// A tracked shared config file changes but is NOT committed — HEAD still
+		// equals the proof, yet the change is not covered by the proof commit.
+		writeFileSync(
+			join(worktree, ".pi", "taskplane-config.json"),
+			'{\n  "taskRunner": { "x": 1 }\n}\n',
+		);
+		const state = {
+			batchId: "b1",
+			tasks: [{ taskId: "TP-R", laneNumber: 1, taskFolder }],
+			lanes: [{ laneNumber: 1, repoId: "default", worktreePath: worktree }],
+			holds: [hold()],
+		};
+		const res = ratifyGate(params(), { role: "supervisor", id: "supervisor" }, tmpRoot, deps(state));
+		assert.match(res, /uncommitted source changes/);
+		assert.match(res, /\.pi\/taskplane-config\.json/);
 		assert.equal(audit.length, 0);
 	});
 
