@@ -1,10 +1,10 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 3: Finalize gate binding (R003 REVISE)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** L
 
@@ -60,6 +60,13 @@
 - [x] Unlinked APPROVE unchanged (not blocking) — `parseRatificationLink` null → continue
 - [x] Behavioural tests (a)–(d) with real `executeTaskV2` + mocked `spawnAgent` (plus (e) unlinked-APPROVE control)
 - [x] Targeted tests pass (ratification 29/29, ratification-finalize 13/13, typecheck clean)
+
+**R003 code-review REVISE items:**
+- [x] R003-1 wrong-gate: bind expected `gate` in validation ctx; reject `record.gate !== gate` (`wrong-gate` code) + executeTaskV2 regression
+- [x] R003-2 proof-vs-HEAD: at finalize require an exact proof==HEAD match (reject changed/unresolvable HEAD: `proof-not-head`/`head-unresolved`); tests for descendant commit + HEAD lookup failure
+- [x] R003-3 unique ids: `randomUUID` per issuance; `readRatifications` fails closed on duplicate ids; stale-then-reratify recovery test
+- [x] R003-4 `npm run format` → format:check clean
+- [x] R003-5 remove unused `readFileSync` import in ratification.test.ts (lint back to baseline); use `node:` import protocol
 
 ---
 
@@ -126,6 +133,8 @@
 - **[R001 suggestion] `isRatificationStale`:** locate the review file for `record.gate` whose content `parseRatificationLink === record.id` AND `parseReviewVerdict === APPROVE`. Missing / ambiguous / wrong-gate / non-APPROVE link → stale (fail-closed). Otherwise stale=true iff any higher-numbered `R\d+-{gate}.md` review file exists (covers "no longer latest" AND "higher REVISE/RETHINK"). ctx = { reviewFilenames, readReview }.
 - **sha256:** node `crypto.createHash("sha256")` over file content (utf-8).
 - **atomic write:** tmp file + `renameSync`, `JSON.stringify(record, null, 2)`.
+- **[R003 suggestion, advisory] `allocateRatificationReviewNumber`** starts at 1 on unreadable STATUS and ignores counter-write failure. Added a light collision guard (refuse if the target APPROVE/JSON already exists) rather than overwrite; a full rollback of the partial pair is deferred as tech debt.
 - **New Step 1 tests (from R001 Missing Items):** wrong-task & wrong-segment ruling references rejected; superseded-review wrong-gate / path-traversal rejected; structurally-valid-JSON-but-bad-shape read throws (in addition to invalid-JSON). Interleaved-gate numbering/collision + subsequent ordinary review allocation is a Step 2 test (global counter) — tracked there.
 | 2026-09-07 23:53 | Review R001 | plan Step 1: REVISE |
 | 2026-09-07 23:56 | Review R002 | plan Step 1: APPROVE |
+| 2026-09-08 00:16 | Review R003 | code Step 3: REVISE |
