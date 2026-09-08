@@ -1,10 +1,10 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Step 3: Finalize gate binding (R003 REVISE)
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-07
 **Review Level:** 3
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** L
 
@@ -52,7 +52,7 @@
 ---
 
 ### Step 3: Finalize gate binding in the lane-runner
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete (code review APPROVE @ R009, after R003–R008 revisions)
 
 - [x] `ReviewInterventionKind` gains `"invalid-ratification"`
 - [x] `findBlockingReviewGates` treats a linked APPROVE without a valid, non-stale record as blocking (reason carried) — optional `RatificationGateCtx` passed only at the authoritative finalize site; `evaluateRatificationBlock` fail-closed helper
@@ -197,3 +197,4 @@ using a tracked `.pi/taskplane-config.json` edit; helper unit tests updated.
 | 2026-09-08 00:43 | Review R006 | code Step 3: REVISE |
 | 2026-09-08 00:53 | Review R007 | code Step 3: REVISE |
 | 2026-09-08 01:00 | Review R008 | code Step 3: REVISE |
+| 2026-09-08 01:05 | Review R009 | code Step 3: APPROVE |
