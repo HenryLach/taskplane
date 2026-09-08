@@ -26,7 +26,7 @@
 ---
 
 ### Step 1: `ratification.ts` — record, validation, staleness (pure module)
-**Status:** ✅ Implemented (code review batched into Step 3 checkpoint)
+**Status:** ✅ Complete
 
 - [x] `GateRatification` type + filename/link helpers + `parseRatificationLink`
 - [x] `validateRatification` with every rejection code from PROMPT.md (injected `isAncestor`)
@@ -38,7 +38,7 @@
 ---
 
 ### Step 2: Trusted ratify operation — supervisor tool and operator command
-**Status:** ✅ Implemented (code review batched into Step 3 checkpoint)
+**Status:** ✅ Complete
 
 **Design:** shared `doRatifyGate(params, actor, stateRoot)` helper in extension.ts (mirrors `doSendAgentMessage`). Loads batch state, finds task+lane, resolves reviewsDir via `resolveCanonicalTaskPaths`, picks the gate's latest review file as `supersededReview` (path relative to reviewsDir + sha256), derives `segmentId`/`closedEscalationIds` from the hold carrying `rulingId`, builds the record, validates with real git (`runGit rev-parse HEAD`, `merge-base --is-ancestor`), and ONLY on success allocates the next R number from STATUS.md `**Review Counter:**` (persisted back), writes `R{N}-{gate}.md` (APPROVE + summary + findings table + `Ratification: <id>`) AND `writeRatification(...,N)`, then audits via `logRecoveryAction` (`gate_ratified`, destructive). On validation failure: writes nothing, returns the code+reason. Tool stamps `{role:"supervisor"}` (marker `RATIFY-SUPERVISOR-STAMP`); `/orch-ratify` stamps `{role:"operator"}` (marker `RATIFY-OPERATOR-STAMP`, the only operator ratifier site). Empty findings → synthesized single `ruled` finding citing the ruling (operator command path).
 
@@ -52,7 +52,7 @@
 ---
 
 ### Step 3: Finalize gate binding in the lane-runner
-**Status:** ✅ Complete (code review APPROVE @ R009, after R003–R008 revisions)
+**Status:** ✅ Complete
 
 - [x] `ReviewInterventionKind` gains `"invalid-ratification"`
 - [x] `findBlockingReviewGates` treats a linked APPROVE without a valid, non-stale record as blocking (reason carried) — optional `RatificationGateCtx` passed only at the authoritative finalize site; `evaluateRatificationBlock` fail-closed helper
@@ -136,6 +136,12 @@
 | 2026-09-08 00:35 | Agent reply | Ack R005 adjudication. Implementing both: (1) extracting a shared packet-path helper (selectPacketPaths) used by buildExecutionUnit AND doRatifyGate, binding the worktree to the cited hold's laneNumbe |
 | 2026-09-08 00:46 | Agent reply | Ack R006 ruling (in-scope incomplete fixes of R005 #1/#2 + format). Already extracted the operation into a new testable `ratification-op.ts` with both bugs fixed: counter now allocated from `statusPat |
 | 2026-09-08 00:55 | Agent reply | Ack R007 ruling (same R004 proof-binding class, in scope). Applying: (1) finalize requireProofHeadMatch now string-equals a canonical 40-hex proof to ctx.headRevision — no merge-base re-resolution of  |
+| 2026-09-08 01:15 | ⚠️ Steering | Supervisor adjudication of the R005 spiral signal on Step 3: NOT circling — every round has closed its findings and R005 raises two new, legitimate classes. Implement both, then request R006: /  / 1.  |
+| 2026-09-08 01:15 | ⚠️ Steering | Supervisor ruling on R006 scope-guard evaluation: all three findings are INCOMPLETE FIXES of R005 items (#1 cross-repo counter path, #2 cited-hold lane fallback), plus a format gate — not a new class. |
+| 2026-09-08 01:15 | ⚠️ Steering | R007 evaluation: one finding, same R004 proof-binding class (not new scope) and the reviewer is right — a persisted symbolic ref re-resolved at finalize tracks a moved HEAD. Fix and request R008: at f |
+| 2026-09-08 01:15 | ⚠️ Steering | Supervisor adjudication of the round-6 spiral signal: R008's single finding is legitimate and in the R004 dirty-tree class — the blanket ".pi" exemption lets tracked .pi/taskplane-config.json / .pi/ag |
+| 2026-09-08 01:15 | Worker iter 1 | done in 5312s, tools: 313 |
+| 2026-09-08 01:15 | Task complete | .DONE created |
 
 ---
 
