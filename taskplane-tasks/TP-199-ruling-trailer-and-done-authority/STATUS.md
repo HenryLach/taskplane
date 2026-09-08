@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-09-08
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -53,10 +53,10 @@
   (`unresolved-verdict`/`invalid-ratification`) and `review_gate_refusal`
   classification unchanged.
 
-- [ ] `authorizeCompletion(ctx)` composing holds → review gates → ratification, reporting all blockers; non-final segments skip review/ratification only
-- [ ] Lane-runner finalize path consolidated onto it (alert kinds and classification unchanged)
-- [ ] `tests/completion-authority.test.ts` scenarios (allowed / each blocker alone / all together / non-final segment)
-- [ ] Targeted tests pass (incl. held-state-runner, review-remediation-spawn, ratification-finalize)
+- [x] `authorizeCompletion(ctx)` composing holds → review gates → ratification, reporting all blockers; non-final segments skip review/ratification only
+- [x] Lane-runner finalize path consolidated onto it (alert kinds and classification unchanged) — moved `findBlockingReviewGates`/`evaluateRatificationBlock`/types into the new module; finalize gate + post-loop held check now call `authorizeCompletion`; in-loop step-marking uses left as-is
+- [x] `tests/completion-authority.test.ts` scenarios (allowed / each blocker alone / all together / non-final segment) — 7 tests
+- [x] Targeted tests pass (incl. held-state-runner, review-remediation-spawn, ratification-finalize) — 51/51
 
 ---
 
@@ -135,3 +135,4 @@
 ## Notes
 
 *Reserved for execution notes*
+| 2026-09-08 01:24 | Review R001 | plan Step 1: APPROVE |
