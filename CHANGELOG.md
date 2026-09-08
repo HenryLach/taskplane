@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New
 
+- **Gate ratification record + finalize binding (#627, Stage 2a).** Gives the
+  "delegated closure" pattern a first-class, verifiable artifact. When a review
+  gate hits its revision cap, the supervisor closes it with the new trusted
+  operation — the `ratify_gate` tool (stamps role `supervisor`) or the
+  `/orch-ratify <taskId> <gate> <rulingId> <proofRevision> -- <summary>`
+  operator command (stamps role `operator`) — instead of hand-writing an APPROVE
+  review file. The operation builds a validated `GateRatification` record
+  (`R{NNN}-{gate}.ratification.json`), canonicalizes the proof to an immutable
+  commit id equal to the current worktree HEAD, requires a clean source working
+  tree, writes the next R-numbered APPROVE review with a `Ratification: <id>`
+  link, and audits `gate_ratified`. The finalize gate in the lane-runner now
+  treats an APPROVE that claims a ratification as **blocking** unless the linked
+  record validates (reference, unit/gate scope, authority, proof == HEAD,
+  superseded-review hash) and is not stale — refusing `.DONE` with the new
+  `review_gate_refusal` / `reviewInterventionKind: "invalid-ratification"`
+  alert. An APPROVE with no `Ratification:` link keeps today's behaviour.
 - **First-class `held` state for escalations (#627, Stage 1).** When a worker
   calls `escalate_to_supervisor`, the runtime now holds the unit itself: a
   durable hold record is persisted (strictly — a persist failure blocks, never

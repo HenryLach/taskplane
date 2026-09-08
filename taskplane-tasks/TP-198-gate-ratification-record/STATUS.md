@@ -1,8 +1,8 @@
 # TP-198: Gate ratification record and finalize binding (#627 Stage 2a) — Status
 
-**Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟡 In Progress
-**Last Updated:** 2026-09-07
+**Current Step:** Step 5: Documentation & Delivery (complete)
+**Status:** ✅ Complete
+**Last Updated:** 2026-09-08
 **Review Level:** 3
 **Review Counter:** 9
 **Iteration:** 1
@@ -95,13 +95,14 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Primer: ratification recipe replaces hand-written APPROVE recipe
-- [ ] commands.md: `/orch-ratify`
-- [ ] Spec status + Stage 2a note
-- [ ] CHANGELOG `[Unreleased]` entry
-- [ ] Discoveries logged
+- [x] Primer: ratification recipe replaces hand-written APPROVE recipe (+ `invalid-ratification` kind + sequencing invariant)
+- [x] commands.md: `/orch-ratify` (next to `/orch-rule`)
+- [x] Spec status + Stage 2a note (filename `R{NNN}-{gate}.ratification.json` + `Ratification: <id>` link line; Stage 2b split out)
+- [x] CHANGELOG `[Unreleased]` → `### New` entry (tool, command, `invalid-ratification` refusal)
+- [x] Discoveries logged
+- [x] `templates/agents/supervisor.md` checked — no hand-written-APPROVE recipe present, no change needed
 
 ---
 
@@ -116,6 +117,12 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Pre-existing full-suite failure `6.3: repo mode — pointer is not consulted` fails at Step 0 baseline, unrelated to TP-198 | Left as-is (out of scope; noted in Step 0/4) | `tests/project-config-loader.test.ts:1619` |
+| `taskplane doctor` exits 1 in this bare worktree (no `.pi/taskplane-config.json`/agents) — environment, not a code regression (diff touches no bin/config/doctor) | Documented in Step 4; not fixed (init out of scope) | `bin/taskplane.mjs` doctor |
+| PROMPT `writeRatification(reviewsDir, record)` signature deviated to add `reviewNumber` (global Review Counter allocation, per R001 plan review) | Amendment 1 in PROMPT.md; approved via Step 1 plan re-review | `ratification.ts` |
+| PROMPT referenced `appendAuditEntry` for the audit write; the code-stamped wrapper `logRecoveryAction` is the correct API used everywhere (appendAuditEntry is the low-level writer) | Used `logRecoveryAction` (via injected `logAudit`) | `ratification-op.ts`, `supervisor.ts` |
+| The trusted operation was extracted into `ratification-op.ts` (injected deps) so it is behaviourally testable outside the pi extension host (R006 required behavioural coverage) | New module; extension.ts is a thin adapter | `ratification-op.ts` |
+| Root/worktree `node_modules` was absent — ran `npm install` to enable typecheck/lint gates | Installed (8 packages); no source impact | worktree root |
 
 ---
 

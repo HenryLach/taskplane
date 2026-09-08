@@ -214,6 +214,36 @@ does not approve the result; review gates still apply. If the batch is parked
 
 ---
 
+### `/orch-ratify <taskId> <gate> <rulingId> <proofRevision> -- <summary>`
+
+Close a review **gate** that hit its revision cap by writing a validated
+**ratification** as the **operator** (#627 Stage 2a). A ruling releases a held
+lane; a *ratification* is what makes the APPROVE that closes the gate
+trustworthy. This is the only operator path (mirroring `/orch-rule`) that stamps
+role `operator` on a ratification; the supervisor equivalent is the `ratify_gate`
+tool (role `supervisor`). Use it ONLY after ruling on the findings, verifying the
+worker's fold, and confirming the proof commit — never hand-write an APPROVE
+review file, which the runtime cannot trust.
+
+**Syntax**
+
+```text
+/orch-ratify TP-198 code-step3 1788817706765-cd7b6 a1b2c3d -- Findings 1-2 fixed at HEAD; finding 3 ruled out of authority.
+```
+
+- `gate` is the gate key `{type}-step{N}` (e.g. `code-step3`).
+- `rulingId` is the ruling message id that released the lane (from the hold).
+- `proofRevision` MUST be the current worktree HEAD (an immutable sha) with a
+  clean working tree — a symbolic ref, an older commit, or uncommitted source
+  changes are refused.
+
+On success it writes `R{NNN}-{gate}.ratification.json` AND the next R-numbered
+APPROVE review file carrying a `Ratification: <id>` link, and audits
+`gate_ratified`. The finalize gate then trusts that APPROVE only while the record
+validates and is not stale. The worker never writes the APPROVE file itself.
+
+---
+
 ### `/orch-confirm-engine-shutdown [--batch <batchId>] <note>`
 
 Record that the operator verified **no engine process is running** for a batch
