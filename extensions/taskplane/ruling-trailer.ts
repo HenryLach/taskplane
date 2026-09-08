@@ -50,7 +50,10 @@ export function parseRulingCitations(commitMessage: string | null | undefined): 
 	for (const line of lines) {
 		const m = TRAILER_RE.exec(line);
 		if (m) {
-			for (const id of m[1].split(",").map((s) => s.trim()).filter(Boolean)) {
+			for (const id of m[1]
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean)) {
 				trailerIds.push(id);
 			}
 			continue; // trailer line — not a prose claim

@@ -40,7 +40,12 @@ function ruledHold(escId: string, rulingId: string, segmentId: string | null = n
 	});
 	const released = applyRuling(
 		base,
-		{ id: rulingId, replyTo: escId, content: "rule: proceed", actor: { role: "supervisor", id: "sup" } },
+		{
+			id: rulingId,
+			replyTo: escId,
+			content: "rule: proceed",
+			actor: { role: "supervisor", id: "sup" },
+		},
 		2_000,
 	);
 	return markDeliveryAcknowledged(markDeliveryInFlight(released, "delivered"));

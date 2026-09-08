@@ -521,11 +521,8 @@ export function collectDoneTaskIdsForResume(
 		// single-segment/legacy tasks. `workingTreeDrift` is intentionally omitted —
 		// resume has no live worktree drift to bind against (defaults to clean).
 		if (reviewsDir) {
-			const taskSegments = (persistedState.segments ?? []).filter(
-				(s) => s.taskId === task.taskId,
-			);
-			const finalSegment =
-				taskSegments.length > 0 ? taskSegments[taskSegments.length - 1] : null;
+			const taskSegments = (persistedState.segments ?? []).filter((s) => s.taskId === task.taskId);
+			const finalSegment = taskSegments.length > 0 ? taskSegments[taskSegments.length - 1] : null;
 			const segmentId = finalSegment?.segmentId ?? null;
 			const worktreePath = finalSegment?.worktreePath ?? worktreePathForTask;
 			const headRevision =
@@ -537,8 +534,7 @@ export function collectDoneTaskIdsForResume(
 					: null;
 			const isAncestor =
 				worktreePath && existsSync(worktreePath)
-					? (a: string, b: string) =>
-							runGit(["merge-base", "--is-ancestor", a, b], worktreePath).ok
+					? (a: string, b: string) => runGit(["merge-base", "--is-ancestor", a, b], worktreePath).ok
 					: () => false;
 			const decision = authorizeCompletion({
 				holds: persistedState.holds ?? [],
@@ -550,9 +546,7 @@ export function collectDoneTaskIdsForResume(
 				isFinalSegment: true,
 			});
 			if (decision.allowed === false) {
-				const blockers = decision.blockers
-					.map((b) => `${b.kind}:${b.ref} (${b.reason})`)
-					.join("; ");
+				const blockers = decision.blockers.map((b) => `${b.kind}:${b.ref} (${b.reason})`).join("; ");
 				console.warn(
 					`[resume] WARN: .DONE present for task ${task.taskId} at ${markerLocation} but refused by completion authority: ${blockers} — not marking complete. Task will re-reconcile.`,
 				);

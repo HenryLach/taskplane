@@ -97,7 +97,6 @@ import {
 	shouldFireOrderViolation,
 	sanitizeSpiralConfig,
 	parseReviewVerdict,
-	latestReviewFilesPerGate,
 	type ReviewStreakState,
 } from "./review-analysis.ts";
 import {
@@ -2391,7 +2390,7 @@ export async function executeTaskV2(
 							context: `worker commit cites a ruling that is not a valid authority for this unit (${flag.kind})`,
 							command: `git commit ${shortSha}`,
 							result: "failure",
-							detail: `${flag.kind}: ${flag.reason} (ref: ${flag.ref})`,
+							detail: `task=${taskId} lane=${config.laneNumber} commit=${shortSha} flag=${flag.kind}: ${flag.reason} (ref: ${flag.ref})`,
 							batchId: config.batchId,
 							laneNumber: config.laneNumber,
 							taskId,
