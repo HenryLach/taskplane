@@ -3,7 +3,7 @@
  * @module orch/resume
  */
 import { existsSync, renameSync } from "fs";
-import { join } from "path";
+import { dirname, join, relative } from "path";
 
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
@@ -131,6 +131,11 @@ async function terminateAliveV2Agents(
 }
 import { getCurrentBranch, runGit, describeOrchBranchStateAcrossRepos } from "./git.ts";
 import { authorizeCompletion } from "./completion-authority.ts";
+import {
+	collectChangedPaths,
+	runtimeArtifactPrefixes,
+	unratifiedWorkingTreePaths,
+} from "./ratification.ts";
 import { mergeWaveByRepo } from "./merge.ts";
 import {
 	applyMergeRetryLoop,
@@ -518,24 +523,47 @@ export function collectDoneTaskIdsForResume(
 		// complete at this point, so this is the final unit (`isFinalSegment: true`).
 		// Segment identity mirrors the live finalize run: the final segment's id
 		// (so a segment-scoped ratification still validates), or null for
-		// single-segment/legacy tasks. `workingTreeDrift` is intentionally omitted —
-		// resume has no live worktree drift to bind against (defaults to clean).
+		// single-segment/legacy tasks.
 		if (reviewsDir) {
 			const taskSegments = (persistedState.segments ?? []).filter((s) => s.taskId === task.taskId);
 			const finalSegment = taskSegments.length > 0 ? taskSegments[taskSegments.length - 1] : null;
 			const segmentId = finalSegment?.segmentId ?? null;
 			const worktreePath = finalSegment?.worktreePath ?? worktreePathForTask;
-			const headRevision =
-				worktreePath && existsSync(worktreePath)
-					? (() => {
-							const r = runGit(["rev-parse", "--verify", "HEAD^{commit}"], worktreePath);
-							return r.ok ? r.stdout.trim() : null;
-						})()
-					: null;
-			const isAncestor =
-				worktreePath && existsSync(worktreePath)
-					? (a: string, b: string) => runGit(["merge-base", "--is-ancestor", a, b], worktreePath).ok
-					: () => false;
+			const worktreeExists = !!worktreePath && existsSync(worktreePath);
+			const headRevision = worktreeExists
+				? (() => {
+						const r = runGit(["rev-parse", "--verify", "HEAD^{commit}"], worktreePath as string);
+						return r.ok ? r.stdout.trim() : null;
+					})()
+				: null;
+			const isAncestor = worktreeExists
+				? (a: string, b: string) =>
+						runGit(["merge-base", "--is-ancestor", a, b], worktreePath as string).ok
+				: () => false;
+			// R003 parity with the live finalize gate: when the lane worktree exists,
+			// bind ratification authority to a CLEAN (source) working tree. Without
+			// this, a crash-then-resume would accept a `.DONE` over uncommitted source
+			// drift that the engine's post-task `git add -A` could sweep into the
+			// merge candidate, defeating the ratification's proof-to-code binding. The
+			// task folder's own files (STATUS.md, .reviews, .DONE) are runtime-owned
+			// and allowed to be dirty. A failed git probe is fail-closed (refuse).
+			const workingTreeDrift = worktreeExists
+				? () => {
+						const wt = worktreePath as string;
+						const resolved = task.taskFolder
+							? resolveCanonicalTaskPaths(task.taskFolder, wt, repoRoot, !!workspaceConfig)
+							: null;
+						const taskFolderRel = resolved
+							? relative(wt, resolved.taskFolderResolved)
+							: relative(wt, dirname(reviewsDir as string));
+						const probe = collectChangedPaths(wt, runGit);
+						if (probe.failedProbe) return { dirty: [], failedProbe: probe.failedProbe };
+						return {
+							dirty: unratifiedWorkingTreePaths(probe.paths, runtimeArtifactPrefixes(taskFolderRel)),
+							failedProbe: null,
+						};
+					}
+				: undefined;
 			const decision = authorizeCompletion({
 				holds: persistedState.holds ?? [],
 				taskId: task.taskId,
@@ -544,6 +572,7 @@ export function collectDoneTaskIdsForResume(
 				headRevision,
 				isAncestor,
 				isFinalSegment: true,
+				...(workingTreeDrift ? { workingTreeDrift } : {}),
 			});
 			if (decision.allowed === false) {
 				const blockers = decision.blockers.map((b) => `${b.kind}:${b.ref} (${b.reason})`).join("; ");
