@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stale `⏸️ Lane held` alert after a fast ruling.** The escalation reaches the
+  supervisor live, so a ruling is often queued before the worker exits; the hold
+  loop published \"Lane held\" and then consumed that ruling on its first poll.
+  The runner now peeks the inbox first and, when every open hold already has a
+  valid ruling waiting, releases without publishing the hold (STATUS logs
+  `Ruling already queued`). Observed on penster 20260909T000015 (TP-1919, TP-2100).
+- **`Ruling citation flagged` false positive on hold bookkeeping.** A commit
+  recording a hold (`hold(TP-1919): … pending operator ruling`) was flagged as a
+  prose ruling claim. A prose mention is now a claim only when it is affirmative
+  (an `R###` reference, a verdict token such as `(FIX)`, or per/applied/as-ruled
+  language); pending/awaiting/requesting/hold language is bookkeeping. The
+  TP-2037 pattern (`R004 cap ruling (FIX)`) still flags.
+
 ### New
 
 - **Unified `.DONE` completion authority + ruling commit-trailer validation

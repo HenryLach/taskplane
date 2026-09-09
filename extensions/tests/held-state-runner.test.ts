@@ -638,6 +638,36 @@ describe("#627 — held state (lane-runner behavioural)", () => {
 		expect(holds()[0].deliveryState).toBe("acknowledged");
 	});
 
+	it("penster 20260909T000015: a ruling already queued when the worker exits releases WITHOUT publishing 'Lane held' (no stale alert after the release)", async () => {
+		let escId = "";
+		onSpawn = async (i) => {
+			if (i === 0) {
+				escId = escalate("fast ruling incoming");
+				// The escalation reaches the supervisor live; it rules before the worker exits.
+				await sleep(200); // let the live drain open the hold
+				ruling(escId, "Ruling: go with option B");
+			}
+			if (i === 1) {
+				expect(spawnPrompts[1].startsWith("## Ruling received")).toBe(true);
+				writeOutboxMessage(tmpRoot, BATCH, AGENT, {
+					from: AGENT,
+					type: "reply",
+					content: "ack",
+					replyTo: holds()[0].ruling!.id,
+				});
+				checkBox();
+			}
+		};
+		const { unit, config } = buildUnitAndConfig();
+		const r = await run(config, unit);
+		expect(r.outcome.status).toBe("succeeded");
+		expect(holds()[0].phase).toBe("released");
+		expect(status()).toContain("Ruling already queued");
+		expect(status()).not.toContain("| Held |");
+		expect(alerts.some((a) => a.summary.includes("Lane held"))).toBe(false);
+		expect(spawnPrompts.length).toBe(2);
+	});
+
 	it("a worker-written .DONE while held is quarantined, never accepted; step check-off is withheld; the monitor reports `held` instead of succeeded/stalled", async () => {
 		onSpawn = (i) => {
 			if (i === 0) {
