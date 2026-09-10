@@ -1100,11 +1100,46 @@ export async function executeTaskV2(
 		}
 	}
 
-	// ── 1. Ensure STATUS.md exists ──────────────────────────────────
-	if (!existsSync(statusPath)) {
+	let totalIterations = 0;
+	let cumulativeCostUsd = 0;
+	let cumulativeTokens = 0;
+	// TP-115: carry latest worker telemetry into terminal snapshots, including invalid tasks.
+	let lastTelemetry: Partial<AgentHostResult> = {};
+
+	const invalidPromptResult = (): LaneRunnerTaskResult => {
+		const reason =
+			"Invalid PROMPT.md: no parseable steps. Expected at least one '### Step N: ...' heading.";
+		quarantineUnauthorizedDone(reason);
+		updateStatusField(statusPath, "Status", "❌ Failed");
+		updateStatusField(statusPath, "Last Updated", new Date().toISOString().slice(0, 10));
+		logExecution(statusPath, "Invalid task", reason);
+		return makeResult(
+			taskId,
+			segmentId,
+			workerAgentId,
+			"failed",
+			startTime,
+			reason,
+			false,
+			totalIterations,
+			cumulativeCostUsd,
+			cumulativeTokens,
+			config,
+			statusPath,
+			reviewerStatePath,
+			lastTelemetry,
+		);
+	};
+
+	// ── 1. Ensure STATUS.md exists and validate the task ─────────────
+	{
 		const content = readFileSync(promptPath, "utf-8");
 		const parsed = parsePromptMd(content, promptPath);
-		writeFileSync(statusPath, generateStatusMd(parsed));
+		if (!existsSync(statusPath)) {
+			writeFileSync(statusPath, generateStatusMd(parsed));
+		}
+		// An empty step list is an invalid task, not an already-completed task (#614).
+		if (parsed.steps.length === 0) return invalidPromptResult();
 	}
 
 	updateStatusField(statusPath, "Status", "🟡 In Progress");
@@ -1151,11 +1186,6 @@ export async function executeTaskV2(
 	let rulingsInFlight: HoldRecord[] = [];
 	/** #629: gates the CURRENT iteration was spawned to remediate (empty = normal iteration). */
 	let remediationGates: BlockingReviewGate[] = [];
-	let totalIterations = 0;
-	let cumulativeCostUsd = 0;
-	let cumulativeTokens = 0;
-	// TP-115: carry latest worker telemetry across iterations and into post-loop terminal snapshots
-	let lastTelemetry: Partial<AgentHostResult> = {};
 
 	// TP-174: Build segment context once for emitSnapshot calls.
 	// Available outside the loop so it can be passed to makeResult too.
@@ -1533,6 +1563,7 @@ export async function executeTaskV2(
 		// Determine remaining steps
 		const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
 		const parsed = parsePromptMd(readFileSync(promptPath, "utf-8"), promptPath);
+		if (parsed.steps.length === 0) return invalidPromptResult();
 
 		// TP-174: Resolve segment-scoped step filtering.
 		// Use config.repoId (structured identity) instead of parsing opaque segmentId.
@@ -2769,6 +2800,8 @@ export async function executeTaskV2(
 	const finalStatusContent = readFileSync(statusPath, "utf-8");
 	const finalStatus = parseStatusMd(finalStatusContent);
 	const parsed = parsePromptMd(readFileSync(promptPath, "utf-8"), promptPath);
+	// A worker can edit PROMPT.md, including on the last permitted iteration.
+	if (parsed.steps.length === 0) return invalidPromptResult();
 
 	// TP-174: Segment-scoped post-loop check. Re-derive repo scoping since
 	// the iteration loop variables are out of scope here.
