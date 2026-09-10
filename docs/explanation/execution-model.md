@@ -62,6 +62,14 @@ remaining (incomplete) steps in order. This preserves accumulated context across
 step boundaries, avoiding the re-hydration cost of spawning a fresh worker per
 step.
 
+Runtime V2 passes composed worker, reviewer, and merger system prompts to pi
+through `--system-prompt <file>`. This preserves prompt replacement semantics
+while keeping prompt text off the operating system's command line, including
+Windows' command-line length limit. Each spawn gets a private, unique file in
+its agent runtime directory (or the OS temporary directory without registry
+integration). The file remains available until the child exits, is removed
+after successful completion, and is retained after failure for diagnostics.
+
 Each iteration:
 
 1. Identify all incomplete steps

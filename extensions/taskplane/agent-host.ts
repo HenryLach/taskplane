@@ -26,12 +26,16 @@ import {
 	writeFileSync,
 	appendFileSync,
 	mkdirSync,
+	mkdtempSync,
 	existsSync,
 	readdirSync,
 	renameSync,
+	rmSync,
 } from "fs";
 import { join, dirname, basename, resolve } from "path";
+import { tmpdir } from "os";
 import { StringDecoder } from "string_decoder";
+import { runtimeAgentDir } from "./types.ts";
 
 import type {
 	RuntimeAgentId,
@@ -452,7 +456,28 @@ export function spawnAgent(
 	const piArgs: string[] = [cliPath, "--mode", "rpc", "--no-session"];
 	if (opts.model) piArgs.push("--model", opts.model);
 	if (opts.tools) piArgs.push("--tools", opts.tools);
-	if (opts.systemPrompt) piArgs.push("--system-prompt", opts.systemPrompt);
+	let systemPromptDir: string | undefined;
+	if (opts.systemPrompt) {
+		// Pi's --system-prompt accepts a file path and still replaces its default
+		// prompt. Keep the composed text off argv to avoid OS command-line limits.
+		const promptRoot = opts.stateRoot
+			? runtimeAgentDir(opts.stateRoot, opts.batchId, opts.agentId)
+			: tmpdir();
+		mkdirSync(promptRoot, { recursive: true });
+		systemPromptDir = mkdtempSync(join(resolve(promptRoot), "system-prompt-"));
+		const promptPath = join(systemPromptDir, "prompt.md");
+		try {
+			writeFileSync(promptPath, opts.systemPrompt, { encoding: "utf-8", mode: 0o600 });
+		} catch (err) {
+			try {
+				rmSync(systemPromptDir, { recursive: true, force: true });
+			} catch {
+				/* best effort — preserve the original write error */
+			}
+			throw err;
+		}
+		piArgs.push("--system-prompt", promptPath);
+	}
 	// Always pass --no-extensions to prevent auto-discovery from cwd.
 	// Explicit -e entries are still honored by pi even with --no-extensions.
 	// This matches the fix from TP-095 that eliminated duplicate extension loading.
@@ -724,6 +749,15 @@ export function spawnAgent(
 			if (finished) return;
 			finished = true;
 			if (timeoutHandle) clearTimeout(timeoutHandle);
+			// Keep the file available for the entire child lifetime (including
+			// reloads and intercepted exits). Retain failed runs for diagnostics.
+			if (systemPromptDir && exitCode === 0 && agentEnded && !killed) {
+				try {
+					rmSync(systemPromptDir, { recursive: true, force: true });
+				} catch {
+					/* best effort */
+				}
+			}
 
 			const result: AgentHostResult = {
 				exitCode,
