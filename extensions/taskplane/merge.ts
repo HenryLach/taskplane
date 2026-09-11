@@ -18,6 +18,7 @@ import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 
 import { execLog, isV2AgentAlive, setV2LivenessRegistryCache } from "./execution.ts";
+import { loadAgentDef } from "./agent-definition.ts";
 import { resolveOperatorId } from "./naming.ts";
 import {
 	MERGE_POLL_INTERVAL_MS,
@@ -784,20 +785,8 @@ export async function spawnMergeAgentV2(
 	// Read the merge request as the agent prompt
 	const prompt = readFileSync(mergeRequestPath, "utf-8");
 
-	// Resolve merger system prompt
-	const systemPromptCandidates = [
-		agentRoot ? join(agentRoot, "task-merger.md") : "",
-		join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"),
-	].filter(Boolean);
-	const systemPromptPath = systemPromptCandidates.find((p) => existsSync(p)) || "";
-	let systemPrompt: string | undefined;
-	if (systemPromptPath) {
-		try {
-			systemPrompt = readFileSync(systemPromptPath, "utf-8");
-		} catch {
-			/* use default */
-		}
-	}
+	// Honor task-merger.md inheritance while preserving explicit agentRoot precedence.
+	const systemPrompt = loadAgentDef(stateRoot ?? repoRoot, "task-merger", agentRoot)?.systemPrompt;
 
 	// Resolve event/exit paths
 	const sidecarRoot = join(stateRoot ?? repoRoot, ".pi");
