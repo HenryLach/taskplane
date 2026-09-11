@@ -34,11 +34,20 @@ import {
 } from "fs";
 import { join, dirname } from "path";
 import { spawn as nodeSpawn } from "child_process";
-import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
+import { resolvePiCliPath } from "./path-resolver.ts";
+import { loadAgentDef } from "./agent-definition.ts";
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import { randomBytes } from "crypto";
 import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.ts";
 import { latestReviewFilesPerGate, parseReviewVerdict } from "./review-analysis.ts";
+
+/** Load the same prompt contract used by the Runtime V2 worker and merger. */
+export function loadReviewerPrompt(cwd = process.cwd()): string {
+	return (
+		loadAgentDef(cwd, "task-reviewer")?.systemPrompt ??
+		"You are a code reviewer. Read the request and write your review to the specified output file."
+	);
+}
 
 /**
  * Resolve the outbox directory from environment variables.
@@ -532,45 +541,6 @@ export default function (pi: ExtensionAPI) {
 	// Spawns a reviewer subprocess to evaluate work at step boundaries.
 	// The reviewer runs as a separate Pi process, writes feedback to
 	// .reviews/, and this tool returns the verdict to the worker.
-
-	/**
-	 * Load the reviewer system prompt from base template + local override.
-	 * Uses resolveTaskplaneAgentTemplate (path-resolver.ts) for all platform support (TP-157).
-	 */
-	function loadReviewerPrompt(): string {
-		let basePrompt =
-			"You are a code reviewer. Read the request and write your review to the specified output file.";
-		try {
-			const templatePath = resolveTaskplaneAgentTemplate("task-reviewer");
-			if (existsSync(templatePath)) {
-				const raw = readFileSync(templatePath, "utf-8");
-				const fmEnd = raw.indexOf("---", 4);
-				if (fmEnd > 0) basePrompt = raw.slice(fmEnd + 3).trim();
-			}
-		} catch {
-			/* fall through to default */
-		}
-		// Local override
-		const localPaths = [
-			join(process.cwd(), ".pi", "agents", "task-reviewer.md"),
-			join(process.cwd(), "agents", "task-reviewer.md"),
-		];
-		for (const p of localPaths) {
-			try {
-				if (!existsSync(p)) continue;
-				const raw = readFileSync(p, "utf-8");
-				const fmEnd = raw.indexOf("---", 4);
-				if (fmEnd > 0) {
-					const localBody = raw.slice(fmEnd + 3).trim();
-					if (localBody) basePrompt += "\n\n---\n\n## Project-Specific Guidance\n\n" + localBody;
-				}
-				break;
-			} catch {
-				continue;
-			}
-		}
-		return basePrompt;
-	}
 
 	function reviewerStatePath(taskFolder: string): string {
 		return process.env.TASKPLANE_REVIEWER_STATE_PATH || join(taskFolder, ".reviewer-state.json");

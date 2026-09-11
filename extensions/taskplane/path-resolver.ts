@@ -46,6 +46,7 @@
 import { spawnSync } from "child_process";
 import { existsSync } from "fs";
 import { join, resolve } from "path";
+import { fileURLToPath } from "url";
 
 // ── Module-level cache ──────────────────────────────────────────────
 
@@ -217,17 +218,18 @@ export function resolvePiCliPath(): string {
  * Resolve the path to a file within the taskplane npm package.
  *
  * This handles both local development (running from the taskplane repo itself)
- * and the installed-package case (taskplane installed globally via npm).
+ * and installed packages, including Pi-managed private npm directories.
  *
  * Resolution order:
  *   1. `join(repoRoot, relPath)` — local development (taskplane's own repo)
- *   2. `npm root -g` result: `{npmGlobalRoot}/taskplane/{relPath}` (dynamic, all setups)
- *   3. `{APPDATA}/npm/node_modules/taskplane/{relPath}` (Windows)
- *   4. `{HOME}/AppData/Roaming/npm/node_modules/taskplane/{relPath}` (Windows alt)
- *   5. `{HOME}/.npm-global/lib/node_modules/taskplane/{relPath}` (macOS/Linux custom prefix)
- *   6. `/usr/local/lib/node_modules/taskplane/{relPath}` (macOS system Node, Linux)
- *   7. `/opt/homebrew/lib/node_modules/taskplane/{relPath}` (macOS Homebrew)
- *   8. Peer of pi's package (adjacent to `process.argv[1]`)
+ *   2. This module's package root (Pi-managed, project-local, or global install)
+ *   3. `npm root -g` result: `{npmGlobalRoot}/taskplane/{relPath}` (dynamic, all setups)
+ *   4. `{APPDATA}/npm/node_modules/taskplane/{relPath}` (Windows)
+ *   5. `{HOME}/AppData/Roaming/npm/node_modules/taskplane/{relPath}` (Windows alt)
+ *   6. `{HOME}/.npm-global/lib/node_modules/taskplane/{relPath}` (macOS/Linux custom prefix)
+ *   7. `/usr/local/lib/node_modules/taskplane/{relPath}` (macOS system Node, Linux)
+ *   8. `/opt/homebrew/lib/node_modules/taskplane/{relPath}` (macOS Homebrew)
+ *   9. Peer of pi's package (adjacent to `process.argv[1]`)
  *
  * @param repoRoot - Absolute path to the project root (used for local dev check)
  * @param relPath  - Relative path within the taskplane package, e.g.
@@ -241,15 +243,20 @@ export function resolveTaskplanePackageFile(repoRoot: string, relPath: string): 
 	const localPath = join(resolve(repoRoot), relPath);
 	if (existsSync(localPath)) return localPath;
 
+	// Resolve against the running package before consulting other installations.
+	// Pi installs packages in its private npm directory, outside `npm root -g`.
+	const packagePath = join(fileURLToPath(new URL("../../", import.meta.url)), relPath);
+	if (existsSync(packagePath)) return packagePath;
+
 	const candidates: string[] = [];
 
-	// 2. Dynamic: npm root -g (covers ALL npm setups: nvm, Homebrew, volta, etc.)
+	// 3. Dynamic: npm root -g (covers ALL npm setups: nvm, Homebrew, volta, etc.)
 	const npmRoot = getNpmGlobalRoot();
 	if (npmRoot) {
 		candidates.push(join(npmRoot, "taskplane", relPath));
 	}
 
-	// 3-7. Well-known static paths
+	// 4-8. Well-known static paths
 	const home = process.env.HOME || process.env.USERPROFILE || "";
 	if (process.env.APPDATA) {
 		candidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane", relPath));
@@ -261,7 +268,7 @@ export function resolveTaskplanePackageFile(repoRoot: string, relPath: string): 
 	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", relPath));
 	candidates.push(join("/opt", "homebrew", "lib", "node_modules", "taskplane", relPath));
 
-	// 8. Peer of pi's package (look adjacent to pi's CLI entrypoint).
+	// 9. Peer of pi's package (look adjacent to pi's CLI entrypoint).
 	// pi is at: <npmRoot>/<scope>/pi-coding-agent/dist/cli.js (where <scope> is
 	//   @earendil-works (current) or @mariozechner (legacy)).
 	// so piPkgDir = <npmRoot>/<scope>/pi-coding-agent (resolve up 2 levels from cli.js).
