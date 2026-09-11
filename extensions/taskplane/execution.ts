@@ -1621,24 +1621,39 @@ export function batchTaskScope(wavePlan: string[][] | undefined | null): Set<str
  * won't have those files and the worker will fail with "file not found".
  *
  * This function checks each wave task's folder for untracked or modified files,
- * stages them, and creates a commit on the current branch. This must run BEFORE
- * allocateLanes() so that worktrees (which are based on the batch's base branch)
- * include the task files.
+ * stages them, and commits them on the orch branch when one is provided.
+ * In workspace mode, task files belong to routing.taskPacketRepo, which may
+ * differ from both the default repo and the task's execution target.
+ * This must run BEFORE allocateLanes() so that worktrees based on the batch's
+ * orch branch include the task files.
  *
  * Only task-specific folders are staged — no other working tree changes are touched.
  *
  * @param waveTasks  - Task IDs in this wave
  * @param pending    - Full pending task map from discovery
- * @param repoRoot   - Main repository root
+ * @param primaryRepoRoot - Main/default repository root
  * @param waveIndex  - Wave number for commit message
+ * @param workspaceConfig - Workspace routing for task packet ownership (absent in repo mode)
  */
 export function ensureTaskFilesCommitted(
 	waveTasks: string[],
 	pending: Map<string, ParsedTask>,
-	repoRoot: string,
+	primaryRepoRoot: string,
 	waveIndex: number,
 	orchBranch?: string,
+	workspaceConfig?: WorkspaceConfig | null,
 ): void {
+	const packetRepo = workspaceConfig?.repos.get(workspaceConfig.routing.taskPacketRepo);
+	if (workspaceConfig && !packetRepo) {
+		throw new ExecutionError(
+			"EXEC_TASK_STAGE_FAILED",
+			`Task packet repository '${workspaceConfig.routing.taskPacketRepo}' is not configured.`,
+			"wave",
+			`W${waveIndex}`,
+		);
+	}
+	const repoRoot = packetRepo?.path ?? primaryRepoRoot;
+
 	// Collect task folder paths for this wave
 	const foldersToCheck: { taskId: string; relPath: string }[] = [];
 	for (const taskId of waveTasks) {
@@ -2020,7 +2035,7 @@ export async function executeWave(
 	// Pass orchBranch so the staging commit is reflected in the orch branch
 	// before worktrees are allocated from it.
 	try {
-		ensureTaskFilesCommitted(waveTasks, pending, repoRoot, waveIndex, orchBranch);
+		ensureTaskFilesCommitted(waveTasks, pending, repoRoot, waveIndex, orchBranch, workspaceConfig);
 	} catch (err: unknown) {
 		const errMsg = err instanceof Error ? err.message : String(err);
 		execLog("wave", `W${waveIndex}`, `task file commit failed: ${errMsg}`);
