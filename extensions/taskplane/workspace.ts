@@ -40,7 +40,7 @@
  * @module orch/workspace
  */
 import { readFileSync, existsSync, realpathSync } from "fs";
-import { resolve, relative, isAbsolute } from "path";
+import { resolve, relative, isAbsolute, win32 } from "path";
 import { parse as yamlParse } from "yaml";
 
 import { runGit } from "./git.ts";
@@ -226,7 +226,7 @@ export function resolvePointer(
 	const normalizedConfigPath = configPath.trim().replace(/\\/g, "/");
 
 	// Reject absolute paths (POSIX `/...` and Windows `C:/...`, `\\...`)
-	if (isAbsolute(normalizedConfigPath) || isAbsolute(configPath.trim())) {
+	if (isAbsolute(normalizedConfigPath) || win32.isAbsolute(normalizedConfigPath)) {
 		return {
 			used: false,
 			configRoot: fallbackConfigRoot,

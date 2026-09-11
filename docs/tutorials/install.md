@@ -146,6 +146,10 @@ taskplane init
 
 Init detects the subdirectory repos and prompts you to choose which one holds the shared Taskplane config. The selected repo gets a `.taskplane/` directory with all config, and the workspace root gets a pointer file (`.pi/taskplane-pointer.json`) that tells Taskplane where to find it.
 
+The pointer's `config_path` must be relative to the selected config repo. Both
+forward-slash and backslash separators are accepted, but POSIX absolute paths,
+Windows drive-absolute paths, and UNC paths are rejected on every host platform.
+
 Files created in the config repo (e.g., `repo-a`):
 
 - `repo-a/.taskplane/taskplane-config.json`
