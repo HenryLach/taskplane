@@ -96,6 +96,9 @@ describe("parseRulingCitations", () => {
 			"completion held behind Step-5 gate ruling",
 			"no ruling needed for this change",
 			"hydrate: TP-1919 record ruling + narrow Step 2 to deployer identities",
+			// penster 20260911T234647 item F: the mandated hold-time commit vocabulary
+			"hold(TP-2104): commit ruling-independent work; hold on Step 3",
+			"chore: ruling-independent cleanup",
 		]) {
 			assert.equal(isProseRulingClaim(bookkeeping), false, bookkeeping);
 		}
