@@ -82,6 +82,42 @@ describe("parseRulingCitations", () => {
 		const c = parseRulingCitations("fix: thing\n\nTaskplane-Ruling: ruling-1\n");
 		assert.deepEqual(c.proseClaims, []);
 	});
+
+	it("hold BOOKKEEPING is not a claim (penster 20260909T000015 false positive); affirmative claims still are", async () => {
+		const { isProseRulingClaim } = await import("../taskplane/ruling-trailer.ts");
+		// the live false positive
+		assert.equal(
+			isProseRulingClaim("hold(TP-1919): record HARD HOLD on Step 2 pending operator ruling"),
+			false,
+		);
+		for (const bookkeeping of [
+			"awaiting a ruling on scope",
+			"escalated; requesting a ruling from the supervisor",
+			"completion held behind Step-5 gate ruling",
+			"no ruling needed for this change",
+			"hydrate: TP-1919 record ruling + narrow Step 2 to deployer identities",
+			// penster 20260911T234647 item F: the mandated hold-time commit vocabulary
+			"hold(TP-2104): commit ruling-independent work; hold on Step 3",
+			"chore: ruling-independent cleanup",
+		]) {
+			assert.equal(isProseRulingClaim(bookkeeping), false, bookkeeping);
+		}
+		for (const claim of [
+			"fix(TP-2037): R004 cap ruling (FIX) — rotate token", // the TP-2037 incident
+			"apply supervisor ruling: narrow Step 2 to deployer identities",
+			"per the ruling, accept the P1 as documented risk",
+			"as ruled, skip the migration",
+			"ruling received; implementing option B",
+		]) {
+			assert.equal(isProseRulingClaim(claim), true, claim);
+		}
+		// a verdict token overrides bookkeeping words on the same line
+		assert.equal(isProseRulingClaim("pending nothing: R004 ruling (FIX) applied"), true);
+		assert.deepEqual(
+			parseRulingCitations("hold(TP-1): HARD HOLD pending operator ruling\n").proseClaims,
+			[],
+		);
+	});
 });
 
 // ── Part 1: validator ─────────────────────────────────────────────────
