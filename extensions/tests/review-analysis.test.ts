@@ -29,7 +29,7 @@ import {
 const SPIRAL = { enabled: true, threshold: 3, cooldownReviews: 2 };
 const adv = (
 	state: ReturnType<typeof freshReviewStreakState>,
-	disposition: string,
+	disposition: string | undefined,
 	counts: Record<string, number> | null = null,
 ) =>
 	advanceReviewStreak(state, {
@@ -169,7 +169,7 @@ describe("review-analysis — computeFindingTrend", () => {
 });
 
 describe("review-analysis — advanceReviewStreak", () => {
-	it("increments round every boundary and the streak on REVISE/RETHINK", () => {
+	it("increments round on verdicts and the streak on REVISE/RETHINK", () => {
 		const s = freshReviewStreakState();
 		adv(s, "REVISE");
 		adv(s, "RETHINK");
@@ -186,20 +186,21 @@ describe("review-analysis — advanceReviewStreak", () => {
 		expect(s.round).toBe(3);
 	});
 
-	it("REFUSED advances round but does NOT touch the streak", () => {
+	it("REFUSED leaves both the round and streak unchanged", () => {
 		const s = freshReviewStreakState();
 		adv(s, "REVISE");
 		adv(s, "REFUSED");
 		expect(s.consecutiveNonApprove).toBe(1);
-		expect(s.round).toBe(2);
+		expect(s.round).toBe(1);
 	});
 
 	it("UNAVAILABLE does not count by default; UNKNOWN never counts", () => {
 		const s = freshReviewStreakState();
 		adv(s, "UNAVAILABLE");
 		adv(s, "UNKNOWN");
+		adv(s, undefined);
 		expect(s.consecutiveNonApprove).toBe(0);
-		expect(s.round).toBe(2);
+		expect(s.round).toBe(0);
 	});
 
 	it("UNAVAILABLE counts when treatUnavailableAsNonApprove is true", () => {
@@ -211,6 +212,7 @@ describe("review-analysis — advanceReviewStreak", () => {
 			recentCap: 6,
 		});
 		expect(s.consecutiveNonApprove).toBe(1);
+		expect(s.round).toBe(0);
 	});
 
 	it("advances lastCounts only when counts are present, and bounds recentDispositions", () => {
@@ -224,6 +226,21 @@ describe("review-analysis — advanceReviewStreak", () => {
 });
 
 describe("review-analysis — reconstructReviewStreaks (resume)", () => {
+	it("resumes at round one after failed attempts followed by the first verdict", () => {
+		const events = [
+			{ reviewStep: 5, disposition: "UNAVAILABLE" },
+			{ reviewStep: 5, disposition: "UNKNOWN" },
+			{ reviewStep: 5, disposition: "REFUSED" },
+			{ reviewStep: 5, disposition: "REVISE" },
+		];
+		const states = reconstructReviewStreaks(events, {
+			treatUnavailableAsNonApprove: false,
+			recentCap: 6,
+		});
+		expect(states.get("5")?.round).toBe(1);
+		expect(states.get("5")?.consecutiveNonApprove).toBe(1);
+	});
+
 	it("replays per-step history so an in-progress spiral survives resume", () => {
 		const events = [
 			{ reviewStep: 4, disposition: "REVISE", findingCounts: { critical: 2 } },

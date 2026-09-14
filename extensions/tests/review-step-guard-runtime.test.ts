@@ -32,12 +32,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 
 // ── child_process mock (installed before importing agent-bridge-extension) ──
 //
 // The review_step handler spawns a Pi reviewer subprocess via
-// `nodeSpawn(process.execPath, args, ...)`. We intercept that with a fake
-// EventEmitter-shaped child process that immediately emits exit(0). The
+// the shared agent host. We intercept that with a fake
+// EventEmitter-shaped child process that immediately emits close(0). The
 // REFUSED path returns BEFORE reaching spawn — the mock exists so the
 // plan-NOT-blocked sanity check doesn't fork a real Pi process.
 //
@@ -51,17 +52,17 @@ let spawnCallCount = 0;
 const mockSpawn = mock.fn((_cmd: string, _args: readonly string[], _opts: object) => {
 	spawnCallCount++;
 	const fake = new EventEmitter() as EventEmitter & {
-		stdout: EventEmitter;
-		stderr: EventEmitter;
-		stdin: { end: () => void };
+		stdout: PassThrough;
+		stderr: PassThrough;
+		stdin: PassThrough;
 		kill: (sig?: string) => boolean;
 	};
-	fake.stdout = new EventEmitter();
-	fake.stderr = new EventEmitter();
-	fake.stdin = { end: () => {} };
+	fake.stdout = new PassThrough();
+	fake.stderr = new PassThrough();
+	fake.stdin = new PassThrough();
 	fake.kill = () => true;
-	// Emit exit on the next tick so the handler's listeners attach first.
-	setImmediate(() => fake.emit("exit", 0, null));
+	// Emit close on the next tick so the handler's listeners attach first.
+	setImmediate(() => fake.emit("close", 0, null));
 	return fake;
 });
 

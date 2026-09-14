@@ -30,7 +30,7 @@ Common fields at top of file:
 | `Status` | Overall task status (Ready, In Progress, Complete, etc.) |
 | `Last Updated` | Last update date |
 | `Review Level` | Task review level from prompt |
-| `Review Counter` | Number of reviews run so far |
+| `Review Counter` | Last allocated review number; attempts producing no output do not increment it |
 | `Iteration` | Worker iteration counter |
 | `Size` | Task size metadata |
 

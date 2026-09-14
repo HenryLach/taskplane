@@ -170,7 +170,7 @@ export function computeFindingTrend(
 export interface ReviewStreakState {
 	/** Consecutive REVISE/RETHINK reviews on this step (reset on APPROVE). */
 	consecutiveNonApprove: number;
-	/** Count of verdict/attempt reviews seen for this step (the review round). */
+	/** Count of APPROVE/REVISE/RETHINK verdicts seen for this step (the review round). */
 	round: number;
 	/** Finding counts from the previous round (for trend), or null. */
 	lastCounts: Record<string, number> | null;
@@ -186,7 +186,7 @@ export function freshReviewStreakState(): ReviewStreakState {
 /**
  * Apply ONE review-boundary outcome to a step's streak state (mutates it). This
  * is the single source of truth for the counter transitions:
- *   - every END boundary increments `round`;
+ *   - only APPROVE/REVISE/RETHINK boundaries increment `round`;
  *   - APPROVE resets the consecutive streak to 0;
  *   - REVISE/RETHINK (and UNAVAILABLE iff `treatUnavailableAsNonApprove`)
  *     increment the streak;
@@ -207,7 +207,13 @@ export function advanceReviewStreak(
 		recentCap: number;
 	},
 ): void {
-	state.round += 1;
+	if (
+		opts.disposition === "APPROVE" ||
+		opts.disposition === "REVISE" ||
+		opts.disposition === "RETHINK"
+	) {
+		state.round += 1;
+	}
 	if (opts.counts && Object.keys(opts.counts).length > 0) {
 		state.lastCounts = opts.counts;
 	}

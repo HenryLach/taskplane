@@ -33,12 +33,12 @@ import {
 	unlinkSync,
 } from "fs";
 import { join, dirname } from "path";
-import { spawn as nodeSpawn } from "child_process";
-import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
+import { resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import { randomBytes } from "crypto";
 import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.ts";
 import { latestReviewFilesPerGate, parseReviewVerdict } from "./review-analysis.ts";
+import { spawnAgent, type AgentHostResult } from "./agent-host.ts";
 
 /**
  * Resolve the outbox directory from environment variables.
@@ -612,212 +612,108 @@ export default function (pi: ExtensionAPI) {
 
 	/**
 	 * Spawn a reviewer Pi subprocess and wait for it to complete.
-	 * Returns the process exit code.
+	 * Returns the exit result and timeout cause; persists attempt diagnostics.
 	 */
-	function spawnReviewer(
+	async function spawnReviewer(
 		prompt: string,
 		systemPrompt: string,
 		cwd: string,
 		taskFolder: string,
+		diagnosticBase: string,
 		reviewType?: string,
 		reviewStep?: number,
-	): Promise<number> {
-		// Pre-clean stale reviewer state from prior interrupted review
+	): Promise<AgentHostResult & { timedOut: boolean }> {
 		removeReviewerState(taskFolder);
-		return new Promise((resolve) => {
-			// Read reviewer config from env vars set by lane-runner from runnerConfig.reviewer.
-			// Empty string means inherit from session default (no flag passed to pi CLI).
-			const reviewerModel = process.env.TASKPLANE_REVIEWER_MODEL || "";
-			const reviewerThinking = process.env.TASKPLANE_REVIEWER_THINKING || "";
-			// Fall back to the schema default reviewer tool list (read-only + bash/grep).
-			// Must match config-schema.ts reviewer.tools default to avoid capability expansion.
-			const reviewerTools = process.env.TASKPLANE_REVIEWER_TOOLS || "read,bash,grep,find,ls";
+		const settingsRoot = process.env.TASKPLANE_STATE_ROOT || cwd;
+		const reviewerPackages = loadPiSettingsPackages(settingsRoot);
+		let reviewerExclusions: string[] = [];
+		try {
+			const rawExclude = process.env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS;
+			if (rawExclude) {
+				const parsed = JSON.parse(rawExclude);
+				if (Array.isArray(parsed)) {
+					reviewerExclusions = parsed.filter((v: unknown): v is string => typeof v === "string");
+				}
+			}
+		} catch {
+			/* ignore malformed */
+		}
 
-			const cliPath = resolvePiCliPath();
-			const args = [
-				cliPath,
-				"--mode",
-				"rpc",
-				"--no-session",
-				"--no-extensions",
-				"--no-skills",
-				"--tools",
-				reviewerTools,
-				"--system-prompt",
-				systemPrompt,
-			];
-			if (reviewerModel) args.push("--model", reviewerModel);
-			if (reviewerThinking) args.push("--thinking", reviewerThinking);
-
-			// TP-180: Forward user-installed extensions to reviewer agent
-			// Use TASKPLANE_STATE_ROOT (canonical project root) for settings resolution,
-			// falling back to cwd (which may be a worktree without .pi/settings.json).
-			const settingsRoot = process.env.TASKPLANE_STATE_ROOT || cwd;
-			const reviewerPackages = loadPiSettingsPackages(settingsRoot);
-			// Apply reviewer-specific exclusions from config (JSON array via env)
-			let reviewerExclusions: string[] = [];
+		const startedAt = Date.now();
+		const telemetry = {
+			toolCalls: 0,
+			contextPct: 0,
+			costUsd: 0,
+			lastTool: "",
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+		};
+		const emitState = (status: "running" | "done" | "error") => {
 			try {
-				const rawExclude = process.env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS;
-				if (rawExclude) {
-					const parsed = JSON.parse(rawExclude);
-					if (Array.isArray(parsed)) {
-						reviewerExclusions = parsed.filter((v: unknown): v is string => typeof v === "string");
-					}
-				}
+				writeReviewerState(taskFolder, {
+					...telemetry,
+					status,
+					elapsedMs: Date.now() - startedAt,
+					updatedAt: Date.now(),
+					reviewType,
+					reviewStep,
+				});
 			} catch {
-				/* ignore malformed */
+				/* best effort */
 			}
-			const filteredReviewerPackages = filterExcludedExtensions(reviewerPackages, reviewerExclusions);
-			for (const pkg of filteredReviewerPackages) {
-				args.push("-e", pkg);
-			}
-			const proc = nodeSpawn(process.execPath, args, {
-				shell: false,
+		};
+		emitState("running");
+		let timedOut = false;
+		const host = spawnAgent(
+			{
+				agentId: `${process.env.TASKPLANE_AGENT_ID || "worker"}-reviewer`,
+				role: "reviewer",
+				batchId: process.env.ORCH_BATCH_ID || "standalone",
+				laneNumber: null,
+				taskId: process.env.TASKPLANE_TASK_ID || null,
+				repoId: "",
 				cwd,
-				stdio: ["pipe", "pipe", "pipe"],
-				env: { ...process.env },
-			});
-
-			const startedAt = Date.now();
-			let inputTokens = 0;
-			let outputTokens = 0;
-			let cacheReadTokens = 0;
-			let cacheWriteTokens = 0;
-			let costUsd = 0;
-			let toolCalls = 0;
-			let lastTool = "";
-			let contextPct = 0;
-			let stdoutBuf = "";
-			let finalized = false;
-
-			const emitState = (status: "running" | "done" | "error") => {
-				try {
-					writeReviewerState(taskFolder, {
-						status,
-						elapsedMs: Date.now() - startedAt,
-						toolCalls,
-						contextPct,
-						costUsd,
-						lastTool,
-						inputTokens,
-						outputTokens,
-						cacheReadTokens,
-						cacheWriteTokens,
-						updatedAt: Date.now(),
-						reviewType,
-						reviewStep,
-					});
-				} catch {
-					/* best effort */
+				prompt,
+				systemPrompt,
+				model: process.env.TASKPLANE_REVIEWER_MODEL || "",
+				thinking: process.env.TASKPLANE_REVIEWER_THINKING || "",
+				// Match the schema's reviewer allowlist, including when no override is set.
+				tools: process.env.TASKPLANE_REVIEWER_TOOLS || "read,bash,grep,find,ls",
+				extensions: filterExcludedExtensions(reviewerPackages, reviewerExclusions),
+				eventsPath: `${diagnosticBase}.jsonl`,
+				exitSummaryPath: `${diagnosticBase}-exit.json`,
+				timeoutMs: 10 * 60 * 1000,
+			},
+			(event) => {
+				if (event.type === "agent_timeout") timedOut = true;
+				if (event.type === "tool_call") {
+					telemetry.toolCalls++;
+					const tool = String(event.payload?.tool || "tool");
+					const preview = String(event.payload?.argsPreview || "").slice(0, 80);
+					telemetry.lastTool = preview ? `${tool}: ${preview}` : tool;
+					emitState("running");
 				}
-			};
-
-			// Write initial "running" state immediately so dashboard shows
-			// the reviewer sub-row before the first message_end arrives.
-			emitState("running");
-
-			const closeStdin = () => {
-				setTimeout(() => {
-					try {
-						proc.stdin?.end();
-					} catch {
-						/* ignore */
-					}
-				}, 100);
-			};
-
-			const finalize = (code: number) => {
-				if (finalized) return;
-				finalized = true;
-				emitState(code === 0 ? "done" : "error");
-				resolve(code);
-			};
-
-			const handleEvent = (event: any) => {
-				if (!event || typeof event.type !== "string") return;
-				switch (event.type) {
-					case "message_end": {
-						const usage = event.message?.usage;
-						if (usage) {
-							inputTokens += usage.input || 0;
-							outputTokens += usage.output || 0;
-							cacheReadTokens += usage.cacheRead || 0;
-							cacheWriteTokens += usage.cacheWrite || 0;
-							if (usage.cost) {
-								costUsd +=
-									typeof usage.cost === "object"
-										? usage.cost.total || 0
-										: typeof usage.cost === "number"
-											? usage.cost
-											: 0;
-							}
-						}
-						emitState("running");
-						break;
-					}
-					case "tool_execution_start": {
-						toolCalls++;
-						const toolName = event.toolName || "tool";
-						const argPreview =
-							typeof event.args === "string"
-								? event.args.slice(0, 80)
-								: event.args && typeof Object.values(event.args)[0] === "string"
-									? String(Object.values(event.args)[0]).slice(0, 80)
-									: "";
-						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
-						emitState("running");
-						break;
-					}
-					case "response": {
-						const pct = event.success === true ? event.data?.contextUsage?.percent : undefined;
-						if (typeof pct === "number" && Number.isFinite(pct)) {
-							contextPct = pct;
-						}
-						break;
-					}
-					case "agent_end": {
-						closeStdin();
-						break;
-					}
-				}
-			};
-
-			// Send prompt immediately
-			proc.stdin?.write(JSON.stringify({ type: "prompt", message: prompt }) + "\n");
-
-			proc.stdout?.on("data", (chunk: Buffer | string) => {
-				stdoutBuf += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
-				let idx = -1;
-				while ((idx = stdoutBuf.indexOf("\n")) >= 0) {
-					let line = stdoutBuf.slice(0, idx);
-					stdoutBuf = stdoutBuf.slice(idx + 1);
-					if (line.endsWith("\r")) line = line.slice(0, -1);
-					if (!line.trim()) continue;
-					let event: any;
-					try {
-						event = JSON.parse(line);
-					} catch {
-						continue;
-					}
-					handleEvent(event);
-				}
-			});
-
-			proc.on("close", (code) => finalize(code ?? 1));
-			proc.on("error", () => finalize(1));
-
-			// Timeout: 10 minutes
-			setTimeout(
-				() => {
-					try {
-						proc.kill("SIGTERM");
-					} catch {
-						/* ignore */
-					}
-				},
-				10 * 60 * 1000,
-			);
-		});
+			},
+			(update) => {
+				telemetry.inputTokens = update.inputTokens ?? telemetry.inputTokens;
+				telemetry.outputTokens = update.outputTokens ?? telemetry.outputTokens;
+				telemetry.cacheReadTokens = update.cacheReadTokens ?? telemetry.cacheReadTokens;
+				telemetry.cacheWriteTokens = update.cacheWriteTokens ?? telemetry.cacheWriteTokens;
+				telemetry.costUsd = update.costUsd ?? telemetry.costUsd;
+				telemetry.contextPct = update.contextUsage?.percent ?? telemetry.contextPct;
+				emitState("running");
+			},
+		);
+		const result = await host.promise;
+		try {
+			writeFileSync(`${diagnosticBase}-stderr.log`, result.stderrTail, "utf-8");
+		} catch {
+			/* best effort */
+		}
+		emitState(result.exitCode === 0 && !timedOut ? "done" : "error");
+		return { ...result, timedOut };
 	}
 
 	pi.registerTool({
@@ -971,32 +867,87 @@ export default function (pi: ExtensionAPI) {
 				].join("\n");
 			}
 
+			// Attempts get unique diagnostic files even when a retry reuses R00N.
+			const diagnosticBase = join(
+				process.env.TASKPLANE_STATE_ROOT || cwd,
+				".pi",
+				"runtime",
+				process.env.ORCH_BATCH_ID || "standalone",
+				"agents",
+				`${process.env.TASKPLANE_AGENT_ID || "worker"}-reviewer-${Date.now()}-${randomBytes(3).toString("hex")}`,
+			);
+			const failedReview = (reason: string) => {
+				// Setup errors may occur before the host has created its diagnostic files.
+				try {
+					mkdirSync(dirname(diagnosticBase), { recursive: true });
+					if (!existsSync(`${diagnosticBase}-exit.json`)) {
+						writeFileSync(
+							`${diagnosticBase}-exit.json`,
+							JSON.stringify(
+								{
+									exitCode: null,
+									exitSignal: null,
+									error: reason,
+								},
+								null,
+								2,
+							) + "\n",
+						);
+					}
+					if (!existsSync(`${diagnosticBase}-stderr.log`))
+						writeFileSync(`${diagnosticBase}-stderr.log`, "");
+				} catch {
+					/* best effort */
+				}
+				try {
+					const status = readFileSync(statusPath, "utf-8");
+					const detail =
+						`${reviewType} Step ${stepNum}: ${reason}; diagnostics: ${diagnosticBase}`.replace(
+							/[|\r\n]/g,
+							" ",
+						);
+					const logEntry = `| ${new Date().toISOString().slice(0, 16).replace("T", " ")} | Review spawn failed | ${detail} |\n`;
+					writeFileSync(statusPath, status.trimEnd() + "\n" + logEntry);
+				} catch {
+					/* best effort */
+				}
+				removeReviewerState(taskFolder);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `UNAVAILABLE — reviewer failed: ${reason}. Exit summary: ${diagnosticBase}-exit.json. Stderr: ${diagnosticBase}-stderr.log.`,
+						},
+					],
+					details: undefined,
+				};
+			};
+
 			try {
 				const systemPrompt = loadReviewerPrompt();
-				const exitCode = await spawnReviewer(
+				const result = await spawnReviewer(
 					reviewPrompt,
 					systemPrompt,
 					cwd,
 					taskFolder,
+					diagnosticBase,
 					reviewType,
 					stepNum,
 				);
 
-				// Update review counter in STATUS.md
-				try {
-					const status = readFileSync(statusPath, "utf-8");
-					const updated = status.replace(
-						/\*\*Review Counter:\*\*\s*\d+/,
-						`**Review Counter:** ${reviewCounter}`,
-					);
-					writeFileSync(statusPath, updated);
-				} catch {
-					/* best effort */
-				}
-
-				// Read review output and extract verdict
-				if (existsSync(outputPath)) {
-					const reviewContent = readFileSync(outputPath, "utf-8");
+				const reviewContent = existsSync(outputPath) ? readFileSync(outputPath, "utf-8") : "";
+				if (reviewContent.trim()) {
+					// Only consume a number once the reviewer has produced an artifact.
+					try {
+						const status = readFileSync(statusPath, "utf-8");
+						const updated = status.replace(
+							/\*\*Review Counter:\*\*\s*\d+/,
+							`**Review Counter:** ${reviewCounter}`,
+						);
+						writeFileSync(statusPath, updated);
+					} catch {
+						/* best effort */
+					}
 					// #624 (severity upgrade): robust, FAIL-CLOSED verdict extraction. The
 					// old regex ('###?\s*Verdict[:\s]*…') missed common reviewer format
 					// variants, and its fallback checked the substring "approve" FIRST — so
@@ -1061,28 +1012,16 @@ export default function (pi: ExtensionAPI) {
 						};
 					}
 				} else {
-					removeReviewerState(taskFolder);
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: `UNAVAILABLE — reviewer exited (code ${exitCode}) but produced no output.`,
-							},
-						],
-						details: undefined,
-					};
+					// Empty files must not become the latest artifact for a review gate.
+					if (existsSync(outputPath)) unlinkSync(outputPath);
+					const cause = result.timedOut
+						? "timeout after 10 minutes"
+						: result.error ||
+							(result.signal ? `signal ${result.signal}` : `exit code ${result.exitCode}`);
+					return failedReview(`${cause}; no review output`);
 				}
 			} catch (err) {
-				removeReviewerState(taskFolder);
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `UNAVAILABLE — reviewer failed: ${err instanceof Error ? err.message : String(err)}`,
-						},
-					],
-					details: undefined,
-				};
+				return failedReview(err instanceof Error ? err.message : String(err));
 			}
 		},
 	});
