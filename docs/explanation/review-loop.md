@@ -98,6 +98,29 @@ During a review, the dashboard shows a **reviewer sub-row** below the active
 task with live metrics: elapsed time, tool count, last tool, cost, and context%.
 The worker row shows `[awaiting review]` until the reviewer finishes.
 
+### Failed reviewer attempts
+
+If an inline reviewer exits without a nonempty review file, `review_step`
+returns `UNAVAILABLE` and appends a `Review spawn failed` execution-log row
+with the exit code, signal, timeout, or launch error. The attempt does not
+increment `Review Counter`; a retry uses the same `R00N` filename. An empty
+file is removed so it cannot supersede a previous review at the same gate.
+Nonempty reviews retain their number even when the verdict is unclear; they
+must still contain an explicit approval before the worker can proceed.
+
+Each subprocess attempt has separate event (`.jsonl`), exit-summary
+(`-exit.json`), and stderr-tail (`-stderr.log`, up to 2 KB) files under
+`.pi/runtime/<batch>/agents/` in the project state root. Failed attempts'
+files survive a successful retry. Launch errors before the subprocess starts
+still receive an exit summary. The tool response and STATUS log identify
+these diagnostic paths.
+
+Review rounds count `APPROVE`, `REVISE`, and `RETHINK` outcomes, both live
+and after resume. `REFUSED`, `UNAVAILABLE`, and `UNKNOWN` do not advance the
+round. The explicit `treatUnavailableAsNonApprove` setting still controls
+whether `UNAVAILABLE` increases the non-approval streak; it does not turn a
+failed attempt into a completed review round.
+
 ### Review availability
 
 The `review_step` tool is registered during orchestrated execution (`/orch`).
