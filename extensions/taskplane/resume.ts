@@ -166,7 +166,6 @@ import {
 	HOLD_TIMEOUT_MINUTES_DEFAULT,
 	type HoldRecord,
 	isHoldUnresolved,
-	projectHoldTransitionOntoOutcomes,
 	selectUnrecordedEscalations,
 	taskCompletionBlocked,
 } from "./hold-state.ts";
@@ -2135,19 +2134,21 @@ export async function resumeOrchBatch(
 		outcomes: () => preWaveOutcomes,
 		discovery: () => preWaveDiscovery,
 	};
-	const holdStore = createHoldStore(batchState, (reason, record) => {
-		// #651: project the transition onto the outcome set this checkpoint serializes.
-		projectHoldTransitionOntoOutcomes(holdPersistCtx.outcomes(), record);
-		persistRuntimeStateStrict(
-			reason,
-			batchState,
-			holdPersistCtx.wavePlan(),
-			holdPersistCtx.lanes(),
-			holdPersistCtx.outcomes(),
-			holdPersistCtx.discovery(),
-			stateRoot,
-		);
-	});
+	const holdStore = createHoldStore(
+		batchState,
+		(reason) =>
+			persistRuntimeStateStrict(
+				reason,
+				batchState,
+				holdPersistCtx.wavePlan(),
+				holdPersistCtx.lanes(),
+				holdPersistCtx.outcomes(),
+				holdPersistCtx.discovery(),
+				stateRoot,
+			),
+		// #651: project status onto whichever outcome set this checkpoint serializes.
+		{ outcomes: () => holdPersistCtx.outcomes() },
+	);
 	// Carry forward unknown fields for roundtrip preservation
 	if (persistedState._extraFields) {
 		batchState._extraFields = persistedState._extraFields;

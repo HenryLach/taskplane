@@ -634,22 +634,29 @@ export class HoldPersistenceError extends Error {
  */
 export function createHoldStore(
 	owner: { holds?: HoldRecord[] },
-	/**
-	 * Durable whole-state write. Receives the transitioned record so the owner
-	 * can PROJECT the bound task's status in the same write (#651): open →
-	 * `held`; released → `running` (a worker is relaunched to deliver the ruling).
-	 * Without this the task record kept its stale `held` / hold-timeout exitReason
-	 * until the next unrelated task-transition persist.
-	 */
-	persist: (reason: string, record: HoldRecord) => void,
+	/** Durable whole-state write; throws on failure. */
+	persist: (reason: string) => void,
+	opts: {
+		/**
+		 * #651: the live outcome array `serializeBatchState` reads task statuses
+		 * from. When supplied, every commit projects the bound task's status from
+		 * the post-transition hold table in the SAME write, and rolls the
+		 * projection back with the hold table if the write fails.
+		 */
+		outcomes?: () => LaneTaskOutcome[];
+	} = {},
 ): HoldStore {
 	const commit = (next: HoldRecord[], reason: string, record: HoldRecord): void => {
 		const prev = owner.holds;
 		owner.holds = next;
+		const projection = opts.outcomes
+			? projectHoldStateOntoOutcomes(opts.outcomes(), next, record.taskId)
+			: { changed: false, restore: () => {} };
 		try {
-			persist(reason, record);
+			persist(reason);
 		} catch (err) {
 			owner.holds = prev;
+			projection.restore();
 			throw new HoldPersistenceError(record.escalationId, err);
 		}
 	};
@@ -675,43 +682,66 @@ export function createHoldStore(
 }
 
 /**
- * #651: project a hold transition onto the task outcome that
- * `serializeBatchState` reads statuses from. Called by the engine/resume persist
- * callbacks BEFORE the strict write so the same write carries the projection.
- *  - open       → `held`, exitReason names the escalation
- *  - released   → `running` (worker relaunched with the ruling), stale hold reason cleared
- *  - cancelled  → left to the runner's own `failed` outcome
- * Never downgrades a terminal outcome.
+ * #651: project the unit's hold state onto the task outcome that
+ * `serializeBatchState` reads statuses from. Evaluated against the POST-transition
+ * hold table (Sage: a unit with two open holds is still held when only one is
+ * ruled), never against a single record:
+ *  - any OPEN hold binding the task            → `held`
+ *  - none open, some released & unacknowledged → `running` (worker relaunched to deliver)
+ *  - otherwise                                 → untouched
+ * Never downgrades a terminal outcome. Returns the previous field values so a
+ * failed persist can restore them (the store does this — projection and hold
+ * write are one transaction).
  */
-export function projectHoldTransitionOntoOutcomes(
+export function projectHoldStateOntoOutcomes(
 	outcomes: LaneTaskOutcome[],
-	record: HoldRecord,
-): boolean {
-	const existing = outcomes.find((o) => o.taskId === record.taskId);
-	if (!existing) return false;
+	holds: readonly HoldRecord[],
+	taskId: string,
+): { changed: boolean; restore: () => void } {
+	const noop = { changed: false, restore: () => {} };
+	const existing = outcomes.find((o) => o.taskId === taskId);
+	if (!existing) return noop;
 	if (
 		existing.status === "succeeded" ||
 		existing.status === "failed" ||
 		existing.status === "stalled" ||
 		existing.status === "skipped"
 	) {
-		return false;
+		return noop;
 	}
-	if (record.phase === "open") {
-		if (existing.status === "held") return false;
-		existing.status = "held";
-		existing.exitReason = `Held — awaiting ruling on ${record.escalationId}`;
-		return true;
+	const mine = holdsForTask(holds, taskId);
+	const open = mine.filter((h) => h.phase === "open");
+	const releasedUnacked = mine.filter(
+		(h) => h.phase === "released" && h.deliveryState !== "acknowledged",
+	);
+	const prev = {
+		status: existing.status,
+		exitReason: existing.exitReason,
+		endTime: existing.endTime,
+	};
+	const restore = () => {
+		existing.status = prev.status;
+		existing.exitReason = prev.exitReason;
+		existing.endTime = prev.endTime;
+	};
+	let want: { status: LaneTaskOutcome["status"]; exitReason: string } | null = null;
+	if (open.length > 0) {
+		want = {
+			status: "held",
+			exitReason: `Held — awaiting ruling on ${open.map((h) => h.escalationId).join(", ")}`,
+		};
+	} else if (releasedUnacked.length > 0) {
+		want = {
+			status: "running",
+			exitReason: `Ruling ${releasedUnacked.map((h) => h.ruling?.id ?? "?").join(", ")} accepted — worker relaunched`,
+		};
 	}
-	if (record.phase === "released") {
-		if (existing.status === "running" && !/^Held|^Hold timeout/.test(existing.exitReason))
-			return false;
-		existing.status = "running";
-		existing.exitReason = `Ruling ${record.ruling?.id ?? "?"} accepted — worker relaunched`;
-		existing.endTime = null;
-		return true;
-	}
-	return false;
+	if (!want) return noop;
+	if (existing.status === want.status && existing.exitReason === want.exitReason) return noop;
+	existing.status = want.status;
+	existing.exitReason = want.exitReason;
+	existing.endTime = null;
+	return { changed: true, restore };
 }
 
 /** Volatile store for tests and legacy callers that run without an engine. */
