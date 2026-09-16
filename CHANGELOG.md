@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A released hold left the task badged `held` and let its lane successor show `running` with the wrong telemetry** (#651). Three writers: (1) the strict hold-store write that persists a release (or an open) now projects the bound task's record in the same write — open → `held`, released → `running` with the stale hold-timeout reason cleared — instead of waiting for the next unrelated task-transition persist; (2) resume reconciliation decides "session alive" per **task** from the registry manifests' task ids, so a not-yet-started successor sharing the lane's session name stays `pending` (legacy registries without task ids keep the old session semantics); (3) the dashboard attaches a lane's live worker telemetry to the task named by the lane snapshot — including a row still badged `held` — never to a sibling that merely has `status: running`.
 - **Stale `⏸️ Lane held` alert after a fast ruling.** The escalation reaches the
   supervisor live, so a ruling is often queued before the worker exits; the hold
   loop published \"Lane held\" and then consumed that ruling on its first poll.

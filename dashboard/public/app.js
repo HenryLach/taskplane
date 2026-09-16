@@ -990,7 +990,15 @@ function renderLanesTasks(batch, sessions) {
       // so allow a task-status fallback while still avoiding duplicate rows.
       const reviewerActive = isReviewerActiveForTask(ls, task);
       const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel, reviewerActive) : "";
-      if (ls && ls.workerStatus === "running" && task.status === "running") {
+      // #651: the lane snapshot names the task its worker is running. Attach the
+      // lane's live numbers to THAT task (even if its batch-state badge is stale,
+      // e.g. still `held` right after a ruling), never to a sibling whose badge
+      // happens to say running.
+      const snapshotOwnsTask = !ls || !ls.taskId || ls.taskId === task.taskId;
+      const workerActiveHere =
+        !!ls && ls.workerStatus === "running" && snapshotOwnsTask &&
+        (task.status === "running" || (task.status === "held" && ls.taskId === task.taskId));
+      if (workerActiveHere) {
         const elapsed = ls.workerElapsed ? `${Math.round(ls.workerElapsed / 1000)}s` : "";
         const tools = ls.workerToolCount || 0;
         const ctx = ls.workerContextPct ? `${Math.round(ls.workerContextPct)}%` : "";
@@ -1005,6 +1013,7 @@ function renderLanesTasks(batch, sessions) {
         workerHtml += telemBadges;
         workerHtml += `</div>`;
       } else if (!ls && tel && task.status === "running") {
+        // (no snapshot to attribute by — early startup only)
         // Running task with telemetry but no lane-state yet (early startup)
         const lastTool = tel.lastTool || "";
         workerHtml = `<div class="worker-stats">`;

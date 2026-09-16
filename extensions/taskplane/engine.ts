@@ -51,7 +51,11 @@ import {
 	syncTaskOutcomesFromMonitor,
 	upsertTaskOutcome,
 } from "./persistence.ts";
-import { createHoldStore, isHoldUnresolved } from "./hold-state.ts";
+import {
+	createHoldStore,
+	isHoldUnresolved,
+	projectHoldTransitionOntoOutcomes,
+} from "./hold-state.ts";
 import {
 	readRegistrySnapshot,
 	isTerminalStatus,
@@ -2691,7 +2695,8 @@ export async function executeOrchBatch(
 	// batch state STRICTLY (throw on failure) before the lane-runner acts on
 	// them — never the best-effort persistRuntimeState path.
 	if (!batchState.holds) batchState.holds = [];
-	const holdStore = createHoldStore(batchState, (reason) =>
+	const holdStore = createHoldStore(batchState, (reason, record) => {
+		projectHoldTransitionOntoOutcomes(allTaskOutcomes, record);
 		persistRuntimeStateStrict(
 			reason,
 			batchState,
@@ -2700,8 +2705,8 @@ export async function executeOrchBatch(
 			allTaskOutcomes,
 			discoveryRef,
 			stateRoot,
-		),
-	);
+		);
+	});
 	// TP-029: Track all repo roots encountered during execution.
 	// Maps repoRoot → repoId (undefined for primary/repo-mode).
 	// Used by inter-wave reset and terminal cleanup to iterate ALL repos

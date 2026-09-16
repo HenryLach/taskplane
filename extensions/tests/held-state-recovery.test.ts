@@ -19,7 +19,11 @@ import {
 	reconcileTaskStates,
 	replayUnrecordedEscalations,
 } from "../taskplane/resume.ts";
-import { reconstructHoldsFromMailbox } from "../taskplane/hold-state.ts";
+import {
+	applyRuling as applyRulingForProjection,
+	projectHoldTransitionOntoOutcomes,
+	reconstructHoldsFromMailbox,
+} from "../taskplane/hold-state.ts";
 import { quarantineUnauthorizedDoneMarkers } from "../taskplane/resume.ts";
 import { readOutboxStrict } from "../taskplane/mailbox.ts";
 import { loadBatchState, persistRuntimeStateStrict } from "../taskplane/persistence.ts";
@@ -147,7 +151,7 @@ describe("#627 — wiring: engine, resume, extension", () => {
 
 	it("engine: hold store is strict, threaded into every executeWave call, and unresolved holds preserve worktrees", () => {
 		expect(engine).toContain(
-			"const holdStore = createHoldStore(batchState, (reason) => persistRuntimeStateStrict(",
+			"const holdStore = createHoldStore(batchState, (reason, record) => { projectHoldTransitionOntoOutcomes(allTaskOutcomes, record); persistRuntimeStateStrict(",
 		);
 		const calls = engine.split("await executeWave(").length - 1;
 		const passes = engine.split("onLaneRespawned ?? undefined, holdStore, );").length - 1;
@@ -193,7 +197,9 @@ describe("#627 — wiring: engine, resume, extension", () => {
 		expect(pinIdx).toBeLessThan(reconcileIdx);
 		expect(resume).toContain('throw new ResumeError("RESUME_INVALID_STATE", replay.error);');
 		expect(resume).toContain("saveBatchState(JSON.stringify(persistedState, null, 2), stateRoot);");
-		expect(resume).toContain("existingWorktreeTaskIds, holdBlockedTaskIds, );");
+		expect(resume).toContain(
+			"existingWorktreeTaskIds, holdBlockedTaskIds, manifestsCarryTaskIds ? aliveTaskIds : undefined, );",
+		);
 		expect(resume).toContain(
 			"await Promise.all( [...reExecByLane.values()].map(async (laneTasks) => { for (const task of laneTasks) { await reExecuteOne(task); } }), );",
 		);
@@ -871,5 +877,113 @@ describe("#627 — Sage round 3: strict checkpoint keeps every task's folder and
 			(src.match(/holdPersistCtx\.discovery = \(\) => withPersistedFallback\(/g) ?? []).length,
 		).toBe(2);
 		expect(src).toContain("discovery: () => preWaveDiscovery,");
+	});
+});
+
+describe("#651 — hold transitions project task status; alive-by-task reconciliation; dashboard attribution", () => {
+	it("projection: open → held; released → running with the stale hold reason cleared; terminal outcomes untouched; acknowledged release is idempotent", () => {
+		const outcomes: any[] = [
+			{
+				taskId: "TP-1",
+				status: "running",
+				exitReason: "Task in progress",
+				startTime: 1,
+				endTime: null,
+				sessionName: "s",
+				doneFileFound: false,
+			},
+			{
+				taskId: "TP-D",
+				status: "succeeded",
+				exitReason: "done",
+				startTime: 1,
+				endTime: 2,
+				sessionName: "s",
+				doneFileFound: true,
+			},
+		];
+		const open = hold();
+		expect(projectHoldTransitionOntoOutcomes(outcomes, open)).toBe(true);
+		expect(outcomes[0].status).toBe("held");
+		expect(outcomes[0].exitReason).toContain("awaiting ruling on esc-1");
+		// a stale hold-timeout reason (the field case) is replaced on release
+		outcomes[0].exitReason =
+			"Hold timeout: escalation esc-1 received no ruling within 240 min — batch parked (hold-timeout); the hold remains open";
+		const released = applyRulingForProjection(
+			open,
+			{ id: "r1", replyTo: "esc-1", content: "go", actor: { role: "supervisor", id: "s" } },
+			5,
+		);
+		expect(projectHoldTransitionOntoOutcomes(outcomes, released)).toBe(true);
+		expect(outcomes[0].status).toBe("running");
+		expect(outcomes[0].exitReason).toBe("Ruling r1 accepted — worker relaunched");
+		expect(outcomes[0].endTime).toBe(null);
+		expect(projectHoldTransitionOntoOutcomes(outcomes, released)).toBe(false); // idempotent
+		expect(projectHoldTransitionOntoOutcomes(outcomes, hold({ taskId: "TP-D" }))).toBe(false);
+		expect(outcomes[1].status).toBe("succeeded");
+	});
+
+	it("store: the persist callback receives the transitioned record, so release + projection land in ONE write (engine/resume wire it)", () => {
+		const outcomes: any[] = [
+			{
+				taskId: "TP-1",
+				status: "held",
+				exitReason: "Hold timeout …",
+				startTime: 1,
+				endTime: null,
+				sessionName: "s",
+				doneFileFound: false,
+			},
+		];
+		const writes: Array<[string, string, string]> = [];
+		const store = createHoldStore({ holds: [hold()] }, (reason, record) => {
+			projectHoldTransitionOntoOutcomes(outcomes, record);
+			writes.push([reason, record.phase, outcomes[0].status]);
+		});
+		store.update(
+			applyRulingForProjection(
+				hold(),
+				{ id: "r1", replyTo: "esc-1", content: "go", actor: { role: "supervisor", id: "s" } },
+				5,
+			),
+		);
+		expect(writes).toEqual([["hold-released:esc-1", "released", "running"]]);
+		const eng = readSrc("engine.ts").replace(/\s+/g, " ");
+		expect(eng).toContain(
+			"createHoldStore(batchState, (reason, record) => { projectHoldTransitionOntoOutcomes(allTaskOutcomes, record);",
+		);
+		const res = readSrc("resume.ts").replace(/\s+/g, " ");
+		expect(res).toContain("projectHoldTransitionOntoOutcomes(holdPersistCtx.outcomes(), record);");
+	});
+
+	it("reconcile: two tasks sharing a lane session — only the task the alive worker manifest names is 'reconnect'; the successor stays pending (legacy registries without task ids keep session semantics)", () => {
+		const st = state([{ taskId: "TP-A" }, { taskId: "TP-B", status: "pending" }]);
+		const alive = new Set(["orch-op-lane-1", "orch-op-lane-1-worker"]);
+		// registry names TP-A as the running task
+		const r = reconcileTaskStates(
+			st,
+			alive,
+			new Set(),
+			new Set(["TP-A", "TP-B"]),
+			new Set(),
+			new Set(["TP-A"]),
+		);
+		expect(r[0].action).toBe("reconnect");
+		expect(r[1].action).not.toBe("reconnect");
+		expect(r[1].liveStatus).toBe("pending");
+		// legacy: no aliveTaskIds → old behaviour
+		const legacy = reconcileTaskStates(st, alive, new Set(), new Set(["TP-A", "TP-B"]), new Set());
+		expect(legacy[1].action).toBe("reconnect");
+		const src = readSrc("resume.ts").replace(/\s+/g, " ");
+		expect(src).toContain("manifestsCarryTaskIds ? aliveTaskIds : undefined,");
+	});
+
+	it("dashboard: worker telemetry attaches to the lane snapshot's taskId (held row included), never to a sibling badged running", () => {
+		const app = readSrc("../../dashboard/public/app.js").replace(/\s+/g, " ");
+		expect(app).toContain("const snapshotOwnsTask = !ls || !ls.taskId || ls.taskId === task.taskId;");
+		expect(app).toContain(
+			'(task.status === "running" || (task.status === "held" && ls.taskId === task.taskId))',
+		);
+		expect(app).toContain("if (workerActiveHere) {");
 	});
 });

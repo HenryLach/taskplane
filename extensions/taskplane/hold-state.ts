@@ -19,7 +19,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import type { MailboxMessage } from "./types.ts";
+import type { LaneTaskOutcome, MailboxMessage } from "./types.ts";
 import { isValidMailboxMessage } from "./mailbox.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -634,16 +634,23 @@ export class HoldPersistenceError extends Error {
  */
 export function createHoldStore(
 	owner: { holds?: HoldRecord[] },
-	persist: (reason: string) => void,
+	/**
+	 * Durable whole-state write. Receives the transitioned record so the owner
+	 * can PROJECT the bound task's status in the same write (#651): open →
+	 * `held`; released → `running` (a worker is relaunched to deliver the ruling).
+	 * Without this the task record kept its stale `held` / hold-timeout exitReason
+	 * until the next unrelated task-transition persist.
+	 */
+	persist: (reason: string, record: HoldRecord) => void,
 ): HoldStore {
-	const commit = (next: HoldRecord[], reason: string, escalationId: string): void => {
+	const commit = (next: HoldRecord[], reason: string, record: HoldRecord): void => {
 		const prev = owner.holds;
 		owner.holds = next;
 		try {
-			persist(reason);
+			persist(reason, record);
 		} catch (err) {
 			owner.holds = prev;
-			throw new HoldPersistenceError(escalationId, err);
+			throw new HoldPersistenceError(record.escalationId, err);
 		}
 	};
 	return {
@@ -651,7 +658,7 @@ export function createHoldStore(
 		open: (record) => {
 			const current = owner.holds ?? [];
 			if (current.some((h) => h.escalationId === record.escalationId)) return; // idempotent
-			commit([...current, { ...record }], `hold-open:${record.escalationId}`, record.escalationId);
+			commit([...current, { ...record }], `hold-open:${record.escalationId}`, record);
 		},
 		update: (record) => {
 			const current = owner.holds ?? [];
@@ -661,10 +668,50 @@ export function createHoldStore(
 			commit(
 				upsertHold(current, { ...record }),
 				`hold-${record.phase}:${record.escalationId}`,
-				record.escalationId,
+				record,
 			);
 		},
 	};
+}
+
+/**
+ * #651: project a hold transition onto the task outcome that
+ * `serializeBatchState` reads statuses from. Called by the engine/resume persist
+ * callbacks BEFORE the strict write so the same write carries the projection.
+ *  - open       → `held`, exitReason names the escalation
+ *  - released   → `running` (worker relaunched with the ruling), stale hold reason cleared
+ *  - cancelled  → left to the runner's own `failed` outcome
+ * Never downgrades a terminal outcome.
+ */
+export function projectHoldTransitionOntoOutcomes(
+	outcomes: LaneTaskOutcome[],
+	record: HoldRecord,
+): boolean {
+	const existing = outcomes.find((o) => o.taskId === record.taskId);
+	if (!existing) return false;
+	if (
+		existing.status === "succeeded" ||
+		existing.status === "failed" ||
+		existing.status === "stalled" ||
+		existing.status === "skipped"
+	) {
+		return false;
+	}
+	if (record.phase === "open") {
+		if (existing.status === "held") return false;
+		existing.status = "held";
+		existing.exitReason = `Held — awaiting ruling on ${record.escalationId}`;
+		return true;
+	}
+	if (record.phase === "released") {
+		if (existing.status === "running" && !/^Held|^Hold timeout/.test(existing.exitReason))
+			return false;
+		existing.status = "running";
+		existing.exitReason = `Ruling ${record.ruling?.id ?? "?"} accepted — worker relaunched`;
+		existing.endTime = null;
+		return true;
+	}
+	return false;
 }
 
 /** Volatile store for tests and legacy callers that run without an engine. */

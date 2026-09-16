@@ -166,6 +166,7 @@ import {
 	HOLD_TIMEOUT_MINUTES_DEFAULT,
 	type HoldRecord,
 	isHoldUnresolved,
+	projectHoldTransitionOntoOutcomes,
 	selectUnrecordedEscalations,
 	taskCompletionBlocked,
 } from "./hold-state.ts";
@@ -1010,9 +1011,17 @@ export function reconcileTaskStates(
 	 * ruling arrives.
 	 */
 	holdBlockedTaskIds: ReadonlySet<string> = new Set(),
+	/**
+	 * #651: when the registry names the task each alive worker is running,
+	 * "alive" is decided per TASK, not per lane session. Undefined = legacy
+	 * registry without task ids → fall back to session identity.
+	 */
+	aliveTaskIds?: ReadonlySet<string>,
 ): ReconciledTaskState[] {
 	return persistedState.tasks.map((task) => {
-		const sessionAlive = aliveSessions.has(task.sessionName);
+		const sessionAlive = aliveTaskIds
+			? aliveTaskIds.has(task.taskId)
+			: aliveSessions.has(task.sessionName);
 		const doneFileFound = doneTaskIds.has(task.taskId);
 		const worktreeExists = existingWorktrees.has(task.taskId);
 
@@ -1820,10 +1829,17 @@ export async function resumeOrchBatch(
 	// TP-112/119: Runtime V2 session liveness check only.
 	// Alive sessions are discovered from the process registry.
 	const aliveSessions = new Set<string>();
+	// #651: tasks whose OWN worker is alive. Two tasks on one serial lane share
+	// the lane's sessionName, so "lane session alive" must not promote a
+	// not-yet-started successor to running/reconnect.
+	const aliveTaskIds = new Set<string>();
+	let manifestsCarryTaskIds = false;
 	const registry = readRegistrySnapshot(stateRoot, persistedState.batchId);
 	if (registry) {
 		for (const manifest of Object.values(registry.agents)) {
+			if (typeof manifest.taskId === "string" && manifest.taskId) manifestsCarryTaskIds = true;
 			if (!isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) {
+				if (typeof manifest.taskId === "string" && manifest.taskId) aliveTaskIds.add(manifest.taskId);
 				aliveSessions.add(manifest.agentId);
 				// Also add lane session name (without role suffix) so reconciliation
 				// matches persisted task.sessionName.
@@ -1874,6 +1890,7 @@ export async function resumeOrchBatch(
 		doneTaskIds,
 		existingWorktreeTaskIds,
 		holdBlockedTaskIds,
+		manifestsCarryTaskIds ? aliveTaskIds : undefined,
 	);
 
 	// ── 4b. Clear stale session allocation for tasks reconciled as pending ──
@@ -2118,7 +2135,9 @@ export async function resumeOrchBatch(
 		outcomes: () => preWaveOutcomes,
 		discovery: () => preWaveDiscovery,
 	};
-	const holdStore = createHoldStore(batchState, (reason) =>
+	const holdStore = createHoldStore(batchState, (reason, record) => {
+		// #651: project the transition onto the outcome set this checkpoint serializes.
+		projectHoldTransitionOntoOutcomes(holdPersistCtx.outcomes(), record);
 		persistRuntimeStateStrict(
 			reason,
 			batchState,
@@ -2127,8 +2146,8 @@ export async function resumeOrchBatch(
 			holdPersistCtx.outcomes(),
 			holdPersistCtx.discovery(),
 			stateRoot,
-		),
-	);
+		);
+	});
 	// Carry forward unknown fields for roundtrip preservation
 	if (persistedState._extraFields) {
 		batchState._extraFields = persistedState._extraFields;
