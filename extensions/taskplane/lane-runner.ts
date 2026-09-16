@@ -1188,6 +1188,25 @@ export async function executeTaskV2(
 	 * Pause (any cause) unwinds with a `held` outcome; the deadline expiring
 	 * parks the batch (`hold-timeout`) with the hold still open.
 	 */
+	const allHoldsHaveQueuedRuling = (open: HoldRecord[], inboxDir: string): boolean => {
+		if (open.length === 0) return false;
+		let queued: ReturnType<typeof readInbox> = [];
+		try {
+			queued = readInbox(inboxDir, config.batchId);
+		} catch {
+			return false;
+		}
+		const holds = holdStore.list();
+		return open.every((h) =>
+			queued.some(
+				({ message }) =>
+					message.type === "ruling" &&
+					message.replyTo === h.escalationId &&
+					validateRuling(message, holds, { taskId, segmentId }).ok,
+			),
+		);
+	};
+
 	const awaitHoldResolution = async (): Promise<
 		| { kind: "ruled" }
 		| { kind: "paused" }
@@ -1198,34 +1217,48 @@ export async function executeTaskV2(
 		const inboxDir = sessionInboxDir(config.stateRoot, config.batchId, workerAgentId);
 		const openHolds = () => unitHolds().filter((h) => h.phase === "open");
 
-		updateStatusField(statusPath, "Status", "⏸️ Held — awaiting ruling");
 		const initial = openHolds();
-		logExecution(
-			statusPath,
-			"Held",
-			`no worker process; awaiting ruling on ${initial.map((h) => h.escalationId).join(", ")} (reply with send_agent_message type="ruling" replyTo=<escalation id>; type="info" acknowledges without releasing)`,
-		);
-		emitSnapshot(
-			config,
-			taskId,
-			segmentId,
-			"held",
-			lastTelemetry,
-			statusPath,
-			reviewerStatePath,
-			snapshotSegmentCtx,
-		);
-		holdAlert(
-			"agent-message",
-			`⏸️ **Lane held** — ${taskId} (lane ${config.laneNumber}) is waiting for a ruling with no worker running (zero cost).\n` +
-				buildHoldStatusSummary(initial)
-					.split("\n")
-					.map((l) => `  ${l}`)
-					.join("\n") +
-				`\n  Rule: send_agent_message(to="${workerAgentId}", type="ruling", replyTo="${initial[0]?.escalationId ?? "<escalation id>"}", content=<instructions>).` +
-				`\n  Acknowledge without releasing: type="info". Ask for status: type="query". Cancel: type="abort".`,
-			{ messageId: initial[0]?.escalationId, exitReason: "lane_held" },
-		);
+		// Penster 20260909T000015: the escalation reaches the supervisor LIVE
+		// (mail recognition), so a fast ruling is often already queued before the
+		// worker has exited. Publishing "Lane held" and then consuming that ruling
+		// on the first poll produced a stale-looking alert after the release. Peek
+		// once: if every open hold already has a valid ruling waiting, skip the
+		// held publication entirely and let the loop release on its first pass.
+		if (allHoldsHaveQueuedRuling(initial, inboxDir)) {
+			logExecution(
+				statusPath,
+				"Ruling already queued",
+				`ruling(s) for ${initial.map((h) => h.escalationId).join(", ")} were waiting in the inbox — releasing without publishing a hold`,
+			);
+		} else {
+			updateStatusField(statusPath, "Status", "⏸️ Held — awaiting ruling");
+			logExecution(
+				statusPath,
+				"Held",
+				`no worker process; awaiting ruling on ${initial.map((h) => h.escalationId).join(", ")} (reply with send_agent_message type="ruling" replyTo=<escalation id>; type="info" acknowledges without releasing)`,
+			);
+			emitSnapshot(
+				config,
+				taskId,
+				segmentId,
+				"held",
+				lastTelemetry,
+				statusPath,
+				reviewerStatePath,
+				snapshotSegmentCtx,
+			);
+			holdAlert(
+				"agent-message",
+				`⏸️ **Lane held** — ${taskId} (lane ${config.laneNumber}) is waiting for a ruling with no worker running (zero cost).\n` +
+					buildHoldStatusSummary(initial)
+						.split("\n")
+						.map((l) => `  ${l}`)
+						.join("\n") +
+					`\n  Rule: send_agent_message(to="${workerAgentId}", type="ruling", replyTo="${initial[0]?.escalationId ?? "<escalation id>"}", content=<instructions>).` +
+					`\n  Acknowledge without releasing: type="info". Ask for status: type="query". Cancel: type="abort".`,
+				{ messageId: initial[0]?.escalationId, exitReason: "lane_held" },
+			);
+		}
 
 		let lastHeartbeat = Date.now();
 		for (;;) {

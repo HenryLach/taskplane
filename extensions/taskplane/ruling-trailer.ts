@@ -35,8 +35,29 @@ export interface RulingCitationFlag {
 
 /** `Taskplane-Ruling: id[, id…]` — case-insensitive, leading whitespace tolerated. */
 const TRAILER_RE = /^[ \t]*Taskplane-Ruling:[ \t]*(.+?)[ \t]*$/i;
-/** A prose mention of a (cap) ruling — the pattern the design flags outside a trailer. */
-const PROSE_RE = /\b(?:cap )?ruling\b/i;
+/** A prose mention of a (cap) ruling — the candidate pattern outside a trailer. */
+const PROSE_RE = /\b(?:(?:cap )?ruling|ruled)\b/i;
+/**
+ * A prose mention is a CLAIM only when it asserts a ruling was received/applied:
+ * an `R###` review reference, a verdict token, or "per / applied / implemented /
+ * as ruled / ruling (FIX)" language. Hold BOOKKEEPING ("pending operator
+ * ruling", "awaiting a ruling", "requesting a ruling", "hold … ruling") is not
+ * a claim — penster 20260909T000015 flagged `hold(TP-1919): record HARD HOLD on
+ * Step 2 pending operator ruling` as a false positive.
+ */
+const CLAIM_RE =
+	/\bR\d{3}\b|\((?:FIX|ACCEPT|REJECT|APPROVE)\)|\b(?:per|apply|applied|applies|applying|implement|implemented|implementing|follow|following|honou?r|honou?ring)\b[^.\n]{0,40}\bruling\b|\bruling\b[^.\n]{0,40}\b(?:applied|implemented|received|says|said)\b|\bas ruled\b/i;
+const BOOKKEEPING_RE =
+	/\b(?:pending|awaiting|await|requesting|requested|request|need(?:s|ed)?|hold|held|holding|until|before|without|no)\b[^.\n]{0,40}\bruling\b/i;
+
+/** Is this non-trailer line an affirmative ruling claim (vs. hold bookkeeping)? */
+export function isProseRulingClaim(line: string): boolean {
+	if (!PROSE_RE.test(line)) return false;
+	if (BOOKKEEPING_RE.test(line) && !/\bR\d{3}\b|\((?:FIX|ACCEPT|REJECT|APPROVE)\)/i.test(line)) {
+		return false;
+	}
+	return CLAIM_RE.test(line);
+}
 
 /**
  * Split a commit message into structured trailer citations and prose ruling
@@ -58,7 +79,7 @@ export function parseRulingCitations(commitMessage: string | null | undefined): 
 			}
 			continue; // trailer line — not a prose claim
 		}
-		if (PROSE_RE.test(line)) {
+		if (isProseRulingClaim(line)) {
 			proseClaims.push(line.trim());
 		}
 	}
