@@ -331,6 +331,35 @@ describe("model fallback retry logic", () => {
 			expect(engineSource).toContain('"1"');
 		});
 
+		it("#657 (Sage): the fallback retry forwards every NON-model worker setting and withholds only the model", async () => {
+			const flat = engineSource.replace(/\s+/g, " ");
+			expect(flat).toContain(
+				"const { model: _unavailableModel, ...workerWithoutModel } = runnerConfig?.worker ?? {};",
+			);
+			expect(flat).toContain(
+				"...buildWorkerEnv(runnerConfig?.worker ? workerWithoutModel : undefined), ...buildReviewerEnv(runnerConfig?.reviewer),",
+			);
+			// behavioural: the exact env the retry builds, given a configured worker
+			const { buildWorkerEnv } = await import("../taskplane/execution.ts");
+			const worker = {
+				model: "anthropic/unavailable",
+				thinking: "high",
+				tools: "read,edit",
+				excludeExtensions: [],
+				exitInterceptTimeoutSec: 300,
+				holdTimeoutMinutes: 30,
+				requireSelfCheck: false,
+			};
+			const { model: _m, ...withoutModel } = worker;
+			const env = buildWorkerEnv(withoutModel);
+			expect(env.TASKPLANE_WORKER_MODEL).toBe(undefined); // the failed model is NOT retried
+			expect(env.TASKPLANE_REQUIRE_SELF_CHECK).toBe("0");
+			expect(env.TASKPLANE_EXIT_INTERCEPT_TIMEOUT_SEC).toBe("300");
+			expect(env.TASKPLANE_HOLD_TIMEOUT_MIN).toBe("30");
+			expect(env.TASKPLANE_WORKER_THINKING).toBe("high");
+			expect(env.TASKPLANE_WORKER_TOOLS).toBe("read,edit");
+		});
+
 		it("uses model_fallback scope key for budget tracking", () => {
 			expect(engineSource).toContain('tier0ScopeKey("model_fallback"');
 		});
