@@ -110,6 +110,13 @@ function makeStatusContent(stepNum: number, stepStatus: "✅ Complete" | "🟨 I
 		"- [x] item one",
 		"- [x] item two",
 		"",
+		// #657: a code review request must carry the worker's self-check (placed after the checkboxes)
+		`### Self-check (Step ${stepNum})`,
+		"",
+		"| Item | Evidence | Result |",
+		"|------|----------|--------|",
+		"| item one | src/a.ts:1 | OK |",
+		"",
 		"### Step 99: Sentinel",
 		"**Status:** ⬜ Not Started",
 	].join("\n");

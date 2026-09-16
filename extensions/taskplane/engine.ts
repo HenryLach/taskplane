@@ -2455,6 +2455,9 @@ async function attemptStaleWorktreeRecovery(
 					thinking: runnerConfig.worker.thinking || "",
 					tools: runnerConfig.worker.tools || "",
 					excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
+					exitInterceptTimeoutSec: runnerConfig.worker.exitInterceptTimeoutSec,
+					holdTimeoutMinutes: runnerConfig.worker.holdTimeoutMinutes,
+					requireSelfCheck: runnerConfig.worker.requireSelfCheck,
 				}
 			: undefined,
 		runnerConfig?.workerExcludeExtensions ?? [],
@@ -3250,6 +3253,9 @@ export async function executeOrchBatch(
 						thinking: runnerConfig.worker.thinking || "",
 						tools: runnerConfig.worker.tools || "",
 						excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
+						exitInterceptTimeoutSec: runnerConfig.worker.exitInterceptTimeoutSec,
+						holdTimeoutMinutes: runnerConfig.worker.holdTimeoutMinutes,
+						requireSelfCheck: runnerConfig.worker.requireSelfCheck,
 					}
 				: undefined,
 			runnerConfig?.workerExcludeExtensions ?? [],

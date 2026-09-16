@@ -155,12 +155,18 @@ by a supervisor ruling — so the two rounds have different jobs:
 - **Round ≥ 2 — verify the fold.** Your scope is the prior review's findings:
   for each, confirm it is addressed (cite `file:line`) or state precisely what
   is still missing. Read the worker's `### Self-check (Step N)` table and
-  verify its evidence rather than re-deriving the review from scratch. A NEW
-  finding is blocking only at the **top severity label** (P0 / critical) unless
-  the request says new findings may be raised at any severity. Every other new
-  observation goes under `### Suggestions` and does not change the verdict.
-  If all prior findings are addressed and no top-severity finding remains, the
-  verdict is **APPROVE**.
+  verify its evidence rather than re-deriving the review from scratch.
+  - A NEW finding that is a **genuine correctness defect** — a regression
+    introduced by the fold, a bug, a stated requirement not met — is blocking
+    at **any** severity label. Never downgrade a defect to a Suggestion because
+    of the round.
+  - Other new observations (hardening, style, extra tests, robustness beyond
+    the stated requirements) are blocking only at the **top severity label**
+    (P0 / critical) unless the request says otherwise; below that they go under
+    `### Suggestions` and do not change the verdict.
+  - Verdict: REVISE if any prior finding is unaddressed or any blocking finding
+    remains; otherwise **APPROVE**. If the round budget is exhausted the worker
+    escalates — never manufacture an APPROVE.
 
 ### Do NOT issue REVISE for
 
@@ -170,8 +176,9 @@ by a supervisor ruling — so the two rounds have different jobs:
 - "Re-run tests and record the result" — test runs are the worker's concern
 - "Check If Affected" docs that turn out to need no changes
 - Suggestions that improve quality but aren't required for correctness
-- In round ≥ 2: any new finding below the top severity label — that is a
-  Suggestion (see Round semantics)
+- In round ≥ 2: a new *non-defect* observation below the top severity label —
+  that is a Suggestion (see Round semantics). A regression or unmet
+  requirement is a defect and still blocks.
 
 ## Plan Review Format
 

@@ -93,13 +93,19 @@ describe("#657 — round semantics", () => {
 		const reviews = join(dir, ".reviews");
 		mkdirSync(reviews);
 		expect(reviewRoundForGate(reviews, "code", 3)).toEqual({ round: 1, priorReviewPath: null });
-		writeFileSync(join(reviews, "R001-plan-step3.md"), "Verdict: APPROVE");
-		writeFileSync(join(reviews, "R002-code-step3.md"), "Verdict: REVISE");
-		writeFileSync(join(reviews, "R003-code-step4.md"), "Verdict: REVISE");
+		writeFileSync(join(reviews, "R001-plan-step3.md"), "### Verdict: APPROVE");
+		writeFileSync(join(reviews, "R002-code-step3.md"), "### Verdict: REVISE");
+		writeFileSync(join(reviews, "R003-code-step4.md"), "### Verdict: REVISE");
 		const r = reviewRoundForGate(reviews, "code", 3);
 		expect(r.round).toBe(2);
 		expect(r.priorReviewPath).toBe(join(reviews, "R002-code-step3.md"));
-		expect(reviewRoundForGate(reviews, "plan", 3).round).toBe(2);
+		// Sage: an APPROVE, an incomplete file or an unparseable verdict is NOT a
+		// completed exhaustive review — it must not narrow the next review's scope.
+		expect(reviewRoundForGate(reviews, "plan", 3).round).toBe(1);
+		writeFileSync(join(reviews, "R004-code-step5.md"), "reviewer crashed mid-write");
+		expect(reviewRoundForGate(reviews, "code", 5).round).toBe(1);
+		writeFileSync(join(reviews, "R005-code-step3.md"), "### Verdict: APPROVE");
+		expect(reviewRoundForGate(reviews, "code", 3).round).toBe(2); // APPROVE after REVISE: still counts only the REVISE
 		expect(reviewRoundForGate(join(dir, "missing"), "code", 1).round).toBe(1);
 	});
 
@@ -110,11 +116,18 @@ describe("#657 — round semantics", () => {
 		const r2 = buildReviewRoundLines(2, "/x/.reviews/R002-code-step3.md", "p0-only").join("\n");
 		expect(r2).toContain("Review round: 2 (verify the fold)");
 		expect(r2).toContain("R002-code-step3.md");
-		expect(r2).toContain("ONLY at the top severity label");
-		expect(r2).toContain("the verdict is APPROVE");
+		// Sage: a genuine defect (regression from the fold, bug, unmet requirement) blocks at ANY label
+		expect(r2).toContain(
+			"BLOCKING (REVISE) at any severity label when it is a genuine correctness defect",
+		);
+		expect(r2).toContain("Never downgrade a defect to a Suggestion");
+		expect(r2).toContain("blocking ONLY at the top severity label");
+		expect(r2).toContain("do not manufacture an APPROVE");
+		expect(r2).not.toContain("no top-severity finding remains, the verdict is APPROVE");
 		const any = buildReviewRoundLines(2, "/x/p.md", "any").join("\n");
-		expect(any).toContain("any severity");
-		expect(any).not.toContain("ONLY at the top severity");
+		expect(any).toContain("may also be raised as findings");
+		expect(any).not.toContain("blocking ONLY at the top severity");
+		expect(any).toContain("Never downgrade a defect");
 	});
 
 	it("config → env: requireSelfCheck opt-out and round2NewFindings mode", () => {
@@ -140,7 +153,11 @@ describe("#657 — round semantics", () => {
 		const counter = src.indexOf("reviewCounter++;");
 		expect(gate).toBeGreaterThan(-1);
 		expect(gate).toBeLessThan(counter);
-		expect(src).toContain("review_step refused — self-check missing");
+		expect(src).toContain("`REFUSED: self-check missing — ${refusal}.");
+		// the disposition parser keys on ^REFUSED — the refusal must not read as a review verdict
+		expect(readSrc("taskplane/agent-host.ts")).toContain(
+			'if (/^REFUSED\\b/.test(lead)) return "REFUSED";',
+		);
 		expect((src.match(/\.\.\.roundLines,/g) ?? []).length).toBe(2);
 		expect(src).toContain(
 			"4. Read the worker's \"### Self-check (Step $" + '{stepNum})" table in STATUS.md',
@@ -157,5 +174,55 @@ describe("#657 — round semantics", () => {
 		expect(reviewer).toContain("**Round 1 — exhaustive.**");
 		expect(reviewer).toContain("**Round ≥ 2 — verify the fold.**");
 		expect(readSrc("reviewer-extension.ts")).toContain("Round semantics (#657)");
+	});
+});
+
+describe("#657 — settings reach the worker process (Sage blocker 2)", () => {
+	it("engine maps requireSelfCheck (and the other worker fields) into the executeWave worker config; execution consumes both env vars into LaneRunnerConfig; lane-runner forwards them to the worker env", () => {
+		const eng = readSrc("taskplane/engine.ts").replace(/\s+/g, " ");
+		expect(
+			(eng.match(/requireSelfCheck: runnerConfig\.worker\.requireSelfCheck,/g) ?? []).length,
+		).toBe(2);
+		expect(
+			(eng.match(/holdTimeoutMinutes: runnerConfig\.worker\.holdTimeoutMinutes,/g) ?? []).length,
+		).toBe(2);
+		const exec = readSrc("taskplane/execution.ts").replace(/\s+/g, " ");
+		expect(exec).toContain('requireSelfCheck: extraEnvVars?.TASKPLANE_REQUIRE_SELF_CHECK !== "0",');
+		expect(exec).toContain(
+			'reviewRound2NewFindings: extraEnvVars?.TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS === "any" ? "any" : "p0-only",',
+		);
+		const lr = readSrc("taskplane/lane-runner.ts").replace(/\s+/g, " ");
+		expect(lr).toContain(
+			'...(config.requireSelfCheck === false ? { TASKPLANE_REQUIRE_SELF_CHECK: "0" } : {}),',
+		);
+		expect(lr).toContain(
+			'TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS: config.reviewRound2NewFindings ?? "p0-only",',
+		);
+	});
+
+	it("end to end: config → buildWorkerEnv/buildReviewerEnv → lane config → worker env (opt-out and 'any' both survive)", () => {
+		const worker = buildWorkerEnv({ requireSelfCheck: false });
+		const reviewer = buildReviewerEnv({ round2NewFindings: "any" });
+		const extra = { ...worker, ...reviewer };
+		// mirror execution.ts's lane-config derivation
+		const laneCfg = {
+			requireSelfCheck: extra.TASKPLANE_REQUIRE_SELF_CHECK !== "0",
+			reviewRound2NewFindings:
+				extra.TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS === "any" ? "any" : "p0-only",
+		};
+		expect(laneCfg).toEqual({ requireSelfCheck: false, reviewRound2NewFindings: "any" });
+		// mirror lane-runner's worker env derivation
+		const workerEnv = {
+			...(laneCfg.requireSelfCheck === false ? { TASKPLANE_REQUIRE_SELF_CHECK: "0" } : {}),
+			TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS: laneCfg.reviewRound2NewFindings,
+		};
+		expect(workerEnv).toEqual({
+			TASKPLANE_REQUIRE_SELF_CHECK: "0",
+			TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS: "any",
+		});
+		// defaults
+		const dflt = { ...buildWorkerEnv({}), ...buildReviewerEnv({}) };
+		expect(dflt.TASKPLANE_REQUIRE_SELF_CHECK).toBe(undefined);
+		expect(dflt.TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS).toBe("p0-only");
 	});
 });

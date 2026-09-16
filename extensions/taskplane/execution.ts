@@ -1998,6 +1998,9 @@ export async function executeWave(
 		thinking?: string;
 		tools?: string;
 		excludeExtensions?: string[];
+		exitInterceptTimeoutSec?: number;
+		holdTimeoutMinutes?: number;
+		requireSelfCheck?: boolean;
 	} | null,
 	workerExcludeExtensions?: string[],
 	onLaneTerminated?: import("./types.ts").LaneTerminatedCallback,
@@ -3132,6 +3135,10 @@ export async function executeLaneV2(
 			workerSystemPrompt,
 			workerSegmentPrompt,
 			reviewerModel: extraEnvVars?.TASKPLANE_REVIEWER_MODEL || "",
+			// #657
+			requireSelfCheck: extraEnvVars?.TASKPLANE_REQUIRE_SELF_CHECK !== "0",
+			reviewRound2NewFindings:
+				extraEnvVars?.TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS === "any" ? "any" : "p0-only",
 			reviewerThinking: extraEnvVars?.TASKPLANE_REVIEWER_THINKING || "",
 			reviewerTools: extraEnvVars?.TASKPLANE_REVIEWER_TOOLS || "",
 			// TP-180: Extension exclusion lists from config

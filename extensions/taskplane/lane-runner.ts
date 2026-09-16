@@ -513,6 +513,10 @@ export interface LaneRunnerConfig {
 	noProgressLimit: number;
 	/** Exit-intercept supervisor-reply window (seconds; default 60; 15..1800). */
 	exitInterceptTimeoutSec?: number;
+	/** #657: review_step requires a fresh self-check section (default true). */
+	requireSelfCheck?: boolean;
+	/** #657: blocking scope for NEW findings in review round ≥ 2. */
+	reviewRound2NewFindings?: "p0-only" | "any";
 	/**
 	 * #627: durable hold store supplied by the engine. When absent (legacy
 	 * callers, unit tests) a volatile in-memory store is used — holds then do
@@ -2005,6 +2009,9 @@ export async function executeTaskV2(
 				TASKPLANE_SUPERVISOR_AUTONOMY: config.supervisorAutonomy || "autonomous",
 				ORCH_BATCH_ID: config.batchId,
 				...(config.reviewerModel ? { TASKPLANE_REVIEWER_MODEL: config.reviewerModel } : {}),
+				// #657: self-check gate + reviewer round semantics (consumed by review_step)
+				...(config.requireSelfCheck === false ? { TASKPLANE_REQUIRE_SELF_CHECK: "0" } : {}),
+				TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS: config.reviewRound2NewFindings ?? "p0-only",
 				...(config.reviewerThinking ? { TASKPLANE_REVIEWER_THINKING: config.reviewerThinking } : {}),
 				...(config.reviewerTools ? { TASKPLANE_REVIEWER_TOOLS: config.reviewerTools } : {}),
 				// TP-180: Pass state root and reviewer exclusions for extension forwarding

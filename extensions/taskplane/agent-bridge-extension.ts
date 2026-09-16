@@ -32,7 +32,7 @@ import {
 	renameSync,
 	unlinkSync,
 } from "fs";
-import { join, dirname } from "path";
+import { join } from "path";
 import { spawn as nodeSpawn } from "child_process";
 import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
@@ -236,10 +236,20 @@ export function selfCheckRefusal(statusContent: string, stepNum: number): string
 	const sectionStart = m.index + m[0].length;
 	const rel = text.slice(sectionStart).search(/^#{1,4}\s/m);
 	const body = text.slice(sectionStart, rel === -1 ? undefined : sectionStart + rel);
-	const rows = body
-		.split("\n")
-		.filter((l) => /^\s*(\|.*\||[-*]\s+\S)/.test(l) && !/^\s*\|?\s*:?-{3,}/.test(l));
-	const dataRows = rows.filter((l) => !/^\s*\|\s*(item|check|criterion|finding|what)\b/i.test(l));
+	// Data rows: table rows that are neither a separator (|---|) nor the header
+	// row directly above a separator; plus list items. Structural, not keyword-based.
+	const bodyLines = body.split("\n");
+	const isSep = (l: string) => /^\s*\|?\s*:?-{3,}/.test(l);
+	const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+	const dataRows = bodyLines.filter((l, idx) => {
+		if (isSep(l)) return false;
+		if (isTableRow(l)) {
+			let k = idx + 1;
+			while (k < bodyLines.length && bodyLines[k].trim() === "") k++;
+			return !(k < bodyLines.length && isSep(bodyLines[k])); // header row sits above the separator
+		}
+		return /^\s*[-*]\s+\S/.test(l);
+	});
 	if (dataRows.length === 0) {
 		return `"### Self-check (Step ${stepNum})" section has no rows — list each outcome / design decision / completion criterion with file:line evidence`;
 	}
@@ -267,7 +277,12 @@ export function selfCheckRefusal(statusContent: string, stepNum: number): string
 	return null;
 }
 
-/** #657: round number for this gate = 1 + number of existing review files for it. */
+/**
+ * #657: round number for this gate = 1 + the number of prior reviews of this
+ * gate that actually returned REVISE/RETHINK. An APPROVE, an incomplete file
+ * or an unparseable verdict is not evidence of a completed exhaustive review
+ * of the current work, so it does not narrow the next review's scope (Sage).
+ */
 export function reviewRoundForGate(
 	reviewsDir: string,
 	reviewType: string,
@@ -276,12 +291,20 @@ export function reviewRoundForGate(
 	try {
 		if (!existsSync(reviewsDir)) return { round: 1, priorReviewPath: null };
 		const suffix = `-${reviewType.toLowerCase()}-step${stepNum}.md`;
-		const files = readdirSync(reviewsDir)
+		const revised = readdirSync(reviewsDir)
 			.filter((f) => /^R\d{3}-/.test(f) && f.toLowerCase().endsWith(suffix))
-			.sort();
+			.sort()
+			.filter((f) => {
+				try {
+					const v = parseReviewVerdict(readFileSync(join(reviewsDir, f), "utf-8"));
+					return v === "REVISE" || v === "RETHINK";
+				} catch {
+					return false;
+				}
+			});
 		return {
-			round: files.length + 1,
-			priorReviewPath: files.length > 0 ? join(reviewsDir, files[files.length - 1]) : null,
+			round: revised.length + 1,
+			priorReviewPath: revised.length > 0 ? join(reviewsDir, revised[revised.length - 1]) : null,
 		};
 	} catch {
 		return { round: 1, priorReviewPath: null };
@@ -305,12 +328,16 @@ export function buildReviewRoundLines(
 	return [
 		`## Review round: ${round} (verify the fold)`,
 		`Prior review for this gate: \`${priorReviewPath ?? "(unknown)"}\``,
-		"Scope: verify that each finding in the prior review is addressed (cite file:line). " +
-			(round2Mode === "any"
-				? "New findings may be raised at any severity."
-				: "Raise a NEW finding as blocking ONLY at the top severity label (P0 / critical). " +
-					'Every other new observation goes in "### Suggestions" and does NOT change the verdict.'),
-		"If all prior findings are addressed and no top-severity finding remains, the verdict is APPROVE.",
+		"Scope: verify that each finding in the prior review is addressed (cite file:line).",
+		"A NEW finding is BLOCKING (REVISE) at any severity label when it is a genuine correctness defect: " +
+			"a regression introduced by the fold, a bug, or a stated requirement that is not met. Never downgrade " +
+			"a defect to a Suggestion because of the round.",
+		round2Mode === "any"
+			? "Other new observations (hardening, style, extra tests, robustness beyond the stated requirements) may also be raised as findings."
+			: "Other new observations (hardening, style, extra tests, robustness beyond the stated requirements) are " +
+				'blocking ONLY at the top severity label (P0 / critical); below that they go in "### Suggestions" and do not change the verdict.',
+		"Verdict: REVISE if any prior finding is unaddressed or any blocking finding remains; otherwise APPROVE. " +
+			"If the round budget is exhausted the worker escalates — do not manufacture an APPROVE.",
 	];
 }
 
@@ -1015,7 +1042,7 @@ export default function (pi: ExtensionAPI) {
 							{
 								type: "text" as const,
 								text:
-									`⛔ review_step refused — self-check missing: ${refusal}.\n\n` +
+									`REFUSED: self-check missing — ${refusal}.\n\n` +
 									`Before requesting a code review, add a "### Self-check (Step ${stepNum})" section to STATUS.md ` +
 									`(directly under the step, AFTER its checkboxes) with one row per: (a) step checkbox/outcome, ` +
 									`(b) each Step 0 design decision this step implements, (c) each PROMPT Completion Criterion it ` +
