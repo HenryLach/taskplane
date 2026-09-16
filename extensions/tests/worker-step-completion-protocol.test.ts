@@ -43,9 +43,11 @@ describe("1.x — task-worker.md prompt: TP-186 sections", () => {
 		// handle REVISE, mark Complete on APPROVE, move on.
 		expect(WORKER_PROMPT).toContain("1. **Implement**");
 		expect(WORKER_PROMPT).toContain("2. **Commit**");
-		expect(WORKER_PROMPT).toContain('3. **Call** `review_step(step=N, type="code"');
-		expect(WORKER_PROMPT).toContain("5. If the verdict is **APPROVE**");
-		expect(WORKER_PROMPT).toContain("6. **Move to step N+1.**");
+		// #657: self-check is step 3; review_step moves to 4, APPROVE to 6, next step to 7.
+		expect(WORKER_PROMPT).toContain("3. **Self-check (MANDATORY");
+		expect(WORKER_PROMPT).toContain('4. **Call** `review_step(step=N, type="code"');
+		expect(WORKER_PROMPT).toContain("6. If the verdict is **APPROVE**");
+		expect(WORKER_PROMPT).toContain("7. **Move to step N+1.**");
 	});
 
 	it("1.2 — contains the Recovery Recipe with the keyword 'revert'", () => {

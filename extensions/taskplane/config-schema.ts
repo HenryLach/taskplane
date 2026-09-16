@@ -132,6 +132,15 @@ export interface WorkerConfig {
 	 * bounded to 5..10080 (7 days).
 	 */
 	holdTimeoutMinutes?: number;
+	/**
+	 * #657: `review_step` refuses when STATUS.md has no `### Self-check (Step N)`
+	 * section for the step (or the section is older than the step's last
+	 * checkbox flip). The worker must diff its draft against its own design,
+	 * the step's outcomes and the Completion Criteria BEFORE asking for a
+	 * review — most round-2 findings in the field were invariants the worker
+	 * had written down itself. Default true.
+	 */
+	requireSelfCheck?: boolean;
 }
 
 /** Reviewer agent configuration */
@@ -170,6 +179,13 @@ export interface ReviewerConfig {
 	severityLabels: string[];
 	/** Revision-spiral detection tuning. */
 	spiral: ReviewSpiralConfig;
+	/**
+	 * #657: round semantics for a gate that already has a REVISE. Round 1 is
+	 * exhaustive; round 2 verifies the fold. New findings in round ≥ 2 are
+	 * blocking only at the top severity label ("p0-only", default) or always
+	 * ("any"). Everything else goes to Suggestions with an APPROVE verdict.
+	 */
+	round2NewFindings?: "p0-only" | "any";
 }
 
 /** Context/resource limits for task execution */

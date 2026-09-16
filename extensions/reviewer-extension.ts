@@ -55,6 +55,7 @@ export default function reviewerExtension(pi: ExtensionAPI) {
 			"After writing your review to the specified output file, call wait_for_review() again.",
 			"When it returns 'SHUTDOWN', exit cleanly — the task is complete.",
 			"Reference your previous reviews when relevant (e.g., 'I flagged X in Step 1 — checking if addressed').",
+			"Round semantics (#657): each review request states its round. Round 1 is EXHAUSTIVE — list every finding now. Round ≥ 2 VERIFIES THE FOLD against the prior review; raise a new finding as blocking only at the top severity label unless the request says otherwise — everything else is a Suggestion and the verdict is APPROVE.",
 		],
 		parameters: Type.Object({}),
 		async execute() {

@@ -2447,6 +2447,7 @@ async function attemptStaleWorktreeRecovery(
 			excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
 			severityLabels: runnerConfig?.reviewer?.severityLabels,
 			spiral: runnerConfig?.reviewer?.spiral,
+			round2NewFindings: runnerConfig?.reviewer?.round2NewFindings,
 		},
 		runnerConfig?.worker
 			? {
@@ -3241,6 +3242,7 @@ export async function executeOrchBatch(
 				excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
 				severityLabels: runnerConfig?.reviewer?.severityLabels,
 				spiral: runnerConfig?.reviewer?.spiral,
+				round2NewFindings: runnerConfig?.reviewer?.round2NewFindings,
 			},
 			runnerConfig?.worker
 				? {

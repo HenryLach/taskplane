@@ -1991,6 +1991,7 @@ export async function executeWave(
 		excludeExtensions?: string[];
 		severityLabels?: string[];
 		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
+		round2NewFindings?: "p0-only" | "any";
 	},
 	workerConfig?: {
 		model?: string;
@@ -2880,6 +2881,7 @@ export function buildReviewerEnv(
 		excludeExtensions?: string[];
 		severityLabels?: string[];
 		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
+		round2NewFindings?: "p0-only" | "any";
 	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
@@ -2898,6 +2900,9 @@ export function buildReviewerEnv(
 		analysis.severityLabels = reviewerConfig.severityLabels;
 	}
 	if (reviewerConfig?.spiral) analysis.spiral = reviewerConfig.spiral;
+	// #657: round semantics for the reviewer prompt
+	env.TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS =
+		reviewerConfig?.round2NewFindings === "any" ? "any" : "p0-only";
 	if (Object.keys(analysis).length > 0) {
 		env.TASKPLANE_REVIEW_ANALYSIS = JSON.stringify(analysis);
 	}
@@ -2920,6 +2925,7 @@ export function buildWorkerEnv(
 		excludeExtensions?: string[];
 		exitInterceptTimeoutSec?: number;
 		holdTimeoutMinutes?: number;
+		requireSelfCheck?: boolean;
 	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
@@ -2942,6 +2948,8 @@ export function buildWorkerEnv(
 			normalizeHoldTimeoutMinutes(workerConfig.holdTimeoutMinutes),
 		);
 	}
+	// #657: opt-out only; the default (unset) is "required".
+	if (workerConfig?.requireSelfCheck === false) env.TASKPLANE_REQUIRE_SELF_CHECK = "0";
 
 	return env;
 }
@@ -3089,6 +3097,7 @@ export async function executeLaneV2(
 				const parsed = JSON.parse(extraEnvVars.TASKPLANE_REVIEW_ANALYSIS) as {
 					severityLabels?: string[];
 					spiral?: import("./config-schema.ts").ReviewSpiralConfig;
+					round2NewFindings?: "p0-only" | "any";
 				};
 				if (Array.isArray(parsed.severityLabels)) reviewSeverityLabels = parsed.severityLabels;
 				if (parsed.spiral && typeof parsed.spiral === "object") reviewSpiral = parsed.spiral;

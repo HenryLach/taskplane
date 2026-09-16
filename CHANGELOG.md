@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New
+
+- **Worker self-check before review; reviewer round semantics** (#657). Review cycles, not authoring, dominated task wall time (penster TP-1921: ~52 min authoring vs ~117 min in review cycles; every gate went to the 2-round cap, and the round-2 findings were invariants the worker had written in its own Step 0 design). Two base-template changes: (1) `review_step` (code/test) now **refuses** unless STATUS.md carries a `### Self-check (Step N)` table placed after the step's checkboxes — one row per outcome / Step 0 design decision / Completion Criterion (and prior-review finding on round ≥ 2) with `file:line` evidence; opt out with `taskRunner.worker.requireSelfCheck: false`. (2) Every review request states its **round** and, from round 2, the prior review path: round 1 is exhaustive, round ≥ 2 verifies the fold and raises new blocking findings only at the top severity label (`taskRunner.reviewer.round2NewFindings`: `"p0-only"` default | `"any"`), everything else → Suggestions + APPROVE. Worker/reviewer templates and the reviewer tool guidance carry the contract.
+
 ### Fixed
 
 - **A released hold left the task badged `held` and let its lane successor show `running` with the wrong telemetry** (#651). Three writers: (1) the strict hold-store write that persists a release (or an open) now projects the bound task's record in the same write — open → `held`, released → `running` with the stale hold-timeout reason cleared — instead of waiting for the next unrelated task-transition persist; (2) resume reconciliation decides "session alive" per **task** from the registry manifests' task ids, so a not-yet-started successor sharing the lane's session name stays `pending` (legacy registries without task ids keep the old session semantics); (3) the dashboard attaches a lane's live worker telemetry to the task named by the lane snapshot — including a row still badged `held` — never to a sibling that merely has `status: running`.

@@ -216,6 +216,104 @@ export function hasOutstandingNonApproveReview(
 	}
 }
 
+/**
+ * #657: the worker's pre-review self-check. A `### Self-check (Step N)` section
+ * (heading level 3–4, case-insensitive) must exist in STATUS.md, contain at
+ * least one table data row or list item, and appear AFTER the step's last
+ * checked checkbox in the file — i.e. it was written once the step's work was
+ * done, not pasted in early. Returns null when satisfied, else the refusal.
+ */
+export function selfCheckRefusal(statusContent: string, stepNum: number): string | null {
+	const text = statusContent.replace(/\r\n/g, "\n");
+	const headingRe = new RegExp(
+		"^#{3,4}\\s+Self-check\\s*\\(\\s*Step\\s+" + String(stepNum) + "\\s*\\)\\s*$",
+		"im",
+	);
+	const m = headingRe.exec(text);
+	if (!m) {
+		return `no "### Self-check (Step ${stepNum})" section in STATUS.md`;
+	}
+	const sectionStart = m.index + m[0].length;
+	const rel = text.slice(sectionStart).search(/^#{1,4}\s/m);
+	const body = text.slice(sectionStart, rel === -1 ? undefined : sectionStart + rel);
+	const rows = body
+		.split("\n")
+		.filter((l) => /^\s*(\|.*\||[-*]\s+\S)/.test(l) && !/^\s*\|?\s*:?-{3,}/.test(l));
+	const dataRows = rows.filter((l) => !/^\s*\|\s*(item|check|criterion|finding|what)\b/i.test(l));
+	if (dataRows.length === 0) {
+		return `"### Self-check (Step ${stepNum})" section has no rows — list each outcome / design decision / completion criterion with file:line evidence`;
+	}
+	// Freshness: the section must come after the step's last checked box.
+	const stepHeadRe = new RegExp("^###\\s+Step\\s+" + String(stepNum) + "\\b", "m");
+	const sh = stepHeadRe.exec(text);
+	if (sh) {
+		const stepStart = sh.index;
+		const stepEndRel = text.slice(stepStart + 1).search(/^###\s+Step\s+\d+/m);
+		const stepBody = text.slice(
+			stepStart,
+			stepEndRel === -1 ? undefined : stepStart + 1 + stepEndRel,
+		);
+		let lastChecked = -1;
+		const cb = /^\s*-\s*\[x\]/gim;
+		let cm: RegExpExecArray | null = cb.exec(stepBody);
+		while (cm !== null) {
+			lastChecked = stepStart + cm.index;
+			cm = cb.exec(stepBody);
+		}
+		if (lastChecked !== -1 && m.index < lastChecked) {
+			return `"### Self-check (Step ${stepNum})" appears before the step's last checked box — re-run the self-check after finishing the step's work`;
+		}
+	}
+	return null;
+}
+
+/** #657: round number for this gate = 1 + number of existing review files for it. */
+export function reviewRoundForGate(
+	reviewsDir: string,
+	reviewType: string,
+	stepNum: number,
+): { round: number; priorReviewPath: string | null } {
+	try {
+		if (!existsSync(reviewsDir)) return { round: 1, priorReviewPath: null };
+		const suffix = `-${reviewType.toLowerCase()}-step${stepNum}.md`;
+		const files = readdirSync(reviewsDir)
+			.filter((f) => /^R\d{3}-/.test(f) && f.toLowerCase().endsWith(suffix))
+			.sort();
+		return {
+			round: files.length + 1,
+			priorReviewPath: files.length > 0 ? join(reviewsDir, files[files.length - 1]) : null,
+		};
+	} catch {
+		return { round: 1, priorReviewPath: null };
+	}
+}
+
+/** #657: lines appended to the reviewer request describing the round's scope. */
+export function buildReviewRoundLines(
+	round: number,
+	priorReviewPath: string | null,
+	round2Mode: "p0-only" | "any",
+): string[] {
+	if (round === 1) {
+		return [
+			"## Review round: 1 of 2 (exhaustive)",
+			"This is the FIRST review of this gate. List EVERY finding now, with severity. A REVISE that " +
+				"withholds findings for a later round is a defect: the gate has a hard 2-round cap and round 2 " +
+				"is verify-only.",
+		];
+	}
+	return [
+		`## Review round: ${round} (verify the fold)`,
+		`Prior review for this gate: \`${priorReviewPath ?? "(unknown)"}\``,
+		"Scope: verify that each finding in the prior review is addressed (cite file:line). " +
+			(round2Mode === "any"
+				? "New findings may be raised at any severity."
+				: "Raise a NEW finding as blocking ONLY at the top severity label (P0 / critical). " +
+					'Every other new observation goes in "### Suggestions" and does NOT change the verdict.'),
+		"If all prior findings are addressed and no top-severity finding remains, the verdict is APPROVE.",
+	];
+}
+
 export function isStepMarkedComplete(statusPath: string, stepNum: number): boolean {
 	let content: string;
 	try {
@@ -899,6 +997,44 @@ export default function (pi: ExtensionAPI) {
 				/* default 0 */
 			}
 
+			// ── #657: self-check gate (code/test reviews) ─────────────────
+			// The worker must have diffed its draft against its own design, the
+			// step's outcomes and the Completion Criteria before asking for a
+			// review. Opt-out: taskRunner.worker.requireSelfCheck = false.
+			if (reviewType !== "plan" && process.env.TASKPLANE_REQUIRE_SELF_CHECK !== "0") {
+				let statusForCheck = "";
+				try {
+					statusForCheck = readFileSync(statusPath, "utf-8");
+				} catch {
+					/* fall through — refusal below names the missing section */
+				}
+				const refusal = selfCheckRefusal(statusForCheck, stepNum);
+				if (refusal) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text:
+									`⛔ review_step refused — self-check missing: ${refusal}.\n\n` +
+									`Before requesting a code review, add a "### Self-check (Step ${stepNum})" section to STATUS.md ` +
+									`(directly under the step, AFTER its checkboxes) with one row per: (a) step checkbox/outcome, ` +
+									`(b) each Step 0 design decision this step implements, (c) each PROMPT Completion Criterion it ` +
+									`touches, and — on round ≥ 2 — (d) each finding from the prior review file. Each row carries ` +
+									`file:line evidence and OK / "fixed in <hash>". Fix anything not OK FIRST, then call review_step ` +
+									`again. Most round-2 findings in the field were invariants the worker had already written down.`,
+							},
+						],
+						details: undefined,
+					};
+				}
+			}
+
+			// #657: round semantics for the reviewer prompt
+			const roundInfo = reviewRoundForGate(reviewsDir, reviewType, stepNum);
+			const round2Mode: "p0-only" | "any" =
+				process.env.TASKPLANE_REVIEW_ROUND2_NEW_FINDINGS === "any" ? "any" : "p0-only";
+			const roundLines = buildReviewRoundLines(roundInfo.round, roundInfo.priorReviewPath, round2Mode);
+
 			reviewCounter++;
 			const num = String(reviewCounter).padStart(3, "0");
 			const outputPath = join(reviewsDir, `R${num}-${reviewType}-step${stepNum}.md`);
@@ -945,6 +1081,8 @@ export default function (pi: ExtensionAPI) {
 					`2. Read STATUS.md for progress so far`,
 					`3. Evaluate the plan for this step`,
 					``,
+					...roundLines,
+					``,
 					`## Output`,
 					`Write your review to: \`${outputPath}\``,
 				].join("\n");
@@ -965,6 +1103,9 @@ export default function (pi: ExtensionAPI) {
 					`1. Run \`${diffNamesCmd}\` to see changed files`,
 					`2. Run \`${diffCmd}\` for the full diff`,
 					`3. Read changed files for context`,
+					`4. Read the worker's "### Self-check (Step ${stepNum})" table in STATUS.md — verify its evidence rather than re-deriving it`,
+					``,
+					...roundLines,
 					``,
 					`## Output`,
 					`Write your review to: \`${outputPath}\``,
