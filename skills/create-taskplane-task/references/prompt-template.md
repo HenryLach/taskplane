@@ -145,6 +145,11 @@ Review Level 0 is ONLY for trivial changes. Most M+ tasks need Level ≥1.
 
 ## Completion Criteria
 
+> The worker's pre-review self-check enumerates these. Replace the generic
+> lines with task-specific, checkable outcomes the worker can cite evidence for.
+
+- [ ] [Task-specific outcome, e.g. "`review_step` refuses when X is missing"]
+- [ ] [Task-specific outcome]
 - [ ] All steps complete
 - [ ] All tests passing
 - [ ] Documentation updated

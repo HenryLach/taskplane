@@ -1,6 +1,6 @@
 ---
 name: create-taskplane-task
-version: 1.2.0
+version: 1.3.0
 description: Creates structured Taskplane task packets (PROMPT.md, STATUS.md) for autonomous agent execution via the task-orchestrator extension (/orch). Use when asked to "create a task", "create a taskplane task", "stage a task", "prepare a task for execution", "write a PROMPT.md", "set up work for the agent", "queue a task", or whenever the user wants to define work that will be executed autonomously by another agent instance.
 ---
 
@@ -485,6 +485,26 @@ pipeline.
 - "Add X" means "write new code that doesn't exist yet" — if it might already exist, say "verify X exists and add tests, or implement if missing"
 - Include at least one NEW test file per task — workers can't shortcut test creation
 - Each step's artifacts list must include at least one source file (not just STATUS.md)
+
+### The worker's self-check reads what you write here
+
+Before every code review the worker must write a `### Self-check (Step N)`
+table into STATUS.md (`review_step` refuses without it) with one row per
+step outcome, per Step 0 design decision the step implements, and per
+`## Completion Criteria` item the step touches — each with `file:line`
+evidence. Two consequences for task creators:
+
+- **Do NOT pre-seed `### Self-check` sections in STATUS.md.** The runtime
+  requires the section to be written *after* the step's last checked box and
+  to contain evidence rows; an empty or early-placed section is refused.
+- **Make `## Completion Criteria` concrete.** The template's defaults ("all
+  steps complete / tests passing / docs updated") give the self-check nothing
+  to verify. Add the task-specific, checkable outcomes ("`review_step` refuses
+  when the section is missing", "resume refuses a `.DONE` over a REVISE") —
+  these become rows the worker must produce evidence for, and the reviewer
+  verifies that evidence instead of re-deriving the review. For Review Level
+  ≥ 2 tasks, a Step 0/1 that records design decisions in a STATUS table pays
+  for itself the same way.
 
 ---
 
