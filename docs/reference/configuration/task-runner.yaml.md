@@ -88,6 +88,7 @@ If a task path matches a configured task area, that area's override applies.
 | `worker.spawn_mode` | `"subprocess"` \| `"tmux"` | commented in template | Optional spawn mode override for task-runner. |
 | `worker.exit_intercept_timeout_sec` | number | `60` (15..1800) | How long the lane waits for a supervisor reply when it intercepts a worker's premature exit before letting the session close. Raise it when the supervisor is often inside long tool calls (a blocking `--wait` cannot answer in 60 s). In `.pi/taskplane-config.json` (the preferred project config) the key is camelCase: `taskRunner.worker.exitInterceptTimeoutSec`. |
 | `worker.hold_timeout_minutes` | number | `240` (5..10080) | How long a lane may stay **held** (worker escalated, waiting for a typed ruling, no worker process running) before the batch parks with pause cause `hold-timeout`. Acknowledgements never extend it; the hold stays open when it expires — rule, then `orch_resume(force=true)`. JSON key: `taskRunner.worker.holdTimeoutMinutes`. |
+| `worker.require_self_check` | boolean | `true` | `review_step` (code/test reviews) refuses unless STATUS.md has a `### Self-check (Step N)` table for the step, placed after its checkboxes: one row per outcome / Step 0 design decision / Completion Criterion (and, on round ≥ 2, per prior finding) with `file:line` evidence. Most round-2 findings in the field were invariants the worker had already written down. Set `false` to opt out. JSON key: `taskRunner.worker.requireSelfCheck`. |
 
 Notes:
 - `spawn_mode` defaults to `subprocess` when not set.
@@ -101,6 +102,7 @@ Notes:
 | `reviewer.model` | string | `""` | Reviewer model (empty = inherit session model). |
 | `reviewer.tools` | string | `"read,write,bash,grep,find,ls"` | Tool allowlist for reviewer agent. |
 | `reviewer.thinking` | string | `"off"` | Thinking mode for reviewer. Empty string (or explicit `"inherit"`) = inherit active session thinking. |
+| `reviewer.round2_new_findings` | `"p0-only"` \| `"any"` | `"p0-only"` | Round semantics for a gate that already has a REVISE. Round 1 is exhaustive; round ≥ 2 verifies the fold, and a *new* finding is blocking only at the top severity label (`p0-only`) or at any severity (`any`) — everything else goes to Suggestions with an APPROVE verdict. The review request states the round and the prior review path. JSON key: `taskRunner.reviewer.round2NewFindings`. |
 
 ### `context`
 

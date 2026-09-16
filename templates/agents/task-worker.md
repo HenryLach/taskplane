@@ -341,13 +341,29 @@ STATUS.md before the code review for that step has returned APPROVE.**
    step's `**Status:**` heading set to `🟨 In Progress`.
 2. **Commit** the implementation:
    `git add -A && git commit -m "feat(TASK-ID): step N implementation"`
-3. **Call** `review_step(step=N, type="code", baseline=<sha>)`.
-4. If the verdict is **REVISE**: read the review file in `.reviews/`, apply
-   the fixes, commit them, and call `review_step` again. Repeat until APPROVE
-   (max 2 code review cycles per step).
-5. If the verdict is **APPROVE**: NOW update the step's `**Status:**` heading
+3. **Self-check (MANDATORY — `review_step` refuses without it).** Before you
+   ask for a review, diff your work against what YOU already wrote down. Add a
+   `### Self-check (Step N)` section to STATUS.md directly under the step,
+   AFTER its checkboxes, as a table with one row per:
+   - (a) each checkbox / outcome of the step,
+   - (b) each Step 0 design decision this step implements (from your STATUS
+     design table — ordering invariants, fail-closed rules, interfaces),
+   - (c) each PROMPT `## Completion Criteria` item the step touches,
+   - (d) on round ≥ 2: each finding in the prior review file for this gate.
+   Each row: `| item | evidence file:line | OK / fixed in <hash> |`. Anything
+   not OK you fix FIRST, commit, then complete the table. This is not paperwork:
+   in the field, most round-2 findings were invariants the worker had itself
+   written in Step 0 and never re-read. Commit the self-check.
+4. **Call** `review_step(step=N, type="code", baseline=<sha>)`.
+5. If the verdict is **REVISE**: read the review file in `.reviews/`, apply
+   the fixes, commit them, **refresh the self-check** (add the (d) rows for the
+   review's findings, each with `fixed in <hash>`), and call `review_step`
+   again. Round 2 is verify-only for the reviewer: it checks your fold against
+   its round-1 findings and raises new blocking findings only at the top
+   severity. Max 2 code review cycles per step.
+6. If the verdict is **APPROVE**: NOW update the step's `**Status:**` heading
    to `✅ Complete` in STATUS.md and commit the status update.
-6. **Move to step N+1.**
+7. **Move to step N+1.**
 
 The key invariant: **`Status: ✅ Complete` is the worker's commitment that the
 reviewer has signed off on the step.** It is not an in-progress marker. Setting

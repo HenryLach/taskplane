@@ -2112,9 +2112,15 @@ async function attemptModelFallbackRetry(
 			// Pass TASKPLANE_MODEL_FALLBACK=1 as extra env var to signal
 			// the task-runner to use the session model instead of configured model.
 			// TP-089: Also include ORCH_BATCH_ID so mailbox steering works for retries.
+			// #657 (Sage): forward every NON-model worker setting (self-check opt-out,
+			// intercept window, hold timeout, tools, thinking) exactly as the normal
+			// wave does — only the configured model is withheld so the retry uses the
+			// session model instead of the one that just failed.
+			const { model: _unavailableModel, ...workerWithoutModel } = runnerConfig?.worker ?? {};
 			const modelFallbackEnv = {
 				TASKPLANE_MODEL_FALLBACK: "1",
 				ORCH_BATCH_ID: batchState.batchId,
+				...buildWorkerEnv(runnerConfig?.worker ? workerWithoutModel : undefined),
 				...buildReviewerEnv(runnerConfig?.reviewer),
 				...buildWorkerExcludeEnv(runnerConfig?.workerExcludeExtensions),
 			};
@@ -2447,6 +2453,7 @@ async function attemptStaleWorktreeRecovery(
 			excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
 			severityLabels: runnerConfig?.reviewer?.severityLabels,
 			spiral: runnerConfig?.reviewer?.spiral,
+			round2NewFindings: runnerConfig?.reviewer?.round2NewFindings,
 		},
 		runnerConfig?.worker
 			? {
@@ -2454,6 +2461,9 @@ async function attemptStaleWorktreeRecovery(
 					thinking: runnerConfig.worker.thinking || "",
 					tools: runnerConfig.worker.tools || "",
 					excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
+					exitInterceptTimeoutSec: runnerConfig.worker.exitInterceptTimeoutSec,
+					holdTimeoutMinutes: runnerConfig.worker.holdTimeoutMinutes,
+					requireSelfCheck: runnerConfig.worker.requireSelfCheck,
 				}
 			: undefined,
 		runnerConfig?.workerExcludeExtensions ?? [],
@@ -3241,6 +3251,7 @@ export async function executeOrchBatch(
 				excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
 				severityLabels: runnerConfig?.reviewer?.severityLabels,
 				spiral: runnerConfig?.reviewer?.spiral,
+				round2NewFindings: runnerConfig?.reviewer?.round2NewFindings,
 			},
 			runnerConfig?.worker
 				? {
@@ -3248,6 +3259,9 @@ export async function executeOrchBatch(
 						thinking: runnerConfig.worker.thinking || "",
 						tools: runnerConfig.worker.tools || "",
 						excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
+						exitInterceptTimeoutSec: runnerConfig.worker.exitInterceptTimeoutSec,
+						holdTimeoutMinutes: runnerConfig.worker.holdTimeoutMinutes,
+						requireSelfCheck: runnerConfig.worker.requireSelfCheck,
 					}
 				: undefined,
 			runnerConfig?.workerExcludeExtensions ?? [],

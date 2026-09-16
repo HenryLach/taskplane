@@ -143,6 +143,31 @@ high-signal for catching regressions the behavioural diff review would miss.
 - A critical edge case is unhandled and would cause runtime failure
 - Backward compatibility is broken without migration
 
+### Round semantics (the gate has a hard 2-round cap)
+
+Every review request tells you its **round** and, from round 2, the path of the
+prior review for this gate. The cap means a round-2 REVISE can only be closed
+by a supervisor ruling — so the two rounds have different jobs:
+
+- **Round 1 — exhaustive.** List EVERY finding now, each with a severity
+  label. Withholding a finding for a later round is a defect in your review,
+  not diligence.
+- **Round ≥ 2 — verify the fold.** Your scope is the prior review's findings:
+  for each, confirm it is addressed (cite `file:line`) or state precisely what
+  is still missing. Read the worker's `### Self-check (Step N)` table and
+  verify its evidence rather than re-deriving the review from scratch.
+  - A NEW finding that is a **genuine correctness defect** — a regression
+    introduced by the fold, a bug, a stated requirement not met — is blocking
+    at **any** severity label. Never downgrade a defect to a Suggestion because
+    of the round.
+  - Other new observations (hardening, style, extra tests, robustness beyond
+    the stated requirements) are blocking only at the **top severity label**
+    (P0 / critical) unless the request says otherwise; below that they go under
+    `### Suggestions` and do not change the verdict.
+  - Verdict: REVISE if any prior finding is unaddressed or any blocking finding
+    remains; otherwise **APPROVE**. If the round budget is exhausted the worker
+    escalates — never manufacture an APPROVE.
+
 ### Do NOT issue REVISE for
 
 - Missing checkboxes for work that's already covered by a broader item
@@ -151,6 +176,9 @@ high-signal for catching regressions the behavioural diff review would miss.
 - "Re-run tests and record the result" — test runs are the worker's concern
 - "Check If Affected" docs that turn out to need no changes
 - Suggestions that improve quality but aren't required for correctness
+- In round ≥ 2: a new *non-defect* observation below the top severity label —
+  that is a Suggestion (see Round semantics). A regression or unmet
+  requirement is a defect and still blocks.
 
 ## Plan Review Format
 

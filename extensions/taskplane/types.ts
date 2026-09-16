@@ -371,6 +371,8 @@ export interface TaskRunnerConfig {
 		excludeExtensions?: string[];
 		/** Ordered severity vocabulary for review finding-count analysis (review-boundary notifications). */
 		severityLabels?: string[];
+		/** #657: blocking scope for NEW findings in round ≥ 2. Default "p0-only". */
+		round2NewFindings?: "p0-only" | "any";
 		/** Revision-spiral detection tuning. */
 		spiral?: import("./config-schema.ts").ReviewSpiralConfig;
 	};
@@ -392,6 +394,8 @@ export interface TaskRunnerConfig {
 		exitInterceptTimeoutSec?: number;
 		/** Minutes a hold may stay open before the batch parks (`hold-timeout`). Default 240; 5..10080. @since #627 */
 		holdTimeoutMinutes?: number;
+		/** #657: review_step requires a fresh `### Self-check (Step N)` section. Default true. */
+		requireSelfCheck?: boolean;
 	};
 	/** Worker agent extension exclusion list. @since TP-180 */
 	workerExcludeExtensions?: string[];
