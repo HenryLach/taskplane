@@ -2691,16 +2691,19 @@ export async function executeOrchBatch(
 	// batch state STRICTLY (throw on failure) before the lane-runner acts on
 	// them — never the best-effort persistRuntimeState path.
 	if (!batchState.holds) batchState.holds = [];
-	const holdStore = createHoldStore(batchState, (reason) =>
-		persistRuntimeStateStrict(
-			reason,
-			batchState,
-			wavePlan,
-			latestAllocatedLanes,
-			allTaskOutcomes,
-			discoveryRef,
-			stateRoot,
-		),
+	const holdStore = createHoldStore(
+		batchState,
+		(reason) =>
+			persistRuntimeStateStrict(
+				reason,
+				batchState,
+				wavePlan,
+				latestAllocatedLanes,
+				allTaskOutcomes,
+				discoveryRef,
+				stateRoot,
+			),
+		{ outcomes: () => allTaskOutcomes }, // #651: status projection in the same write
 	);
 	// TP-029: Track all repo roots encountered during execution.
 	// Maps repoRoot → repoId (undefined for primary/repo-mode).
