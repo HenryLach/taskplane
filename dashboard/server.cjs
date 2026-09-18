@@ -1327,6 +1327,71 @@ function serveStatic(req, res) {
 
 const sseClients = new Set();
 
+/**
+ * SSE backpressure + liveness (heap-OOM fix).
+ *
+ * `res.write()` on a stalled client never throws — Node queues the chunk in the
+ * socket's write buffer and returns false. A browser tab that stopped reading
+ * (background-throttled, laptop asleep, half-open TCP after a VPN blip) never
+ * fires `close`, so every broadcast appended another full state payload to a
+ * buffer nobody drained. A penster batch (~60 KB per tick, every 2 s) reached
+ * V8's 4 GB heap limit after ~39 hours and the dashboard crashed.
+ *
+ * Rules:
+ *  - a client whose write buffer exceeds SSE_MAX_BUFFERED_BYTES is skipped this
+ *    tick (backpressure) and dropped once it has been stalled for
+ *    SSE_MAX_STALLED_TICKS consecutive ticks;
+ *  - a `: ping` comment every SSE_PING_MS and a socket idle timeout make a dead
+ *    peer error out so `close` actually fires;
+ *  - `close`/`error` on BOTH req and res remove the client.
+ */
+const SSE_MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
+const SSE_MAX_STALLED_TICKS = 15; // ≈30 s of consecutive backpressure at POLL_INTERVAL
+const SSE_PING_MS = 15_000;
+const SSE_SOCKET_TIMEOUT_MS = 90_000;
+
+/**
+ * Write one payload to every SSE client with backpressure. Pure over the
+ * client set: clients expose `write`, `destroy`, `writableLength`,
+ * `writableNeedDrain` (Node Writable) plus a mutable `_sseStalledTicks`.
+ * Returns { written, skipped, dropped } for tests/logging.
+ */
+function writeToSseClients(clients, payload, opts = {}) {
+	const maxBuffered = opts.maxBufferedBytes ?? SSE_MAX_BUFFERED_BYTES;
+	const maxStalled = opts.maxStalledTicks ?? SSE_MAX_STALLED_TICKS;
+	let written = 0;
+	let skipped = 0;
+	let dropped = 0;
+	for (const client of clients) {
+		const buffered = client.writableLength ?? 0;
+		const stalled = client.writableNeedDrain === true || buffered > maxBuffered;
+		if (stalled) {
+			client._sseStalledTicks = (client._sseStalledTicks ?? 0) + 1;
+			if (client._sseStalledTicks > maxStalled) {
+				clients.delete(client);
+				dropped++;
+				try {
+					client.destroy();
+				} catch {
+					/* already gone */
+				}
+			} else {
+				skipped++;
+			}
+			continue;
+		}
+		client._sseStalledTicks = 0;
+		try {
+			client.write(payload);
+			written++;
+		} catch {
+			clients.delete(client);
+			dropped++;
+		}
+	}
+	return { written, skipped, dropped };
+}
+
 // ─── Conversation JSONL ─────────────────────────────────────────────────
 
 function serveConversation(req, res, prefix) {
@@ -1368,19 +1433,47 @@ function handleSSE(req, res) {
   res.write(`data: ${JSON.stringify(state)}\n\n`);
 
   sseClients.add(res);
-  req.on("close", () => sseClients.delete(res));
+  res._sseStalledTicks = 0;
+
+  // Liveness: a dead peer must surface as an error/close, not as an ever-growing
+  // write buffer. Pings are SSE comments (ignored by EventSource).
+  const ping = setInterval(() => {
+    if (!sseClients.has(res)) return;
+    try {
+      res.write(": ping\n\n");
+    } catch {
+      remove();
+    }
+  }, SSE_PING_MS);
+  if (res.socket && typeof res.socket.setTimeout === "function") {
+    res.socket.setTimeout(SSE_SOCKET_TIMEOUT_MS, () => {
+      try {
+        res.destroy();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+  let removed = false;
+  const remove = () => {
+    if (removed) return;
+    removed = true;
+    clearInterval(ping);
+    sseClients.delete(res);
+  };
+  req.on("close", remove);
+  req.on("error", remove);
+  res.on("close", remove);
+  res.on("error", remove);
 }
 
 function broadcastState() {
   if (sseClients.size === 0) return;
   const state = buildDashboardState();
   const payload = `data: ${JSON.stringify(state)}\n\n`;
-  for (const client of sseClients) {
-    try {
-      client.write(payload);
-    } catch {
-      sseClients.delete(client);
-    }
+  const r = writeToSseClients(sseClients, payload);
+  if (r.dropped > 0) {
+    console.error(`[dashboard] dropped ${r.dropped} stalled SSE client(s) (write buffer never drained)`);
   }
 }
 
