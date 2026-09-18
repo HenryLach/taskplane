@@ -31,17 +31,19 @@ function extract(startMarker: string, endMarker: string): string {
 // Pull the constants + writeToSseClients as a pure module.
 const block = extract("const SSE_MAX_BUFFERED_BYTES", "function handleSSE(req, res) {");
 const factory = new Function(
-	`${block}\nreturn { writeToSseClients, SSE_MAX_BUFFERED_BYTES, SSE_MAX_STALLED_TICKS };`,
+	`${block}\nreturn { writeToSseClients, teardownSseClient, SSE_MAX_BUFFERED_BYTES, SSE_MAX_STALLED_MS };`,
 );
-const { writeToSseClients, SSE_MAX_BUFFERED_BYTES, SSE_MAX_STALLED_TICKS } = factory() as {
-	writeToSseClients: (
-		clients: Set<any>,
-		payload: string,
-		opts?: any,
-	) => { written: number; skipped: number; dropped: number };
-	SSE_MAX_BUFFERED_BYTES: number;
-	SSE_MAX_STALLED_TICKS: number;
-};
+const { writeToSseClients, teardownSseClient, SSE_MAX_BUFFERED_BYTES, SSE_MAX_STALLED_MS } =
+	factory() as {
+		writeToSseClients: (
+			clients: Set<any>,
+			payload: string,
+			opts?: any,
+		) => { written: number; skipped: number; dropped: number };
+		teardownSseClient: (clients: Set<any>, client: any) => void;
+		SSE_MAX_BUFFERED_BYTES: number;
+		SSE_MAX_STALLED_MS: number;
+	};
 
 function fakeClient(over: Record<string, unknown> = {}) {
 	const c: any = {
@@ -62,57 +64,90 @@ function fakeClient(over: Record<string, unknown> = {}) {
 }
 
 describe("dashboard SSE — writeToSseClients", () => {
-	it("writes to healthy clients and resets their stall counter", () => {
+	const T0 = 1_000_000;
+
+	it("writes to healthy clients and clears their stall mark", () => {
 		const a = fakeClient();
-		const b = fakeClient({ _sseStalledTicks: 3 });
+		const b = fakeClient({ _sseStalledSince: T0 - 5000 });
 		const clients = new Set([a, b]);
-		const r = writeToSseClients(clients, "data: x\n\n");
+		const r = writeToSseClients(clients, "data: x\n\n", { now: T0 });
 		expect(r).toEqual({ written: 2, skipped: 0, dropped: 0 });
 		expect(a.writes.length).toBe(1);
-		expect(b._sseStalledTicks).toBe(0);
+		expect(b._sseStalledSince).toBe(null);
 	});
 
-	it("SKIPS a client whose buffer is over the cap or that needs drain — nothing is appended to its buffer", () => {
+	it("SKIPS a client whose buffer is over the cap or that needs drain — nothing is appended; stall clock starts", () => {
 		const bloated = fakeClient({ writableLength: SSE_MAX_BUFFERED_BYTES + 1 });
 		const draining = fakeClient({ writableNeedDrain: true });
 		const clients = new Set([bloated, draining]);
-		const r = writeToSseClients(clients, "data: x\n\n");
+		const r = writeToSseClients(clients, "data: x\n\n", { now: T0 });
 		expect(r).toEqual({ written: 0, skipped: 2, dropped: 0 });
 		expect(bloated.writes.length).toBe(0);
-		expect(draining.writes.length).toBe(0);
 		expect(clients.size).toBe(2);
-		expect(bloated._sseStalledTicks).toBe(1);
+		expect(bloated._sseStalledSince).toBe(T0);
 	});
 
-	it("DROPS (destroy + remove) a client stalled for more than SSE_MAX_STALLED_TICKS consecutive ticks; a recovered client survives", () => {
+	it("eviction is ELAPSED-TIME based (Sage): 100 bursty broadcasts inside 3 s do not evict; > SSE_MAX_STALLED_MS does; a recovered client survives", () => {
 		const dead = fakeClient({ writableNeedDrain: true });
 		const flaky = fakeClient({ writableNeedDrain: true });
 		const clients = new Set([dead, flaky]);
-		for (let i = 0; i < SSE_MAX_STALLED_TICKS; i++) writeToSseClients(clients, "d");
-		expect(clients.size).toBe(2); // at the cap, not yet dropped
-		flaky.writableNeedDrain = false; // peer caught up
-		const r = writeToSseClients(clients, "d");
+		// fs.watch debounce storm: 100 broadcasts in 3 seconds
+		for (let i = 0; i < 100; i++) writeToSseClients(clients, "d", { now: T0 + i * 30 });
+		expect(clients.size).toBe(2);
+		// at the boundary: still kept
+		writeToSseClients(clients, "d", { now: T0 + SSE_MAX_STALLED_MS });
+		expect(clients.size).toBe(2);
+		flaky.writableNeedDrain = false; // peer caught up just in time
+		const r = writeToSseClients(clients, "d", { now: T0 + SSE_MAX_STALLED_MS + 1 });
 		expect(r).toEqual({ written: 1, skipped: 0, dropped: 1 });
 		expect(dead.destroyed).toBe(true);
+		expect(dead._sseTornDown).toBe(true);
 		expect(clients.has(dead)).toBe(false);
 		expect(clients.has(flaky)).toBe(true);
-		expect(flaky._sseStalledTicks).toBe(0);
-		expect(flaky.writes.length).toBe(1);
+		expect(flaky._sseStalledSince).toBe(null);
 	});
 
-	it("a write that throws removes the client (existing behaviour preserved)", () => {
+	it("a write that throws goes through the SAME teardown: removed, destroyed, ping timer cleared (Sage)", () => {
+		let cleared = false;
+		const realClear = globalThis.clearInterval;
 		const boom = fakeClient({
+			_ssePing: 42,
 			write() {
 				throw new Error("EPIPE");
 			},
 		});
-		const clients = new Set([boom]);
-		const r = writeToSseClients(clients, "d");
-		expect(r.dropped).toBe(1);
+		(globalThis as any).clearInterval = (h: unknown) => {
+			if (h === 42) cleared = true;
+		};
+		try {
+			const clients = new Set([boom]);
+			const r = writeToSseClients(clients, "d", { now: T0 });
+			expect(r.dropped).toBe(1);
+			expect(clients.size).toBe(0);
+			expect(boom.destroyed).toBe(true);
+			expect(boom._ssePing).toBe(null);
+			expect(cleared).toBe(true);
+		} finally {
+			(globalThis as any).clearInterval = realClear;
+		}
+	});
+
+	it("teardownSseClient is idempotent (repeated close/error events)", () => {
+		let destroys = 0;
+		const c = fakeClient({
+			destroy() {
+				destroys++;
+			},
+		});
+		const clients = new Set([c]);
+		teardownSseClient(clients, c);
+		teardownSseClient(clients, c);
+		teardownSseClient(clients, c);
+		expect(destroys).toBe(1);
 		expect(clients.size).toBe(0);
 	});
 
-	it("39-hour scenario: a permanently stalled client never accumulates more than the cap", () => {
+	it("39-hour scenario: a permanently stalled client never accumulates more than the cap and is destroyed", () => {
 		let buffered = 0;
 		const stalled = fakeClient({
 			write(p: string) {
@@ -123,7 +158,9 @@ describe("dashboard SSE — writeToSseClients", () => {
 		});
 		const clients = new Set([stalled]);
 		const payload = "x".repeat(60_000);
-		for (let i = 0; i < 70_000 && clients.size > 0; i++) writeToSseClients(clients, payload);
+		for (let i = 0; i < 70_000 && clients.size > 0; i++) {
+			writeToSseClients(clients, payload, { now: T0 + i * 2000 });
+		}
 		expect(clients.size).toBe(0);
 		expect(buffered).toBeLessThan(SSE_MAX_BUFFERED_BYTES + 60_000 * 2);
 		expect(stalled.destroyed).toBe(true);
@@ -139,7 +176,13 @@ describe("dashboard SSE — handler wiring", () => {
 		expect(fn).toContain('req.on("error", remove);');
 		expect(fn).toContain('res.on("close", remove);');
 		expect(fn).toContain('res.on("error", remove);');
-		expect(fn).toContain("clearInterval(ping);");
+		// every exit path is the one teardown
+		expect(fn).toContain("const remove = () => teardownSseClient(sseClients, res);");
+		expect(fn).toContain(
+			"res.socket.setTimeout(SSE_SOCKET_TIMEOUT_MS, () => teardownSseClient(sseClients, res));",
+		);
+		expect(fn).toContain("teardownSseClient(sseClients, res);"); // ping write failure
+		expect(fn).not.toContain("sseClients.delete(res)");
 	});
 
 	it("broadcastState goes through writeToSseClients and logs drops", () => {
