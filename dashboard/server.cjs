@@ -1340,25 +1340,48 @@ const sseClients = new Set();
  * Rules:
  *  - a client whose write buffer exceeds SSE_MAX_BUFFERED_BYTES is skipped this
  *    tick (backpressure) and dropped once it has been stalled for
- *    SSE_MAX_STALLED_TICKS consecutive ticks;
+ *    SSE_MAX_STALLED_MS of continuous backpressure (elapsed time, not ticks);
  *  - a `: ping` comment every SSE_PING_MS and a socket idle timeout make a dead
  *    peer error out so `close` actually fires;
  *  - `close`/`error` on BOTH req and res remove the client.
  */
 const SSE_MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
-const SSE_MAX_STALLED_TICKS = 15; // ≈30 s of consecutive backpressure at POLL_INTERVAL
+// Elapsed-time grace, not a tick count: fs.watch debounce bursts during a busy
+// batch would otherwise burn a tick budget in seconds (Sage review).
+const SSE_MAX_STALLED_MS = 30_000;
 const SSE_PING_MS = 15_000;
 const SSE_SOCKET_TIMEOUT_MS = 90_000;
 
 /**
+ * One idempotent teardown for every SSE exit path (client close/error, stall
+ * eviction, synchronous write failure): unregister, clear the ping timer,
+ * destroy the connection. Nothing may retain a response after this runs.
+ */
+function teardownSseClient(clients, client) {
+  if (client._sseTornDown) return;
+  client._sseTornDown = true;
+  clients.delete(client);
+  if (client._ssePing) {
+    clearInterval(client._ssePing);
+    client._ssePing = null;
+  }
+  try {
+    client.destroy();
+  } catch {
+    /* already gone */
+  }
+}
+
+/**
  * Write one payload to every SSE client with backpressure. Pure over the
  * client set: clients expose `write`, `destroy`, `writableLength`,
- * `writableNeedDrain` (Node Writable) plus a mutable `_sseStalledTicks`.
+ * `writableNeedDrain` (Node Writable) plus mutable `_sseStalledSince` / `_sseTornDown` / `_ssePing`.
  * Returns { written, skipped, dropped } for tests/logging.
  */
 function writeToSseClients(clients, payload, opts = {}) {
 	const maxBuffered = opts.maxBufferedBytes ?? SSE_MAX_BUFFERED_BYTES;
-	const maxStalled = opts.maxStalledTicks ?? SSE_MAX_STALLED_TICKS;
+	const maxStalledMs = opts.maxStalledMs ?? SSE_MAX_STALLED_MS;
+	const now = opts.now ?? Date.now();
 	let written = 0;
 	let skipped = 0;
 	let dropped = 0;
@@ -1366,26 +1389,21 @@ function writeToSseClients(clients, payload, opts = {}) {
 		const buffered = client.writableLength ?? 0;
 		const stalled = client.writableNeedDrain === true || buffered > maxBuffered;
 		if (stalled) {
-			client._sseStalledTicks = (client._sseStalledTicks ?? 0) + 1;
-			if (client._sseStalledTicks > maxStalled) {
-				clients.delete(client);
+			if (client._sseStalledSince == null) client._sseStalledSince = now;
+			if (now - client._sseStalledSince > maxStalledMs) {
+				teardownSseClient(clients, client);
 				dropped++;
-				try {
-					client.destroy();
-				} catch {
-					/* already gone */
-				}
 			} else {
 				skipped++;
 			}
 			continue;
 		}
-		client._sseStalledTicks = 0;
+		client._sseStalledSince = null;
 		try {
 			client.write(payload);
 			written++;
 		} catch {
-			clients.delete(client);
+			teardownSseClient(clients, client);
 			dropped++;
 		}
 	}
@@ -1433,34 +1451,24 @@ function handleSSE(req, res) {
   res.write(`data: ${JSON.stringify(state)}\n\n`);
 
   sseClients.add(res);
-  res._sseStalledTicks = 0;
+  res._sseStalledSince = null;
+  res._sseTornDown = false;
 
   // Liveness: a dead peer must surface as an error/close, not as an ever-growing
-  // write buffer. Pings are SSE comments (ignored by EventSource).
-  const ping = setInterval(() => {
-    if (!sseClients.has(res)) return;
+  // write buffer. Pings are SSE comments (ignored by EventSource). The timer is
+  // owned by the client record so every teardown path can clear it.
+  res._ssePing = setInterval(() => {
+    if (res._sseTornDown) return;
     try {
       res.write(": ping\n\n");
     } catch {
-      remove();
+      teardownSseClient(sseClients, res);
     }
   }, SSE_PING_MS);
   if (res.socket && typeof res.socket.setTimeout === "function") {
-    res.socket.setTimeout(SSE_SOCKET_TIMEOUT_MS, () => {
-      try {
-        res.destroy();
-      } catch {
-        /* ignore */
-      }
-    });
+    res.socket.setTimeout(SSE_SOCKET_TIMEOUT_MS, () => teardownSseClient(sseClients, res));
   }
-  let removed = false;
-  const remove = () => {
-    if (removed) return;
-    removed = true;
-    clearInterval(ping);
-    sseClients.delete(res);
-  };
+  const remove = () => teardownSseClient(sseClients, res);
   req.on("close", remove);
   req.on("error", remove);
   res.on("close", remove);
