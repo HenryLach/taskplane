@@ -4,7 +4,7 @@
  * A stalled SSE client used to accumulate every broadcast in its write buffer
  * (res.write never throws), reaching V8's heap limit after ~39 h of a penster
  * batch. The broadcast path must skip stalled clients, drop them after a
- * bounded number of stalled ticks, and the SSE handler must remove clients on
+ * bounded stall duration (elapsed time, not ticks), and the SSE handler must remove clients on
  * close/error from either side and ping so dead peers surface.
  */
 

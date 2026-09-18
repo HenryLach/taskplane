@@ -1340,7 +1340,7 @@ const sseClients = new Set();
  * Rules:
  *  - a client whose write buffer exceeds SSE_MAX_BUFFERED_BYTES is skipped this
  *    tick (backpressure) and dropped once it has been stalled for
- *    SSE_MAX_STALLED_TICKS consecutive ticks;
+ *    SSE_MAX_STALLED_MS of continuous backpressure (elapsed time, not ticks);
  *  - a `: ping` comment every SSE_PING_MS and a socket idle timeout make a dead
  *    peer error out so `close` actually fires;
  *  - `close`/`error` on BOTH req and res remove the client.
@@ -1375,7 +1375,7 @@ function teardownSseClient(clients, client) {
 /**
  * Write one payload to every SSE client with backpressure. Pure over the
  * client set: clients expose `write`, `destroy`, `writableLength`,
- * `writableNeedDrain` (Node Writable) plus a mutable `_sseStalledTicks`.
+ * `writableNeedDrain` (Node Writable) plus mutable `_sseStalledSince` / `_sseTornDown` / `_ssePing`.
  * Returns { written, skipped, dropped } for tests/logging.
  */
 function writeToSseClients(clients, payload, opts = {}) {
