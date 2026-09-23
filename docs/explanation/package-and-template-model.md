@@ -90,6 +90,21 @@ Managed by users/maintainers inside their repositories.
 
 `taskplane init` copies/generates these into project-local paths.
 
+### Agent prompt inheritance
+
+Runtime V2 workers, reviewers, and mergers use the same agent-definition loader.
+By default, an agent's bundled prompt is followed by the body of its project-local
+Markdown file under `## Project-Specific Guidance`. Frontmatter is configuration
+and is removed from the system prompt.
+
+Set `standalone: true` in a local agent file's frontmatter to replace the bundled
+prompt with that file's body. The project then owns the complete prompt for that
+role, including its execution or review instructions.
+
+Bundled templates are resolved relative to the running Taskplane package, so
+this behavior also works with Pi's private npm installation directory. Runtime
+model and tool configuration retains its existing precedence.
+
 ---
 
 ## Upgrade path
