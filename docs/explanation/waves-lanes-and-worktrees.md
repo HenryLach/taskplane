@@ -171,6 +171,12 @@ All task work is merged onto this branch — the user's working branch (e.g.,
 In workspace mode, the orch branch is created in **every** workspace repo that
 has tasks, and `/orch-integrate` integrates across all repos.
 
+Before each wave allocates worktrees, uncommitted task files are staged on the
+orch branch in the configured task packet repository.
+This may differ from the default repository or the repository where the task
+executes. Only the current wave's task folders are staged; unrelated user changes
+and the checked-out branch remain untouched when staging on the orch branch.
+
 ---
 
 ## 5) Worktree isolation
