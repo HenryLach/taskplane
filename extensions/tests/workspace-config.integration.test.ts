@@ -996,9 +996,18 @@ describe("resolvePointer", () => {
 
 		const result = resolvePointer(dir, wsConfig);
 		expect(result!.used).toBe(false);
-		// May be caught by absolute check or containment check
+		expect(result!.warning).toContain("absolute paths not allowed");
+	});
+
+	it("6.8d: rejects UNC config_path on every host platform", () => {
+		const dir = makeTestDir("ptr-abs-unc");
+		writePointer(
+			dir,
+			JSON.stringify({ config_repo: "infra", config_path: "\\\\server\\share\\config" }),
+		);
+		const result = resolvePointer(dir, makeWorkspaceConfig({ infra: "/fake/infra" }));
 		expect(result!.used).toBe(false);
-		expect(result!.warning).toBeDefined();
+		expect(result!.warning).toContain("absolute paths not allowed");
 	});
 
 	// ── 6.9: Valid pointer → resolved paths ─────────────────────
@@ -1026,6 +1035,16 @@ describe("resolvePointer", () => {
 		const wsConfig = makeWorkspaceConfig({ infra: repoPath });
 
 		const result = resolvePointer(dir, wsConfig);
+		expect(result!.used).toBe(true);
+		expect(result!.configRoot).toBe(resolve(repoPath, "config", "taskplane"));
+		expect(result!.agentRoot).toBe(resolve(repoPath, "config", "taskplane", "agents"));
+	});
+
+	it("6.9c: accepts relative config_path with backslash separators", () => {
+		const dir = makeTestDir("ptr-relative-backslashes");
+		const repoPath = resolve(dir, "infra-repo");
+		writePointer(dir, JSON.stringify({ config_repo: "infra", config_path: "config\\taskplane" }));
+		const result = resolvePointer(dir, makeWorkspaceConfig({ infra: repoPath }));
 		expect(result!.used).toBe(true);
 		expect(result!.configRoot).toBe(resolve(repoPath, "config", "taskplane"));
 		expect(result!.agentRoot).toBe(resolve(repoPath, "config", "taskplane", "agents"));

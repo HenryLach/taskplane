@@ -31,6 +31,10 @@ independently in each repo.
 Everything in this document applies to both modes. Sections that describe
 workspace-specific behavior are called out explicitly.
 
+Task-marker lookup normalizes forward-slash and backslash separators before
+resolving task and worktree paths. Mixed separators therefore locate the same
+`STATUS.md` and `.DONE` files, including the archive fallback.
+
 ---
 
 ## 1) Dependency graph

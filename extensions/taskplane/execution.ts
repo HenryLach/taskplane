@@ -436,8 +436,12 @@ export function resolveCanonicalTaskPaths(
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
 ): ResolvedTaskPaths {
-	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
-	const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
+	// Normalize separators before native path resolution. On POSIX, a leading
+	// backslash is otherwise treated as a relative filename and prefixed with cwd.
+	const repoRootNorm = resolve(repoRoot.replace(/\\/g, "/")).replace(/\\/g, "/");
+	const folderPath = resolve(taskFolder.replace(/\\/g, "/"));
+	const folderNorm = folderPath.replace(/\\/g, "/");
+	const worktreeRoot = resolve(worktreePath.replace(/\\/g, "/"));
 
 	let resolvedFolder: string;
 
@@ -447,21 +451,21 @@ export function resolveCanonicalTaskPaths(
 		// the worktree, so the engine must look there too.
 		if (folderNorm.startsWith(repoRootNorm + "/")) {
 			const relPath = folderNorm.slice(repoRootNorm.length + 1);
-			resolvedFolder = join(worktreePath, relPath);
+			resolvedFolder = join(worktreeRoot, relPath);
 		} else {
 			// Cross-repo: task files were copied into the worktree under
 			// .taskplane-tasks/<taskDirName>/ by buildLaneEnvVars
-			const taskDirName = basename(resolve(taskFolder));
-			resolvedFolder = join(worktreePath, ".taskplane-tasks", taskDirName);
+			const taskDirName = basename(folderPath);
+			resolvedFolder = join(worktreeRoot, ".taskplane-tasks", taskDirName);
 		}
 	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: task folder is inside the repo root.
 		// Translate to equivalent path in the worktree.
 		const relativePath = folderNorm.slice(repoRootNorm.length + 1);
-		resolvedFolder = join(worktreePath, relativePath);
+		resolvedFolder = join(worktreeRoot, relativePath);
 	} else {
 		// Fallback: use absolute path directly.
-		resolvedFolder = resolve(taskFolder);
+		resolvedFolder = folderPath;
 	}
 
 	// Check primary location

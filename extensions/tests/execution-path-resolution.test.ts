@@ -542,7 +542,8 @@ function runEdgeCaseTests(): void {
 		const wtMirror = join(worktreePath, "tasks", "TP-WIN");
 		mkdirSync(wtMirror, { recursive: true });
 
-		// Use backslash-style paths (if on Windows this is natural; on unix resolve() normalizes anyway)
+		// Use backslash-style paths on every platform. POSIX resolve() does not
+		// interpret backslashes, so the task resolver must normalize them first.
 		const backslashTask = taskFolder.replace(/\//g, "\\");
 		const backslashRepo = repoRoot.replace(/\//g, "\\");
 		const backslashWt = worktreePath.replace(/\//g, "\\");
