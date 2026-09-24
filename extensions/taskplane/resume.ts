@@ -543,7 +543,7 @@ export function collectDoneTaskIdsForResume(
 			// R003 parity with the live finalize gate: when the lane worktree exists,
 			// bind ratification authority to a CLEAN (source) working tree. Without
 			// this, a crash-then-resume would accept a `.DONE` over uncommitted source
-			// drift that the engine's post-task `git add -A` could sweep into the
+			// drift that the engine's post-task artifact staging could sweep into the
 			// merge candidate, defeating the ratification's proof-to-code binding. The
 			// task folder's own files (STATUS.md, .reviews, .DONE) are runtime-owned
 			// and allowed to be dirty. A failed git probe is fail-closed (refuse).

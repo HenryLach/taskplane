@@ -561,7 +561,36 @@ export async function pollUntilTaskComplete(
  * @param task   - The task that just completed
  * @param laneId - Lane identifier for logging
  */
-function commitTaskArtifacts(lane: AllocatedLane, task: AllocatedTask, laneId: string): void {
+export function collectTaskArtifactPaths(
+	repoRoot: string,
+	taskFolder: string,
+	statusOutput: string,
+): { artifactPaths: string[]; skippedPaths: string[] } {
+	const relTaskFolder = relative(repoRoot, taskFolder).replace(/\\/g, "/");
+	if (relTaskFolder.startsWith("..") || relTaskFolder.startsWith("/"))
+		return { artifactPaths: [], skippedPaths: statusOutput.split("\n").filter(Boolean) };
+	const artifactPaths = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"]
+		.map((name) => `${relTaskFolder}/${name}`)
+		.filter((path) => existsSync(join(repoRoot, path)));
+	const skippedPaths = statusOutput
+		.split("\n")
+		.filter(Boolean)
+		.filter((line) => {
+			const path = line.slice(3).trim().replace(/^"|"$/g, "").replace(/\\/g, "/");
+			return (
+				!artifactPaths.includes(path) &&
+				!artifactPaths.some((candidate) => path.startsWith(`${candidate}/`))
+			);
+		});
+	return { artifactPaths, skippedPaths };
+}
+
+function commitTaskArtifacts(
+	lane: AllocatedLane,
+	task: AllocatedTask,
+	laneId: string,
+	packetTaskFolder?: string,
+): void {
 	const worktreePath = lane.worktreePath;
 
 	// Check if there are any uncommitted changes in the worktree
@@ -571,8 +600,35 @@ function commitTaskArtifacts(lane: AllocatedLane, task: AllocatedTask, laneId: s
 		return;
 	}
 
-	// Stage all changes in the worktree
-	const addResult = runGit(["add", "-A"], worktreePath);
+	// Stage only task-owned completion artifacts. Never use `git add -A`: workers
+	// can leave unrelated source or supervisor files in the lane worktree.
+	const repoResult = runGit(["rev-parse", "--show-toplevel"], worktreePath);
+	const repoRoot = repoResult.ok ? repoResult.stdout : worktreePath;
+	const taskFolder = packetTaskFolder
+		? resolve(packetTaskFolder)
+		: resolve(worktreePath, task.task.taskFolder);
+	const relTaskFolder = relative(repoRoot, taskFolder).replace(/\\/g, "/");
+	if (!repoResult.ok || relTaskFolder.startsWith("..") || relTaskFolder.startsWith("/")) {
+		execLog(laneId, task.taskId, "post-task stage skipped: task folder is outside worktree", {
+			taskFolder,
+		});
+		return;
+	}
+	const collected = collectTaskArtifactPaths(repoRoot, taskFolder, statusResult.stdout);
+	const artifactPaths = collected.artifactPaths;
+	const reviewsDir = join(repoRoot, relTaskFolder, ".reviews");
+	if (existsSync(reviewsDir)) {
+		const reviewFiles = runGit(
+			["ls-files", "--others", "--modified", "--exclude-standard", "--", `${relTaskFolder}/.reviews`],
+			repoRoot,
+		);
+		if (reviewFiles.ok && reviewFiles.stdout)
+			artifactPaths.push(...reviewFiles.stdout.split("\n").filter(Boolean));
+	}
+	const addResult =
+		artifactPaths.length > 0
+			? runGit(["add", "--", ...artifactPaths], repoRoot)
+			: { ok: true, stdout: "", stderr: "" };
 	if (!addResult.ok) {
 		execLog(
 			laneId,
@@ -580,6 +636,17 @@ function commitTaskArtifacts(lane: AllocatedLane, task: AllocatedTask, laneId: s
 			`post-task stage failed (non-fatal): ${addResult.stderr.slice(0, 200)}`,
 		);
 		return;
+	}
+	const skipped = collected.skippedPaths;
+	if (skipped.length > 0) {
+		execLog(
+			laneId,
+			task.taskId,
+			`post-task checkpoint skipped ${skipped.length} out-of-scope path(s)`,
+			{
+				paths: skipped.map((line) => line.slice(3).trim()).join(","),
+			},
+		);
 	}
 
 	// Commit with task ID for traceability
@@ -3178,7 +3245,7 @@ export async function executeLaneV2(
 
 			// Commit artifacts after success (same as legacy path)
 			if (result.outcome.status === "succeeded") {
-				commitTaskArtifacts(lane, task, laneId);
+				commitTaskArtifacts(lane, task, laneId, unit.packet.taskFolder);
 				// Reset worktree for next task
 				if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
 					runGit(["checkout", "--", "."], lane.worktreePath);

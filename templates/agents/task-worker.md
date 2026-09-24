@@ -165,7 +165,7 @@ Git commits happen at **step boundaries**, not after every checkbox. When all
 checkboxes in a step are checked off, commit the implementation:
 
 ```bash
-git add -A && git commit -m "feat(TASK-ID): step N implementation"
+git add <files you changed> && git commit -m "feat(TASK-ID): step N implementation"
 ```
 
 For **Review Level 0 or 1** tasks, this commit completes the step — the next
@@ -189,9 +189,9 @@ commit when applicable.
 
 **Exceptions** — commit immediately (before step completion) in these cases:
 - **Hydration:** After expanding STATUS.md with new checkboxes, commit before
-  implementing: `git add -A && git commit -m "hydrate: expand Step N checkboxes"`
+  implementing: `git add <files you changed> && git commit -m "hydrate: expand Step N checkboxes"`
 - **REVISE response:** After adding reviewer revision items to STATUS.md:
-  `git add -A && git commit -m "hydrate: add R00N revision items to Step N"`
+  `git add <files you changed> && git commit -m "hydrate: add R00N revision items to Step N"`
 - **Wrap-up signal:** If stopping mid-step due to a wrap-up signal, commit
   whatever is done so far.
 
@@ -233,7 +233,7 @@ Before implementing anything, assess whether the step needs expansion:
    things that need to be true when this step is done?"
 4. **Commit the hydrated STATUS.md immediately** (see Checkpoint Discipline exceptions):
    ```bash
-   git add -A && git commit -m "hydrate: expand Step N checkboxes"
+   git add <files you changed> && git commit -m "hydrate: expand Step N checkboxes"
    ```
 5. THEN start implementing from the first unchecked item
 
@@ -256,7 +256,7 @@ When a reviewer returns REVISE with specific feedback items:
    Do NOT create checkboxes for suggestions. They are advisory, not blocking.
 4. **Commit the hydrated STATUS.md** (see Checkpoint Discipline exceptions):
    ```bash
-   git add -A && git commit -m "hydrate: add R00N revision items to Step N"
+   git add <files you changed> && git commit -m "hydrate: add R00N revision items to Step N"
    ```
 5. THEN implement the revisions, checking off each item as you go
 
@@ -340,7 +340,7 @@ STATUS.md before the code review for that step has returned APPROVE.**
    check each box `[x]` in STATUS.md as you finish that item, but leave the
    step's `**Status:**` heading set to `🟨 In Progress`.
 2. **Commit** the implementation:
-   `git add -A && git commit -m "feat(TASK-ID): step N implementation"`
+   `git add <files you changed> && git commit -m "feat(TASK-ID): step N implementation"`
 3. **Self-check (MANDATORY — `review_step` refuses without it).** Before you
    ask for a review, diff your work against what YOU already wrote down. Add a
    `### Self-check (Step N)` section to STATUS.md directly under the step,

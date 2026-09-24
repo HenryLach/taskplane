@@ -18,6 +18,8 @@ import { join, resolve, relative, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 
+import { collectTaskArtifactPaths } from "../taskplane/execution.ts";
+
 import {
 	applyStatusReconciliation,
 	type StatusReconciliation,
@@ -521,6 +523,33 @@ describe("4.x: Artifact staging allowlist", () => {
 // ══════════════════════════════════════════════════════════════════════
 // 5.x — Artifact staging rejection: outside-task, repo-escape, no-op
 // ══════════════════════════════════════════════════════════════════════
+
+describe("5.6: Runtime checkpoint scope", () => {
+	it("collects task artifacts and reports unrelated worktree paths", () => {
+		const repoRoot = makeTestDir("checkpoint-scope");
+		const taskFolder = join(repoRoot, "tasks", "TP-SCOPE");
+		mkdirSync(taskFolder, { recursive: true });
+		writeFileSync(join(taskFolder, ".DONE"), "done", "utf8");
+		writeFileSync(join(taskFolder, "STATUS.md"), "status", "utf8");
+		const result = collectTaskArtifactPaths(
+			repoRoot,
+			taskFolder,
+			" M tasks/TP-SCOPE/STATUS.md\n?? tasks/TP-SCOPE/notes.txt\n?? .pi/supervisor-note.md",
+		);
+		expect(result.artifactPaths).toEqual(["tasks/TP-SCOPE/.DONE", "tasks/TP-SCOPE/STATUS.md"]);
+		expect(result.skippedPaths).toHaveLength(2);
+		expect(result.skippedPaths[0]).toContain("notes.txt");
+		expect(result.skippedPaths[1]).toContain("supervisor-note.md");
+	});
+
+	it("rejects a task folder outside the repository", () => {
+		const repoRoot = makeTestDir("checkpoint-escape");
+		const outside = join(testRoot, "outside-task");
+		const result = collectTaskArtifactPaths(repoRoot, outside, "?? outside.txt");
+		expect(result.artifactPaths).toHaveLength(0);
+		expect(result.skippedPaths).toHaveLength(1);
+	});
+});
 
 describe("5.x: Artifact staging rejection", () => {
 	it("5.1: path outside repo root (repo-escape) is rejected", () => {

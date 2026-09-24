@@ -112,7 +112,7 @@ export function evaluateRatificationBlock(
 	});
 	if (stale) return `stale (${linkId} is no longer the latest APPROVE for ${gate})`;
 	// R004 issue 2: HEAD may equal the proof commit yet the working tree can carry
-	// uncommitted source changes that the post-task `git add -A` would sweep into
+	// uncommitted source changes that the post-task artifact staging would sweep into
 	// the merge candidate. Bind authority to a clean (source) working tree.
 	// R005 issue 2: a failed git probe is fail-closed, never "clean".
 	const drift = ctx.workingTreeDrift();
