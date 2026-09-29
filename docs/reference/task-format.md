@@ -65,6 +65,10 @@ Canonical folder:
 - At least one step in `### Step N: ...` format
 - Checkbox items (`- [ ]`) inside steps
 
+Runtime V2 rejects a task with no parseable steps before launching a worker.
+For example, `## Step N: ...` headings do not satisfy the required `### Step N: ...` format.
+Correct the headings before retrying the task.
+
 ### Optional but strongly recommended
 
 - `## Review Level: N`

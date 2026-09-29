@@ -106,6 +106,12 @@ Generated file includes:
 
 Orchestrator and runner use `.DONE` as the authoritative completion marker.
 
+If Runtime V2 finds no parseable steps in `PROMPT.md`, it records `❌ Failed` and
+an actionable error in the execution log instead of marking the task complete.
+It quarantines any existing `.DONE` as `.DONE.unauthorized-<timestamp>` and does
+not create a new completion marker. Existing step progress remains available
+after the prompt is corrected.
+
 ---
 
 ## Editing guidelines
